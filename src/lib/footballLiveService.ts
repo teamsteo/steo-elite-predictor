@@ -529,7 +529,7 @@ export async function fetchUpcomingMatches(): Promise<LiveFootballMatch[]> {
 
       return events
         .filter((e: any) => e.status?.type?.state !== 'in' && e.status?.type?.state !== 'post')
-        .slice(0, 5) // Max 5 par ligue
+        .slice(0, 8) // Max 8 par ligue (augmenté)
         .map((event: any) => parseESPNEvent(event, league.name, league.priority));
 
     } catch {
@@ -542,7 +542,7 @@ export async function fetchUpcomingMatches(): Promise<LiveFootballMatch[]> {
 
   allMatches.sort((a, b) => b.priority - a.priority);
 
-  return allMatches.slice(0, 10); // Max 10 matchs à venir
+  return allMatches.slice(0, 20); // Max 20 matchs à venir (augmenté)
 }
 
 // ============================================
