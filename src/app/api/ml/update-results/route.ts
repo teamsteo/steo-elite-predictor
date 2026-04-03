@@ -1,46 +1,42 @@
 /**
  * API pour mettre à jour automatiquement les résultats des pronostics ML
+ * Version Supabase - Stockage permanent des pronostics
  * 
  * GET /api/ml/update-results
  * Vérifie les résultats des matchs terminés et met à jour les pronostics
  */
 
 import { NextResponse } from 'next/server';
-import * as fs from 'fs';
-import * as path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
-const DATA_DIR = path.join(process.cwd(), 'data');
-const ML_RESULTS_FILE = path.join(DATA_DIR, 'ml-results-tracking.json');
+// Configuration Supabase
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+function getSupabase() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  return createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  });
+}
 
 interface Pick {
   id: string;
-  matchId: string;
+  match_id: string;
   sport: string;
   date: string;
-  homeTeam: string;
-  awayTeam: string;
+  home_team: string;
+  away_team: string;
   bet: string;
-  betLabel: string;
+  bet_label: string;
   odds: number;
-  winProbability: number;
+  win_probability: number;
   confidence: string;
   type: string;
   result: 'pending' | 'won' | 'lost';
-  actualWinner?: string;
-}
-
-interface MLResults {
-  picks: Pick[];
-  dailyStats: any[];
-  weeklyRatio: number;
-  last7Days: {
-    total: number;
-    won: number;
-    ratio: number;
-  };
-  lastUpdated: string;
-  expertMLVisible: boolean;
-  history: any[];
+  actual_winner?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -48,7 +44,6 @@ interface MLResults {
  */
 async function checkTennisResult(homeTeam: string, awayTeam: string): Promise<{ winner: string | null; found: boolean }> {
   try {
-    // ATP et WTA sur ESPN
     const endpoints = [
       'https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard',
       'https://site.api.espn.com/apis/site/v2/sports/tennis/wta/scoreboard',
@@ -69,7 +64,6 @@ async function checkTennisResult(homeTeam: string, awayTeam: string): Promise<{ 
           const player1 = competitors[0]?.team?.displayName || competitors[0]?.athlete?.displayName || '';
           const player2 = competitors[1]?.team?.displayName || competitors[1]?.athlete?.displayName || '';
 
-          // Vérifier si c'est le bon match (noms similaires)
           const homeLower = homeTeam.toLowerCase();
           const awayLower = awayTeam.toLowerCase();
           const p1Lower = player1.toLowerCase();
@@ -122,7 +116,6 @@ async function checkBasketballResult(homeTeam: string, awayTeam: string): Promis
       const homeLower = homeTeam.toLowerCase();
       const awayLower = awayTeam.toLowerCase();
 
-      // Correspondance flexible
       const isMatch = 
         team1.toLowerCase().includes(homeLower.slice(0, 5)) ||
         team2.toLowerCase().includes(awayLower.slice(0, 5)) ||
@@ -176,7 +169,6 @@ async function checkFootballResult(homeTeam: string, awayTeam: string): Promise<
           const t1Lower = team1.toLowerCase();
           const t2Lower = team2.toLowerCase();
 
-          // Correspondance flexible sur les noms
           const isMatch = 
             t1Lower.includes(homeLower.slice(0, 4)) || homeLower.includes(t1Lower.slice(0, 4)) ||
             t2Lower.includes(awayLower.slice(0, 4)) || awayLower.includes(t2Lower.slice(0, 4));
@@ -259,11 +251,10 @@ function updatePickResult(pick: Pick, actualWinner: string | null): 'won' | 'los
 
   // Pour le tennis
   if (pick.sport === 'tennis') {
-    const betPlayer = pick.bet === 'player1' ? pick.homeTeam : pick.awayTeam;
+    const betPlayer = pick.bet === 'player1' ? pick.home_team : pick.away_team;
     const winnerLower = actualWinner.toLowerCase();
     const betPlayerLower = betPlayer.toLowerCase();
 
-    // Vérifier si le joueur parié a gagné
     const lastName = betPlayer.split(' ').pop()?.toLowerCase() || '';
     if (winnerLower.includes(lastName) || lastName.includes(winnerLower.split(' ').pop() || '')) {
       return 'won';
@@ -279,7 +270,7 @@ function updatePickResult(pick: Pick, actualWinner: string | null): 'won' | 'los
 
   // Vérification par nom d'équipe
   const winnerLower = actualWinner.toLowerCase();
-  const betTeam = pick.bet === 'home' ? pick.homeTeam : pick.awayTeam;
+  const betTeam = pick.bet === 'home' ? pick.home_team : pick.away_team;
   const betTeamLower = betTeam.toLowerCase();
 
   if (winnerLower.includes(betTeamLower.slice(0, 4)) || betTeamLower.includes(winnerLower.slice(0, 4))) {
@@ -290,47 +281,70 @@ function updatePickResult(pick: Pick, actualWinner: string | null): 'won' | 'los
 }
 
 /**
- * Calculer les statistiques
- */
-function calculateStats(picks: Pick[]): { last7Days: any; weeklyRatio: number; expertMLVisible: boolean } {
-  const now = new Date();
-  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  const last7DaysPicks = picks.filter(p => new Date(p.date) >= sevenDaysAgo && p.result !== 'pending');
-  const total = last7DaysPicks.length;
-  const won = last7DaysPicks.filter(p => p.result === 'won').length;
-  const ratio = total > 0 ? Math.round((won / total) * 100) : 0;
-
-  // L'Expert ML devient visible si 70%+ de réussite avec au moins 10 pronostics
-  const expertMLVisible = ratio >= 70 && total >= 10;
-
-  return {
-    last7Days: { total, won, ratio },
-    weeklyRatio: ratio,
-    expertMLVisible
-  };
-}
-
-/**
  * GET - Mettre à jour les résultats des pronostics
  */
 export async function GET() {
   try {
-    console.log('🔄 Mise à jour des résultats ML...');
+    console.log('🔄 Mise à jour des résultats ML (Supabase)...');
 
-    // Créer le dossier data si nécessaire
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
+    const supabase = getSupabase();
+    
+    if (!supabase) {
+      return NextResponse.json({
+        success: false,
+        error: 'Configuration Supabase manquante',
+        hint: 'Vérifiez NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY'
+      }, { status: 500 });
     }
 
-    // Charger les données existantes
-    let mlResults: MLResults;
-    if (fs.existsSync(ML_RESULTS_FILE)) {
-      mlResults = JSON.parse(fs.readFileSync(ML_RESULTS_FILE, 'utf-8'));
-    } else {
+    // Récupérer les pronostics en attente
+    const { data: pendingPicks, error: fetchError } = await supabase
+      .from('ml_picks')
+      .select('*')
+      .eq('result', 'pending');
+
+    if (fetchError) {
+      // Si la table n'existe pas, on retourne un message
+      if (fetchError.code === 'PGRST116' || fetchError.message.includes('does not exist')) {
+        return NextResponse.json({
+          success: true,
+          message: 'Table ml_picks non configurée. Veuillez créer la table dans Supabase.',
+          sqlHint: `
+CREATE TABLE ml_picks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_id VARCHAR(255),
+  sport VARCHAR(50) NOT NULL,
+  date TIMESTAMP WITH TIME ZONE NOT NULL,
+  home_team VARCHAR(255) NOT NULL,
+  away_team VARCHAR(255) NOT NULL,
+  bet VARCHAR(50) NOT NULL,
+  bet_label VARCHAR(255),
+  odds DECIMAL(10,2),
+  win_probability DECIMAL(5,2),
+  confidence VARCHAR(20),
+  type VARCHAR(50),
+  result VARCHAR(20) DEFAULT 'pending',
+  actual_winner VARCHAR(255),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_ml_picks_result ON ml_picks(result);
+CREATE INDEX idx_ml_picks_date ON ml_picks(date);
+          `
+        });
+      }
+      
+      return NextResponse.json({
+        success: false,
+        error: 'Erreur récupération pronostics: ' + fetchError.message
+      }, { status: 500 });
+    }
+
+    if (!pendingPicks || pendingPicks.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'Aucun pronostic à mettre à jour',
+        message: 'Aucun pronostic en attente à mettre à jour',
         updated: 0,
         stats: { total: 0, won: 0, pending: 0, lost: 0 }
       });
@@ -340,55 +354,69 @@ export async function GET() {
     const now = new Date();
 
     // Vérifier chaque pronostic en attente
-    for (const pick of mlResults.picks) {
-      if (pick.result !== 'pending') continue;
-
+    for (const pick of pendingPicks as Pick[]) {
       // Ne vérifier que les matchs qui ont commencé il y a plus de 3 heures
       const matchDate = new Date(pick.date);
       const threeHoursAfterMatch = new Date(matchDate.getTime() + 3 * 60 * 60 * 1000);
       
       if (now < threeHoursAfterMatch) continue; // Match pas encore terminé
 
-      console.log(`  📋 Vérification: ${pick.homeTeam} vs ${pick.awayTeam} (${pick.sport})`);
+      console.log(`  📋 Vérification: ${pick.home_team} vs ${pick.away_team} (${pick.sport})`);
 
       let result: { winner: string | null; found: boolean } = { winner: null, found: false };
 
       // Vérifier selon le sport
       switch (pick.sport.toLowerCase()) {
         case 'tennis':
-          result = await checkTennisResult(pick.homeTeam, pick.awayTeam);
+          result = await checkTennisResult(pick.home_team, pick.away_team);
           break;
         case 'basketball':
         case 'nba':
-          result = await checkBasketballResult(pick.homeTeam, pick.awayTeam);
+          result = await checkBasketballResult(pick.home_team, pick.away_team);
           break;
         case 'football':
         case 'soccer':
-          result = await checkFootballResult(pick.homeTeam, pick.awayTeam);
+          result = await checkFootballResult(pick.home_team, pick.away_team);
           break;
         case 'hockey':
         case 'nhl':
-          result = await checkNHLResult(pick.homeTeam, pick.awayTeam);
+          result = await checkNHLResult(pick.home_team, pick.away_team);
           break;
       }
 
       if (result.found && result.winner) {
-        pick.result = updatePickResult(pick, result.winner);
-        pick.actualWinner = result.winner;
-        updated++;
-        console.log(`    ✅ Résultat: ${pick.result} (gagnant: ${result.winner})`);
+        const newResult = updatePickResult(pick, result.winner);
+        
+        // Mettre à jour dans Supabase
+        const { error: updateError } = await supabase
+          .from('ml_picks')
+          .update({
+            result: newResult,
+            actual_winner: result.winner,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', pick.id);
+
+        if (!updateError) {
+          updated++;
+          console.log(`    ✅ Résultat: ${newResult} (gagnant: ${result.winner})`);
+        }
       }
     }
 
-    // Calculer les nouvelles statistiques
-    const stats = calculateStats(mlResults.picks);
-    mlResults.last7Days = stats.last7Days;
-    mlResults.weeklyRatio = stats.weeklyRatio;
-    mlResults.expertMLVisible = stats.expertMLVisible;
-    mlResults.lastUpdated = new Date().toISOString();
+    // Calculer les statistiques mises à jour
+    const { data: allPicks } = await supabase
+      .from('ml_picks')
+      .select('result');
 
-    // Sauvegarder
-    fs.writeFileSync(ML_RESULTS_FILE, JSON.stringify(mlResults, null, 2));
+    const stats = {
+      total: allPicks?.length || 0,
+      won: allPicks?.filter((p: Pick) => p.result === 'won').length || 0,
+      lost: allPicks?.filter((p: Pick) => p.result === 'lost').length || 0,
+      pending: allPicks?.filter((p: Pick) => p.result === 'pending').length || 0
+    };
+
+    const ratio = stats.total > 0 ? Math.round((stats.won / (stats.won + stats.lost)) * 100) : 0;
 
     console.log(`✅ Mise à jour terminée: ${updated} pronostics mis à jour`);
 
@@ -397,14 +425,9 @@ export async function GET() {
       message: `${updated} pronostic(s) mis à jour`,
       updated,
       stats: {
-        total: mlResults.picks.length,
-        won: mlResults.picks.filter(p => p.result === 'won').length,
-        lost: mlResults.picks.filter(p => p.result === 'lost').length,
-        pending: mlResults.picks.filter(p => p.result === 'pending').length,
-        ratio: stats.last7Days.ratio,
-        expertMLVisible: stats.expertMLVisible
-      },
-      last7Days: stats.last7Days
+        ...stats,
+        ratio
+      }
     });
 
   } catch (error) {
@@ -413,6 +436,83 @@ export async function GET() {
       success: false,
       message: 'Erreur lors de la mise à jour',
       error: String(error)
+    }, { status: 500 });
+  }
+}
+
+/**
+ * POST - Ajouter un nouveau pronostic
+ */
+export async function POST(request: Request) {
+  try {
+    const supabase = getSupabase();
+    
+    if (!supabase) {
+      return NextResponse.json({
+        success: false,
+        error: 'Configuration Supabase manquante'
+      }, { status: 500 });
+    }
+
+    const body = await request.json();
+    const { 
+      match_id, 
+      sport, 
+      date, 
+      home_team, 
+      away_team, 
+      bet, 
+      bet_label, 
+      odds, 
+      win_probability, 
+      confidence, 
+      type 
+    } = body;
+
+    if (!sport || !date || !home_team || !away_team || !bet) {
+      return NextResponse.json({
+        success: false,
+        error: 'Champs requis: sport, date, home_team, away_team, bet'
+      }, { status: 400 });
+    }
+
+    const { data, error } = await supabase
+      .from('ml_picks')
+      .insert({
+        match_id,
+        sport,
+        date,
+        home_team,
+        away_team,
+        bet,
+        bet_label,
+        odds,
+        win_probability,
+        confidence,
+        type,
+        result: 'pending'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      return NextResponse.json({
+        success: false,
+        error: 'Erreur création pronostic: ' + error.message
+      }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Pronostic ajouté avec succès',
+      pick: data
+    });
+
+  } catch (error) {
+    console.error('Erreur ajout pronostic:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Erreur lors de l\'ajout du pronostic'
     }, { status: 500 });
   }
 }
