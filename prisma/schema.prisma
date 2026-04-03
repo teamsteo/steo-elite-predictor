@@ -1,0 +1,269 @@
+// Prisma Schema for Supabase (PostgreSQL)
+// Configuration pour l'apprentissage ML et stockage des pronostics
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// PRONOSTICS
+// ============================================
+
+model Prediction {
+  id              String   @id @default(cuid())
+  matchId         String   @unique
+  homeTeam        String
+  awayTeam        String
+  league          String
+  sport           SportType
+  matchDate       DateTime
+  
+  // Cotes
+  oddsHome        Float
+  oddsDraw        Float?
+  oddsAway        Float
+  
+  // Prédictions
+  predictedResult PredictionType
+  predictedGoals  String?
+  predictedCards  String?
+  confidence      ConfidenceLevel
+  riskPercentage  Float    @default(50)
+  
+  // Résultats (remplis après vérification)
+  homeScore       Int?
+  awayScore       Int?
+  totalGoals      Int?
+  actualResult    PredictionType?
+  
+  // Validation
+  status          PredictionStatus @default(pending)
+  resultMatch     Boolean?
+  goalsMatch      Boolean?
+  cardsMatch      Boolean?
+  
+  // Sources
+  source          String?
+  mlModelVersion  String?
+  
+  // ML Learning
+  features        Json?    // Features utilisées pour la prédiction
+  modelConfidence Float?   // Confiance du modèle ML
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  checkedAt       DateTime?
+  signature       String?
+  
+  // Relations
+  mlLearning      MLLearning?
+  
+  @@index([sport, matchDate])
+  @@index([status, matchDate])
+  @@index([league])
+  @@map("predictions")
+}
+
+// ============================================
+// APPRENTISSAGE ML
+// ============================================
+
+model MLLearning {
+  id              String   @id @default(cuid())
+  predictionId    String   @unique
+  prediction      Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  
+  // Features d'entrée
+  homeForm        Float?   // Forme équipe domicile
+  awayForm        Float?   // Forme équipe extérieur
+  h2hHomeWins     Int?     // Victoires domicile en H2H
+  h2hAwayWins     Int?     // Victoires extérieur en H2H
+  h2hDraws        Int?     // Matchs nuls en H2H
+  homeGoalsAvg    Float?   // Moyenne buts marqués domicile
+  awayGoalsAvg    Float?   // Moyenne buts marqués extérieur
+  homeConcededAvg Float?   // Moyenne buts encaissés domicile
+  awayConcededAvg Float?   // Moyenne buts encaissés extérieur
+  leaguePosition  Int?     // Position en ligue
+  daysSinceMatch  Int?     // Jours depuis le dernier match
+  restDays        Int?     // Jours de repos
+  
+  // Features avancées
+  homeWinStreak   Int?     @default(0)
+  awayWinStreak   Int?     @default(0)
+  homeLossStreak  Int?     @default(0)
+  awayLossStreak  Int?     @default(0)
+  oddsImpliedProb Float?   // Probabilité implicite des cotes
+  
+  // Prédiction du modèle
+  modelPrediction PredictionType?
+  modelConfidence Float?
+  modelProbHome   Float?
+  modelProbDraw   Float?
+  modelProbAway   Float?
+  
+  // Résultat
+  correct         Boolean?
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([correct])
+  @@index([modelConfidence])
+  @@map("ml_learning")
+}
+
+// ============================================
+// STATISTIQUES QUOTIDIENNES
+// ============================================
+
+model DailyStats {
+  id              String   @id @default(cuid())
+  date            DateTime @unique
+  
+  // Stats globales
+  totalPredictions Int    @default(0)
+  completed        Int    @default(0)
+  wins             Int    @default(0)
+  losses           Int    @default(0)
+  winRate          Float  @default(0)
+  
+  // Stats par sport
+  footballTotal    Int    @default(0)
+  footballWins     Int    @default(0)
+  footballWinRate  Float  @default(0)
+  
+  basketballTotal  Int    @default(0)
+  basketballWins   Int    @default(0)
+  basketballWinRate Float @default(0)
+  
+  hockeyTotal      Int    @default(0)
+  hockeyWins       Int    @default(0)
+  hockeyWinRate    Float  @default(0)
+  
+  // Détails par type de pari
+  resultatsTotal   Int    @default(0)
+  resultatsWins    Int    @default(0)
+  resultatsWinRate Float  @default(0)
+  
+  goalsTotal       Int    @default(0)
+  goalsWins        Int    @default(0)
+  goalsWinRate     Float  @default(0)
+  
+  bttsTotal        Int    @default(0)
+  bttsWins         Int    @default(0)
+  bttsWinRate      Float  @default(0)
+  
+  // Timestamps
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  
+  @@index([date])
+  @@map("daily_stats")
+}
+
+// ============================================
+// MODÈLE ML (Patterns appris)
+// ============================================
+
+model MLPattern {
+  id              String   @id @default(cuid())
+  patternType     String   // Type de pattern (form, h2h, odds, etc.)
+  sport           SportType
+  
+  // Pattern data
+  patternKey      String   // Clé unique du pattern
+  patternValue    String   // Valeur du pattern
+  conditions      Json?    // Conditions associées
+  
+  // Stats du pattern
+  occurrences     Int      @default(0)
+  successCount    Int      @default(0)
+  successRate     Float    @default(0)
+  
+  // Métadonnées
+  lastSeen        DateTime @default(now())
+  lastSuccess     DateTime?
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([patternType, sport, patternKey])
+  @@index([patternType, sport])
+  @@index([successRate])
+  @@map("ml_patterns")
+}
+
+// ============================================
+// MODÈLE ML (Config et version)
+// ============================================
+
+model MLModel {
+  id              String   @id @default(cuid())
+  version         String   @unique
+  sport           SportType
+  
+  // Métriques
+  accuracy        Float    @default(0)
+  precision       Float    @default(0)
+  recall          Float    @default(0)
+  f1Score         Float    @default(0)
+  
+  // Configuration
+  config          Json?    // Configuration du modèle
+  
+  // Stats
+  trainingSamples Int      @default(0)
+  testSamples     Int      @default(0)
+  
+  // Timestamps
+  trainedAt       DateTime @default(now())
+  createdAt       DateTime @default(now())
+  
+  @@index([sport, version])
+  @@map("ml_models")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum SportType {
+  FOOTBALL
+  BASKETBALL
+  HOCKEY
+  TENNIS
+  OTHER
+}
+
+enum PredictionType {
+  HOME
+  DRAW
+  AWAY
+  OVER
+  UNDER
+  BTTS_YES
+  BTTS_NO
+  AVOID
+}
+
+enum ConfidenceLevel {
+  VERY_HIGH
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum PredictionStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  POSTPONED
+}

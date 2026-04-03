@@ -1,0 +1,20 @@
+services:
+  - type: cron
+    name: elite-pronos-scraper
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    schedule: "0 */6 * * *"
+    command: node scraper.js
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SCRAPER_DELAY
+        value: "3000"
+      - key: SCRAPER_SOURCE_DELAY
+        value: "8000"

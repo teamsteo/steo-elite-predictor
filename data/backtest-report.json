@@ -1,0 +1,500 @@
+{
+  "generatedAt": "2026-03-19T22:01:35.904Z",
+  "stakePerBet": 10,
+  "summary": {
+    "totalBets": 200,
+    "totalWins": 93,
+    "totalProfit": -422.0000000000002,
+    "totalStake": 2000,
+    "globalWinRate": 47,
+    "globalROI": -21
+  },
+  "results": [
+    {
+      "sport": "Football",
+      "totalBets": 100,
+      "wins": 40,
+      "losses": 60,
+      "winRate": 40,
+      "totalStake": 1000,
+      "totalReturn": 722.6000000000001,
+      "profit": -277.39999999999986,
+      "roi": -28,
+      "avgOdds": 3.31,
+      "bestWin": {
+        "match": "Chelsea vs Tottenham",
+        "odds": 3.3,
+        "profit": 23
+      },
+      "worstLoss": {
+        "match": "Crystal Palace vs Leeds United",
+        "stake": 10
+      },
+      "byConfidence": {
+        "high": {
+          "bets": 21,
+          "wins": 21,
+          "winRate": 100,
+          "profit": 128.3
+        },
+        "medium": {
+          "bets": 20,
+          "wins": 17,
+          "winRate": 85,
+          "profit": 118.30000000000001
+        },
+        "low": {
+          "bets": 59,
+          "wins": 2,
+          "winRate": 3,
+          "profit": -524
+        }
+      },
+      "details": [
+        {
+          "match": "Crystal Palace vs Leeds United",
+          "prediction": "HOME",
+          "result": "DRAW",
+          "odds": 2.61,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Manchester United vs Aston Villa",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.46,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Nottingham Forest vs Fulham",
+          "prediction": "HOME",
+          "result": "DRAW",
+          "odds": 2.59,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Liverpool vs Tottenham Hotspur",
+          "prediction": "HOME",
+          "result": "DRAW",
+          "odds": 2.49,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "medium"
+        },
+        {
+          "match": "Mallorca vs Espanyol",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.65,
+          "stake": 10,
+          "won": true,
+          "profit": 6.5,
+          "confidence": "high"
+        },
+        {
+          "match": "Barcelona vs Sevilla",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.8,
+          "stake": 10,
+          "won": true,
+          "profit": 8,
+          "confidence": "medium"
+        },
+        {
+          "match": "Real Betis vs Celta Vigo",
+          "prediction": "AWAY",
+          "result": "DRAW",
+          "odds": 3.17,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Real Sociedad vs Osasuna",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.64,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Werder Bremen vs Mainz",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 6.56,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "SC Freiburg vs 1. FC Union Berlin",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 7.77,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "VfB Stuttgart vs RB Leipzig",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.42,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Hellas Verona vs Genoa",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 7.94,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Pisa vs Cagliari",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.73,
+          "stake": 10,
+          "won": true,
+          "profit": 7.300000000000001,
+          "confidence": "high"
+        },
+        {
+          "match": "Sassuolo vs Bologna",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 6.19,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Como vs AS Roma",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.51,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Lazio vs AC Milan",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.47,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Strasbourg vs Paris FC",
+          "prediction": "AWAY",
+          "result": "DRAW",
+          "odds": 2.9,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Le Havre AC vs Lyon",
+          "prediction": "HOME",
+          "result": "DRAW",
+          "odds": 2.7,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Metz vs Toulouse",
+          "prediction": "AWAY",
+          "result": "AWAY",
+          "odds": 1.56,
+          "stake": 10,
+          "won": true,
+          "profit": 5.600000000000001,
+          "confidence": "high"
+        },
+        {
+          "match": "Stade Rennais vs Lille",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 7.52,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        }
+      ]
+    },
+    {
+      "sport": "Basketball",
+      "totalBets": 100,
+      "wins": 53,
+      "losses": 47,
+      "winRate": 53,
+      "totalStake": 1000,
+      "totalReturn": 855.3999999999996,
+      "profit": -144.60000000000036,
+      "roi": -14,
+      "avgOdds": 3.49,
+      "bestWin": {
+        "match": "Wizards vs Jazz",
+        "odds": 1.99,
+        "profit": 9.899999999999999
+      },
+      "worstLoss": {
+        "match": "Cleveland Cavaliers vs Dallas Mavericks",
+        "stake": 10
+      },
+      "byConfidence": {
+        "high": {
+          "bets": 39,
+          "wins": 39,
+          "winRate": 100,
+          "profit": 200.20000000000002
+        },
+        "medium": {
+          "bets": 14,
+          "wins": 14,
+          "winRate": 100,
+          "profit": 125.2
+        },
+        "low": {
+          "bets": 47,
+          "wins": 0,
+          "winRate": 0,
+          "profit": -470
+        }
+      },
+      "details": [
+        {
+          "match": "Oklahoma City Thunder vs Minnesota Timberwolves",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.94,
+          "stake": 10,
+          "won": true,
+          "profit": 9.399999999999999,
+          "confidence": "medium"
+        },
+        {
+          "match": "Cleveland Cavaliers vs Dallas Mavericks",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 6.06,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Toronto Raptors vs Detroit Pistons",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 5,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Milwaukee Bucks vs Indiana Pacers",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.87,
+          "stake": 10,
+          "won": true,
+          "profit": 8.700000000000003,
+          "confidence": "medium"
+        },
+        {
+          "match": "Philadelphia 76ers vs Portland Trail Blazers",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.61,
+          "stake": 10,
+          "won": true,
+          "profit": 6.100000000000001,
+          "confidence": "high"
+        },
+        {
+          "match": "New York Knicks vs Golden State Warriors",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.75,
+          "stake": 10,
+          "won": true,
+          "profit": 7.5,
+          "confidence": "high"
+        },
+        {
+          "match": "Sacramento Kings vs Utah Jazz",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.61,
+          "stake": 10,
+          "won": true,
+          "profit": 6.100000000000001,
+          "confidence": "high"
+        },
+        {
+          "match": "Philadelphia 76ers vs Brooklyn Nets",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.98,
+          "stake": 10,
+          "won": true,
+          "profit": 9.8,
+          "confidence": "medium"
+        },
+        {
+          "match": "Atlanta Hawks vs Milwaukee Bucks",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.63,
+          "stake": 10,
+          "won": true,
+          "profit": 6.299999999999997,
+          "confidence": "high"
+        },
+        {
+          "match": "San Antonio Spurs vs Charlotte Hornets",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.82,
+          "stake": 10,
+          "won": true,
+          "profit": 8.2,
+          "confidence": "medium"
+        },
+        {
+          "match": "Boston Celtics vs Washington Wizards",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.62,
+          "stake": 10,
+          "won": true,
+          "profit": 6.200000000000003,
+          "confidence": "high"
+        },
+        {
+          "match": "Miami Heat vs Orlando Magic",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 6.21,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Los Angeles Lakers vs Denver Nuggets",
+          "prediction": "HOME",
+          "result": "HOME",
+          "odds": 1.87,
+          "stake": 10,
+          "won": true,
+          "profit": 8.700000000000003,
+          "confidence": "medium"
+        },
+        {
+          "match": "LA Clippers vs Sacramento Kings",
+          "prediction": "HOME",
+          "result": "AWAY",
+          "odds": 7.16,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "LA Clippers vs New York Knicks",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.2,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Utah Jazz vs Golden State Warriors",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.59,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Cleveland Cavaliers vs Philadelphia 76ers",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.3,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Oklahoma City Thunder vs Denver Nuggets",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.88,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Brooklyn Nets vs Memphis Grizzlies",
+          "prediction": "AWAY",
+          "result": "HOME",
+          "odds": 4.68,
+          "stake": 10,
+          "won": false,
+          "profit": -10,
+          "confidence": "low"
+        },
+        {
+          "match": "Lakers vs Celtics",
+          "prediction": "AWAY",
+          "result": "AWAY",
+          "odds": 1.39,
+          "stake": 10,
+          "won": true,
+          "profit": 3.8999999999999986,
+          "confidence": "high"
+        }
+      ]
+    }
+  ]
+}

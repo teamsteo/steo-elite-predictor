@@ -1,0 +1,11 @@
+# Ignore backup folders
+backup_*
+
+# Ignore node_modules
+node_modules
+
+# Ignore .next
+.next
+
+# Ignore cache
+.cache

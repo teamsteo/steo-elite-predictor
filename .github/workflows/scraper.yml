@@ -1,0 +1,73 @@
+name: ElitePronosPro Scraper
+
+on:
+  # Déclenchement manuel
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: 'Mode debug (plus de logs)'
+        required: false
+        default: 'false'
+  
+  # Programmation automatique: toutes les 6 heures
+  schedule:
+    - cron: '0 */6 * * *'  # 00:00, 06:00, 12:00, 18:00 UTC
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+
+      - name: 📦 Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📦 Installation des dépendances
+        run: npm ci --prefer-offline
+
+      - name: 🔍 Vérification des secrets
+        run: |
+          if [ -z "${{ secrets.SUPABASE_URL }}" ]; then
+            echo "❌ SUPABASE_URL non configuré"
+            exit 1
+          fi
+          if [ -z "${{ secrets.SUPABASE_SERVICE_KEY }}" ]; then
+            echo "❌ SUPABASE_SERVICE_KEY non configuré"
+            exit 1
+          fi
+          echo "✅ Secrets configurés"
+
+      - name: 🚀 Exécution du scraper
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SCRAPER_DELAY: '3000'
+          SCRAPER_SOURCE_DELAY: '8000'
+        run: npx tsx scripts/independent-scraper.ts
+
+      - name: 📊 Résumé d'exécution
+        if: always()
+        run: |
+          echo "## 🎯 Scraping terminé" >> $GITHUB_STEP_SUMMARY
+          echo "📅 Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "⏱️ Durée totale: ${{ job.status }}" >> $GITHUB_STEP_SUMMARY
+
+  # Notification en cas d'échec
+  notify-failure:
+    needs: scrape
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⚠️ Notification d'échec
+        run: |
+          echo "❌ Le scraping a échoué. Vérifiez les logs."
+          # Vous pouvez ajouter une notification Discord/Slack ici

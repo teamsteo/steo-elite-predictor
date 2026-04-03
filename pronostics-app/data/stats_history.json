@@ -1,0 +1,1246 @@
+{
+  "description": "Historique des statistiques journalières pour calculs hebdomadaires et mensuels",
+  "version": "4.0",
+  "dailyStats": [
+    {
+      "date": "2026-03-16",
+      "stats": {
+        "results": {
+          "total": 33,
+          "correct": 13,
+          "rate": 39
+        },
+        "goals": {
+          "total": 20,
+          "correct": 0,
+          "rate": 0
+        },
+        "overall": 25,
+        "completed": 33,
+        "wins": 13,
+        "losses": 20,
+        "winRate": 39
+      },
+      "predictions": [
+        {
+          "matchId": "fb_740890",
+          "homeTeam": "Crystal Palace",
+          "awayTeam": "Leeds United",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_740892",
+          "homeTeam": "Manchester United",
+          "awayTeam": "Aston Villa",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_740893",
+          "homeTeam": "Nottingham Forest",
+          "awayTeam": "Fulham",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_740891",
+          "homeTeam": "Liverpool",
+          "awayTeam": "Tottenham Hotspur",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_748421",
+          "homeTeam": "Mallorca",
+          "awayTeam": "Espanyol",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_748415",
+          "homeTeam": "Barcelona",
+          "awayTeam": "Sevilla",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_748417",
+          "homeTeam": "Real Betis",
+          "awayTeam": "Celta Vigo",
+          "result": "draw",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_748420",
+          "homeTeam": "Real Sociedad",
+          "awayTeam": "Osasuna",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746946",
+          "homeTeam": "Werder Bremen",
+          "awayTeam": "Mainz",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746945",
+          "homeTeam": "SC Freiburg",
+          "awayTeam": "1. FC Union Berlin",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746948",
+          "homeTeam": "VfB Stuttgart",
+          "awayTeam": "RB Leipzig",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_737073",
+          "homeTeam": "Hellas Verona",
+          "awayTeam": "Genoa",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_737069",
+          "homeTeam": "Pisa",
+          "awayTeam": "Cagliari",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_737068",
+          "homeTeam": "Sassuolo",
+          "awayTeam": "Bologna",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Over 2.5 buts"
+        },
+        {
+          "matchId": "fb_737064",
+          "homeTeam": "Como",
+          "awayTeam": "AS Roma",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_737071",
+          "homeTeam": "Lazio",
+          "awayTeam": "AC Milan",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746645",
+          "homeTeam": "Strasbourg",
+          "awayTeam": "Paris FC",
+          "result": "draw",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746638",
+          "homeTeam": "Le Havre AC",
+          "awayTeam": "Lyon",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746641",
+          "homeTeam": "Metz",
+          "awayTeam": "Toulouse",
+          "result": "away",
+          "prediction": "away",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746644",
+          "homeTeam": "Stade Rennais",
+          "awayTeam": "Lille",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "nba_401810831",
+          "homeTeam": "Oklahoma City Thunder",
+          "awayTeam": "Minnesota Timberwolves",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810832",
+          "homeTeam": "Cleveland Cavaliers",
+          "awayTeam": "Dallas Mavericks",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810833",
+          "homeTeam": "Toronto Raptors",
+          "awayTeam": "Detroit Pistons",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810834",
+          "homeTeam": "Milwaukee Bucks",
+          "awayTeam": "Indiana Pacers",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810835",
+          "homeTeam": "Philadelphia 76ers",
+          "awayTeam": "Portland Trail Blazers",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810836",
+          "homeTeam": "New York Knicks",
+          "awayTeam": "Golden State Warriors",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810837",
+          "homeTeam": "Sacramento Kings",
+          "awayTeam": "Utah Jazz",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803408",
+          "homeTeam": "Winnipeg Jets",
+          "awayTeam": "St. Louis Blues",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803409",
+          "homeTeam": "Ottawa Senators",
+          "awayTeam": "San Jose Sharks",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803410",
+          "homeTeam": "Montreal Canadiens",
+          "awayTeam": "Anaheim Ducks",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803411",
+          "homeTeam": "Minnesota Wild",
+          "awayTeam": "Toronto Maple Leafs",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803412",
+          "homeTeam": "Edmonton Oilers",
+          "awayTeam": "Nashville Predators",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803413",
+          "homeTeam": "Seattle Kraken",
+          "awayTeam": "Florida Panthers",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        }
+      ]
+    },
+    {
+      "date": "2026-03-15",
+      "stats": {
+        "results": {
+          "total": 41,
+          "correct": 19,
+          "rate": 46
+        },
+        "goals": {
+          "total": 20,
+          "correct": 0,
+          "rate": 0
+        },
+        "overall": 31,
+        "completed": 41,
+        "wins": 19,
+        "losses": 22,
+        "winRate": 46
+      },
+      "predictions": [
+        {
+          "matchId": "fb_740888",
+          "homeTeam": "Burnley",
+          "awayTeam": "AFC Bournemouth",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_740894",
+          "homeTeam": "Sunderland",
+          "awayTeam": "Brighton & Hove Albion",
+          "result": "away",
+          "prediction": "away",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_740886",
+          "homeTeam": "Arsenal",
+          "awayTeam": "Everton",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_740889",
+          "homeTeam": "Chelsea",
+          "awayTeam": "Newcastle United",
+          "result": "away",
+          "prediction": "away",
+          "correct": true,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_740895",
+          "homeTeam": "West Ham United",
+          "awayTeam": "Manchester City",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_748414",
+          "homeTeam": "Girona",
+          "awayTeam": "Athletic Club",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_748423",
+          "homeTeam": "Atlético Madrid",
+          "awayTeam": "Getafe",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_748419",
+          "homeTeam": "Real Oviedo",
+          "awayTeam": "Valencia",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_748418",
+          "homeTeam": "Real Madrid",
+          "awayTeam": "Elche",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Over 2.5 buts"
+        },
+        {
+          "matchId": "fb_746950",
+          "homeTeam": "Bayer Leverkusen",
+          "awayTeam": "Bayern Munich",
+          "result": "draw",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746951",
+          "homeTeam": "Borussia Dortmund",
+          "awayTeam": "FC Augsburg",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746943",
+          "homeTeam": "Eintracht Frankfurt",
+          "awayTeam": "1. FC Heidenheim 1846",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_746947",
+          "homeTeam": "TSG Hoffenheim",
+          "awayTeam": "VfL Wolfsburg",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746949",
+          "homeTeam": "Hamburg SV",
+          "awayTeam": "FC Cologne",
+          "result": "draw",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_737072",
+          "homeTeam": "Internazionale",
+          "awayTeam": "Atalanta",
+          "result": "draw",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_737070",
+          "homeTeam": "Napoli",
+          "awayTeam": "Lecce",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Under 2.5 buts"
+        },
+        {
+          "matchId": "fb_737066",
+          "homeTeam": "Udinese",
+          "awayTeam": "Juventus",
+          "result": "away",
+          "prediction": "away",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746639",
+          "homeTeam": "Lorient",
+          "awayTeam": "Lens",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746637",
+          "homeTeam": "Angers",
+          "awayTeam": "Nice",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "fb_746642",
+          "homeTeam": "AS Monaco",
+          "awayTeam": "Brest",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": "Les deux marquent"
+        },
+        {
+          "matchId": "nba_401810824",
+          "homeTeam": "Philadelphia 76ers",
+          "awayTeam": "Brooklyn Nets",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810825",
+          "homeTeam": "Atlanta Hawks",
+          "awayTeam": "Milwaukee Bucks",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810828",
+          "homeTeam": "San Antonio Spurs",
+          "awayTeam": "Charlotte Hornets",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810826",
+          "homeTeam": "Boston Celtics",
+          "awayTeam": "Washington Wizards",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810827",
+          "homeTeam": "Miami Heat",
+          "awayTeam": "Orlando Magic",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810829",
+          "homeTeam": "Los Angeles Lakers",
+          "awayTeam": "Denver Nuggets",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nba_401810830",
+          "homeTeam": "LA Clippers",
+          "awayTeam": "Sacramento Kings",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803394",
+          "homeTeam": "Ottawa Senators",
+          "awayTeam": "Anaheim Ducks",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803395",
+          "homeTeam": "Washington Capitals",
+          "awayTeam": "Boston Bruins",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803396",
+          "homeTeam": "Winnipeg Jets",
+          "awayTeam": "Colorado Avalanche",
+          "result": "home",
+          "prediction": "away",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803397",
+          "homeTeam": "Minnesota Wild",
+          "awayTeam": "New York Rangers",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803398",
+          "homeTeam": "Buffalo Sabres",
+          "awayTeam": "Toronto Maple Leafs",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803399",
+          "homeTeam": "Montreal Canadiens",
+          "awayTeam": "San Jose Sharks",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803400",
+          "homeTeam": "Tampa Bay Lightning",
+          "awayTeam": "Carolina Hurricanes",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803401",
+          "homeTeam": "New Jersey Devils",
+          "awayTeam": "Los Angeles Kings",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803402",
+          "homeTeam": "New York Islanders",
+          "awayTeam": "Calgary Flames",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803403",
+          "homeTeam": "Philadelphia Flyers",
+          "awayTeam": "Columbus Blue Jackets",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803404",
+          "homeTeam": "Dallas Stars",
+          "awayTeam": "Detroit Red Wings",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803405",
+          "homeTeam": "Utah Mammoth",
+          "awayTeam": "Pittsburgh Penguins",
+          "result": "away",
+          "prediction": "home",
+          "correct": false,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803406",
+          "homeTeam": "Vancouver Canucks",
+          "awayTeam": "Seattle Kraken",
+          "result": "away",
+          "prediction": "away",
+          "correct": true,
+          "goalsPrediction": null
+        },
+        {
+          "matchId": "nhl_401803407",
+          "homeTeam": "Vegas Golden Knights",
+          "awayTeam": "Chicago Blackhawks",
+          "result": "home",
+          "prediction": "home",
+          "correct": true,
+          "goalsPrediction": null
+        }
+      ]
+    },
+    {
+      "date": "2026-03-10",
+      "stats": {
+        "results": {
+          "total": 2,
+          "correct": 0,
+          "rate": 0
+        },
+        "goals": {
+          "total": 0,
+          "correct": 0,
+          "rate": 0
+        },
+        "overall": 0,
+        "completed": 2,
+        "wins": 0,
+        "losses": 2,
+        "winRate": 0,
+        "bySport": {
+          "football": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              },
+              "buts": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              },
+              "btts": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "basketball": {
+            "total": 2,
+            "wins": 0,
+            "losses": 2,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 2,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "hockey": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          }
+        }
+      },
+      "predictions": [
+        {
+          "matchId": "nba_401810790",
+          "homeTeam": "LA Clippers",
+          "awayTeam": "New York Knicks",
+          "sport": "basketball",
+          "league": "NBA",
+          "result": "home",
+          "prediction": "away",
+          "predictedGoals": null,
+          "correct": false,
+          "score": "126-118"
+        },
+        {
+          "matchId": "nba_401810789",
+          "homeTeam": "Utah Jazz",
+          "awayTeam": "Golden State Warriors",
+          "sport": "basketball",
+          "league": "NBA",
+          "result": "home",
+          "prediction": "away",
+          "predictedGoals": null,
+          "correct": false,
+          "score": "119-116"
+        }
+      ]
+    },
+    {
+      "date": "2026-03-09",
+      "stats": {
+        "results": {
+          "total": 3,
+          "correct": 0,
+          "rate": 0
+        },
+        "goals": {
+          "total": 0,
+          "correct": 0,
+          "rate": 0
+        },
+        "overall": 0,
+        "completed": 3,
+        "wins": 0,
+        "losses": 3,
+        "winRate": 0,
+        "bySport": {
+          "football": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              },
+              "buts": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              },
+              "btts": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "basketball": {
+            "total": 3,
+            "wins": 0,
+            "losses": 3,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 3,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "hockey": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          }
+        }
+      },
+      "predictions": [
+        {
+          "matchId": "nba_401810786",
+          "homeTeam": "Cleveland Cavaliers",
+          "awayTeam": "Philadelphia 76ers",
+          "sport": "basketball",
+          "league": "NBA",
+          "result": "home",
+          "prediction": "away",
+          "predictedGoals": null,
+          "correct": false,
+          "score": "115-101"
+        },
+        {
+          "matchId": "nba_401810788",
+          "homeTeam": "Oklahoma City Thunder",
+          "awayTeam": "Denver Nuggets",
+          "sport": "basketball",
+          "league": "NBA",
+          "result": "home",
+          "prediction": "away",
+          "predictedGoals": null,
+          "correct": false,
+          "score": "129-126"
+        },
+        {
+          "matchId": "nba_401810787",
+          "homeTeam": "Brooklyn Nets",
+          "awayTeam": "Memphis Grizzlies",
+          "sport": "basketball",
+          "league": "NBA",
+          "result": "home",
+          "prediction": "away",
+          "predictedGoals": null,
+          "correct": false,
+          "score": "126-115"
+        }
+      ]
+    },
+    {
+      "date": "2026-03-06",
+      "stats": {
+        "results": {
+          "total": 4,
+          "correct": 3,
+          "rate": 75
+        },
+        "goals": {
+          "total": 4,
+          "correct": 4,
+          "rate": 100
+        },
+        "overall": 88,
+        "completed": 4,
+        "wins": 3,
+        "losses": 1,
+        "winRate": 75,
+        "bySport": {
+          "football": {
+            "total": 4,
+            "wins": 3,
+            "losses": 1,
+            "winRate": 75,
+            "details": {
+              "resultats": {
+                "total": 4,
+                "wins": 3,
+                "winRate": 75
+              },
+              "buts": {
+                "total": 4,
+                "wins": 4,
+                "winRate": 100
+              },
+              "btts": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "basketball": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "hockey": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          }
+        }
+      },
+      "predictions": [
+        {
+          "matchId": "foot_2026-03-06_001",
+          "homeTeam": "Inter Milan",
+          "awayTeam": "AC Milan",
+          "sport": "football",
+          "league": "Serie A",
+          "result": "home",
+          "prediction": "home",
+          "predictedGoals": "Under 2.5",
+          "correct": true,
+          "goalsCorrect": true,
+          "score": "2-0"
+        },
+        {
+          "matchId": "foot_2026-03-06_002",
+          "homeTeam": "Barcelona",
+          "awayTeam": "Real Sociedad",
+          "sport": "football",
+          "league": "La Liga",
+          "result": "home",
+          "prediction": "home",
+          "predictedGoals": "Over 1.5",
+          "correct": true,
+          "goalsCorrect": true,
+          "score": "3-1"
+        },
+        {
+          "matchId": "foot_2026-03-06_003",
+          "homeTeam": "Juventus",
+          "awayTeam": "Napoli",
+          "sport": "football",
+          "league": "Serie A",
+          "result": "away",
+          "prediction": "draw",
+          "predictedGoals": "Under 2.5",
+          "correct": false,
+          "goalsCorrect": true,
+          "score": "0-2"
+        },
+        {
+          "matchId": "foot_2026-03-06_004",
+          "homeTeam": "Tottenham",
+          "awayTeam": "Everton",
+          "sport": "football",
+          "league": "Premier League",
+          "result": "home",
+          "prediction": "home",
+          "predictedGoals": "Over 1.5",
+          "correct": true,
+          "goalsCorrect": true,
+          "score": "4-1"
+        }
+      ]
+    },
+    {
+      "date": "2026-03-05",
+      "stats": {
+        "results": {
+          "total": 4,
+          "correct": 3,
+          "rate": 75
+        },
+        "goals": {
+          "total": 4,
+          "correct": 4,
+          "rate": 100
+        },
+        "overall": 88,
+        "completed": 4,
+        "wins": 3,
+        "losses": 1,
+        "winRate": 75,
+        "bySport": {
+          "football": {
+            "total": 4,
+            "wins": 3,
+            "losses": 1,
+            "winRate": 75,
+            "details": {
+              "resultats": {
+                "total": 4,
+                "wins": 3,
+                "winRate": 75
+              },
+              "buts": {
+                "total": 4,
+                "wins": 4,
+                "winRate": 100
+              },
+              "btts": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "basketball": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          },
+          "hockey": {
+            "total": 0,
+            "wins": 0,
+            "losses": 0,
+            "winRate": 0,
+            "details": {
+              "resultats": {
+                "total": 0,
+                "wins": 0,
+                "winRate": 0
+              }
+            }
+          }
+        }
+      },
+      "predictions": [
+        {
+          "matchId": "foot_2026-03-05_001",
+          "homeTeam": "Liverpool",
+          "awayTeam": "Southampton",
+          "sport": "football",
+          "league": "Premier League",
+          "result": "home",
+          "prediction": "home",
+          "predictedGoals": "Over 2.5",
+          "correct": true,
+          "goalsCorrect": true,
+          "score": "3-1"
+        },
+        {
+          "matchId": "foot_2026-03-05_002",
+          "homeTeam": "Real Madrid",
+          "awayTeam": "Girona",
+          "sport": "football",
+          "league": "La Liga",
+          "result": "home",
+          "prediction": "home",
+          "predictedGoals": "Over 1.5",
+          "correct": true,
+          "goalsCorrect": true,
+          "score": "2-0"
+        },
+        {
+          "matchId": "foot_2026-03-05_003",
+          "homeTeam": "Bayern Munich",
+          "awayTeam": "Freiburg",
+          "sport": "football",
+          "league": "Bundesliga",
+          "result": "draw",
+          "prediction": "home",
+          "predictedGoals": "Over 2.5",
+          "correct": false,
+          "goalsCorrect": true,
+          "score": "1-1"
+        },
+        {
+          "matchId": "foot_2026-03-05_004",
+          "homeTeam": "PSG",
+          "awayTeam": "Nice",
+          "sport": "football",
+          "league": "Ligue 1",
+          "result": "home",
+          "prediction": "home",
+          "predictedGoals": "Over 2.5",
+          "correct": true,
+          "goalsCorrect": true,
+          "score": "4-0"
+        }
+      ]
+    }
+  ],
+  "weeklyStats": [],
+  "monthlyStats": [],
+  "lastArchiveDate": "2026-03-12",
+  "summary": {
+    "totalDays": 4,
+    "totalPredictions": 13,
+    "totalWins": 6,
+    "totalLosses": 7,
+    "overallWinRate": 46,
+    "bySport": {
+      "football": {
+        "total": 8,
+        "wins": 6,
+        "losses": 2,
+        "winRate": 75,
+        "details": {
+          "resultats": {
+            "total": 8,
+            "wins": 6,
+            "winRate": 75
+          },
+          "buts": {
+            "total": 8,
+            "wins": 8,
+            "winRate": 100
+          },
+          "btts": {
+            "total": 0,
+            "wins": 0,
+            "winRate": 0
+          }
+        }
+      },
+      "basketball": {
+        "total": 5,
+        "wins": 0,
+        "losses": 5,
+        "winRate": 0,
+        "details": {
+          "resultats": {
+            "total": 5,
+            "wins": 0,
+            "winRate": 0
+          }
+        }
+      },
+      "hockey": {
+        "total": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "details": {
+          "resultats": {
+            "total": 0,
+            "wins": 0,
+            "winRate": 0
+          }
+        }
+      }
+    },
+    "expertAdvisor": {
+      "total": 0,
+      "wins": 0,
+      "losses": 0,
+      "winRate": 0,
+      "highConfidence": {
+        "total": 0,
+        "wins": 0,
+        "winRate": 0
+      }
+    },
+    "lastUpdated": "2026-03-13T14:16:07.061Z"
+  },
+  "lastUpdated": "2026-03-13T14:02:05.388Z"
+}

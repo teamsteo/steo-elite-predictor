@@ -1,0 +1,142 @@
+{
+  "date": "2026-03-21",
+  "generated": "2026-03-21T07:06:14.354Z",
+  "summary": {
+    "total": 3,
+    "green": 1,
+    "orange": 0,
+    "red": 2
+  },
+  "predictions": [
+    {
+      "matchId": "nba-001",
+      "homeTeam": "Houston Rockets",
+      "awayTeam": "Miami Heat",
+      "probabilities": {
+        "homeWin": 59.7,
+        "awayWin": 40.3
+      },
+      "expectedValue": {
+        "home": 0.02,
+        "away": -0.11,
+        "best": "home"
+      },
+      "mlAnalysis": {
+        "winRatePrediction": 59.7,
+        "confidenceScore": 48,
+        "confidenceLevel": "LOW",
+        "factors": [
+          "✓ Fort avantage domicile: +24.4%",
+          "✓ Attaque supérieure: +4.3 ORtg"
+        ],
+        "riskFactors": [
+          "⚠ Cote faible sans domination claire",
+          "⚠ Adversaire compétitif",
+          "⚠ Adversaire avec bon % de victoires"
+        ]
+      },
+      "recommendation": {
+        "bet": "Victoire Houston Rockets",
+        "odds": 1.7,
+        "probability": 59.7,
+        "edge": 2,
+        "kellyStake": 2.2,
+        "tag": "RED",
+        "tagLabel": "🔴 REJETÉ AUTO"
+      },
+      "keyStats": {
+        "winDiff": 4,
+        "homeAdvantage": 24.4,
+        "formDiff": 2,
+        "offensiveDiff": 4.3,
+        "defensiveDiff": 2.6
+      }
+    },
+    {
+      "matchId": "nba-002",
+      "homeTeam": "Charlotte Hornets",
+      "awayTeam": "Memphis Grizzlies",
+      "probabilities": {
+        "homeWin": 65.8,
+        "awayWin": 34.2
+      },
+      "expectedValue": {
+        "home": 0.08,
+        "away": -0.2,
+        "best": "home"
+      },
+      "mlAnalysis": {
+        "winRatePrediction": 65.8,
+        "confidenceScore": 101,
+        "confidenceLevel": "HIGH",
+        "factors": [
+          "✓ Avantage victoires: +12 wins",
+          "✓ Fort avantage domicile: +33.4%",
+          "✓ Meilleure forme: +4.0 pts",
+          "✓ Attaque supérieure: +5.0 ORtg",
+          "✓ Défense solide: -3.7 DRtg adverse"
+        ],
+        "riskFactors": []
+      },
+      "recommendation": {
+        "bet": "Victoire Charlotte Hornets",
+        "odds": 1.65,
+        "probability": 65.8,
+        "edge": 8,
+        "kellyStake": 10,
+        "tag": "GREEN",
+        "tagLabel": "🟢 À PRENDRE"
+      },
+      "keyStats": {
+        "winDiff": 12,
+        "homeAdvantage": 33.4,
+        "formDiff": 4,
+        "offensiveDiff": 5,
+        "defensiveDiff": 3.7
+      }
+    },
+    {
+      "matchId": "nba-003",
+      "homeTeam": "LA Lakers",
+      "awayTeam": "Orlando Magic",
+      "probabilities": {
+        "homeWin": 62.1,
+        "awayWin": 37.9
+      },
+      "expectedValue": {
+        "home": -0.02,
+        "away": -0.07,
+        "best": "home"
+      },
+      "mlAnalysis": {
+        "winRatePrediction": 62.1,
+        "confidenceScore": 73,
+        "confidenceLevel": "LOW",
+        "factors": [
+          "✓ Avantage victoires: +7 wins",
+          "✓ Fort avantage domicile: +27.1%",
+          "✓ Attaque supérieure: +6.3 ORtg"
+        ],
+        "riskFactors": [
+          "⚠ Adversaire avec bon % de victoires"
+        ]
+      },
+      "recommendation": {
+        "bet": "Victoire LA Lakers",
+        "odds": 1.58,
+        "probability": 62.1,
+        "edge": -2,
+        "kellyStake": 0,
+        "tag": "RED",
+        "tagLabel": "🔴 REJETÉ AUTO"
+      },
+      "keyStats": {
+        "winDiff": 7,
+        "homeAdvantage": 27.1,
+        "formDiff": 2,
+        "offensiveDiff": 6.3,
+        "defensiveDiff": -1.3
+      }
+    }
+  ]
+}

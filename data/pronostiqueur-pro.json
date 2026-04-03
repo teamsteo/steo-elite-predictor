@@ -1,0 +1,96 @@
+{
+  "predictions": [],
+  "stats": {
+    "totalPredictions": 0,
+    "won": 0,
+    "lost": 0,
+    "pending": 0,
+    "winRate": 0,
+    "roi": 0,
+    "profit": 0,
+    "byType": {
+      "safe": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0,
+        "profit": 0
+      },
+      "fun": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0,
+        "profit": 0
+      },
+      "combo": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0,
+        "profit": 0
+      }
+    },
+    "byConfidence": {
+      "very_high": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0
+      },
+      "high": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0
+      },
+      "medium": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0
+      },
+      "low": {
+        "total": 0,
+        "won": 0,
+        "winRate": 0
+      }
+    },
+    "learningMetrics": {
+      "accuracyTrend": [],
+      "bestConditions": [],
+      "avoidConditions": [],
+      "recentROI": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  },
+  "modelWeights": {
+    "confidence": 0.3,
+    "value": 0.25,
+    "odds": 0.2,
+    "historicalAccuracy": 0.25,
+    "safeThreshold": {
+      "minProbability": 70,
+      "maxOdds": 1.8,
+      "minConfidenceWeight": 0.7
+    },
+    "funThreshold": {
+      "minProbability": 55,
+      "minOdds": 1.5,
+      "minValue": 10
+    },
+    "learningRate": 0.05,
+    "version": "1.0.0",
+    "lastUpdated": "2026-03-13T23:58:02.826Z"
+  },
+  "lastUpdated": "2026-03-19T14:38:50.094Z"
+}

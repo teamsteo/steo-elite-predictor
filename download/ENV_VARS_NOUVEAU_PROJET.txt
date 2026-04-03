@@ -1,0 +1,43 @@
+# ===========================================
+# VARIABLES D'ENVIRONNEMENT - STEO ÉLITE V2
+# Pour le nouveau projet Vercel + Nouvelle base Supabase
+# ===========================================
+
+# ===========================================
+# 🔴 OBLIGATOIRE - NOUVEAU SUPABASE
+# ===========================================
+# 1. Créez un nouveau projet Supabase
+# 2. Exécutez le script NOUVELLE_BASE_SUPABASE.sql
+# 3. Copiez les valeurs ci-dessous depuis Settings → API
+
+NEXT_PUBLIC_SUPABASE_URL=https://[NOUVEAU-PROJET].supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=[NOUVELLE CLÉ ANON - À COPIER]
+SUPABASE_SERVICE_ROLE_KEY=[NOUVELLE CLÉ SERVICE_ROLE - À COPIER]
+
+# ===========================================
+# 🔴 OBLIGATOIRE - AUTHENTIFICATION
+# ===========================================
+# Générer un nouveau secret: openssl rand -base64 32
+
+AUTH_SECRET=[GÉNÉRER UN NOUVEAU SECRET SÉCURISÉ]
+NEXTAUTH_URL=https://[VOTRE-NOUVEAU-SITE].vercel.app
+
+# ===========================================
+# 🟡 OPTIONNEL - CRON
+# ===========================================
+CRON_SECRET=steo-elite-cron-2026
+
+# ===========================================
+# 🟡 OPTIONNEL - APIs SPORTIVES
+# ===========================================
+# API_FOOTBALL_KEY=
+# API_SPORTS_KEY=
+# THE_ODDS_API_KEY=
+# RAPIDAPI_KEY=
+
+# ===========================================
+# 📁 FICHIERS À UTILISER
+# ===========================================
+# 1. NOUVELLE_BASE_SUPABASE.sql → Script complet de création
+# 2. GUIDE_MIGRATION.txt → Instructions détaillées
+# ===========================================

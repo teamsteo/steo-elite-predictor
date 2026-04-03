@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "cd pronostics-app && bun install && bun run build",
+  "installCommand": "cd pronostics-app && bun install",
+  "outputDirectory": "pronostics-app/.next",
+  "framework": "nextjs",
+  "regions": ["cdg1"],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "s-maxage=300, stale-while-revalidate=600" }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=precalc",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify",
+      "schedule": "0 7 * * *"
+    }
+  ]
+}

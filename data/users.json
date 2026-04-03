@@ -1,0 +1,48 @@
+{
+  "users": [
+    {
+      "login": "admin",
+      "password": "114663ab194edcb3f61d409883ce4ae6c3c2f9854194095a5385011d15becbef",
+      "role": "admin",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": "2026-04-02T07:03:56.755Z"
+    }
+  ],
+  "logs": [
+    {
+      "id": "mnh4pia8qvgcs",
+      "timestamp": "2026-04-02T07:03:57.392Z",
+      "action": "LOGIN",
+      "actor": "admin",
+      "target": "admin",
+      "details": "Connexion"
+    },
+    {
+      "id": "mngoku0bpo9zh",
+      "timestamp": "2026-04-01T23:32:25.451Z",
+      "action": "LOGIN",
+      "actor": "admin",
+      "target": "admin",
+      "details": "Connexion"
+    },
+    {
+      "id": "mngji0j7cky7k",
+      "timestamp": "2026-04-01T21:10:15.859Z",
+      "action": "LOGIN",
+      "actor": "admin",
+      "target": "admin",
+      "details": "Connexion"
+    }
+  ],
+  "activeSessions": [
+    {
+      "token": "8e9e6fbc569dfe7230d37f92d2a56320cc3af9e7aa1c91c94fb3702bca000b82",
+      "username": "admin",
+      "createdAt": 1775113438046,
+      "expiresAt": 1775114638046
+    }
+  ],
+  "lastUpdated": "2026-04-02T07:03:58.046Z"
+}

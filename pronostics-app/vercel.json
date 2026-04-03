@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "next build",
+  "installCommand": "bun install",
+  "framework": "nextjs",
+  "regions": ["cdg1"],
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "s-maxage=300, stale-while-revalidate=600" }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=precalc",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron-ml?action=auto&secret=steo-elite-cron-2026",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

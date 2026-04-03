@@ -1,0 +1,96 @@
+# ============================================
+# Pronostiqueur Pro - Vérification & Apprentissage
+# ============================================
+
+name: Pro Learning
+
+on:
+  schedule:
+    # Toutes les 6 heures
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  verify-and-learn:
+    name: Vérification & Apprentissage Pro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: 📦 Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: 🎯 Verify results & Learn
+        run: bun run scripts/pro-verify-learn.ts
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+
+      - name: 📊 Commit and push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          if git diff --quiet data/pronostiqueur-pro.json; then
+            echo "⚠️ Aucun changement à commiter"
+            exit 0
+          fi
+          
+          REMOTE_URL="https://x-access-token:${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "$REMOTE_URL"
+          
+          git add data/pronostiqueur-pro.json
+          git commit -m "🧠 Pro: Vérification & Apprentissage - $(date '+%Y-%m-%d %H:%M') UTC"
+          
+          git fetch origin master
+          git merge origin/master --no-edit -X theirs || {
+            git merge --abort 2>/dev/null || true
+            git reset --hard origin/master
+            exit 0
+          }
+          
+          git push origin master
+
+      - name: 📈 Summary
+        if: always()
+        run: |
+          echo "## 🎯 Pronostiqueur Pro" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f data/pronostiqueur-pro.json ]; then
+            echo "### 📊 Stats" >> $GITHUB_STEP_SUMMARY
+            TOTAL=$(cat data/pronostiqueur-pro.json | grep -o '"totalPredictions": [0-9]*' | grep -o '[0-9]*' || echo "0")
+            WR=$(cat data/pronostiqueur-pro.json | grep -o '"winRate": [0-9.]*' | head -1 | grep -o '[0-9.]*' || echo "0")
+            ROI=$(cat data/pronostiqueur-pro.json | grep -o '"roi": [0-9.-]*' | grep -o '[0-9.-]*' || echo "0")
+            PROFIT=$(cat data/pronostiqueur-pro.json | grep -o '"profit": [0-9.-]*' | grep -o '[0-9.-]*' || echo "0")
+            
+            echo "- Total: ${TOTAL}" >> $GITHUB_STEP_SUMMARY
+            echo "- Win Rate: ${WR}%" >> $GITHUB_STEP_SUMMARY
+            echo "- ROI: ${ROI}%" >> $GITHUB_STEP_SUMMARY
+            echo "- Profit: ${PROFIT}€" >> $GITHUB_STEP_SUMMARY
+            
+            # Meilleures conditions
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ✅ Meilleures conditions" >> $GITHUB_STEP_SUMMARY
+            cat data/pronostiqueur-pro.json | grep -o '"bestConditions": \[[^]]*\]' | head -1 >> $GITHUB_STEP_SUMMARY || true
+            
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ À éviter" >> $GITHUB_STEP_SUMMARY
+            cat data/pronostiqueur-pro.json | grep -o '"avoidConditions": \[[^]]*\]' | head -1 >> $GITHUB_STEP_SUMMARY || true
+          fi

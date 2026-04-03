@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Steo Élite - Hors ligne</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
+    }
+    .icon {
+      font-size: 64px;
+      margin-bottom: 24px;
+    }
+    h1 {
+      font-size: 24px;
+      color: #f97316;
+      margin-bottom: 12px;
+    }
+    p {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 24px;
+      max-width: 300px;
+    }
+    button {
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      background: #f97316;
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #ea580c;
+    }
+    .logo {
+      width: 80px;
+      height: 80px;
+      background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+    .logo span {
+      font-size: 40px;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">
+    <span>👑</span>
+  </div>
+  <h1>Steo Élite</h1>
+  <div class="icon">📴</div>
+  <h1>Vous êtes hors ligne</h1>
+  <p>Vérifiez votre connexion internet et réessayez. Les données en cache seront disponibles lors de la reconnexion.</p>
+  <button onclick="window.location.reload()">Réessayer</button>
+</body>
+</html>

@@ -1,0 +1,98 @@
+# ============================================
+# GUIDE MIGRATION - NOUVELLE BASE SUPABASE
+# Steo Élite Predictor
+# ============================================
+
+## ÉTAPE 1: Créer le nouveau projet Supabase
+
+1. Allez sur https://supabase.com
+2. Cliquez "New Project"
+3. Nommez-le: `steo-elite-v2` (ou autre)
+4. Définissez un mot de passe fort pour la base de données
+5. Choisissez la région la plus proche
+6. Attendez la création (~2 minutes)
+
+## ÉTAPE 2: Exécuter le script SQL
+
+1. Dans votre nouveau projet, allez dans **SQL Editor**
+2. Créez une "New query"
+3. Collez le contenu du fichier `NOUVELLE_BASE_SUPABASE.sql`
+4. Cliquez **Run**
+5. Vérifiez que toutes les tables sont créées
+
+## ÉTAPE 3: Récupérer les nouvelles clés API
+
+1. Allez dans **Settings** → **API**
+2. Copiez:
+   - **Project URL** → `NEXT_PUBLIC_SUPABASE_URL`
+   - **anon public** → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - **service_role** → `SUPABASE_SERVICE_ROLE_KEY` (⚠️ Secret!)
+
+## ÉTAPE 4: Configurer Vercel
+
+Dans votre nouveau projet Vercel, ajoutez les variables:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=[nouvelle URL]
+NEXT_PUBLIC_SUPABASE_ANON_KEY=[nouvelle clé anon]
+SUPABASE_SERVICE_ROLE_KEY=[nouvelle clé service_role]
+AUTH_SECRET=[générer: openssl rand -base64 32]
+NEXTAUTH_URL=[URL du site Vercel]
+CRON_SECRET=steo-elite-cron-2026
+```
+
+## ÉTAPE 5: Migrer les données (Optionnel)
+
+Si vous voulez récupérer les données de l'ancienne base:
+
+### 5.1 Exporter depuis l'ancienne base
+
+Dans l'ancien projet Supabase SQL Editor:
+
+```sql
+-- Exporter ml_patterns (patterns ML appris)
+COPY (SELECT * FROM ml_patterns) TO STDOUT WITH CSV HEADER;
+```
+
+### 5.2 Importer dans la nouvelle base
+
+Dans le nouveau projet Supabase SQL Editor:
+
+```sql
+-- Importer les patterns
+COPY ml_patterns FROM STDIN WITH CSV HEADER;
+-- Collez les données ici
+```
+
+## ÉTAPE 6: Relancer l'entraînement ML
+
+Les modèles ML devront être réentraînés avec:
+
+```bash
+bun run scripts/ml-training-advanced.ts
+```
+
+Ou via l'API: `POST /api/ml/train`
+
+## ============================================
+# RÉSUMÉ DES AVANTAGES
+# ============================================
+
+✅ Base de données propre et sécurisée
+✅ RLS activé sur toutes les tables
+✅ Politiques de sécurité renforcées
+✅ Aucune clé compromise
+✅ Structure complète pour ML et historique
+
+## ============================================
+# VARIABLES D'ENVIRONNEMENT FINALES
+# ============================================
+
+```
+NEXT_PUBLIC_SUPABASE_URL=https://[nouveau-projet].supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=[nouvelle clé anon]
+SUPABASE_SERVICE_ROLE_KEY=[nouvelle clé service_role]
+AUTH_SECRET=[générer nouvelle clé]
+NEXTAUTH_URL=https://[votre-site].vercel.app
+CRON_SECRET=steo-elite-cron-2026
+```

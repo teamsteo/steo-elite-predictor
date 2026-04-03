@@ -1,0 +1,88 @@
+{
+  "users": [
+    {
+      "login": "admin",
+      "password": "admin123",
+      "role": "admin",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "demo",
+      "password": "demo123",
+      "role": "demo",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "DD",
+      "password": "112233",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "Lyno",
+      "password": "223345",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "Elcapo",
+      "password": "234673",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "PJ",
+      "password": "775553",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "Hans",
+      "password": "547633",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "patco",
+      "password": "12345",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    },
+    {
+      "login": "lebeni",
+      "password": "78945",
+      "role": "user",
+      "firstLoginDate": null,
+      "expiresAt": null,
+      "isActive": true,
+      "lastLoginAt": null
+    }
+  ],
+  "logs": [],
+  "activeSessions": [],
+  "lastUpdated": null
+}

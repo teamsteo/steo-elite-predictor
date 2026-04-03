@@ -1,0 +1,20 @@
+services:
+  - type: cron
+    name: elite-scraper
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    schedule: "0 */6 * * *"  # Toutes les 6 heures
+    command: npx tsx scripts/independent-scraper.ts
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SCRAPER_DELAY
+        value: "3000"
+      - key: SCRAPER_SOURCE_DELAY
+        value: "8000"

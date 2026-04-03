@@ -1,0 +1,280 @@
+{
+  "picks": [
+    {
+      "id": "tennis_betexp_CKrWRxM0",
+      "matchId": "betexp_CKrWRxM0",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.730Z",
+      "homeTeam": "Aryna Sabalenka",
+      "awayTeam": "Linda Noskova",
+      "bet": "player1",
+      "betLabel": "Victoire Aryna Sabalenka",
+      "odds": 1.2,
+      "winProbability": 75,
+      "confidence": "very_high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_EcYNTzt1",
+      "matchId": "betexp_EcYNTzt1",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.732Z",
+      "homeTeam": "Moutet Corentin",
+      "awayTeam": "Giron Marcos",
+      "bet": "player1",
+      "betLabel": "Victoire Moutet Corentin",
+      "odds": 1.17,
+      "winProbability": 72,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_zLbbDw77",
+      "matchId": "betexp_zLbbDw77",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.732Z",
+      "homeTeam": "Alexander Zverev",
+      "awayTeam": "Jannik Sinner",
+      "bet": "player2",
+      "betLabel": "Victoire Jannik Sinner",
+      "odds": 1.17,
+      "winProbability": 71,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_pM6KcmWp",
+      "matchId": "betexp_pM6KcmWp",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.727Z",
+      "homeTeam": "Cassone Murphy",
+      "awayTeam": "Kotov Pavel",
+      "bet": "player1",
+      "betLabel": "Victoire Cassone Murphy",
+      "odds": 1.21,
+      "winProbability": 70,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_ziNKlFo4",
+      "matchId": "betexp_ziNKlFo4",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.727Z",
+      "homeTeam": "Gonzalez Santiago Pel David",
+      "awayTeam": "Draxl Liam Maginley Jody",
+      "bet": "player1",
+      "betLabel": "Victoire Gonzalez Santiago Pel David",
+      "odds": 1.23,
+      "winProbability": 69,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_02I55qAM",
+      "matchId": "betexp_02I55qAM",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.730Z",
+      "homeTeam": "Borges Nuno",
+      "awayTeam": "Giron Marcos",
+      "bet": "player1",
+      "betLabel": "Victoire Borges Nuno",
+      "odds": 1.23,
+      "winProbability": 69,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_OGVusOqe",
+      "matchId": "betexp_OGVusOqe",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.730Z",
+      "homeTeam": "Moutet Corentin",
+      "awayTeam": "Basilashvili Nikoloz",
+      "bet": "player1",
+      "betLabel": "Victoire Moutet Corentin",
+      "odds": 1.26,
+      "winProbability": 68,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_OYdfSLZP",
+      "matchId": "betexp_OYdfSLZP",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.731Z",
+      "homeTeam": "Nys Hugo Roger Vasselin",
+      "awayTeam": "Edouard Cash Robert Tracy James",
+      "bet": "player2",
+      "betLabel": "Victoire Edouard Cash Robert Tracy James",
+      "odds": 1.2,
+      "winProbability": 68,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_UXpcWpq1",
+      "matchId": "betexp_UXpcWpq1",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.726Z",
+      "homeTeam": "Cazaux Arthur",
+      "awayTeam": "Basilashvili Nikoloz",
+      "bet": "player1",
+      "betLabel": "Victoire Cazaux Arthur",
+      "odds": 1.28,
+      "winProbability": 67,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_fDLHOKUN",
+      "matchId": "betexp_fDLHOKUN",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.728Z",
+      "homeTeam": "Rinderknech Arthur Vacherot Valentin",
+      "awayTeam": "Bhambri Yuki Goransson Andre",
+      "bet": "player1",
+      "betLabel": "Victoire Rinderknech Arthur Vacherot Valentin",
+      "odds": 1.28,
+      "winProbability": 67,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_xvMZ256E",
+      "matchId": "betexp_xvMZ256E",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.730Z",
+      "homeTeam": "Melo Marcelo Rojer Jean",
+      "awayTeam": "Julien Schnaitter Jakob Wallner Mark",
+      "bet": "player2",
+      "betLabel": "Victoire Julien Schnaitter Jakob Wallner Mark",
+      "odds": 1.21,
+      "winProbability": 67,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_dKnjAkqB",
+      "matchId": "betexp_dKnjAkqB",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.732Z",
+      "homeTeam": "Harris Billy",
+      "awayTeam": "Quinn Ethan",
+      "bet": "player2",
+      "betLabel": "Victoire Quinn Ethan",
+      "odds": 1.23,
+      "winProbability": 67,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_4fuOTbil",
+      "matchId": "betexp_4fuOTbil",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.729Z",
+      "homeTeam": "Rodionov Jurij",
+      "awayTeam": "Onclin Gauthier",
+      "bet": "player1",
+      "betLabel": "Victoire Rodionov Jurij",
+      "odds": 1.3,
+      "winProbability": 66,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    },
+    {
+      "id": "tennis_betexp_4fmlyhee",
+      "matchId": "betexp_4fmlyhee",
+      "sport": "tennis",
+      "date": "2026-03-14T08:15:37.731Z",
+      "homeTeam": "Rocha Henrique",
+      "awayTeam": "Boscardin Dias Pedro",
+      "bet": "player1",
+      "betLabel": "Victoire Rocha Henrique",
+      "odds": 1.3,
+      "winProbability": 66,
+      "confidence": "high",
+      "type": "safe",
+      "result": "pending"
+    }
+  ],
+  "dailyStats": [
+    {
+      "date": "2026-03-15",
+      "total": 0,
+      "won": 0,
+      "lost": 0,
+      "pending": 0,
+      "ratio": 0,
+      "bySport": {
+        "football": {
+          "total": 0,
+          "won": 0
+        },
+        "basketball": {
+          "total": 0,
+          "won": 0
+        },
+        "tennis": {
+          "total": 0,
+          "won": 0
+        }
+      }
+    },
+    {
+      "date": "2026-03-16",
+      "total": 0,
+      "won": 0,
+      "lost": 0,
+      "pending": 0,
+      "ratio": 0,
+      "bySport": {
+        "football": {
+          "total": 0,
+          "won": 0
+        },
+        "basketball": {
+          "total": 0,
+          "won": 0
+        },
+        "tennis": {
+          "total": 0,
+          "won": 0
+        }
+      }
+    }
+  ],
+  "weeklyRatio": 0,
+  "last7Days": {
+    "total": 0,
+    "won": 0,
+    "ratio": 0
+  },
+  "lastUpdated": "2026-03-16T10:15:19.199Z",
+  "expertMLVisible": false,
+  "history": [
+    {
+      "date": "2026-03-15",
+      "ratio": 0,
+      "visible": false
+    },
+    {
+      "date": "2026-03-16",
+      "ratio": 0,
+      "visible": false
+    }
+  ]
+}

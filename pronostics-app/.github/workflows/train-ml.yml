@@ -1,0 +1,113 @@
+# ============================================
+# Steo Élite Predictor - Entraînement ML
+# ============================================
+
+name: Train ML Model
+
+on:
+  schedule:
+    - cron: '0 5 * * *'  # 05:00 UTC = 06h00 Paris (AVANT pré-calcul)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  train:
+    name: Entraînement du modèle ML
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: 📦 Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: 🔍 Check match results (yesterday)
+        run: bun run scripts/check-results.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: 🧠 Train ML Model
+        run: bun run scripts/train-ml.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Commit and push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Créer ml-models/ si n'existe pas
+          mkdir -p ml-models
+          
+          # Vérifier s'il y a des changements
+          if git diff --quiet data/ ml-models/ 2>/dev/null; then
+            # Vérifier aussi les fichiers non trackés
+            if git status --porcelain data/ ml-models/ | grep -q .; then
+              echo "📝 Nouveaux fichiers à commiter"
+            else
+              echo "⚠️ Aucun changement à commiter"
+              exit 0
+            fi
+          fi
+          
+          # Set remote with token for all operations
+          REMOTE_URL="https://x-access-token:${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "$REMOTE_URL"
+          
+          git add data/ ml-models/
+          git commit -m "🧠 ML entraîné + résultats vérifiés - $(date '+%Y-%m-%d %H:%M') UTC"
+          
+          # Retry loop for push (handles race conditions)
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "🔄 Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+            
+            # Fetch and rebase
+            git fetch origin master
+            git rebase origin/master || {
+              echo "⚠️ Rebase failed, aborting"
+              git rebase --abort 2>/dev/null || true
+            }
+            
+            # Try to push
+            if git push origin master; then
+              echo "✅ Push successful!"
+              exit 0
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⚠️ Push failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          
+          echo "❌ Failed to push after $MAX_RETRIES attempts"
+          exit 1
+
+      - name: 📈 Summary
+        if: always()
+        run: |
+          echo "## 🧠 Entraînement ML terminé" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f data/ml-metrics.json ]; then
+            echo "### 📊 Métriques" >> $GITHUB_STEP_SUMMARY
+            cat data/ml-metrics.json >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⏱️ **Prochain pré-calcul:** 06:30 UTC" >> $GITHUB_STEP_SUMMARY
