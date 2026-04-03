@@ -20,7 +20,7 @@ function getSupabase() {
   });
 }
 
-interface Pick {
+interface MlPick {
   id: string;
   match_id: string;
   sport: string;
@@ -246,7 +246,7 @@ async function checkNHLResult(homeTeam: string, awayTeam: string): Promise<{ win
 /**
  * Mettre à jour un pronostic avec le résultat
  */
-function updatePickResult(pick: Pick, actualWinner: string | null): 'won' | 'lost' | 'pending' {
+function updateMlPickResult(pick: MlPick, actualWinner: string | null): 'won' | 'lost' | 'pending' {
   if (!actualWinner) return 'pending';
 
   // Pour le tennis
@@ -298,7 +298,7 @@ export async function GET() {
     }
 
     // Récupérer les pronostics en attente
-    const { data: pendingPicks, error: fetchError } = await supabase
+    const { data: pendingMlPicks, error: fetchError } = await supabase
       .from('ml_picks')
       .select('*')
       .eq('result', 'pending');
@@ -341,7 +341,7 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
       }, { status: 500 });
     }
 
-    if (!pendingPicks || pendingPicks.length === 0) {
+    if (!pendingMlPicks || pendingMlPicks.length === 0) {
       return NextResponse.json({
         success: true,
         message: 'Aucun pronostic en attente à mettre à jour',
@@ -354,7 +354,7 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
     const now = new Date();
 
     // Vérifier chaque pronostic en attente
-    for (const pick of pendingPicks as Pick[]) {
+    for (const pick of pendingMlPicks as MlPick[]) {
       // Ne vérifier que les matchs qui ont commencé il y a plus de 3 heures
       const matchDate = new Date(pick.date);
       const threeHoursAfterMatch = new Date(matchDate.getTime() + 3 * 60 * 60 * 1000);
@@ -385,7 +385,7 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
       }
 
       if (result.found && result.winner) {
-        const newResult = updatePickResult(pick, result.winner);
+        const newResult = updateMlPickResult(pick, result.winner);
         
         // Mettre à jour dans Supabase
         const { error: updateError } = await supabase
@@ -405,15 +405,15 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
     }
 
     // Calculer les statistiques mises à jour
-    const { data: allPicks } = await supabase
+    const { data: allMlPicks } = await supabase
       .from('ml_picks')
       .select('result');
 
     const stats = {
-      total: allPicks?.length || 0,
-      won: allPicks?.filter((p: Pick) => p.result === 'won').length || 0,
-      lost: allPicks?.filter((p: Pick) => p.result === 'lost').length || 0,
-      pending: allPicks?.filter((p: Pick) => p.result === 'pending').length || 0
+      total: allMlPicks?.length || 0,
+      won: allMlPicks?.filter((p: any) => p.result === 'won').length || 0,
+      lost: allMlPicks?.filter((p: any) => p.result === 'lost').length || 0,
+      pending: allMlPicks?.filter((p: any) => p.result === 'pending').length || 0
     };
 
     const ratio = stats.total > 0 ? Math.round((stats.won / (stats.won + stats.lost)) * 100) : 0;

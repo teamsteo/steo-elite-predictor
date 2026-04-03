@@ -57,15 +57,32 @@ async function generateBackup() {
   const projectRoot = process.cwd();
 
   // Structure du backup
-  const backup = {
+  const backup: {
+    metadata: {
+      project: string;
+      version: string;
+      generated: string;
+      description: string;
+    };
+    files: Record<string, string>;
+    sqlScripts: Record<string, string>;
+    environmentTemplate: string;
+    instructions: string;
+    cronConfig: Array<{
+      name: string;
+      url: string;
+      schedule: string;
+      description: string;
+    }>;
+  } = {
     metadata: {
       project: 'Steo Élite Sports Predictor',
       version: '2026.04.03-v1',
       generated: new Date().toISOString(),
       description: 'Application de pronostics sportifs avec ML'
     },
-    files: {} as Record<string, string>,
-    sqlScripts: {} as Record<string, string>,
+    files: {},
+    sqlScripts: {},
     environmentTemplate: '',
     instructions: '',
     cronConfig: []
