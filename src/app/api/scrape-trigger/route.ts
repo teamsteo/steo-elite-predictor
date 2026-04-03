@@ -55,8 +55,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const secret = searchParams.get('secret');
   
-  // Vérification du secret
-  if (secret !== SCRAPE_SECRET) {
+  // Vérification du secret OU appel depuis cron-job.org
+  const userAgent = request.headers.get('user-agent') || '';
+  const isCronJob = userAgent.includes('cron-job.org') || userAgent.includes('Cronitor');
+  const hasValidSecret = secret === SCRAPE_SECRET;
+  
+  if (!hasValidSecret && !isCronJob) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
   
