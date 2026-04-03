@@ -1,7 +1,7 @@
 // Middleware to protect routes
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/api/auth', '/api/cron', '/api/scrape-trigger', '/api/ml/', '/api/system/', '/api/espn-status'];
+const PUBLIC_PATHS = ['/api/auth', '/api/cron', '/api/scrape-trigger', '/api/ml/', '/api/system/', '/api/espn-status'];
 const STATIC_PATHS = ['/_next', '/favicon.ico', '/images', '/fonts'];
 
 export async function middleware(request: NextRequest) {
@@ -12,33 +12,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow public paths
+  // Allow public paths (API routes)
   if (PUBLIC_PATHS.some(path => pathname.startsWith(path))) {
-    // If user is already authenticated and tries to access login, redirect to home
-    const token = request.cookies.get('session')?.value;
-    if (pathname === '/login' && token) {
-      try {
-        // Simple check - if token exists, redirect to home
-        // Full verification happens in the auth route
-        return NextResponse.redirect(new URL('/', request.url));
-      } catch {
-        // Token invalid, continue to login
-      }
-    }
     return NextResponse.next();
   }
 
-  // Check for session token
-  const token = request.cookies.get('session')?.value;
+  // La page d'accueil (/) gère elle-même l'authentification avec steo_elite_session_data
+  // Le dashboard intégré vérifie le cookie et affiche la page de connexion si nécessaire
+  // Donc on laisse passer toutes les requêtes vers les pages
 
-  if (!token) {
-    // Redirect to login if no token
-    const loginUrl = new URL('/login', request.url);
-    return NextResponse.redirect(loginUrl);
-  }
-
-  // Token exists, allow request
-  // Full verification happens in the API routes
   return NextResponse.next();
 }
 

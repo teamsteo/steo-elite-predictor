@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, LogIn, AlertCircle, Loader2, Brain, Shield } from 'lucide-react';
+import { Eye, EyeOff, LogIn, AlertCircle, Loader2, Crown, Shield } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,7 +23,7 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth', {
+      const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -49,21 +49,23 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-orange-950 to-slate-900 flex items-center justify-center p-4">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000" />
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-orange-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-amber-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000" />
       </div>
 
       <div className="relative z-10 w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
-            <Brain className="w-12 h-12 text-purple-400" />
-            <h1 className="text-4xl font-bold text-white">ForexML Pro</h1>
+            <div className="p-3 bg-gradient-to-br from-orange-500 to-amber-600 rounded-2xl">
+              <Crown className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-4xl font-bold text-white">Steo Élite</h1>
           </div>
-          <p className="text-slate-400">Système de Trading Forex avec Intelligence Artificielle</p>
+          <p className="text-slate-400">Sports Predictor - Pronostics Intelligents</p>
         </div>
 
         {/* Login Card */}
@@ -71,7 +73,7 @@ export default function LoginPage() {
           <CardHeader className="space-y-1">
             <CardTitle className="text-2xl text-white text-center">Connexion</CardTitle>
             <CardDescription className="text-slate-400 text-center">
-              Entrez vos identifiants pour accéder à la plateforme
+              Entrez vos identifiants pour accéder aux pronostics
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -120,7 +122,7 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                className="w-full bg-orange-600 hover:bg-orange-700 text-white"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -148,23 +150,23 @@ export default function LoginPage() {
                   type="button"
                   onClick={() => {
                     setUsername('admin');
-                    setPassword('ForexML2024!');
+                    setPassword('Elite2024!');
                   }}
-                  className="w-full text-left p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-purple-500 transition-colors"
+                  className="w-full text-left p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-orange-500 transition-colors"
                 >
                   <p className="text-white font-medium">Admin</p>
-                  <p className="text-slate-400 text-sm">admin / ForexML2024!</p>
+                  <p className="text-slate-400 text-sm">admin / Elite2024!</p>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setUsername('trader');
-                    setPassword('Trading2024!');
+                    setUsername('demo');
+                    setPassword('Demo2024!');
                   }}
-                  className="w-full text-left p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-purple-500 transition-colors"
+                  className="w-full text-left p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-orange-500 transition-colors"
                 >
-                  <p className="text-white font-medium">Trader</p>
-                  <p className="text-slate-400 text-sm">trader / Trading2024!</p>
+                  <p className="text-white font-medium">Demo</p>
+                  <p className="text-slate-400 text-sm">demo / Demo2024!</p>
                 </button>
               </div>
             </div>
@@ -173,7 +175,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-slate-500 text-sm mt-6">
-          ⚠️ Usage éducatif uniquement. Pas de conseil financier.
+          Football • NBA • NFL • NHL • MLB
         </p>
       </div>
 
