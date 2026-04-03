@@ -1,7 +1,7 @@
 // Middleware to protect routes
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/api/auth'];
+const PUBLIC_PATHS = ['/login', '/api/auth', '/api/cron', '/api/scrape-trigger', '/api/ml/', '/api/system/', '/api/espn-status'];
 const STATIC_PATHS = ['/_next', '/favicon.ico', '/images', '/fonts'];
 
 export async function middleware(request: NextRequest) {
