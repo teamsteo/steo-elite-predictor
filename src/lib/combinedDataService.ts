@@ -205,7 +205,11 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
   const allMatches: any[] = [];
   
   try {
+    // Récupérer les dates d'aujourd'hui ET demain
     const todayStr = new Date().toISOString().split('-').join('').slice(0, 8);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
     
     // 🎯 ÉTAPE 1: Préparer le fallback The Odds API en parallèle
     const oddsApiMapPromise = fetchOddsApiFallback();
@@ -242,15 +246,28 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Foot', isInternational: true },
     ];
     
-    // 🎯 ÉTAPE 2: Récupérer ESPN en parallèle avec Odds API
-    const [oddsApiMap, ...espnResults] = await Promise.all([
-      oddsApiMapPromise,
-      ...sports.map(sport => 
+    // 🎯 ÉTAPE 2: Récupérer ESPN pour aujourd'hui ET demain
+    const fetchPromises: Promise<any>[] = [];
+    for (const sport of sports) {
+      // Aujourd'hui
+      fetchPromises.push(
         fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${todayStr}`)
           .then(r => r.json())
-          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data }))
+          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'today' }))
           .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
-      )
+      );
+      // Demain
+      fetchPromises.push(
+        fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${tomorrowStr}`)
+          .then(r => r.json())
+          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'tomorrow' }))
+          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+      );
+    }
+    
+    const [oddsApiMap, ...espnResults] = await Promise.all([
+      oddsApiMapPromise,
+      ...fetchPromises
     ]);
     
     // Stats
@@ -349,38 +366,31 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       }
     }
     
-    // Filtrer pour ne garder que les matchs à venir et en cours (PAS les terminés)
+    // Filtrer pour garder les matchs à venir, en cours ET terminés (pour affichage)
     const currentTime = new Date();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    // Also include matches from the next 24 hours
-    const tomorrowEnd = new Date();
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
-    tomorrowEnd.setHours(23, 59, 59, 999);
 
     const filteredMatches = allMatches.filter(match => {
-      // EXCLURE les matchs terminés
-      if (match.isFinished) return false;
-
       const matchDate = new Date(match.date);
 
       // Garder les matchs en cours (live)
       if (match.isLive) return true;
 
-      // Garder les matchs à venir d'aujourd'hui (qui n'ont pas encore commencé)
-      if (matchDate >= todayStart && matchDate <= todayEnd) {
-        // Vérifier que le match n'a pas encore commencé (avec marge de 2 minutes)
-        const matchStartTime = new Date(matchDate.getTime() - 2 * 60 * 1000);
-        if (currentTime < matchStartTime) return true;
-        // Si le match a commencé mais n'est pas marqué live/finished, on l'exclut
-        return false;
-      }
+      // Garder les matchs à venir d'aujourd'hui
+      if (matchDate >= todayStart && matchDate > currentTime) return true;
 
-      // Garder les matchs à venir dans les prochaines 24h
-      if (matchDate > todayEnd && matchDate <= tomorrowEnd) return true;
+      // Garder les matchs terminés d'aujourd'hui (pour affichage jusqu'à minuit)
+      if (match.isFinished && matchDate >= todayStart) return true;
+
+      // Garder les matchs à venir demain
+      const tomorrowStart = new Date();
+      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+      tomorrowStart.setHours(0, 0, 0, 0);
+      const tomorrowEnd = new Date(tomorrowStart);
+      tomorrowEnd.setHours(23, 59, 59, 999);
+      
+      if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) return true;
 
       return false;
     });
