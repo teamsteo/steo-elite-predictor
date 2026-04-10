@@ -160,6 +160,13 @@ function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | nul
 }
 
 /**
+ * Formate une date en format ESPN (YYYYMMDD)
+ */
+function formatDate(date: Date): string {
+  return date.toISOString().split('-').join('').slice(0, 8);
+}
+
+/**
  * Récupère les matchs depuis ESPN
  */
 async function fetchESPNMatches(): Promise<any[]> {
@@ -173,7 +180,21 @@ async function fetchESPNMatches(): Promise<any[]> {
   const allMatches: any[] = [];
   
   try {
-    const today = new Date().toISOString().split('-').join('').slice(0, 8);
+    const today = new Date();
+    const todayStr = formatDate(today);
+    
+    // Récupérer hier, aujourd'hui et demain pour les matchs NBA/NHL de nuit
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDate(yesterday);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = formatDate(tomorrow);
+    
+    // Date de référence pour comparer (sans heure)
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
     
     // Sports à récupérer - incluant les compétitions européennes
     const sports = [
@@ -196,11 +217,20 @@ async function fetchESPNMatches(): Promise<any[]> {
       { key: 'soccer/bel.1', name: 'Jupiler Pro League' },
     ];
     
+    // Récupérer les matchs sur 3 jours (hier, aujourd'hui, demain)
+    const dateRanges = [
+      { date: yesterdayStr, label: 'hier' },
+      { date: todayStr, label: 'aujourd\'hui' },
+      { date: tomorrowStr, label: 'demain' }
+    ];
+    
     const results = await Promise.allSettled(
-      sports.map(sport => 
-        fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${today}`)
-          .then(r => r.json())
-          .then(data => ({ sport: sport.name, data }))
+      sports.flatMap(sport => 
+        dateRanges.map(dateRange => 
+          fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${dateRange.date}`)
+            .then(r => r.json())
+            .then(data => ({ sport: sport.name, data, dateLabel: dateRange.label, dateStr: dateRange.date }))
+        )
       )
     );
     
@@ -209,6 +239,8 @@ async function fetchESPNMatches(): Promise<any[]> {
         // Déterminer le sport principal (pas le nom de la ligue)
         const sportKey = result.value.data?.sports?.[0]?.slug || '';
         const leagueName = result.value.sport; // Nom de la ligue depuis la config (ex: "Europa League")
+        const dateLabel = result.value.dateLabel; // 'hier', 'aujourd\'hui', ou 'demain'
+        const dateStr = result.value.dateStr;
         
         // Mapper le sport correctement
         let mainSport = 'Autre';
@@ -244,6 +276,41 @@ async function fetchESPNMatches(): Promise<any[]> {
           // Extraire les cotes depuis ESPN (DraftKings)
           const espnOdds = extractEspnOdds(event);
           
+          // Calculer les tags de date pour l'affichage
+          const eventDate = new Date(event.date);
+          const eventDateStart = new Date(eventDate);
+          eventDateStart.setHours(0, 0, 0, 0);
+          
+          // Déterminer le tag de date basé sur la comparaison avec aujourd'hui
+          let dateTag: 'hier' | 'aujourd\'hui' | 'demain';
+          let displayDate: string;
+          
+          if (eventDateStart < todayStart) {
+            dateTag = 'hier';
+            // Pour les matchs LIVE qui sont datés "hier" (matchs de nuit NBA/NHL)
+            displayDate = isLive ? "En cours" : `Hier ${eventDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
+          } else if (eventDateStart > todayStart) {
+            dateTag = 'demain';
+            displayDate = `Demain ${eventDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
+          } else {
+            dateTag = 'aujourd\'hui';
+            displayDate = isLive ? "En cours" : (isFinished ? "Terminé" : "Aujourd'hui");
+          }
+          
+          // Labels spécifiques selon le statut
+          let dateLabelDisplay: string;
+          if (isLive) {
+            dateLabelDisplay = "🔴 EN DIRECT";
+          } else if (isFinished) {
+            dateLabelDisplay = "Terminé";
+          } else if (dateTag === 'hier') {
+            dateLabelDisplay = "Match reporté/hier";
+          } else if (dateTag === 'demain') {
+            dateLabelDisplay = "À venir demain";
+          } else {
+            dateLabelDisplay = "À venir";
+          }
+          
           allMatches.push({
             id: `espn_${event.id}`,
             homeTeam: home?.team?.displayName || 'TBD',
@@ -259,6 +326,10 @@ async function fetchESPNMatches(): Promise<any[]> {
             period: event.status?.period,
             homeRecord: home?.records?.[0]?.summary,
             awayRecord: away?.records?.[0]?.summary,
+            // Tags de date pour l'affichage
+            dateTag,
+            dateLabel: dateLabelDisplay,
+            displayDate,
             // Ajouter les cotes ESPN
             oddsHome: espnOdds.oddsHome,
             oddsDraw: espnOdds.oddsDraw,

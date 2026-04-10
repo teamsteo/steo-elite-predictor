@@ -23,7 +23,11 @@ import {
   Database,
   TrendingUp,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Calendar,
+  Sun,
+  Moon,
+  Sunrise
 } from 'lucide-react';
 import {
   DataQualityLevel,
@@ -58,6 +62,10 @@ interface MatchCardProps {
     period?: number;
     clock?: string;
     league?: string;
+    // Tags de date pour différencier hier/aujourd'hui/demain
+    dateTag?: 'hier' | "aujourd'hui" | 'demain';
+    dateLabel?: string;
+    displayDate?: string;
     insight?: {
       riskPercentage: number;
       valueBetDetected: boolean;
@@ -156,6 +164,82 @@ const dataQualityConfig: Record<DataQuality, {
     description: 'Aucune donnée disponible',
   },
 };
+
+// Configuration pour l'affichage des tags de date
+const dateTagConfig: Record<string, { 
+  icon: React.ReactNode; 
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  pulse?: boolean;
+}> = {
+  'hier': {
+    icon: <Moon className="h-3.5 w-3.5" />,
+    color: 'text-purple-600 dark:text-purple-400',
+    bgColor: 'bg-purple-500/15',
+    borderColor: 'border-purple-500/30',
+  },
+  "aujourd'hui": {
+    icon: <Sun className="h-3.5 w-3.5" />,
+    color: 'text-orange-600 dark:text-orange-400',
+    bgColor: 'bg-orange-500/15',
+    borderColor: 'border-orange-500/30',
+  },
+  'demain': {
+    icon: <Sunrise className="h-3.5 w-3.5" />,
+    color: 'text-blue-600 dark:text-blue-400',
+    bgColor: 'bg-blue-500/15',
+    borderColor: 'border-blue-500/30',
+  },
+};
+
+/**
+ * Composant pour afficher le tag de date (hier, aujourd'hui, demain)
+ */
+function DateTagBadge({ 
+  dateTag, 
+  dateLabel, 
+  displayDate,
+  isLive 
+}: { 
+  dateTag?: 'hier' | "aujourd'hui" | 'demain';
+  dateLabel?: string;
+  displayDate?: string;
+  isLive?: boolean;
+}) {
+  // Si LIVE, afficher un badge spécial
+  if (isLive) {
+    return (
+      <Badge className="bg-red-500 text-white animate-pulse gap-1">
+        <Radio className="h-3 w-3" />
+        LIVE
+      </Badge>
+    );
+  }
+  
+  if (!dateTag) return null;
+  
+  const config = dateTagConfig[dateTag] || dateTagConfig["aujourd'hui"];
+  
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge 
+            variant="outline" 
+            className={`${config.bgColor} ${config.color} ${config.borderColor} gap-1 font-medium`}
+          >
+            {config.icon}
+            <span>{displayDate || dateTag}</span>
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="text-xs">{dateLabel || dateTag}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 /**
  * Composant pour afficher un message d'erreur explicite - VERSION AMÉLIORÉE
@@ -471,19 +555,20 @@ export function MatchCard({ match, onAnalyze, compact = false }: MatchCardProps)
   return (
     <Card className={`transition-all hover:shadow-lg ${compact ? 'p-2' : ''}`}>
       <CardHeader className={`pb-2 ${compact ? 'p-3' : ''}`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {match.league && (
               <Badge variant="outline" className="text-xs">
                 {match.league}
               </Badge>
             )}
-            {isLive && (
-              <Badge className="bg-red-500 text-white animate-pulse">
-                <Radio className="h-3 w-3 mr-1" />
-                LIVE
-              </Badge>
-            )}
+            {/* Tag de date (hier, aujourd'hui, demain) ou LIVE */}
+            <DateTagBadge 
+              dateTag={match.dateTag}
+              dateLabel={match.dateLabel}
+              displayDate={match.displayDate}
+              isLive={isLive}
+            />
           </div>
           
           {/* Indicateur de qualité principal */}

@@ -18,6 +18,10 @@ interface Match {
   oddsDraw: number | null;
   oddsAway: number;
   status: string;
+  // Tags de date pour différencier hier/aujourd'hui/demain
+  dateTag?: 'hier' | "aujourd'hui" | 'demain';
+  dateLabel?: string;
+  displayDate?: string;
   insight?: {
     riskPercentage: number;
     valueBetDetected: boolean;
