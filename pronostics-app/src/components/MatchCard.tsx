@@ -168,28 +168,28 @@ const dataQualityConfig: Record<DataQuality, {
 // Configuration pour l'affichage des tags de date
 const dateTagConfig: Record<string, { 
   icon: React.ReactNode; 
-  color: string;
-  bgColor: string;
-  borderColor: string;
+  colorClass: string;
+  bgClass: string;
+  borderClass: string;
   pulse?: boolean;
 }> = {
   'hier': {
     icon: <Moon className="h-3.5 w-3.5" />,
-    color: 'text-purple-600 dark:text-purple-400',
-    bgColor: 'bg-purple-500/15',
-    borderColor: 'border-purple-500/30',
+    colorClass: 'text-purple-600 dark:text-purple-400',
+    bgClass: 'bg-purple-500/15',
+    borderClass: 'border-purple-500/30',
   },
   "aujourd'hui": {
     icon: <Sun className="h-3.5 w-3.5" />,
-    color: 'text-orange-600 dark:text-orange-400',
-    bgColor: 'bg-orange-500/15',
-    borderColor: 'border-orange-500/30',
+    colorClass: 'text-orange-600 dark:text-orange-400',
+    bgClass: 'bg-orange-500/15',
+    borderClass: 'border-orange-500/30',
   },
   'demain': {
     icon: <Sunrise className="h-3.5 w-3.5" />,
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-500/15',
-    borderColor: 'border-blue-500/30',
+    colorClass: 'text-blue-600 dark:text-blue-400',
+    bgClass: 'bg-blue-500/15',
+    borderClass: 'border-blue-500/30',
   },
 };
 
@@ -221,13 +221,18 @@ function DateTagBadge({
   
   const config = dateTagConfig[dateTag] || dateTagConfig["aujourd'hui"];
   
+  // Classes en dur pour Tailwind (évite le purge)
+  // bg-purple-500/15 bg-orange-500/15 bg-blue-500/15
+  // text-purple-600 text-orange-600 text-blue-600
+  // border-purple-500/30 border-orange-500/30 border-blue-500/30
+  
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge 
             variant="outline" 
-            className={`${config.bgColor} ${config.color} ${config.borderColor} gap-1 font-medium`}
+            className={`${config.bgClass} ${config.colorClass} ${config.borderClass} gap-1 font-medium`}
           >
             {config.icon}
             <span>{displayDate || dateTag}</span>
