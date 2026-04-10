@@ -53,10 +53,16 @@ function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | nul
   const bookmaker = odds.provider?.name || odds.provider || 'DraftKings';
   
   // Format ESPN: odds peuvent être en format américain ou décimal
-  // moneyline format
+  // moneyline format - Attention: drawOdds peut être un objet avec moneyLine
   let homeOdds = odds.homeTeamOdds?.moneyLine || odds.moneyline?.home?.close?.odds || odds.moneyline?.home?.open?.odds || odds.homeOdds;
   let awayOdds = odds.awayTeamOdds?.moneyLine || odds.moneyline?.away?.close?.odds || odds.moneyline?.away?.open?.odds || odds.awayOdds;
-  let drawOdds = odds.drawOdds || odds.moneyline?.draw?.close?.odds || odds.moneyline?.draw?.open?.odds || null;
+  // drawOdds est souvent un objet ESPN avec { moneyLine: number, link: {...} }
+  let drawOdds = odds.drawOdds?.moneyLine || odds.drawOdds || odds.moneyline?.draw?.close?.odds || odds.moneyline?.draw?.open?.odds || null;
+  
+  // S'assurer que drawOdds est un nombre (pas un objet)
+  if (typeof drawOdds !== 'number') {
+    drawOdds = null;
+  }
   
   // Si les cotes sont au format américain (entier), les convertir
   if (homeOdds && Math.abs(homeOdds) > 2) {
