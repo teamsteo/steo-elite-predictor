@@ -418,8 +418,57 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       return false;
     });
 
-    // Si aucun match trouvé, retourner un tableau vide (ne PAS retourner tous les matchs)
-    const finalMatches = filteredMatches;
+    // Ajouter un tag de date (hier, aujourd'hui, demain) pour l'affichage
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const tomorrowEnd = new Date(tomorrowStart);
+    tomorrowEnd.setHours(23, 59, 59, 999);
+
+    // Fonction pour déterminer le tag de date
+    const getDateTag = (matchDate: Date, isLive: boolean, isFinished: boolean): {
+      dateTag: 'hier' | 'aujourd\'hui' | 'demain';
+      dateLabel: string;
+      displayDate: string;
+    } => {
+      if (matchDate >= todayStart && matchDate < tomorrowStart) {
+        // Aujourd'hui
+        if (isLive) {
+          return { dateTag: 'aujourd\'hui', dateLabel: '🔴 En cours', displayDate: 'Aujourd\'hui' };
+        }
+        if (isFinished) {
+          return { dateTag: 'aujourd\'hui', dateLabel: '✅ Terminé', displayDate: 'Aujourd\'hui' };
+        }
+        return { dateTag: 'aujourd\'hui', dateLabel: '⏳ À venir', displayDate: 'Aujourd\'hui' };
+      } else if (matchDate >= yesterdayStart && matchDate < todayStart) {
+        // Hier (matchs de nuit encore en cours ou récemment terminés)
+        if (isLive) {
+          return { dateTag: 'hier', dateLabel: '🔴 En cours (nuit)', displayDate: 'Hier' };
+        }
+        if (isFinished) {
+          return { dateTag: 'hier', dateLabel: '✅ Terminé', displayDate: 'Hier' };
+        }
+        return { dateTag: 'hier', dateLabel: '⏳ À venir', displayDate: 'Hier' };
+      } else if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) {
+        // Demain
+        return { dateTag: 'demain', dateLabel: '📅 Demain', displayDate: 'Demain' };
+      }
+      // Par défaut
+      return { dateTag: 'aujourd\'hui', dateLabel: '⏳ À venir', displayDate: 'Aujourd\'hui' };
+    };
+
+    // Enrichir chaque match avec le tag de date
+    const finalMatches = filteredMatches.map(match => {
+      const matchDate = new Date(match.date);
+      const dateInfo = getDateTag(matchDate, match.isLive, match.isFinished);
+      return {
+        ...match,
+        dateTag: dateInfo.dateTag,
+        dateLabel: dateInfo.dateLabel,
+        displayDate: dateInfo.displayDate,
+      };
+    });
 
     espnCache = finalMatches;
     espnCacheTime = now;
