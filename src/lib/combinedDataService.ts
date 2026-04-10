@@ -205,9 +205,17 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
   const allMatches: any[] = [];
   
   try {
-    // Récupérer les dates d'aujourd'hui ET demain
-    const todayStr = new Date().toISOString().split('-').join('').slice(0, 8);
-    const tomorrow = new Date();
+    // Récupérer les dates d'hier, aujourd'hui ET demain
+    // IMPORTANT: Les matchs NBA/NHL de nuit sont datés du jour précédent dans ESPN
+    // Ex: match à 23:00 UTC le 9 avril peut être en cours le 10 avril à 00:30
+    const today = new Date();
+    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('-').join('').slice(0, 8);
+
+    const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
     
@@ -246,9 +254,17 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Foot', isInternational: true },
     ];
     
-    // 🎯 ÉTAPE 2: Récupérer ESPN pour aujourd'hui ET demain
+    // 🎯 ÉTAPE 2: Récupérer ESPN pour hier, aujourd'hui ET demain
+    // Hier = pour les matchs NBA/NHL de nuit encore en cours
     const fetchPromises: Promise<any>[] = [];
     for (const sport of sports) {
+      // Hier (pour matchs de nuit encore en cours)
+      fetchPromises.push(
+        fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${yesterdayStr}`)
+          .then(r => r.json())
+          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'yesterday' }))
+          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+      );
       // Aujourd'hui
       fetchPromises.push(
         fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${todayStr}`)
@@ -371,11 +387,18 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
+    // Fenêtre pour les matchs terminés d'hier (garder ceux terminés il y a moins de 6h)
+    const sixHoursAgo = new Date(currentTime);
+    sixHoursAgo.setHours(sixHoursAgo.getHours() - 6);
+
     const filteredMatches = allMatches.filter(match => {
       const matchDate = new Date(match.date);
 
-      // Garder les matchs en cours (live)
+      // Garder les matchs en cours (live) - peu importe la date
       if (match.isLive) return true;
+
+      // Garder les matchs terminés récemment (moins de 6h) - pour les matchs de nuit
+      if (match.isFinished && matchDate >= sixHoursAgo) return true;
 
       // Garder les matchs à venir d'aujourd'hui
       if (matchDate >= todayStart && matchDate > currentTime) return true;
@@ -389,7 +412,7 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       tomorrowStart.setHours(0, 0, 0, 0);
       const tomorrowEnd = new Date(tomorrowStart);
       tomorrowEnd.setHours(23, 59, 59, 999);
-      
+
       if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) return true;
 
       return false;
@@ -400,7 +423,7 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
 
     espnCache = finalMatches;
     espnCacheTime = now;
-    espnCacheDate = today;
+    espnCacheDate = today.toDateString();
     
     console.log(`✅ Total: ${finalMatches.length} matchs (ESPN: ${espnOddsCount}, Odds API: ${oddsApiFallbackCount}, Estimés: ${estimatedCount})`);
     
