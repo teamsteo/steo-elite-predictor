@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { MatchCard } from './MatchCard';
-import { Trophy, RefreshCw, TrendingUp, BarChart3 } from 'lucide-react';
+import { Trophy, RefreshCw, TrendingUp, BarChart3, Calendar } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 
 interface Match {
@@ -18,6 +18,12 @@ interface Match {
   oddsDraw: number | null;
   oddsAway: number;
   status: string;
+  isLive?: boolean;
+  isFinished?: boolean;
+  // 📅 Tags de date
+  dateTag?: 'hier' | "aujourd'hui" | 'demain';
+  dateLabel?: string;
+  displayDate?: string;
   insight?: {
     riskPercentage: number;
     valueBetDetected: boolean;
@@ -25,6 +31,13 @@ interface Match {
     confidence: string;
   };
 }
+
+// Configuration des tags de date pour l'affichage
+const dateTagDisplay: Record<string, { icon: string; label: string; color: string }> = {
+  'hier': { icon: '🌙', label: 'Hier (nuit)', color: 'text-purple-600 bg-purple-50 dark:bg-purple-950/30' },
+  "aujourd'hui": { icon: '📅', label: "Aujourd'hui", color: 'text-blue-600 bg-blue-50 dark:bg-blue-950/30' },
+  'demain': { icon: '🗓️', label: 'Demain', color: 'text-orange-600 bg-orange-50 dark:bg-orange-950/30' },
+};
 
 const sportsConfig: Record<string, { icon: string; label: string; color: string }> = {
   Foot: { icon: '⚽', label: 'Football', color: 'data-[state=active]:bg-green-500 data-[state=active]:text-white' },
@@ -133,10 +146,55 @@ export function Multisports() {
                   ))}
                 </div>
               ) : filteredMatches.length > 0 ? (
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  {filteredMatches.map((match) => (
-                    <MatchCard key={match.id} match={match} />
-                  ))}
+                <div className="space-y-6">
+                  {/* Grouper par dateTag */}
+                  {['hier', "aujourd'hui", 'demain'].map((dateTag) => {
+                    const dateMatches = filteredMatches.filter(m => m.dateTag === dateTag);
+                    if (dateMatches.length === 0) return null;
+                    
+                    const dateConfig = dateTagDisplay[dateTag];
+                    
+                    return (
+                      <div key={dateTag}>
+                        {/* En-tête de section avec date */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className={`px-3 py-1.5 rounded-lg ${dateConfig.color} flex items-center gap-2`}>
+                            <Calendar className="h-4 w-4" />
+                            <span className="font-semibold text-sm">
+                              {dateConfig.icon} {dateConfig.label}
+                            </span>
+                          </div>
+                          <Badge variant="outline" className="text-xs">
+                            {dateMatches.length} match{dateMatches.length > 1 ? 's' : ''}
+                          </Badge>
+                        </div>
+                        
+                        {/* Grille de matchs */}
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                          {dateMatches.map((match) => (
+                            <MatchCard key={match.id} match={match} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Matchs sans dateTag (fallback) */}
+                  {filteredMatches.filter(m => !m.dateTag).length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="px-3 py-1.5 rounded-lg text-muted-foreground bg-muted/50 flex items-center gap-2">
+                          <Calendar className="h-4 w-4" />
+                          <span className="font-semibold text-sm">Autres matchs</span>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                        {filteredMatches.filter(m => !m.dateTag).map((match) => (
+                          <MatchCard key={match.id} match={match} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-12">
