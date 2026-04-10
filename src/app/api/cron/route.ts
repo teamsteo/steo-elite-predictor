@@ -17,6 +17,7 @@ import { updateStatsHistory, forceUpdateStats } from '@/lib/statsUpdater';
 import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
 import SupabaseStore from '@/lib/db-supabase';
 import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
+import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
@@ -467,31 +468,47 @@ async function runPrecalc(): Promise<{ success: boolean; count: number; errors: 
 }
 
 /**
- * Entraînement du modèle ML
+ * Entraînement du modèle ML unifié (persisté dans Supabase)
  */
-async function trainMLModel(): Promise<{ success: boolean; accuracy: number; errors: string[] }> {
-  const errors: string[] = [];
+async function trainMLModel(): Promise<{ 
+  success: boolean; 
+  accuracy: number; 
+  samplesUsed: number;
+  patternsSaved: number;
+  patternsUpdated: number;
+  improvements: string[];
+  errors: string[] 
+}> {
+  console.log('🧠 Entraînement du modèle ML unifié...');
 
   try {
-    console.log('🧠 Entraînement du modèle ML...');
-
-    const completed = await PredictionStore.getCompletedAsync();
-
-    if (completed.length < 10) {
-      console.log('⚠️ Pas assez de données pour entraîner (< 10)');
-      return { success: false, accuracy: 0, errors: ['Pas assez de données'] };
+    // Utiliser le nouveau service ML unifié avec persistance Supabase
+    const result = await trainUnifiedML();
+    
+    if (result.success) {
+      console.log(`✅ ML Training terminé - Accuracy: ${result.accuracy}%, Patterns: ${result.patternsSaved} nouveaux, ${result.patternsUpdated} mis à jour`);
     }
-
-    const correct = completed.filter(p => p.resultMatch === true).length;
-    const accuracy = completed.length > 0 ? (correct / completed.length) * 100 : 0;
-
-    console.log(`✅ ML training terminé - Précision: ${accuracy.toFixed(1)}% (${correct}/${completed.length})`);
-
-    return { success: true, accuracy, errors };
+    
+    return {
+      success: result.success,
+      accuracy: result.accuracy,
+      samplesUsed: result.samplesUsed,
+      patternsSaved: result.patternsSaved,
+      patternsUpdated: result.patternsUpdated,
+      improvements: result.improvements,
+      errors: result.errors
+    };
   } catch (error: any) {
-    errors.push(error.message);
     console.error('Erreur ML training:', error);
-    return { success: false, accuracy: 0, errors };
+    return { 
+      success: false, 
+      accuracy: 0, 
+      samplesUsed: 0,
+      patternsSaved: 0,
+      patternsUpdated: 0,
+      improvements: [],
+      errors: [error.message] 
+    };
   }
 }
 
@@ -732,9 +749,29 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'train-ml':
+        // Entraînement manuel du modèle ML
+        try {
+          const mlTrainResult = await trainMLModel();
+          result = { mlTraining: mlTrainResult };
+        } catch (e: any) {
+          result = { mlTraining: { success: false, error: e.message } };
+        }
+        break;
+        
+      case 'ml-stats':
+        // Statistiques du modèle ML
+        try {
+          const mlStats = await getUnifiedMLStats();
+          result = { mlStats };
+        } catch (e: any) {
+          result = { mlStats: { success: false, error: e.message } };
+        }
+        break;
+        
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'sync-all', 'ping', 'db-status', 'test-espn'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn'] },
           { status: 400 }
         );
     }
@@ -855,9 +892,29 @@ export async function POST(request: NextRequest) {
         result = { ping: pingResult };
         break;
 
+      case 'train-ml':
+        // Entraînement manuel du modèle ML
+        try {
+          const mlTrainResult = await trainMLModel();
+          result = { mlTraining: mlTrainResult };
+        } catch (e: any) {
+          result = { mlTraining: { success: false, error: e.message } };
+        }
+        break;
+        
+      case 'ml-stats':
+        // Statistiques du modèle ML
+        try {
+          const mlStats = await getUnifiedMLStats();
+          result = { mlStats };
+        } catch (e: any) {
+          result = { mlStats: { success: false, error: e.message } };
+        }
+        break;
+
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'test-espn'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn'] },
           { status: 400 }
         );
     }
