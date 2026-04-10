@@ -41,28 +41,52 @@ import { useState } from 'react';
 // Type pour la qualité des données
 type DataQuality = 'real' | 'estimated' | 'partial' | 'none';
 
-// Configuration pour les tags de date
-const dateTagConfig: Record<string, { 
-  color: string; 
-  bgColor: string;
-  borderColor: string;
-}> = {
-  'hier': {
-    color: 'text-purple-600 dark:text-purple-400',
-    bgColor: 'bg-purple-500/15',
-    borderColor: 'border-purple-500/30',
-  },
-  "aujourd'hui": {
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-500/15',
-    borderColor: 'border-blue-500/30',
-  },
-  'demain': {
-    color: 'text-orange-600 dark:text-orange-400',
-    bgColor: 'bg-orange-500/15',
-    borderColor: 'border-orange-500/30',
-  },
-};
+/**
+ * 📅 Composant DateTagBadge - Affiche le badge de date avec des classes TAILWIND STATIQUES
+ * IMPORTANT: Les classes doivent être écrites en dur pour que Tailwind puisse les détecter
+ */
+function DateTagBadge({ dateTag, dateLabel }: { 
+  dateTag?: 'hier' | "aujourd'hui" | 'demain'; 
+  dateLabel?: string;
+}) {
+  if (!dateTag) return null;
+
+  // Classes statiques pour Tailwind - ne pas utiliser de template strings
+  if (dateTag === 'hier') {
+    return (
+      <Badge 
+        variant="outline" 
+        className="text-xs bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30"
+      >
+        {dateLabel || 'Hier'}
+      </Badge>
+    );
+  }
+  
+  if (dateTag === "aujourd'hui") {
+    return (
+      <Badge 
+        variant="outline" 
+        className="text-xs bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30"
+      >
+        {dateLabel || "Aujourd'hui"}
+      </Badge>
+    );
+  }
+  
+  if (dateTag === 'demain') {
+    return (
+      <Badge 
+        variant="outline" 
+        className="text-xs bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30"
+      >
+        {dateLabel || 'Demain'}
+      </Badge>
+    );
+  }
+
+  return null;
+}
 
 interface MatchCardProps {
   match: {
@@ -500,7 +524,6 @@ export function MatchCard({ match, onAnalyze, compact = false }: MatchCardProps)
   const isLive = match.isLive || match.status === 'live';
   const isFinished = match.isFinished || match.status === 'finished';
   const config = match.dataQuality ? dataQualityConfig[match.dataQuality.overall] : null;
-  const dateConfig = match.dateTag ? dateTagConfig[match.dateTag] : null;
 
   return (
     <Card className={`transition-all hover:shadow-lg ${compact ? 'p-2' : ''}`}>
@@ -513,14 +536,7 @@ export function MatchCard({ match, onAnalyze, compact = false }: MatchCardProps)
               </Badge>
             )}
             {/* 📅 Badge de date */}
-            {match.dateTag && dateConfig && (
-              <Badge 
-                variant="outline" 
-                className={`text-xs ${dateConfig.bgColor} ${dateConfig.color} ${dateConfig.borderColor}`}
-              >
-                {match.dateLabel || match.displayDate}
-              </Badge>
-            )}
+            <DateTagBadge dateTag={match.dateTag} dateLabel={match.dateLabel} />
             {isLive && (
               <Badge className="bg-red-500 text-white animate-pulse">
                 <Radio className="h-3 w-3 mr-1" />

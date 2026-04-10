@@ -60,28 +60,6 @@ const config: Config = {
                 }
         }
   },
-  // Safelist pour les classes dynamiques des badges de date
-  safelist: [
-    // Date tags - couleurs de fond
-    'bg-purple-500/15',
-    'bg-blue-500/15',
-    'bg-orange-500/15',
-    // Date tags - couleurs de texte
-    'text-purple-600',
-    'text-purple-400',
-    'text-blue-600',
-    'text-blue-400',
-    'text-orange-600',
-    'text-orange-400',
-    // Date tags - couleurs de bordure
-    'border-purple-500/30',
-    'border-blue-500/30',
-    'border-orange-500/30',
-    // Dark mode date tags
-    'dark:text-purple-400',
-    'dark:text-blue-400',
-    'dark:text-orange-400',
-  ],
   plugins: [tailwindcssAnimate],
 };
 export default config;
