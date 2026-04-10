@@ -735,3 +735,4 @@ export function MatchCard({ match, onAnalyze, compact = false }: MatchCardProps)
 }
 
 export default MatchCard;
+// Build v1775784627
