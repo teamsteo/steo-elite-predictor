@@ -653,7 +653,7 @@ export async function GET(request: NextRequest) {
         
         // Mettre à jour les résultats ML
         try {
-          await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-nine-sigma-24.vercel.app'}/api/ml/update-results`);
+          await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/ml/update-results`);
           console.log('✅ ML results updated');
         } catch (e) {
           console.log('⚠️ ML update failed:', e);
@@ -674,7 +674,7 @@ export async function GET(request: NextRequest) {
       case 'update-ml':
         // Mise à jour spécifique des résultats ML
         try {
-          const mlUpdateResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-nine-sigma-24.vercel.app'}/api/ml/update-results`);
+          const mlUpdateResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/ml/update-results`);
           const mlUpdateData = await mlUpdateResponse.json();
           result = { mlUpdate: mlUpdateData };
         } catch (e: any) {

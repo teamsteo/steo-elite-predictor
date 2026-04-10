@@ -4,7 +4,7 @@
  * Cette API est appelée par cron-job.org (gratuit) pour déclencher le scraping.
  * 
  * URL à configurer dans cron-job.org:
- * https://my-project-nine-sigma-24.vercel.app/api/scrape-trigger?secret=VOTRE_SECRET
+ * https://my-project-zeta-five-85.vercel.app/api/scrape-trigger?secret=VOTRE_SECRET
  * 
  * Schedule recommandé: Tous les jours à 5h UTC
  */
