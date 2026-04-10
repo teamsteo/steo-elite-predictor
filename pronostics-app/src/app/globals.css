@@ -1,7 +1,20 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Tailwind v4: scan src folder for classes */
+@source "../components/**/*.{js,ts,jsx,tsx}";
+@source "../lib/**/*.{js,ts,jsx,tsx}";
+@source "../app/**/*.{js,ts,jsx,tsx}";
+
 @custom-variant dark (&:is(.dark *));
+
+/* Date tag badge styles */
+.border-purple-500\/30 { border-color: rgb(168 85 247 / 0.3); }
+.border-orange-500\/30 { border-color: rgb(249 115 22 / 0.3); }
+.border-blue-500\/30 { border-color: rgb(59 130 246 / 0.3); }
+.dark .border-purple-500\/30 { border-color: rgb(168 85 247 / 0.3); }
+.dark .border-orange-500\/30 { border-color: rgb(249 115 22 / 0.3); }
+.dark .border-blue-500\/30 { border-color: rgb(59 130 246 / 0.3); }
 
 @theme inline {
   --color-background: var(--background);

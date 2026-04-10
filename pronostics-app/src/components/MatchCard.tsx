@@ -219,31 +219,45 @@ function DateTagBadge({
   
   if (!dateTag) return null;
   
-  const config = dateTagConfig[dateTag] || dateTagConfig["aujourd'hui"];
+  // Classes en dur pour Tailwind - IMPORTANT: ne pas utiliser de template strings
+  // Ces classes doivent être visibles par Tailwind
+  if (dateTag === 'hier') {
+    return (
+      <Badge 
+        variant="outline" 
+        className="bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30 gap-1 font-medium"
+      >
+        <Moon className="h-3.5 w-3.5" />
+        <span>{displayDate || 'Hier'}</span>
+      </Badge>
+    );
+  }
   
-  // Classes en dur pour Tailwind (évite le purge)
-  // bg-purple-500/15 bg-orange-500/15 bg-blue-500/15
-  // text-purple-600 text-orange-600 text-blue-600
-  // border-purple-500/30 border-orange-500/30 border-blue-500/30
+  if (dateTag === "aujourd'hui") {
+    return (
+      <Badge 
+        variant="outline" 
+        className="bg-orange-500/15 text-orange-600 dark:text-orange-400 border-orange-500/30 gap-1 font-medium"
+      >
+        <Sun className="h-3.5 w-3.5" />
+        <span>{displayDate || "Aujourd'hui"}</span>
+      </Badge>
+    );
+  }
   
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge 
-            variant="outline" 
-            className={`${config.bgClass} ${config.colorClass} ${config.borderClass} gap-1 font-medium`}
-          >
-            {config.icon}
-            <span>{displayDate || dateTag}</span>
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">{dateLabel || dateTag}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
+  if (dateTag === 'demain') {
+    return (
+      <Badge 
+        variant="outline" 
+        className="bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30 gap-1 font-medium"
+      >
+        <Sunrise className="h-3.5 w-3.5" />
+        <span>{displayDate || 'Demain'}</span>
+      </Badge>
+    );
+  }
+  
+  return null;
 }
 
 /**
