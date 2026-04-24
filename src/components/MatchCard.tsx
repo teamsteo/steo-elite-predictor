@@ -536,7 +536,7 @@ export function MatchCard({ match, onAnalyze, compact = false }: MatchCardProps)
               </Badge>
             )}
             {/* 📅 Badge de date */}
-            <DateTagBadge dateTag={match.dateTag} dateLabel={match.dateLabel} />
+            <DateTagBadge dateTag={match.dateTag} dateLabel={match.displayDate} />
             {isLive && (
               <Badge className="bg-red-500 text-white animate-pulse">
                 <Radio className="h-3 w-3 mr-1" />
