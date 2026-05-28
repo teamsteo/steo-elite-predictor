@@ -20,7 +20,7 @@ import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
 import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
 import { 
   publishDailySummaryToTelegram, 
-  publishPredictionToTelegram,
+  publishValueBetsToTelegram,
   isSafeOrModerate
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
@@ -783,10 +783,17 @@ export async function GET(request: NextRequest) {
             homeTeam: m.homeTeam,
             awayTeam: m.awayTeam,
             sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
             recommendation: m.recommendations?.[0]?.label,
             confidence: m.confidence,
             valueBetDetected: m.valueBets?.length > 0,
             riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
           }));
           
           const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
@@ -812,43 +819,38 @@ export async function GET(request: NextRequest) {
         // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
         try {
           const matches = await getMatchesWithRealOdds();
-          // Filtrer: value bet + confiance non low + risque safe/modéré
-          const valueBets = matches.filter((m: any) => 
-            m.valueBets?.length > 0 && 
-            m.confidence !== 'low' &&
-            isSafeOrModerate(m.riskPercentage)
-          );
-          
-          let published = 0;
-          for (const match of valueBets.slice(0, 5)) {
-            const success = await publishPredictionToTelegram({
-              homeTeam: match.homeTeam,
-              awayTeam: match.awayTeam,
-              sport: match.sport,
-              league: match.league,
-              date: match.date,
-              oddsHome: match.oddsHome,
-              oddsDraw: match.oddsDraw,
-              oddsAway: match.oddsAway,
-              recommendation: match.recommendations?.[0]?.label,
-              confidence: match.confidence,
-              riskPercentage: match.riskPercentage,
-              valueBetDetected: true,
-              valueBetType: match.valueBets?.[0]?.type,
-              dateTag: match.dateTag,
-              displayDate: match.displayDate,
-              isEstimated: match.isEstimated,
-            });
-            if (success) published++;
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
+          const predictions = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            recommendation: m.recommendations?.[0]?.label,
+            confidence: m.confidence,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            valueBetDetected: m.valueBets?.length > 0,
+            valueBetType: m.valueBets?.[0]?.type,
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
+
+          const telegramResult = await publishValueBetsToTelegram(predictions);
+          const valueBetsCount = predictions.filter(p => 
+            p.valueBetDetected && 
+            p.confidence !== 'low' && 
+            isSafeOrModerate(p.riskPercentage)
+          ).length;
           
           result = { 
             telegram: { 
-              success: published > 0, 
-              published,
-              total: valueBets.length,
-              message: `${published} value bet(s) publié(s) sur Telegram`
+              success: telegramResult, 
+              total: valueBetsCount,
+              message: telegramResult 
+                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
+                : 'Erreur ou aucun value bet à publier'
             } 
           };
         } catch (e: any) {

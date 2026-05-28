@@ -1,17 +1,10 @@
 /**
  * Telegram Service - Publication automatique des pronostics
  * 
- * Utilise Telegram Bot API pour envoyer les pronostics
- * Documentation: https://core.telegram.org/bots/api
- * 
- * CRÉER UN BOT TELEGRAM:
- * 1. Ouvrir Telegram et chercher @BotFather
- * 2. Envoyer /newbot
- * 3. Choisir un nom (ex: "Pronostics Bot")
- * 4. Choisir un username (ex: "mon_pronostics_bot")
- * 5. Récupérer le TOKEN fourni
- * 6. Créer un groupe/canal et ajouter le bot
- * 7. Récupérer le CHAT_ID (voir fonction getChatId ci-dessous)
+ * Format des messages ergonomique et clair avec:
+ * - Date et heure de la rencontre
+ * - Pourcentage de réussite du pronostic
+ * - Niveau de risque visuel
  */
 
 // Configuration Telegram
@@ -19,13 +12,10 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Seuils de risque
-// Safe: ≤30% (🟢)
-// Modéré: 31-50% (🟡)
-// Risqué: >50% (🔴) - EXCLU des publications automatiques
-const MAX_RISK_PERCENTAGE = 50; // On publie safe + modéré uniquement
+const MAX_RISK_PERCENTAGE = 50; // Safe + Modéré uniquement
 
 /**
- * Vérifie si un pronostic est safe ou modéré (publiable sur Telegram)
+ * Vérifie si un pronostic est publiable (safe ou modéré)
  */
 export function isSafeOrModerate(riskPercentage?: number): boolean {
   if (riskPercentage === undefined) return false;
@@ -45,27 +35,63 @@ export function getRiskLabel(riskPercentage?: number): string {
 // Emojis pour les sports
 const SPORT_EMOJIS: Record<string, string> = {
   // Football
-  'Foot': '⚽',
-  'Football': '⚽',
-  'football': '⚽',
-  'Soccer': '⚽',
-  'soccer': '⚽',
+  'Foot': '⚽', 'Football': '⚽', 'football': '⚽', 'Soccer': '⚽', 'soccer': '⚽',
   // Basket
-  'Basket': '🏀',
-  'basket': '🏀',
-  'Basketball': '🏀',
-  'basketball': '🏀',
-  'NBA': '🏀',
-  'nba': '🏀',
-  'BASKET': '🏀',
+  'Basket': '🏀', 'basket': '🏀', 'Basketball': '🏀', 'basketball': '🏀', 
+  'NBA': '🏀', 'nba': '🏀', 'BASKET': '🏀',
   // Hockey
-  'NHL': '🏒',
-  'Hockey': '🏒',
-  'hockey': '🏒',
-  // Autres
-  'Tennis': '🎾',
-  'tennis': '🎾',
+  'NHL': '🏒', 'Hockey': '🏒', 'hockey': '🏒',
+  // Tennis
+  'Tennis': '🎾', 'tennis': '🎾',
 };
+
+/**
+ * Crée une barre de progression visuelle
+ */
+function createProgressBar(percentage: number, length: number = 10): string {
+  const filled = Math.round((percentage / 100) * length);
+  const empty = length - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
+/**
+ * Formate la date et l'heure pour l'affichage
+ */
+function formatDateTime(dateStr: string, displayDate?: string): { date: string; time: string } {
+  try {
+    // Si on a déjà un displayDate formaté, l'utiliser
+    if (displayDate) {
+      const parts = displayDate.split(',');
+      if (parts.length >= 2) {
+        return { date: parts[0].trim(), time: parts[1].trim() };
+      }
+      return { date: displayDate, time: '' };
+    }
+    
+    // Sinon parser la date
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return { date: 'Date inconnue', time: '' };
+    }
+    
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    
+    const dayName = dayNames[date.getDay()];
+    const day = date.getDate();
+    const month = monthNames[date.getMonth()];
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    
+    return { 
+      date: `${dayName} ${day} ${month}`, 
+      time: `${hours}h${minutes}` 
+    };
+  } catch {
+    return { date: 'Date inconnue', time: '' };
+  }
+}
 
 /**
  * Envoie un message sur Telegram
@@ -75,7 +101,7 @@ export async function sendTelegramMessage(text: string, options?: {
   disable_notification?: boolean;
 }): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-    console.warn('⚠️ Telegram non configuré (TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID manquant)');
+    console.warn('⚠️ Telegram non configuré');
     return false;
   }
 
@@ -84,9 +110,7 @@ export async function sendTelegramMessage(text: string, options?: {
     
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: TELEGRAM_CHAT_ID,
         text,
@@ -111,7 +135,7 @@ export async function sendTelegramMessage(text: string, options?: {
 }
 
 /**
- * Formate un pronostic pour Telegram
+ * Formate un pronostic individuel (format ergonomique)
  */
 function formatPrediction(prediction: {
   homeTeam: string;
@@ -125,6 +149,7 @@ function formatPrediction(prediction: {
   recommendation?: string;
   confidence?: string;
   riskPercentage?: number;
+  winProbability?: number;
   valueBetDetected?: boolean;
   valueBetType?: string | null;
   isLive?: boolean;
@@ -133,22 +158,29 @@ function formatPrediction(prediction: {
   displayDate?: string;
 }): string {
   const sportEmoji = SPORT_EMOJIS[prediction.sport] || '🏟️';
+  const { date, time } = formatDateTime(prediction.date, prediction.displayDate);
   
-  // En-tête
-  let message = '';
+  // En-tête avec bordure
+  let message = '━━━━━━━━━━━━━━━━━━━━━\n';
   
+  // Ligne titre avec sport et value bet
   if (prediction.valueBetDetected) {
-    message += '🔔 <b>VALUE BET DÉTECTÉ !</b>\n\n';
+    message += `🔔 <b>VALUE BET</b> ${sportEmoji}\n`;
+  } else {
+    message += `${sportEmoji} <b>${prediction.sport.toUpperCase()}</b>\n`;
   }
   
-  // Titre du match
-  message += `${sportEmoji} <b>${prediction.homeTeam} vs ${prediction.awayTeam}</b>\n`;
+  message += '━━━━━━━━━━━━━━━━━━━━━\n\n';
   
-  // Statut live ou date
-  if (prediction.isLive) {
-    message += '🔴 <b>MATCH EN DIRECT</b>\n';
-  } else if (prediction.displayDate) {
-    message += `📅 ${prediction.displayDate}\n`;
+  // Match
+  message += `🏟️ <b>${prediction.homeTeam}</b>\n`;
+  message += `    <b>VS</b>\n`;
+  message += `🏟️ <b>${prediction.awayTeam}</b>\n\n`;
+  
+  // Date et heure
+  message += `📅 <b>${date}</b>\n`;
+  if (time) {
+    message += `⏰ <b>${time}</b>\n`;
   }
   
   // Ligue
@@ -160,43 +192,51 @@ function formatPrediction(prediction: {
   
   // Cotes
   if (prediction.oddsHome && prediction.oddsAway) {
+    message += `📊 <b>COTES</b>\n`;
     if (prediction.oddsDraw) {
-      message += `📈 <b>Cotes:</b> 1: ${prediction.oddsHome.toFixed(2)} | X: ${prediction.oddsDraw.toFixed(2)} | 2: ${prediction.oddsAway.toFixed(2)}\n`;
+      message += `    1️⃣ ${prediction.oddsHome.toFixed(2)}  |  ❌ ${prediction.oddsDraw.toFixed(2)}  |  2️⃣ ${prediction.oddsAway.toFixed(2)}\n`;
     } else {
-      message += `📈 <b>Cotes:</b> 1: ${prediction.oddsHome.toFixed(2)} | 2: ${prediction.oddsAway.toFixed(2)}\n`;
+      message += `    1️⃣ ${prediction.oddsHome.toFixed(2)}  |  2️⃣ ${prediction.oddsAway.toFixed(2)}\n`;
     }
+    message += '\n';
   }
   
-  // Pronostic
+  // Pronostic avec mise en évidence
   if (prediction.recommendation) {
-    const confidenceEmoji = prediction.confidence === 'very_high' ? '🔥' 
-                          : prediction.confidence === 'high' ? '✅' 
-                          : prediction.confidence === 'medium' ? '⚡' : '⚠️';
-    message += `${confidenceEmoji} <b>Pronostic:</b> ${prediction.recommendation}\n`;
+    message += `🎯 <b>PRONOSTIC</b>\n`;
+    message += `    ▶️ <b>${prediction.recommendation}</b>\n\n`;
   }
   
-  // Risque
+  // Pourcentage de réussite
+  const winProb = prediction.winProbability || (prediction.riskPercentage !== undefined ? 100 - prediction.riskPercentage : null);
+  if (winProb !== null && winProb !== undefined) {
+    const probEmoji = winProb >= 70 ? '🔥' : winProb >= 50 ? '✅' : '⚡';
+    message += `${probEmoji} <b>RÉUSSITE</b>\n`;
+    message += `    ${createProgressBar(winProb)} <b>${winProb}%</b>\n\n`;
+  }
+  
+  // Niveau de risque
   if (prediction.riskPercentage !== undefined) {
-    const riskEmoji = prediction.riskPercentage <= 30 ? '🟢' 
-                    : prediction.riskPercentage <= 50 ? '🟡' : '🔴';
-    message += `⚖️ <b>Risque:</b> ${riskEmoji} ${prediction.riskPercentage}%\n`;
+    const riskEmoji = prediction.riskPercentage <= 30 ? '🟢' : '🟡';
+    const riskLabel = prediction.riskPercentage <= 30 ? 'SAFE' : 'MODÉRÉ';
+    message += `${riskEmoji} <b>RISQUE: ${riskLabel}</b> (${prediction.riskPercentage}%)\n`;
   }
   
-  // Value bet
+  // Value bet info
   if (prediction.valueBetDetected && prediction.valueBetType) {
-    message += `💎 <b>Value Bet:</b> ${prediction.valueBetType}\n`;
+    message += `💎 <b>Value: ${prediction.valueBetType}</b>\n`;
   }
   
-  // Avertissement si cotes estimées
+  // Avertissement
   if (prediction.isEstimated) {
-    message += '\n⚠️ <i>Cotes estimées - Utilisez avec prudence</i>\n';
+    message += `\n⚠️ <i>Cotes estimées</i>\n`;
   }
   
   return message;
 }
 
 /**
- * Publie un pronostic sur Telegram
+ * Publie un pronostic individuel sur Telegram
  */
 export async function publishPredictionToTelegram(prediction: {
   homeTeam: string;
@@ -210,6 +250,7 @@ export async function publishPredictionToTelegram(prediction: {
   recommendation?: string;
   confidence?: string;
   riskPercentage?: number;
+  winProbability?: number;
   valueBetDetected?: boolean;
   valueBetType?: string | null;
   isLive?: boolean;
@@ -222,80 +263,177 @@ export async function publishPredictionToTelegram(prediction: {
 }
 
 /**
- * Publie un résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
+ * Publie un résumé quotidien ergonomique
  */
 export async function publishDailySummaryToTelegram(predictions: Array<{
   homeTeam: string;
   awayTeam: string;
   sport: string;
+  league?: string;
+  date: string;
+  displayDate?: string;
   recommendation?: string;
   confidence?: string;
-  valueBetDetected?: boolean;
   riskPercentage?: number;
+  winProbability?: number;
+  valueBetDetected?: boolean;
+  oddsHome?: number;
+  oddsAway?: number;
 }>): Promise<boolean> {
-  // Filtrer UNIQUEMENT les pronostics safe et modéré
-  const filteredPredictions = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
-  const today = new Date().toLocaleDateString('fr-FR', { 
-    weekday: 'long', 
-    day: 'numeric', 
-    month: 'long' 
-  });
-
-  // Si aucun pronostic safe/modéré, ne rien publier
-  if (filteredPredictions.length === 0) {
+  // Filtrer safe et modéré
+  const filtered = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
+  
+  if (filtered.length === 0) {
     console.log('⚠️ Aucun pronostic safe/modéré à publier');
     return false;
   }
 
+  const today = new Date().toLocaleDateString('fr-FR', { 
+    weekday: 'long', day: 'numeric', month: 'long' 
+  });
+
+  // Stats
+  const safeCount = filtered.filter(p => (p.riskPercentage || 100) <= 30).length;
+  const moderateCount = filtered.length - safeCount;
+  const valueBetsCount = filtered.filter(p => p.valueBetDetected).length;
+
   // Grouper par sport
-  const bySport: Record<string, typeof filteredPredictions> = {};
-  filteredPredictions.forEach(p => {
+  const bySport: Record<string, typeof filtered> = {};
+  filtered.forEach(p => {
     const sport = p.sport || 'Autre';
     if (!bySport[sport]) bySport[sport] = [];
     bySport[sport].push(p);
   });
 
-  // Stats par niveau de risque
-  const safeCount = filteredPredictions.filter(p => (p.riskPercentage || 100) <= 30).length;
-  const moderateCount = filteredPredictions.filter(p => {
-    const risk = p.riskPercentage || 100;
-    return risk > 30 && risk <= 50;
-  }).length;
-
-  let message = `📢 <b>PROGRAMME DU JOUR</b>\n`;
-  message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n`;
-  message += `🎯 ${filteredPredictions.length} pronostic${filteredPredictions.length > 1 ? 's' : ''} disponible${filteredPredictions.length > 1 ? 's' : ''}\n`;
-  message += `🟢 Safe: ${safeCount} | 🟡 Modéré: ${moderateCount}\n\n`;
+  // Construire le message
+  let message = '';
   
-  // Stats par sport
+  // En-tête
+  message += '╔════════════════════════╗\n';
+  message += `║    📢 <b>PRONOSTICS DU JOUR</b>    ║\n`;
+  message += '╚════════════════════════╝\n\n';
+  
+  message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
+  
+  // Stats globales
+  message += `🎯 <b>${filtered.length} PRONOSTICS</b>\n`;
+  message += `    🟢 Safe: ${safeCount}\n`;
+  message += `    🟡 Modéré: ${moderateCount}\n`;
+  if (valueBetsCount > 0) {
+    message += `    💎 Value Bets: ${valueBetsCount}\n`;
+  }
+  message += '\n';
+  
+  // Détail par sport
   for (const [sport, matches] of Object.entries(bySport)) {
     const emoji = SPORT_EMOJIS[sport] || '🏟️';
-    const valueBets = matches.filter(m => m.valueBetDetected).length;
+    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `${emoji} <b>${sport.toUpperCase()}</b> (${matches.length})\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
     
-    message += `${emoji} <b>${sport}</b>: ${matches.length} match${matches.length > 1 ? 's' : ''}`;
-    if (valueBets > 0) {
-      message += ` | 💎 ${valueBets} value bet${valueBets > 1 ? 's' : ''}`;
+    // Lister les matchs
+    matches.slice(0, 8).forEach((m, i) => {
+      const { time } = formatDateTime(m.date, m.displayDate);
+      const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
+      const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+      const vbEmoji = m.valueBetDetected ? '💎 ' : '';
+      
+      message += `<b>${i + 1}.</b> ${vbEmoji}${m.homeTeam} vs ${m.awayTeam}\n`;
+      if (time) {
+        message += `    ⏰ ${time}`;
+      }
+      if (m.recommendation) {
+        message += ` | 🎯 ${m.recommendation}`;
+      }
+      message += `\n    ${riskEmoji} ${winProb}% réussite\n\n`;
+    });
+    
+    if (matches.length > 8) {
+      message += `    <i>... et ${matches.length - 8} autres</i>\n\n`;
     }
-    message += '\n';
   }
   
-  // Top value bets
-  const topValueBets = predictions.filter(p => p.valueBetDetected && p.confidence !== 'low').slice(0, 3);
-  if (topValueBets.length > 0) {
-    message += '\n💎 <b>TOP VALUE BETS:</b>\n';
-    topValueBets.forEach((p, i) => {
-      message += `${i + 1}. ${p.homeTeam} vs ${p.awayTeam}\n`;
-      if (p.recommendation) {
-        message += `   → ${p.recommendation}\n`;
-      }
-    });
-  }
+  // Pied de message
+  message += '━━━━━━━━━━━━━━━━━━━━━\n';
+  message += '🟢 Safe: Risque ≤ 30%\n';
+  message += '🟡 Modéré: Risque 31-50%\n';
+  message += '💎 Value Bet détecté\n';
 
   return sendTelegramMessage(message);
 }
 
 /**
- * Publie une alerte live sur Telegram
+ * Publie les value bets uniquement
+ */
+export async function publishValueBetsToTelegram(predictions: Array<{
+  homeTeam: string;
+  awayTeam: string;
+  sport: string;
+  league?: string;
+  date: string;
+  displayDate?: string;
+  recommendation?: string;
+  confidence?: string;
+  riskPercentage?: number;
+  winProbability?: number;
+  valueBetDetected?: boolean;
+  valueBetType?: string | null;
+  oddsHome?: number;
+  oddsAway?: number;
+  oddsDraw?: number | null;
+}>): Promise<boolean> {
+  // Filtrer: value bet + safe/modéré
+  const valueBets = predictions.filter(p => 
+    p.valueBetDetected && 
+    p.confidence !== 'low' && 
+    isSafeOrModerate(p.riskPercentage)
+  );
+
+  if (valueBets.length === 0) {
+    console.log('⚠️ Aucun value bet safe/modéré');
+    return false;
+  }
+
+  let message = '';
+  
+  message += '╔════════════════════════╗\n';
+  message += `║   💎 <b>VALUE BETS DU JOUR</b>   ║\n`;
+  message += '╚════════════════════════╝\n\n';
+  
+  message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
+
+  valueBets.slice(0, 5).forEach((m, i) => {
+    const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
+    const { time } = formatDateTime(m.date, m.displayDate);
+    const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+    
+    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+    message += `${sportEmoji} ${m.sport}`;
+    if (m.league) message += ` | ${m.league}`;
+    message += `\n`;
+    
+    if (time) message += `⏰ ${time} | `;
+    message += `🎯 <b>${m.recommendation || 'N/A'}</b>\n`;
+    
+    if (m.oddsHome && m.oddsAway) {
+      message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
+      if (m.oddsDraw) message += ` X:${m.oddsDraw.toFixed(2)}`;
+      message += ` 2:${m.oddsAway.toFixed(2)}\n`;
+    }
+    
+    message += `🔥 Réussite: <b>${winProb}%</b>\n`;
+    if (m.valueBetType) {
+      message += `💎 Type: ${m.valueBetType}\n`;
+    }
+    message += '\n';
+  });
+
+  return sendTelegramMessage(message);
+}
+
+/**
+ * Publie une alerte live
  */
 export async function publishLiveAlertToTelegram(match: {
   homeTeam: string;
@@ -308,11 +446,14 @@ export async function publishLiveAlertToTelegram(match: {
 }): Promise<boolean> {
   const sportEmoji = SPORT_EMOJIS[match.sport] || '🏟️';
   
-  let message = `🚨 <b>MATCH EN DIRECT !</b>\n\n`;
-  message += `${sportEmoji} <b>${match.homeTeam} vs ${match.awayTeam}</b>\n`;
+  let message = '━━━━━━━━━━━━━━━━━━━━━\n';
+  message += `🔴 <b>MATCH EN DIRECT</b>\n`;
+  message += '━━━━━━━━━━━━━━━━━━━━━\n\n';
+  
+  message += `${sportEmoji} <b>${match.homeTeam} vs ${match.awayTeam}</b>\n\n`;
   
   if (match.homeScore !== undefined && match.awayScore !== undefined) {
-    message += `📊 <b>Score:</b> ${match.homeScore} - ${match.awayScore}\n`;
+    message += `📊 <b>SCORE: ${match.homeScore} - ${match.awayScore}</b>\n`;
   }
   
   if (match.clock) {
@@ -320,14 +461,14 @@ export async function publishLiveAlertToTelegram(match: {
   }
   
   if (match.recommendation) {
-    message += `\n💡 <b>Pronostic:</b> ${match.recommendation}\n`;
+    message += `\n💡 <b>Pronostic: ${match.recommendation}</b>\n`;
   }
 
   return sendTelegramMessage(message);
 }
 
 /**
- * Publie les résultats du jour sur Telegram
+ * Publie les résultats
  */
 export async function publishResultsToTelegram(results: {
   total: number;
@@ -341,16 +482,24 @@ export async function publishResultsToTelegram(results: {
 }): Promise<boolean> {
   const emoji = results.winRate >= 60 ? '🎉' : results.winRate >= 40 ? '📊' : '📉';
   
-  let message = `${emoji} <b>RÉSULTATS DU JOUR</b>\n\n`;
+  let message = '';
+  message += '╔════════════════════════╗\n';
+  message += `║   ${emoji} <b>RÉSULTATS DU JOUR</b>    ║\n`;
+  message += '╚════════════════════════╝\n\n';
+  
   message += `✅ <b>${results.correct}/${results.total}</b> pronostics corrects\n`;
-  message += `📈 Taux de réussite: <b>${results.winRate}%</b>\n\n`;
+  message += `📈 Taux: <b>${results.winRate}%</b>\n`;
+  message += `    ${createProgressBar(results.winRate)}\n\n`;
   
   if (results.bestPredictions.length > 0) {
-    message += `<b>Meilleures prédictions:</b>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>DÉTAILS</b>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    
     results.bestPredictions.slice(0, 5).forEach(p => {
       const resultEmoji = p.result === 'won' ? '✅' : '❌';
-      message += `${resultEmoji} ${p.match}\n`;
-      message += `   <i>${p.prediction}</i>\n`;
+      message += `${resultEmoji} <b>${p.match}</b>\n`;
+      message += `    🎯 ${p.prediction}\n\n`;
     });
   }
 
@@ -358,43 +507,29 @@ export async function publishResultsToTelegram(results: {
 }
 
 /**
- * Récupère le CHAT_ID Telegram
- * À appeler une seule fois pour configurer le bot
+ * Récupère le CHAT_ID
  */
 export async function getTelegramChatId(): Promise<string | null> {
-  if (!TELEGRAM_BOT_TOKEN) {
-    console.error('❌ TELEGRAM_BOT_TOKEN non configuré');
-    return null;
-  }
+  if (!TELEGRAM_BOT_TOKEN) return null;
 
   try {
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
     const response = await fetch(url);
     const data = await response.json();
 
-    if (!data.ok || !data.result || data.result.length === 0) {
-      console.log('⚠️ Aucun message trouvé. Envoyez un message au bot ou ajoutez-le à un groupe.');
-      return null;
-    }
+    if (!data.ok || !data.result?.length) return null;
 
-    // Récupérer le chat_id du dernier message
     const lastUpdate = data.result[data.result.length - 1];
     const chatId = lastUpdate.message?.chat?.id || lastUpdate.my_chat_member?.chat?.id;
 
-    if (chatId) {
-      console.log(`✅ CHAT_ID trouvé: ${chatId}`);
-      return String(chatId);
-    }
-
-    return null;
-  } catch (error) {
-    console.error('❌ Erreur récupération CHAT_ID:', error);
+    return chatId ? String(chatId) : null;
+  } catch {
     return null;
   }
 }
 
 /**
- * Teste la connexion Telegram
+ * Teste la connexion
  */
 export async function testTelegramConnection(): Promise<{
   success: boolean;
@@ -407,34 +542,21 @@ export async function testTelegramConnection(): Promise<{
   }
 
   try {
-    // Vérifier le bot
     const botUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`;
     const botResponse = await fetch(botUrl);
     const botData = await botResponse.json();
 
-    if (!botData.ok) {
-      return { success: false, error: botData.description };
-    }
+    if (!botData.ok) return { success: false, error: botData.description };
 
     const botName = botData.result.username;
 
-    // Vérifier le chat_id
     if (!TELEGRAM_CHAT_ID) {
       const chatId = await getTelegramChatId();
-      if (chatId) {
-        return { success: true, chatId, botName };
-      }
-      return { 
-        success: false, 
-        botName, 
-        error: 'TELEGRAM_CHAT_ID non configuré. Envoyez un message au bot puis appelez getTelegramChatId()'
-      };
+      return chatId ? { success: true, chatId, botName } : { success: false, botName, error: 'CHAT_ID non trouvé' };
     }
 
-    // Tester l'envoi
     const testSent = await sendTelegramMessage('🤖 Test de connexion réussi !');
     return { success: testSent, chatId: TELEGRAM_CHAT_ID, botName };
-
   } catch (error) {
     return { success: false, error: String(error) };
   }
@@ -444,8 +566,10 @@ export default {
   sendTelegramMessage,
   publishPredictionToTelegram,
   publishDailySummaryToTelegram,
+  publishValueBetsToTelegram,
   publishLiveAlertToTelegram,
   publishResultsToTelegram,
   getTelegramChatId,
   testTelegramConnection,
+  isSafeOrModerate,
 };
