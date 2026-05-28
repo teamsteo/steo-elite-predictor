@@ -44,14 +44,27 @@ export function getRiskLabel(riskPercentage?: number): string {
 
 // Emojis pour les sports
 const SPORT_EMOJIS: Record<string, string> = {
+  // Football
   'Foot': '⚽',
+  'Football': '⚽',
+  'football': '⚽',
+  'Soccer': '⚽',
+  'soccer': '⚽',
+  // Basket
   'Basket': '🏀',
+  'basket': '🏀',
+  'Basketball': '🏀',
+  'basketball': '🏀',
   'NBA': '🏀',
+  'nba': '🏀',
+  'BASKET': '🏀',
+  // Hockey
   'NHL': '🏒',
   'Hockey': '🏒',
-  'football': '⚽',
-  'basketball': '🏀',
   'hockey': '🏒',
+  // Autres
+  'Tennis': '🎾',
+  'tennis': '🎾',
 };
 
 /**
