@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 
-// Force rebuild v5 - Utiliser l'API directement
+// Force rebuild v6 - Envoie les VRAIS pronostics du jour avec format ergonomique
 /**
  * GET /api/telegram/test - Envoie les VRAIS pronostics du jour
+ * Utilise le nouveau format ergonomique
  */
 export async function GET() {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -11,7 +12,7 @@ export async function GET() {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     return NextResponse.json({
       success: false,
-      error: 'Telegram non configuré',
+      error: 'TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID non configuré dans Vercel',
     }, { status: 500 });
   }
 
@@ -74,7 +75,8 @@ export async function GET() {
     });
 
     const sportEmojis: Record<string, string> = {
-      'Foot': '⚽', 'Football': '⚽', 'Basket': '🏀', 'NBA': '🏀', 'NHL': '🏒', 'Hockey': '🏒'
+      'Foot': '⚽', 'Football': '⚽', 'Basket': '🏀', 'NBA': '🏀', 'NHL': '🏒', 'Hockey': '🏒',
+      'Tennis': '🎾', 'MLB': '⚾', 'NFL': '🏈'
     };
 
     for (const [sport, matchs] of Object.entries(bySport)) {
