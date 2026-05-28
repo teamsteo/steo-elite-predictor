@@ -18,6 +18,11 @@ import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
 import SupabaseStore from '@/lib/db-supabase';
 import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
 import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
+import { 
+  publishDailySummaryToDiscord, 
+  publishPredictionToDiscord 
+} from '@/lib/discordService';
+import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
@@ -769,9 +774,79 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'discord-summary':
+        // Publier le résumé quotidien sur Discord
+        try {
+          const matches = await getMatchesWithRealOdds();
+          const predictions = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            recommendation: m.recommendations?.[0]?.label,
+            confidence: m.confidence,
+            valueBetDetected: m.valueBets?.length > 0,
+          }));
+          const discordResult = await publishDailySummaryToDiscord(predictions);
+          result = { 
+            discord: { 
+              success: discordResult, 
+              count: predictions.length,
+              message: discordResult ? 'Résumé publié sur Discord' : 'Erreur publication Discord'
+            } 
+          };
+        } catch (e: any) {
+          result = { discord: { success: false, error: e.message } };
+        }
+        break;
+        
+      case 'discord-valuebets':
+        // Publier uniquement les value bets sur Discord
+        try {
+          const matches = await getMatchesWithRealOdds();
+          const valueBets = matches.filter((m: any) => 
+            m.valueBets?.length > 0 && m.confidence !== 'low'
+          );
+          
+          let published = 0;
+          for (const match of valueBets.slice(0, 5)) {
+            const success = await publishPredictionToDiscord({
+              homeTeam: match.homeTeam,
+              awayTeam: match.awayTeam,
+              sport: match.sport,
+              league: match.league,
+              date: match.date,
+              oddsHome: match.oddsHome,
+              oddsDraw: match.oddsDraw,
+              oddsAway: match.oddsAway,
+              recommendation: match.recommendations?.[0]?.label,
+              confidence: match.confidence,
+              riskPercentage: match.riskPercentage,
+              valueBetDetected: true,
+              valueBetType: match.valueBets?.[0]?.type,
+              dateTag: match.dateTag,
+              displayDate: match.displayDate,
+              isEstimated: match.isEstimated,
+            });
+            if (success) published++;
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+          
+          result = { 
+            discord: { 
+              success: published > 0, 
+              published,
+              total: valueBets.length,
+              message: `${published} value bet(s) publié(s) sur Discord`
+            } 
+          };
+        } catch (e: any) {
+          result = { discord: { success: false, error: e.message } };
+        }
+        break;
+        
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'discord-summary', 'discord-valuebets'] },
           { status: 400 }
         );
     }
