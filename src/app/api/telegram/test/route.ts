@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+// Force rebuild v2 - $(date +%s)
 /**
  * GET /api/telegram/test - Test direct de Telegram
  * Envoie un message test sur Telegram
