@@ -3,7 +3,8 @@ import {
   publishPredictionToTelegram, 
   publishDailySummaryToTelegram,
   testTelegramConnection,
-  getTelegramChatId
+  getTelegramChatId,
+  isSafeOrModerate
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
@@ -52,7 +53,7 @@ export async function GET(request: Request) {
       }, { status: 500 });
     }
 
-    // Résumé quotidien
+    // Résumé quotidien (UNIQUEMENT safe et modéré)
     if (type === 'summary') {
       const matches = await getMatchesWithRealOdds();
       
@@ -63,25 +64,36 @@ export async function GET(request: Request) {
         recommendation: m.recommendations?.[0]?.label,
         confidence: m.confidence,
         valueBetDetected: m.valueBets?.length > 0,
+        riskPercentage: m.riskPercentage,
       }));
+
+      // Filtrer safe et modéré uniquement
+      const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+      const excludedCount = predictions.length - filteredCount;
 
       const success = await publishDailySummaryToTelegram(predictions);
 
       return NextResponse.json({
         success,
         message: success 
-          ? `Résumé publié: ${predictions.length} matchs` 
+          ? `Résumé publié: ${filteredCount} pronostics (safe/modéré)` 
           : 'Erreur lors de la publication',
-        count: predictions.length,
+        total: predictions.length,
+        published: filteredCount,
+        excluded: excludedCount,
+        excludedReason: 'Risque > 50% (risqué)',
       });
     }
 
-    // Value bets uniquement
+    // Value bets uniquement (UNIQUEMENT safe et modéré)
     if (type === 'valuebets') {
       const matches = await getMatchesWithRealOdds();
       
+      // Filtrer: value bet + confiance non low + risque safe/modéré
       const valueBets = matches.filter((m: any) => 
-        m.valueBets?.length > 0 && m.confidence !== 'low'
+        m.valueBets?.length > 0 && 
+        m.confidence !== 'low' &&
+        isSafeOrModerate(m.riskPercentage)
       );
 
       let published = 0;

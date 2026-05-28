@@ -18,6 +18,30 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Seuils de risque
+// Safe: ≤30% (🟢)
+// Modéré: 31-50% (🟡)
+// Risqué: >50% (🔴) - EXCLU des publications automatiques
+const MAX_RISK_PERCENTAGE = 50; // On publie safe + modéré uniquement
+
+/**
+ * Vérifie si un pronostic est safe ou modéré (publiable sur Telegram)
+ */
+export function isSafeOrModerate(riskPercentage?: number): boolean {
+  if (riskPercentage === undefined) return false;
+  return riskPercentage <= MAX_RISK_PERCENTAGE;
+}
+
+/**
+ * Retourne le label du niveau de risque
+ */
+export function getRiskLabel(riskPercentage?: number): string {
+  if (riskPercentage === undefined) return 'Non évalué';
+  if (riskPercentage <= 30) return 'Safe';
+  if (riskPercentage <= 50) return 'Modéré';
+  return 'Risqué';
+}
+
 // Emojis pour les sports
 const SPORT_EMOJIS: Record<string, string> = {
   'Foot': '⚽',
@@ -185,7 +209,7 @@ export async function publishPredictionToTelegram(prediction: {
 }
 
 /**
- * Publie un résumé quotidien sur Telegram
+ * Publie un résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
  */
 export async function publishDailySummaryToTelegram(predictions: Array<{
   homeTeam: string;
@@ -194,24 +218,41 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   recommendation?: string;
   confidence?: string;
   valueBetDetected?: boolean;
+  riskPercentage?: number;
 }>): Promise<boolean> {
+  // Filtrer UNIQUEMENT les pronostics safe et modéré
+  const filteredPredictions = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
   const today = new Date().toLocaleDateString('fr-FR', { 
     weekday: 'long', 
     day: 'numeric', 
     month: 'long' 
   });
 
+  // Si aucun pronostic safe/modéré, ne rien publier
+  if (filteredPredictions.length === 0) {
+    console.log('⚠️ Aucun pronostic safe/modéré à publier');
+    return false;
+  }
+
   // Grouper par sport
-  const bySport: Record<string, typeof predictions> = {};
-  predictions.forEach(p => {
+  const bySport: Record<string, typeof filteredPredictions> = {};
+  filteredPredictions.forEach(p => {
     const sport = p.sport || 'Autre';
     if (!bySport[sport]) bySport[sport] = [];
     bySport[sport].push(p);
   });
 
+  // Stats par niveau de risque
+  const safeCount = filteredPredictions.filter(p => (p.riskPercentage || 100) <= 30).length;
+  const moderateCount = filteredPredictions.filter(p => {
+    const risk = p.riskPercentage || 100;
+    return risk > 30 && risk <= 50;
+  }).length;
+
   let message = `📢 <b>PROGRAMME DU JOUR</b>\n`;
   message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n`;
-  message += `🎯 ${predictions.length} pronostic${predictions.length > 1 ? 's' : ''} disponible${predictions.length > 1 ? 's' : ''}\n\n`;
+  message += `🎯 ${filteredPredictions.length} pronostic${filteredPredictions.length > 1 ? 's' : ''} disponible${filteredPredictions.length > 1 ? 's' : ''}\n`;
+  message += `🟢 Safe: ${safeCount} | 🟡 Modéré: ${moderateCount}\n\n`;
   
   // Stats par sport
   for (const [sport, matches] of Object.entries(bySport)) {

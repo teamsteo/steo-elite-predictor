@@ -20,7 +20,8 @@ import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
 import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
 import { 
   publishDailySummaryToTelegram, 
-  publishPredictionToTelegram 
+  publishPredictionToTelegram,
+  isSafeOrModerate
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
@@ -775,7 +776,7 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-summary':
-        // Publier le résumé quotidien sur Telegram
+        // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
         try {
           const matches = await getMatchesWithRealOdds();
           const predictions = matches.map((m: any) => ({
@@ -785,13 +786,21 @@ export async function GET(request: NextRequest) {
             recommendation: m.recommendations?.[0]?.label,
             confidence: m.confidence,
             valueBetDetected: m.valueBets?.length > 0,
+            riskPercentage: m.riskPercentage,
           }));
+          
+          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+          
           const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = { 
             telegram: { 
               success: telegramResult, 
-              count: predictions.length,
-              message: telegramResult ? 'Résumé publié sur Telegram' : 'Erreur publication Telegram'
+              total: predictions.length,
+              published: filteredCount,
+              excluded: predictions.length - filteredCount,
+              message: telegramResult 
+                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+                : 'Erreur publication Telegram'
             } 
           };
         } catch (e: any) {
@@ -800,11 +809,14 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-valuebets':
-        // Publier uniquement les value bets sur Telegram
+        // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
         try {
           const matches = await getMatchesWithRealOdds();
+          // Filtrer: value bet + confiance non low + risque safe/modéré
           const valueBets = matches.filter((m: any) => 
-            m.valueBets?.length > 0 && m.confidence !== 'low'
+            m.valueBets?.length > 0 && 
+            m.confidence !== 'low' &&
+            isSafeOrModerate(m.riskPercentage)
           );
           
           let published = 0;
