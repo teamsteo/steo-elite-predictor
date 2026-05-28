@@ -19,9 +19,9 @@ import SupabaseStore from '@/lib/db-supabase';
 import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
 import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
 import { 
-  publishDailySummaryToDiscord, 
-  publishPredictionToDiscord 
-} from '@/lib/discordService';
+  publishDailySummaryToTelegram, 
+  publishPredictionToTelegram 
+} from '@/lib/telegramService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
 // Secret pour sécuriser le cron
@@ -774,8 +774,8 @@ export async function GET(request: NextRequest) {
         }
         break;
         
-      case 'discord-summary':
-        // Publier le résumé quotidien sur Discord
+      case 'telegram-summary':
+        // Publier le résumé quotidien sur Telegram
         try {
           const matches = await getMatchesWithRealOdds();
           const predictions = matches.map((m: any) => ({
@@ -786,21 +786,21 @@ export async function GET(request: NextRequest) {
             confidence: m.confidence,
             valueBetDetected: m.valueBets?.length > 0,
           }));
-          const discordResult = await publishDailySummaryToDiscord(predictions);
+          const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = { 
-            discord: { 
-              success: discordResult, 
+            telegram: { 
+              success: telegramResult, 
               count: predictions.length,
-              message: discordResult ? 'Résumé publié sur Discord' : 'Erreur publication Discord'
+              message: telegramResult ? 'Résumé publié sur Telegram' : 'Erreur publication Telegram'
             } 
           };
         } catch (e: any) {
-          result = { discord: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: e.message } };
         }
         break;
         
-      case 'discord-valuebets':
-        // Publier uniquement les value bets sur Discord
+      case 'telegram-valuebets':
+        // Publier uniquement les value bets sur Telegram
         try {
           const matches = await getMatchesWithRealOdds();
           const valueBets = matches.filter((m: any) => 
@@ -809,7 +809,7 @@ export async function GET(request: NextRequest) {
           
           let published = 0;
           for (const match of valueBets.slice(0, 5)) {
-            const success = await publishPredictionToDiscord({
+            const success = await publishPredictionToTelegram({
               homeTeam: match.homeTeam,
               awayTeam: match.awayTeam,
               sport: match.sport,
@@ -832,21 +832,21 @@ export async function GET(request: NextRequest) {
           }
           
           result = { 
-            discord: { 
+            telegram: { 
               success: published > 0, 
               published,
               total: valueBets.length,
-              message: `${published} value bet(s) publié(s) sur Discord`
+              message: `${published} value bet(s) publié(s) sur Telegram`
             } 
           };
         } catch (e: any) {
-          result = { discord: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: e.message } };
         }
         break;
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'discord-summary', 'discord-valuebets'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets'] },
           { status: 400 }
         );
     }

@@ -38,6 +38,14 @@
     {
       "path": "/api/cron?secret=steo-elite-cron-2026&action=update-fundamentals",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-summary",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-valuebets",
+      "schedule": "0 8 * * *"
     }
   ]
 }
