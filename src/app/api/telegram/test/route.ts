@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 
-// Force rebuild v2 - $(date +%s)
+// Force rebuild v3
 /**
  * GET /api/telegram/test - Test direct de Telegram
- * Envoie un message test sur Telegram
+ * Envoie un message test avec le nouveau format ergonomique
  */
 export async function GET() {
   const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -14,7 +14,6 @@ export async function GET() {
     return NextResponse.json({
       success: false,
       error: 'TELEGRAM_BOT_TOKEN non configuré dans Vercel',
-      help: 'Ajoutez TELEGRAM_BOT_TOKEN dans Settings > Environment Variables'
     }, { status: 500 });
   }
 
@@ -22,40 +21,53 @@ export async function GET() {
     return NextResponse.json({
       success: false,
       error: 'TELEGRAM_CHAT_ID non configuré dans Vercel',
-      help: 'Ajoutez TELEGRAM_CHAT_ID dans Settings > Environment Variables'
     }, { status: 500 });
   }
 
   try {
-    // Message de test
-    const testMessage = `🤖 <b>TEST CONNEXION</b>
+    // Message de test avec le NOUVEAU FORMAT ERGONOMIQUE
+    const testMessage = `╔════════════════════════╗
+║   📢 <b>PRONOSTICS DU JOUR</b>    ║
+╚════════════════════════╝
 
-✅ Le bot Telegram fonctionne parfaitement !
+📅 <b>Jeudi 29 Mai 2026</b>
 
-📅 ${new Date().toLocaleDateString('fr-FR', { 
-  weekday: 'long', 
-  day: 'numeric', 
-  month: 'long',
-  hour: '2-digit',
-  minute: '2-digit'
-})}
+🎯 <b>3 PRONOSTICS</b>
+    🟢 Safe: 2
+    🟡 Modéré: 1
+    💎 Value Bets: 1
 
-🎯 Les pronostics <b>Safe</b> et <b>Modéré</b> seront publiés automatiquement ici.
+━━━━━━━━━━━━━━━━━━━━━
+⚽ <b>FOOTBALL</b> (2)
+━━━━━━━━━━━━━━━━━━━━━
 
+<b>1.</b> 💎 PSG vs Barcelona
+    ⏰ 21h00 | 🎯 Victoire PSG
+    🟢 75% réussite
+
+<b>2.</b> Real Madrid vs Bayern
+    ⏰ 20h45 | 🎯 Over 2.5 buts
+    🟡 62% réussite
+
+━━━━━━━━━━━━━━━━━━━━━
+🏀 <b>BASKET</b> (1)
+━━━━━━━━━━━━━━━━━━━━━
+
+<b>3.</b> Lakers vs Celtics
+    ⏰ 02h30 | 🎯 Lakers +5.5
+    🟢 78% réussite
+
+━━━━━━━━━━━━━━━━━━━━━
 🟢 Safe: Risque ≤ 30%
 🟡 Modéré: Risque 31-50%
-🔴 Risqué: > 50% (non publié)
-
-<i>Message de test envoyé depuis Steo Élite Predictor</i>`;
+💎 Value Bet détecté`;
 
     // Envoyer le message
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: TELEGRAM_CHAT_ID,
         text: testMessage,
@@ -69,23 +81,14 @@ export async function GET() {
       return NextResponse.json({
         success: false,
         error: data.description,
-        telegramError: data
       }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
-      message: '✅ Message envoyé avec succès sur Telegram !',
+      message: '✅ Message de test envoyé avec le NOUVEAU FORMAT !',
       chatId: TELEGRAM_CHAT_ID,
       timestamp: new Date().toISOString(),
-      botInfo: {
-        firstName: data.result?.from?.first_name,
-        username: data.result?.from?.username,
-      },
-      chatInfo: {
-        type: data.result?.chat?.type,
-        title: data.result?.chat?.title,
-      }
     });
 
   } catch (error) {
