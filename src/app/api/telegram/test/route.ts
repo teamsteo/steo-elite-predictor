@@ -22,7 +22,8 @@ export async function GET() {
     
     // Filtrer safe (≤30%) et modéré (31-50%)
     const safeModerate = matches.filter((m: any) => {
-      const risk = m.riskPercentage;
+      // Essayer plusieurs sources pour le risque
+      const risk = m.riskPercentage ?? m.insight?.riskPercentage ?? m.mlAnalysis?.probabilities?.risk;
       if (risk === undefined) return false;
       return risk <= 50;
     });
@@ -32,7 +33,10 @@ export async function GET() {
         success: false,
         message: 'Aucun pronostic safe/modéré disponible',
         total: matches.length,
-        allRisks: matches.map((m: any) => ({ match: `${m.homeTeam} vs ${m.awayTeam}`, risk: m.riskPercentage }))
+        allRisks: matches.map((m: any) => ({ 
+          match: `${m.homeTeam} vs ${m.awayTeam}`, 
+          risk: m.riskPercentage ?? m.insight?.riskPercentage ?? 'N/A'
+        }))
       });
     }
 
@@ -41,8 +45,8 @@ export async function GET() {
       weekday: 'long', day: 'numeric', month: 'long' 
     });
 
-    const safe = safeModerate.filter((m: any) => m.riskPercentage <= 30);
-    const moderate = safeModerate.filter((m: any) => m.riskPercentage > 30);
+    const safe = safeModerate.filter((m: any) => (m.riskPercentage ?? m.insight?.riskPercentage ?? 100) <= 30);
+    const moderate = safeModerate.filter((m: any) => (m.riskPercentage ?? m.insight?.riskPercentage ?? 100) > 30);
     const valueBets = safeModerate.filter((m: any) => m.valueBets?.length > 0);
 
     let message = '';
@@ -77,7 +81,7 @@ export async function GET() {
       message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
       matchs.forEach((m: any, i: number) => {
-        const risk = m.riskPercentage;
+        const risk = m.riskPercentage ?? m.insight?.riskPercentage ?? 50;
         const riskEmoji = risk <= 30 ? '🟢' : '🟡';
         const winProb = 100 - risk;
         const vbEmoji = m.valueBets?.length > 0 ? '💎 ' : '';
@@ -120,12 +124,15 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       message: `✅ ${safeModerate.length} VRAIS pronostics envoyés sur Telegram !`,
-      published: safeModerate.map((m: any) => ({
-        match: `${m.homeTeam} vs ${m.awayTeam}`,
-        sport: m.sport,
-        risk: `${m.riskPercentage}%`,
-        level: m.riskPercentage <= 30 ? 'Safe' : 'Modéré'
-      })),
+      published: safeModerate.map((m: any) => {
+        const risk = m.riskPercentage ?? m.insight?.riskPercentage ?? 0;
+        return {
+          match: `${m.homeTeam} vs ${m.awayTeam}`,
+          sport: m.sport,
+          risk: `${risk}%`,
+          level: risk <= 30 ? 'Safe' : 'Modéré'
+        };
+      }),
       chatId: TELEGRAM_CHAT_ID,
       timestamp: new Date().toISOString(),
     });
