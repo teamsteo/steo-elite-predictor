@@ -49,9 +49,19 @@ export async function GET(request: Request) {
       oddsDraw: m.oddsDraw,
     }));
 
+    // DEBUG: Voir les risques
+    console.log('📊 Prédictions avec risques:', predictions.map(p => ({
+      match: `${p.homeTeam} vs ${p.awayTeam}`,
+      risk: p.riskPercentage,
+      isSafe: isSafeOrModerate(p.riskPercentage)
+    })));
+
     // Filtrer par niveau de risque
     const safeModeratePredictions = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
     const excludedPredictions = predictions.filter(p => !isSafeOrModerate(p.riskPercentage));
+
+    // DEBUG
+    console.log(`✅ Safe/Modéré: ${safeModeratePredictions.length}, ❌ Exclus: ${excludedPredictions.length}`);
 
     if (safeModeratePredictions.length === 0) {
       return NextResponse.json({
@@ -60,6 +70,11 @@ export async function GET(request: Request) {
         total: predictions.length,
         excluded: excludedPredictions.length,
         excludedReason: 'Tous les pronostics ont un risque > 50%',
+        debug: predictions.map(p => ({
+          match: `${p.homeTeam} vs ${p.awayTeam}`,
+          risk: p.riskPercentage,
+          isSafe: isSafeOrModerate(p.riskPercentage)
+        })),
         timestamp: new Date().toISOString()
       });
     }
