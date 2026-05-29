@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
-// Force rebuild v4 - VRAIS MATCHS
+// Force rebuild v5 - Utiliser l'API directement
 /**
  * GET /api/telegram/test - Envoie les VRAIS pronostics du jour
  */
@@ -17,13 +16,17 @@ export async function GET() {
   }
 
   try {
-    // Récupérer les VRAIS matchs
-    const matches = await getMatchesWithRealOdds();
+    // Récupérer les VRAIS matchs via l'API interne (pas de cache)
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app';
+    const matchesResponse = await fetch(`${baseUrl}/api/matches?_=${Date.now()}`, {
+      cache: 'no-store'
+    });
+    const matchesData = await matchesResponse.json();
+    const matches = matchesData.matches || [];
     
     // Filtrer safe (≤30%) et modéré (31-50%)
     const safeModerate = matches.filter((m: any) => {
-      // Essayer plusieurs sources pour le risque
-      const risk = m.riskPercentage ?? m.insight?.riskPercentage ?? m.mlAnalysis?.probabilities?.risk;
+      const risk = m.riskPercentage;
       if (risk === undefined) return false;
       return risk <= 50;
     });
@@ -35,7 +38,7 @@ export async function GET() {
         total: matches.length,
         allRisks: matches.map((m: any) => ({ 
           match: `${m.homeTeam} vs ${m.awayTeam}`, 
-          risk: m.riskPercentage ?? m.insight?.riskPercentage ?? 'N/A'
+          risk: m.riskPercentage ?? 'N/A'
         }))
       });
     }
@@ -45,8 +48,8 @@ export async function GET() {
       weekday: 'long', day: 'numeric', month: 'long' 
     });
 
-    const safe = safeModerate.filter((m: any) => (m.riskPercentage ?? m.insight?.riskPercentage ?? 100) <= 30);
-    const moderate = safeModerate.filter((m: any) => (m.riskPercentage ?? m.insight?.riskPercentage ?? 100) > 30);
+    const safe = safeModerate.filter((m: any) => m.riskPercentage <= 30);
+    const moderate = safeModerate.filter((m: any) => m.riskPercentage > 30);
     const valueBets = safeModerate.filter((m: any) => m.valueBets?.length > 0);
 
     let message = '';
@@ -81,7 +84,7 @@ export async function GET() {
       message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
       matchs.forEach((m: any, i: number) => {
-        const risk = m.riskPercentage ?? m.insight?.riskPercentage ?? 50;
+        const risk = m.riskPercentage;
         const riskEmoji = risk <= 30 ? '🟢' : '🟡';
         const winProb = 100 - risk;
         const vbEmoji = m.valueBets?.length > 0 ? '💎 ' : '';
@@ -124,15 +127,12 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       message: `✅ ${safeModerate.length} VRAIS pronostics envoyés sur Telegram !`,
-      published: safeModerate.map((m: any) => {
-        const risk = m.riskPercentage ?? m.insight?.riskPercentage ?? 0;
-        return {
-          match: `${m.homeTeam} vs ${m.awayTeam}`,
-          sport: m.sport,
-          risk: `${risk}%`,
-          level: risk <= 30 ? 'Safe' : 'Modéré'
-        };
-      }),
+      published: safeModerate.map((m: any) => ({
+        match: `${m.homeTeam} vs ${m.awayTeam}`,
+        sport: m.sport,
+        risk: `${m.riskPercentage}%`,
+        level: m.riskPercentage <= 30 ? 'Safe' : 'Modéré'
+      })),
       chatId: TELEGRAM_CHAT_ID,
       timestamp: new Date().toISOString(),
     });
