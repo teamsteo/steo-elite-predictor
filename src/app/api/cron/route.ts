@@ -1001,9 +1001,92 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'telegram-summary':
+        // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
+        try {
+          const matches = await getMatchesWithRealOdds();
+          const predictions = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            recommendation: m.recommendations?.[0]?.label,
+            confidence: m.confidence,
+            valueBetDetected: m.valueBets?.length > 0,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
+
+          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+
+          const telegramResult = await publishDailySummaryToTelegram(predictions);
+          result = {
+            telegram: {
+              success: telegramResult,
+              total: predictions.length,
+              published: filteredCount,
+              excluded: predictions.length - filteredCount,
+              message: telegramResult
+                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+                : 'Erreur publication Telegram'
+            }
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'telegram-valuebets':
+        // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
+        try {
+          const matches = await getMatchesWithRealOdds();
+          const predictions = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            recommendation: m.recommendations?.[0]?.label,
+            confidence: m.confidence,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            valueBetDetected: m.valueBets?.length > 0,
+            valueBetType: m.valueBets?.[0]?.type,
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
+
+          const telegramResult = await publishValueBetsToTelegram(predictions);
+          const valueBetsCount = predictions.filter(p =>
+            p.valueBetDetected &&
+            p.confidence !== 'low' &&
+            isSafeOrModerate(p.riskPercentage)
+          ).length;
+
+          result = {
+            telegram: {
+              success: telegramResult,
+              total: valueBetsCount,
+              message: telegramResult
+                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
+                : 'Erreur ou aucun value bet à publier'
+            }
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets'] },
           { status: 400 }
         );
     }
