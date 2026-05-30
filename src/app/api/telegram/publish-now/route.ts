@@ -54,6 +54,7 @@ export async function GET(request: Request) {
     console.log('📊 Prédictions avec risques:', predictions.map(p => ({
       match: `${p.homeTeam} vs ${p.awayTeam}`,
       risk: p.riskPercentage,
+      riskType: typeof p.riskPercentage,
       isSafe: isSafeOrModerate(p.riskPercentage)
     })));
 
