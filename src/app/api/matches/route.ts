@@ -3,6 +3,7 @@ import {
   getMatchesWithRealOdds,
   getDataStats
 } from '@/lib/combinedDataService';
+import { loadDailyPredictions } from '@/lib/dailyPredictionService';
 import { getModelStatus } from '@/lib/adaptiveThresholdsML';
 import {
   loadCache,
@@ -288,6 +289,8 @@ function analyzeMatch(match: any): MatchAnalysis {
 
 /**
  * GET - Fetch matches with cached ML predictions
+ * SOURCE UNIQUE: Utilise daily-predictions.json (généré par le cron 05:30)
+ * Même source que Telegram pour cohérence
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -303,7 +306,146 @@ export async function GET(request: Request) {
     }
 
     console.log('🔄 Fetching matches...');
-    
+
+    // ============================================
+    // SOURCE UNIQUE: daily-predictions.json
+    // Même source que Telegram pour COHÉRENCE
+    // ============================================
+    const dailyData = loadDailyPredictions();
+
+    if (dailyData && dailyData.predictions.length > 0) {
+      console.log(`✅ Utilisation prédictions pré-calculées: ${dailyData.predictions.length} matchs`);
+      console.log(`   Source: ${dailyData.generatedAt}`);
+      console.log(`   Sports: ${JSON.stringify(dailyData.summary.bySport)}`);
+
+      // Convertir les prédictions au format attendu par le site web
+      const enrichedMatches = dailyData.predictions.map((p) => {
+        const matchId = p.id;
+
+        return {
+          id: matchId,
+          homeTeam: p.homeTeam,
+          awayTeam: p.awayTeam,
+          sport: p.sport === 'football' ? 'Foot' :
+                 p.sport === 'basketball' ? 'Basket' :
+                 p.sport === 'hockey' ? 'NHL' :
+                 p.sport === 'tennis' ? 'Tennis' : p.sport,
+          league: p.league || p.tournament || 'Unknown',
+          date: p.date,
+          displayDate: p.displayDate,
+
+          // Cotes
+          oddsHome: p.oddsHome,
+          oddsAway: p.oddsAway,
+          oddsDraw: p.oddsDraw,
+
+          // Probabilités
+          probabilities: {
+            home: p.predictedResult === 'home' ? p.winProbability : 100 - p.winProbability,
+            draw: p.oddsDraw ? Math.round(100 / p.oddsDraw) : 28,
+            away: p.predictedResult === 'away' ? p.winProbability : 100 - p.winProbability,
+          },
+          riskPercentage: p.riskPercentage,
+          confidence: p.confidence,
+
+          // Insight
+          insight: {
+            riskPercentage: p.riskPercentage,
+            confidence: p.confidence,
+            valueBetDetected: p.valueBet,
+            valueBetType: p.valueBetType || null,
+          },
+
+          // Recommendation
+          recommendations: [{
+            type: p.predictedResult,
+            label: p.recommendation,
+            probability: p.winProbability,
+            odds: p.predictedResult === 'home' ? p.oddsHome :
+                  p.predictedResult === 'away' ? p.oddsAway : p.oddsDraw,
+            value: p.expectedValue || 0,
+            stake: p.kellyStake || 0,
+            recommendation: p.confidence === 'very_high' || p.confidence === 'high' ? 'strong' : 'moderate',
+          }],
+          valueBets: p.valueBet ? [{
+            type: p.recommendation,
+            edge: p.expectedValue || 0,
+            confidence: p.confidence === 'high' ? 'strong' : 'moderate',
+          }] : [],
+
+          // Goals prediction (estimation)
+          goalsPrediction: {
+            total: 2.5,
+            over25: 55,
+            under25: 45,
+            over15: 75,
+            over35: 35,
+            over45: 20,
+            bothTeamsScore: 50,
+            prediction: 'Over 2.5',
+          },
+
+          // ML Analysis
+          mlAnalysis: {
+            probabilities: {
+              home: p.predictedResult === 'home' ? p.winProbability : 100 - p.winProbability,
+              draw: p.oddsDraw ? Math.round(100 / p.oddsDraw) : 28,
+              away: p.predictedResult === 'away' ? p.winProbability : 100 - p.winProbability,
+            },
+            confidence: p.confidence,
+            factors: p.reasons || [],
+            valueBetDetected: p.valueBet,
+            recommendation: p.recommendation,
+          },
+
+          // Data quality
+          dataQuality: {
+            overall: 'real',
+            overallScore: 85,
+            sources: [p.source],
+            hasRealData: true,
+          },
+
+          // Métadonnées
+          generatedAt: p.generatedAt,
+          source: p.source,
+        };
+      });
+
+      const result = {
+        matches: enrichedMatches,
+        timing: {
+          currentHour: new Date().getUTCHours(),
+          canRefresh: true,
+          nextRefreshTime: '05:30 UTC demain',
+          message: `${enrichedMatches.length} matchs (pré-calculés)`,
+          source: 'daily-predictions.json',
+          generatedAt: dailyData.generatedAt,
+        },
+        dataStats: {
+          total: enrichedMatches.length,
+          withRealOdds: enrichedMatches.filter((m: any) => m.oddsHome && m.oddsHome > 1).length,
+          highConfidence: enrichedMatches.filter((m: any) => m.confidence === 'high' || m.confidence === 'very_high').length,
+          valueBets: dailyData.summary.valueBets,
+          bySport: dailyData.summary.bySport,
+          byRisk: dailyData.summary.byRisk,
+        },
+        mlStatus: getModelStatus(),
+        lastUpdate: new Date().toISOString(),
+      };
+
+      // Update memory cache
+      cachedData = result;
+      lastFetchTime = now;
+
+      return NextResponse.json(result);
+    }
+
+    // ============================================
+    // FALLBACK: Si pas de prédictions pré-calculées
+    // ============================================
+    console.log('⚠️ Pas de prédictions pré-calculées, fallback sur scraping temps réel...');
+
     // Get matches from data source
     const matches = await getMatchesWithRealOdds();
     
