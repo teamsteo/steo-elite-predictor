@@ -24,92 +24,9 @@ import {
   isSafeOrModerate
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
-import { getBatchPredictions, getValueBets } from '@/lib/unifiedPredictionService';
-
-// ============================================
-// TENNIS INTEGRATION - Récupération prédictions tennis
-// ============================================
-
-interface TennisPrediction {
-  matchId: string;
-  player1: string;
-  player2: string;
-  tournament: string;
-  surface: string;
-  round: string;
-  date: string;
-  odds1: number;
-  odds2: number;
-  category: string;
-  prediction: {
-    winner: 'player1' | 'player2';
-    winProbability: number;
-    confidence: 'very_high' | 'high' | 'medium' | 'low';
-    riskPercentage: number;
-  };
-  betting: {
-    recommendedBet: boolean;
-    kellyStake: number;
-    winnerOdds: number;
-    expectedValue: number;
-  };
-}
-
-/**
- * Récupère les prédictions tennis depuis l'API interne
- */
-async function getTennisPredictions(): Promise<TennisPrediction[]> {
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app';
-    const response = await fetch(`${baseUrl}/api/tennis?filter=recommended`, {
-      next: { revalidate: 300 } // Cache 5 minutes
-    });
-    
-    if (!response.ok) {
-      console.log(`⚠️ API Tennis non disponible: ${response.status}`);
-      return [];
-    }
-    
-    const data = await response.json();
-    const predictions = data.predictions || [];
-    
-    console.log(`🎾 ${predictions.length} prédictions tennis récupérées`);
-    return predictions;
-  } catch (error) {
-    console.error('Erreur récupération tennis:', error);
-    return [];
-  }
-}
-
-/**
- * Convertit une prédiction tennis au format Telegram
- */
-function formatTennisForTelegram(tennis: TennisPrediction) {
-  const winner = tennis.prediction.winner;
-  const winnerName = winner === 'player1' ? tennis.player1 : tennis.player2;
-  const winnerOdds = winner === 'player1' ? tennis.odds1 : tennis.odds2;
-  
-  return {
-    homeTeam: tennis.player1,
-    awayTeam: tennis.player2,
-    sport: 'Tennis',
-    league: `${tennis.tournament} (${tennis.category.toUpperCase()})`,
-    date: tennis.date,
-    displayDate: undefined,
-    recommendation: `Victoire ${winnerName}`,
-    confidence: tennis.prediction.confidence,
-    valueBetDetected: tennis.betting.recommendedBet && tennis.betting.expectedValue > 5,
-    valueBetType: tennis.betting.expectedValue > 5 ? `Edge +${tennis.betting.expectedValue}%` : null,
-    riskPercentage: tennis.prediction.riskPercentage,
-    winProbability: tennis.prediction.winProbability,
-    oddsHome: tennis.odds1,
-    oddsAway: tennis.odds2,
-    oddsDraw: null,
-  };
-}
 
 // Secret pour sécuriser le cron
-const CRON_SECRET = process.env.CRON_SECRET || 'secretsteo-elitecron2026';
+const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -859,124 +776,51 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-summary':
-        // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
-        // Inclut: Football + Basket + NHL + Tennis
-        // Utilise le service de prédiction unifié pour calculer riskPercentage et confidence
+        // Publier le résumé quotidien sur Telegram (lit fichier pré-calculé, PAS de scraping)
         try {
-          // 1. Récupérer les matchs Foot/Basket/NHL bruts
-          const rawMatches = await getMatchesWithRealOdds();
+          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+          const dailyData = loadDailyPredictions();
           
-          // Filtrer les matchs à venir (pas terminés, pas en cours)
-          const upcomingMatches = rawMatches.filter((m: any) => 
-            m.status !== 'finished' && !m.isFinished && !m.isLive
-          );
-          
-          console.log(`📊 ${upcomingMatches.length} matchs à venir sur ${rawMatches.length} total`);
-          
-          // 2. Préparer les inputs pour le service ML unifié
-          const matchInputs = upcomingMatches
-            .filter((m: any) => m.oddsHome > 0 && m.oddsAway > 0) // Besoin de cotes
-            .map((m: any) => ({
-              id: m.id,
-              homeTeam: m.homeTeam,
-              awayTeam: m.awayTeam,
-              sport: m.sport === 'Basket' ? 'NBA' as const : m.sport === 'NHL' ? 'NHL' as const : 'Foot' as const,
-              league: m.league || 'Unknown',
-              oddsHome: m.oddsHome || 2.0,
-              oddsDraw: m.oddsDraw || null,
-              oddsAway: m.oddsAway || 2.0,
-            }));
-          
-          // 3. Calculer les prédictions ML
-          console.log(`🧠 Calcul prédictions ML pour ${matchInputs.length} matchs...`);
-          let mlPredictions: any[] = [];
-          
-          if (matchInputs.length > 0) {
-            try {
-              mlPredictions = await getBatchPredictions(matchInputs);
-              console.log(`✅ ${mlPredictions.length} prédictions ML calculées`);
-            } catch (mlError) {
-              console.log(`⚠️ Erreur ML predictions: ${mlError}`);
-            }
+          if (!dailyData) {
+            result = { 
+              telegram: { 
+                success: false, 
+                message: 'Aucune prédiction disponible. Exécutez /api/cron/generate-daily d\'abord.'
+              } 
+            };
+            break;
           }
           
-          // 4. Formater pour Telegram avec riskPercentage calculé
-          const footBasketPredictions = mlPredictions.map((pred: any) => {
-            const match = upcomingMatches.find((m: any) => m.id === pred.matchId) || {};
-            const bet = pred.recommendation?.bet;
-            const confidence = pred.mlPrediction?.confidence || 'low';
-            
-            // riskPercentage = 100 - winProbability
-            let winProb = 50;
-            let riskPercentage = 50;
-            let recommendation = '';
-            
-            if (bet === 'home') {
-              winProb = pred.mlPrediction?.homeProb || 50;
-              recommendation = `Victoire ${pred.homeTeam}`;
-            } else if (bet === 'away') {
-              winProb = pred.mlPrediction?.awayProb || 50;
-              recommendation = `Victoire ${pred.awayTeam}`;
-            } else if (bet === 'draw') {
-              winProb = pred.mlPrediction?.drawProb || 33;
-              recommendation = 'Match Nul';
-            }
-            
-            riskPercentage = Math.round(100 - winProb);
-            
-            // Ajuster riskPercentage selon la confiance
-            if (confidence === 'low') {
-              riskPercentage = Math.max(riskPercentage, 60); // Low = au moins 60% risque
-            }
-            
-            return {
-              homeTeam: pred.homeTeam,
-              awayTeam: pred.awayTeam,
-              sport: pred.sport,
-              league: pred.league,
-              date: match.date || pred.generatedAt,
-              displayDate: match.displayDate,
-              recommendation: bet !== 'avoid' ? recommendation : undefined,
-              confidence: confidence,
-              valueBetDetected: pred.mlPrediction?.valueBet || false,
-              valueBetType: pred.mlPrediction?.valueBetType,
-              riskPercentage: riskPercentage,
-              winProbability: Math.round(winProb),
-              oddsHome: pred.odds?.home,
-              oddsAway: pred.odds?.away,
-              oddsDraw: pred.odds?.draw,
-            };
-          }).filter((p: any) => p.confidence !== 'low'); // Exclure les low confidence
+          // Convertir au format attendu par Telegram
+          const predictions = dailyData.predictions.map(p => ({
+            homeTeam: p.homeTeam,
+            awayTeam: p.awayTeam,
+            sport: p.sport,
+            league: p.league || p.tournament,
+            date: p.date,
+            recommendation: p.recommendation,
+            confidence: p.confidence,
+            valueBetDetected: p.valueBet,
+            valueBetType: p.valueBetType,
+            riskPercentage: p.riskPercentage,
+            winProbability: p.winProbability,
+            oddsHome: p.oddsHome,
+            oddsAway: p.oddsAway,
+            oddsDraw: p.oddsDraw,
+          }));
           
-          // 5. Récupérer les prédictions Tennis
-          console.log('🎾 Récupération prédictions tennis pour Telegram...');
-          const tennisPredictions = await getTennisPredictions();
-          const tennisFormatted = tennisPredictions
-            .filter(t => t.betting.recommendedBet && t.prediction.confidence !== 'low')
-            .map(formatTennisForTelegram);
+          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
           
-          // 6. Combiner toutes les prédictions
-          const allPredictions = [...footBasketPredictions, ...tennisFormatted];
-          
-          const filteredCount = allPredictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
-          const tennisCount = tennisFormatted.filter(p => isSafeOrModerate(p.riskPercentage)).length;
-          
-          console.log(`📊 Total: ${allPredictions.length} prédictions (${footBasketPredictions.length} foot/basket + ${tennisFormatted.length} tennis)`);
-          console.log(`✅ Safe/Modéré: ${filteredCount} (${tennisCount} tennis)`);
-          
-          const telegramResult = await publishDailySummaryToTelegram(allPredictions);
+          const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = { 
             telegram: { 
               success: telegramResult, 
-              total: allPredictions.length,
+              total: predictions.length,
               published: filteredCount,
-              excluded: allPredictions.length - filteredCount,
-              breakdown: {
-                footBasket: footBasketPredictions.length,
-                tennis: tennisFormatted.length
-              },
+              excluded: predictions.length - filteredCount,
+              source: 'precalculated',
               message: telegramResult 
-                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram (${tennisCount} tennis)`
+                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
                 : 'Erreur publication Telegram'
             } 
           };
@@ -986,117 +830,53 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-valuebets':
-        // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
-        // Inclut: Football + Basket + NHL + Tennis
+        // Publier uniquement les value bets sur Telegram (lit fichier pré-calculé, PAS de scraping)
         try {
-          // 1. Récupérer les matchs Foot/Basket/NHL bruts
-          const rawMatches = await getMatchesWithRealOdds();
+          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+          const dailyData = loadDailyPredictions();
           
-          // Filtrer les matchs à venir
-          const upcomingMatches = rawMatches.filter((m: any) => 
-            m.status !== 'finished' && !m.isFinished && !m.isLive
-          );
-          
-          // 2. Préparer les inputs pour le service ML unifié
-          const matchInputs = upcomingMatches
-            .filter((m: any) => m.oddsHome > 0 && m.oddsAway > 0)
-            .map((m: any) => ({
-              id: m.id,
-              homeTeam: m.homeTeam,
-              awayTeam: m.awayTeam,
-              sport: m.sport === 'Basket' ? 'NBA' as const : m.sport === 'NHL' ? 'NHL' as const : 'Foot' as const,
-              league: m.league || 'Unknown',
-              oddsHome: m.oddsHome || 2.0,
-              oddsDraw: m.oddsDraw || null,
-              oddsAway: m.oddsAway || 2.0,
-            }));
-          
-          // 3. Récupérer les value bets avec le service ML
-          console.log(`💎 Calcul value bets ML pour ${matchInputs.length} matchs...`);
-          let mlValueBets: any[] = [];
-          
-          if (matchInputs.length > 0) {
-            try {
-              mlValueBets = await getValueBets(matchInputs);
-              console.log(`✅ ${mlValueBets.length} value bets ML détectés`);
-            } catch (mlError) {
-              console.log(`⚠️ Erreur value bets: ${mlError}`);
-            }
+          if (!dailyData) {
+            result = { 
+              telegram: { 
+                success: false, 
+                message: 'Aucune prédiction disponible. Exécutez /api/cron/generate-daily d\'abord.'
+              } 
+            };
+            break;
           }
           
-          // 4. Formater pour Telegram
-          const footBasketValueBets = mlValueBets.map((pred: any) => {
-            const match = upcomingMatches.find((m: any) => m.id === pred.matchId) || {};
-            const bet = pred.recommendation?.bet;
-            const confidence = pred.mlPrediction?.confidence || 'low';
-            
-            let winProb = 50;
-            let riskPercentage = 50;
-            let recommendation = '';
-            
-            if (bet === 'home') {
-              winProb = pred.mlPrediction?.homeProb || 50;
-              recommendation = `Victoire ${pred.homeTeam}`;
-            } else if (bet === 'away') {
-              winProb = pred.mlPrediction?.awayProb || 50;
-              recommendation = `Victoire ${pred.awayTeam}`;
-            } else if (bet === 'draw') {
-              winProb = pred.mlPrediction?.drawProb || 33;
-              recommendation = 'Match Nul';
-            }
-            
-            riskPercentage = Math.round(100 - winProb);
-            
-            return {
-              homeTeam: pred.homeTeam,
-              awayTeam: pred.awayTeam,
-              sport: pred.sport,
-              league: pred.league,
-              date: match.date || pred.generatedAt,
-              displayDate: match.displayDate,
-              recommendation: recommendation,
-              confidence: confidence,
-              valueBetDetected: true,
-              valueBetType: pred.mlPrediction?.valueBetType,
-              riskPercentage: riskPercentage,
-              winProbability: Math.round(winProb),
-              oddsHome: pred.odds?.home,
-              oddsAway: pred.odds?.away,
-              oddsDraw: pred.odds?.draw,
-            };
-          });
-          
-          // 5. Récupérer les value bets Tennis
-          console.log('🎾 Récupération value bets tennis...');
-          const tennisPredictions = await getTennisPredictions();
-          const tennisValueBets = tennisPredictions
-            .filter(t => t.betting.recommendedBet && t.betting.expectedValue > 5 && t.prediction.confidence !== 'low')
-            .map(formatTennisForTelegram);
-          
-          // 6. Combiner
-          const allValueBets = [...footBasketValueBets, ...tennisValueBets];
+          // Convertir au format attendu par Telegram
+          const predictions = dailyData.predictions.map(p => ({
+            homeTeam: p.homeTeam,
+            awayTeam: p.awayTeam,
+            sport: p.sport,
+            league: p.league || p.tournament,
+            date: p.date,
+            recommendation: p.recommendation,
+            confidence: p.confidence,
+            valueBetDetected: p.valueBet,
+            valueBetType: p.valueBetType,
+            riskPercentage: p.riskPercentage,
+            winProbability: p.winProbability,
+            oddsHome: p.oddsHome,
+            oddsAway: p.oddsAway,
+            oddsDraw: p.oddsDraw,
+          }));
 
-          const telegramResult = await publishValueBetsToTelegram(allValueBets);
-          const valueBetsCount = allValueBets.filter(p => 
+          const telegramResult = await publishValueBetsToTelegram(predictions);
+          const valueBetsCount = predictions.filter(p => 
             p.valueBetDetected && 
             p.confidence !== 'low' && 
             isSafeOrModerate(p.riskPercentage)
           ).length;
-          const tennisVBCount = tennisValueBets.filter(p => 
-            p.valueBetDetected && 
-            p.confidence !== 'low' && 
-            isSafeOrModerate(p.riskPercentage)
-          ).length;
-          
-          console.log(`💎 Value bets: ${valueBetsCount} (${tennisVBCount} tennis)`);
           
           result = { 
             telegram: { 
               success: telegramResult, 
               total: valueBetsCount,
-              tennisValueBets: tennisVBCount,
+              source: 'precalculated',
               message: telegramResult 
-                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram (${tennisVBCount} tennis)`
+                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
                 : 'Erreur ou aucun value bet à publier'
             } 
           };
@@ -1248,9 +1028,92 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'telegram-summary':
+        // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
+        try {
+          const matches = await getMatchesWithRealOdds();
+          const predictions = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            recommendation: m.recommendations?.[0]?.label,
+            confidence: m.confidence,
+            valueBetDetected: m.valueBets?.length > 0,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
+
+          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+
+          const telegramResult = await publishDailySummaryToTelegram(predictions);
+          result = {
+            telegram: {
+              success: telegramResult,
+              total: predictions.length,
+              published: filteredCount,
+              excluded: predictions.length - filteredCount,
+              message: telegramResult
+                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+                : 'Erreur publication Telegram'
+            }
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'telegram-valuebets':
+        // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
+        try {
+          const matches = await getMatchesWithRealOdds();
+          const predictions = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            recommendation: m.recommendations?.[0]?.label,
+            confidence: m.confidence,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            valueBetDetected: m.valueBets?.length > 0,
+            valueBetType: m.valueBets?.[0]?.type,
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
+
+          const telegramResult = await publishValueBetsToTelegram(predictions);
+          const valueBetsCount = predictions.filter(p =>
+            p.valueBetDetected &&
+            p.confidence !== 'low' &&
+            isSafeOrModerate(p.riskPercentage)
+          ).length;
+
+          result = {
+            telegram: {
+              success: telegramResult,
+              total: valueBetsCount,
+              message: telegramResult
+                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
+                : 'Erreur ou aucun value bet à publier'
+            }
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets'] },
           { status: 400 }
         );
     }

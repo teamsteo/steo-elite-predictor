@@ -20,33 +20,40 @@
   ],
   "crons": [
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=verify-evening",
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-evening",
       "schedule": "0 0 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=verify-morning",
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-morning",
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=verify-night",
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-night",
       "schedule": "0 5 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=precalc",
+      "path": "/api/cron/generate-daily?secret=steo-elite-cron-2026",
       "schedule": "30 5 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=update-fundamentals",
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=update-fundamentals",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-summary",
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-valuebets",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-predictions?secret=steo-elite-cron-2026&mode=major",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-predictions?secret=steo-elite-cron-2026&mode=summary",
+      "schedule": "0 9 * * *"
     }
   ]
 }
-
