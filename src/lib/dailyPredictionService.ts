@@ -16,9 +16,11 @@
  * │      │                                                         │
  * │      ▼                                                         │
  * │  ┌─────────────────────────────────────────────────────────┐   │
- * │  │ 2. Calcul ML pour chaque match                          │   │
- * │  │    - 8 facteurs pour tennis                             │   │
- * │  │    - 5 facteurs pour autres sports                      │   │
+ * │  │ 2. Calcul ML AVANCÉ pour chaque match                   │   │
+ * │  │    - Football: Dixon-Coles + ML + Context (5 facteurs)  │   │
+ * │  │    - Basketball: ML + Context + Form                    │   │
+ * │  │    - Hockey: ML + Form                                  │   │
+ * │  │    - Tennis: 8 facteurs avancés                         │   │
  * │  │    - Classification risque: safe/modéré/risqué          │   │
  * │  └─────────────────────────────────────────────────────────┘   │
  * │      │                                                         │
@@ -35,11 +37,13 @@
  * │  Telegram  ───► API ───► Lecture fichier (0 scraping)          │
  * │                                                                 │
  * │  ✅ 1 SEUL SCRAPING PAR JOUR !                                 │
+ * │  ✅ MODÈLES ML AVANCÉS POUR TOUS LES SPORTS !                  │
  * └────────────────────────────────────────────────────────────────┘
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getUnifiedPrediction, type UnifiedPredictionInput } from './unifiedPredictionService';
 
 // ============================================
 // INTERFACES
@@ -278,7 +282,7 @@ async function fetchFootballPredictions(): Promise<DailyPrediction[]> {
       
       if (!home || !away) continue;
       
-      const prediction = createFootballPrediction(event, home, away);
+      const prediction = await createFootballPrediction(event, home, away);
       if (prediction) predictions.push(prediction);
     }
     
@@ -312,7 +316,7 @@ async function fetchBasketballPredictions(): Promise<DailyPrediction[]> {
       
       if (!home || !away) continue;
       
-      const prediction = createBasketballPrediction(event, home, away);
+      const prediction = await createBasketballPrediction(event, home, away);
       if (prediction) predictions.push(prediction);
     }
     
@@ -346,7 +350,7 @@ async function fetchHockeyPredictions(): Promise<DailyPrediction[]> {
       
       if (!home || !away) continue;
       
-      const prediction = createHockeyPrediction(event, home, away);
+      const prediction = await createHockeyPrediction(event, home, away);
       if (prediction) predictions.push(prediction);
     }
     
@@ -411,16 +415,193 @@ async function fetchTennisPredictions(): Promise<DailyPrediction[]> {
 }
 
 // ============================================
-// CRÉATION DE PRÉDICTIONS
+// CRÉATION DE PRÉDICTIONS AVEC ML AVANCÉ
 // ============================================
 
-function createFootballPrediction(event: any, home: any, away: any): DailyPrediction | null {
+/**
+ * Crée une prédiction Football avec le modèle ML unifié
+ * Utilise: Dixon-Coles + ML Thresholds + Context (forme, blessures, xG)
+ */
+async function createFootballPrediction(event: any, home: any, away: any): Promise<DailyPrediction | null> {
   const homeTeam = home.team?.displayName || 'Unknown';
   const awayTeam = away.team?.displayName || 'Unknown';
-  const homeScore = parseInt(home.score) || 0;
-  const awayScore = parseInt(away.score) || 0;
   
-  // Calcul simple basé sur les records (si disponibles)
+  // Récupérer les cotes réelles si disponibles
+  const oddsHome = home.odds?.current || 1.85;
+  const oddsAway = away.odds?.current || 1.85;
+  const oddsDraw = 3.3;
+  
+  try {
+    // Utiliser le service ML unifié
+    const mlInput: UnifiedPredictionInput = {
+      id: `fb_${event.id}`,
+      homeTeam,
+      awayTeam,
+      sport: 'Foot',
+      league: event.league?.name || 'Football',
+      oddsHome,
+      oddsDraw,
+      oddsAway,
+    };
+    
+    const mlPrediction = await getUnifiedPrediction(mlInput);
+    
+    return {
+      id: mlPrediction.matchId,
+      sport: 'football',
+      league: mlPrediction.league,
+      homeTeam,
+      awayTeam,
+      date: event.date,
+      oddsHome: mlPrediction.odds.home,
+      oddsAway: mlPrediction.odds.away,
+      oddsDraw: mlPrediction.odds.draw ?? undefined,
+      recommendation: mlPrediction.recommendation.bet === 'home' 
+        ? homeTeam 
+        : mlPrediction.recommendation.bet === 'away' 
+          ? awayTeam 
+          : 'Match Nul',
+      predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
+      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+      confidence: mlPrediction.mlPrediction.confidence,
+      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
+      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+      valueBet: mlPrediction.mlPrediction.valueBet,
+      valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
+      expectedValue: mlPrediction.recommendation.expectedValue,
+      kellyStake: mlPrediction.recommendation.kellyStake,
+      reasons: mlPrediction.recommendation.reasoning,
+      warnings: mlPrediction.recommendation.riskLevel === 'high' ? ['⚠️ Risque élevé'] : [],
+      source: 'unified-ml',
+      modelVersion: 'football-dixon-coles-ml-v2.0',
+      generatedAt: mlPrediction.generatedAt,
+    };
+  } catch (error) {
+    console.error('Erreur ML Football:', error);
+    // Fallback sur calcul simple
+    return createSimpleFootballPrediction(event, home, away);
+  }
+}
+
+/**
+ * Crée une prédiction Basketball avec le modèle ML unifié
+ */
+async function createBasketballPrediction(event: any, home: any, away: any): Promise<DailyPrediction | null> {
+  const homeTeam = home.team?.displayName || 'Unknown';
+  const awayTeam = away.team?.displayName || 'Unknown';
+  
+  const oddsHome = home.odds?.current || 1.85;
+  const oddsAway = away.odds?.current || 1.85;
+  
+  try {
+    const mlInput: UnifiedPredictionInput = {
+      id: `nba_${event.id}`,
+      homeTeam,
+      awayTeam,
+      sport: 'NBA',
+      league: 'NBA',
+      oddsHome,
+      oddsDraw: null,
+      oddsAway,
+    };
+    
+    const mlPrediction = await getUnifiedPrediction(mlInput);
+    
+    return {
+      id: mlPrediction.matchId,
+      sport: 'basketball',
+      league: 'NBA',
+      homeTeam,
+      awayTeam,
+      date: event.date,
+      oddsHome: mlPrediction.odds.home,
+      oddsAway: mlPrediction.odds.away,
+      oddsDraw: undefined,
+      recommendation: mlPrediction.recommendation.bet === 'home' ? homeTeam : awayTeam,
+      predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
+      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+      confidence: mlPrediction.mlPrediction.confidence,
+      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
+      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+      valueBet: mlPrediction.mlPrediction.valueBet,
+      valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
+      expectedValue: mlPrediction.recommendation.expectedValue,
+      kellyStake: mlPrediction.recommendation.kellyStake,
+      reasons: mlPrediction.recommendation.reasoning,
+      warnings: [],
+      source: 'unified-ml',
+      modelVersion: 'nba-ml-v2.0',
+      generatedAt: mlPrediction.generatedAt,
+    };
+  } catch (error) {
+    console.error('Erreur ML NBA:', error);
+    return createSimpleBasketballPrediction(event, home, away);
+  }
+}
+
+/**
+ * Crée une prédiction Hockey avec le modèle ML
+ */
+async function createHockeyPrediction(event: any, home: any, away: any): Promise<DailyPrediction | null> {
+  const homeTeam = home.team?.displayName || 'Unknown';
+  const awayTeam = away.team?.displayName || 'Unknown';
+  
+  const oddsHome = home.odds?.current || 1.85;
+  const oddsAway = away.odds?.current || 1.85;
+  
+  try {
+    const mlInput: UnifiedPredictionInput = {
+      id: `nhl_${event.id}`,
+      homeTeam,
+      awayTeam,
+      sport: 'NHL',
+      league: 'NHL',
+      oddsHome,
+      oddsDraw: null,
+      oddsAway,
+    };
+    
+    const mlPrediction = await getUnifiedPrediction(mlInput);
+    
+    return {
+      id: mlPrediction.matchId,
+      sport: 'hockey',
+      league: 'NHL',
+      homeTeam,
+      awayTeam,
+      date: event.date,
+      oddsHome: mlPrediction.odds.home,
+      oddsAway: mlPrediction.odds.away,
+      oddsDraw: undefined,
+      recommendation: mlPrediction.recommendation.bet === 'home' ? homeTeam : awayTeam,
+      predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
+      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+      confidence: mlPrediction.mlPrediction.confidence,
+      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
+      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+      valueBet: mlPrediction.mlPrediction.valueBet,
+      expectedValue: mlPrediction.recommendation.expectedValue,
+      kellyStake: mlPrediction.recommendation.kellyStake,
+      reasons: mlPrediction.recommendation.reasoning,
+      warnings: [],
+      source: 'unified-ml',
+      modelVersion: 'nhl-ml-v2.0',
+      generatedAt: mlPrediction.generatedAt,
+    };
+  } catch (error) {
+    console.error('Erreur ML NHL:', error);
+    return createSimpleHockeyPrediction(event, home, away);
+  }
+}
+
+// ============================================
+// FALLBACK - Prédictions simples (si ML échoue)
+// ============================================
+
+function createSimpleFootballPrediction(event: any, home: any, away: any): DailyPrediction | null {
+  const homeTeam = home.team?.displayName || 'Unknown';
+  const awayTeam = away.team?.displayName || 'Unknown';
+  
   const homeRecord = home.records?.find((r: any) => r.type === 'total');
   const awayRecord = away.records?.find((r: any) => r.type === 'total');
   const homeWins = homeRecord?.wins || 0;
@@ -428,10 +609,7 @@ function createFootballPrediction(event: any, home: any, away: any): DailyPredic
   
   const totalWins = homeWins + awayWins;
   const homeProb = totalWins > 0 ? (homeWins / totalWins) * 100 : 50;
-  
-  // Probabilité ajustée (favori domicile)
   const adjustedProb = Math.min(75, Math.max(25, homeProb + 10));
-  
   const riskPercentage = 100 - adjustedProb;
   
   return {
@@ -441,7 +619,7 @@ function createFootballPrediction(event: any, home: any, away: any): DailyPredic
     homeTeam,
     awayTeam,
     date: event.date,
-    oddsHome: 1.85, // Cote estimée
+    oddsHome: 1.85,
     oddsAway: 1.85,
     oddsDraw: 3.3,
     recommendation: adjustedProb > 50 ? homeTeam : awayTeam,
@@ -451,22 +629,18 @@ function createFootballPrediction(event: any, home: any, away: any): DailyPredic
     riskPercentage: Math.round(riskPercentage),
     riskLevel: getRiskLevel(riskPercentage),
     valueBet: false,
-    reasons: [
-      `Match ${homeTeam} vs ${awayTeam}`,
-      `Probabilité: ${Math.round(adjustedProb)}%`,
-    ],
-    warnings: [],
-    source: 'espn',
-    modelVersion: 'football-v1.0',
+    reasons: [`Match ${homeTeam} vs ${awayTeam}`, '⚠️ Fallback (ML non disponible)'],
+    warnings: ['Prédiction simplifiée'],
+    source: 'espn-fallback',
+    modelVersion: 'football-simple-v1.0',
     generatedAt: new Date().toISOString(),
   };
 }
 
-function createBasketballPrediction(event: any, home: any, away: any): DailyPrediction | null {
+function createSimpleBasketballPrediction(event: any, home: any, away: any): DailyPrediction | null {
   const homeTeam = home.team?.displayName || 'Unknown';
   const awayTeam = away.team?.displayName || 'Unknown';
   
-  // Calcul basé sur les records
   const homeRecord = home.records?.find((r: any) => r.type === 'total');
   const awayRecord = away.records?.find((r: any) => r.type === 'total');
   const homeWins = homeRecord?.wins || 0;
@@ -476,11 +650,8 @@ function createBasketballPrediction(event: any, home: any, away: any): DailyPred
   
   const homeWinRate = homeWins / (homeWins + homeLosses) || 0.5;
   const awayWinRate = awayWins / (awayWins + awayLosses) || 0.5;
-  
-  // Avantage domicile en NBA (~60%)
   const homeProb = (homeWinRate * 0.6 + (1 - awayWinRate) * 0.4) * 100 + 10;
   const adjustedProb = Math.min(75, Math.max(25, homeProb));
-  
   const riskPercentage = 100 - adjustedProb;
   
   return {
@@ -499,23 +670,18 @@ function createBasketballPrediction(event: any, home: any, away: any): DailyPred
     riskPercentage: Math.round(riskPercentage),
     riskLevel: getRiskLevel(riskPercentage),
     valueBet: false,
-    reasons: [
-      `${homeTeam}: ${homeWins}W-${homeLosses}L`,
-      `${awayTeam}: ${awayWins}W-${awayLosses}L`,
-      `Avantage domicile NBA`,
-    ],
-    warnings: [],
-    source: 'espn',
-    modelVersion: 'nba-v1.0',
+    reasons: [`${homeTeam}: ${homeWins}W-${homeLosses}L`, `${awayTeam}: ${awayWins}W-${awayLosses}L`, '⚠️ Fallback'],
+    warnings: ['Prédiction simplifiée'],
+    source: 'espn-fallback',
+    modelVersion: 'nba-simple-v1.0',
     generatedAt: new Date().toISOString(),
   };
 }
 
-function createHockeyPrediction(event: any, home: any, away: any): DailyPrediction | null {
+function createSimpleHockeyPrediction(event: any, home: any, away: any): DailyPrediction | null {
   const homeTeam = home.team?.displayName || 'Unknown';
   const awayTeam = away.team?.displayName || 'Unknown';
   
-  // Calcul similaire au basketball
   const homeRecord = home.records?.find((r: any) => r.type === 'total');
   const awayRecord = away.records?.find((r: any) => r.type === 'total');
   const homeWins = homeRecord?.wins || 0;
@@ -524,7 +690,6 @@ function createHockeyPrediction(event: any, home: any, away: any): DailyPredicti
   const totalWins = homeWins + awayWins;
   const homeProb = totalWins > 0 ? (homeWins / totalWins) * 100 + 5 : 50;
   const adjustedProb = Math.min(75, Math.max(25, homeProb));
-  
   const riskPercentage = 100 - adjustedProb;
   
   return {
@@ -543,12 +708,10 @@ function createHockeyPrediction(event: any, home: any, away: any): DailyPredicti
     riskPercentage: Math.round(riskPercentage),
     riskLevel: getRiskLevel(riskPercentage),
     valueBet: false,
-    reasons: [
-      `Match NHL: ${homeTeam} vs ${awayTeam}`,
-    ],
-    warnings: [],
-    source: 'espn',
-    modelVersion: 'nhl-v1.0',
+    reasons: [`Match NHL: ${homeTeam} vs ${awayTeam}`, '⚠️ Fallback'],
+    warnings: ['Prédiction simplifiée'],
+    source: 'espn-fallback',
+    modelVersion: 'nhl-simple-v1.0',
     generatedAt: new Date().toISOString(),
   };
 }
