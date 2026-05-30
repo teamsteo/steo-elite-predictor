@@ -135,6 +135,26 @@ export async function sendTelegramMessage(text: string, options?: {
 }
 
 /**
+ * Convertit le résultat prédit en option de pari (1, X, 2)
+ */
+function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string): string {
+  if (!predictedResult) return '';
+  
+  // Pour le football: 1, X, 2
+  if (sport?.toLowerCase().includes('foot') || sport?.toLowerCase() === 'soccer') {
+    if (predictedResult === 'home') return '1️⃣';
+    if (predictedResult === 'draw') return '❌';
+    if (predictedResult === 'away') return '2️⃣';
+  }
+  
+  // Pour tennis/basket/hockey: 1 ou 2 (pas de match nul)
+  if (predictedResult === 'home') return '1️⃣';
+  if (predictedResult === 'away') return '2️⃣';
+  
+  return '';
+}
+
+/**
  * Formate un pronostic individuel (format ergonomique)
  */
 function formatPrediction(prediction: {
@@ -147,6 +167,7 @@ function formatPrediction(prediction: {
   oddsDraw?: number | null;
   oddsAway?: number;
   recommendation?: string;
+  predictedResult?: 'home' | 'away' | 'draw';
   confidence?: string;
   riskPercentage?: number;
   winProbability?: number;
@@ -201,10 +222,24 @@ function formatPrediction(prediction: {
     message += '\n';
   }
   
-  // Pronostic avec mise en évidence
-  if (prediction.recommendation) {
+  // Pronostic avec mise en évidence - OPTION DE PARI CLAIRE
+  if (prediction.recommendation || prediction.predictedResult) {
     message += `🎯 <b>PRONOSTIC</b>\n`;
-    message += `    ▶️ <b>${prediction.recommendation}</b>\n\n`;
+    
+    // Afficher l'option de pari (1, X, 2)
+    const betOption = getBetOption(prediction.predictedResult, prediction.sport);
+    
+    if (betOption && prediction.recommendation) {
+      message += `    ${betOption} <b>${prediction.recommendation}</b>\n`;
+    } else if (betOption) {
+      // Si on a que l'option, afficher le nom de l'équipe correspondante
+      const teamName = prediction.predictedResult === 'home' ? prediction.homeTeam :
+                       prediction.predictedResult === 'away' ? prediction.awayTeam : 'Match Nul';
+      message += `    ${betOption} <b>${teamName}</b>\n`;
+    } else if (prediction.recommendation) {
+      message += `    ▶️ <b>${prediction.recommendation}</b>\n`;
+    }
+    message += '\n';
   }
   
   // Pourcentage de réussite
@@ -248,6 +283,7 @@ export async function publishPredictionToTelegram(prediction: {
   oddsDraw?: number | null;
   oddsAway?: number;
   recommendation?: string;
+  predictedResult?: 'home' | 'away' | 'draw';
   confidence?: string;
   riskPercentage?: number;
   winProbability?: number;
@@ -273,6 +309,7 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   date: string;
   displayDate?: string;
   recommendation?: string;
+  predictedResult?: 'home' | 'away' | 'draw';
   confidence?: string;
   riskPercentage?: number;
   winProbability?: number;
@@ -338,12 +375,16 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
       const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
       const vbEmoji = m.valueBetDetected ? '💎 ' : '';
       
+      // Option de pari (1, X, 2)
+      const betOption = getBetOption(m.predictedResult, m.sport);
+      const betDisplay = betOption ? `${betOption} ` : '';
+      
       message += `<b>${i + 1}.</b> ${vbEmoji}${m.homeTeam} vs ${m.awayTeam}\n`;
       if (time) {
         message += `    ⏰ ${time}`;
       }
-      if (m.recommendation) {
-        message += ` | 🎯 ${m.recommendation}`;
+      if (m.recommendation || betOption) {
+        message += ` | 🎯 ${betDisplay}${m.recommendation || ''}`;
       }
       message += `\n    ${riskEmoji} ${winProb}% réussite\n\n`;
     });
@@ -373,6 +414,7 @@ export async function publishValueBetsToTelegram(predictions: Array<{
   date: string;
   displayDate?: string;
   recommendation?: string;
+  predictedResult?: 'home' | 'away' | 'draw';
   confidence?: string;
   riskPercentage?: number;
   winProbability?: number;

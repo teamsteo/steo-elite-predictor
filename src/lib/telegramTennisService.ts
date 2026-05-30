@@ -191,9 +191,10 @@ function formatTennisPrediction(prediction: TennisPrediction): string {
   message += `📊 <b>COTES</b>\n`;
   message += `    1️⃣ ${prediction.odds1.toFixed(2)}  |  2️⃣ ${prediction.odds2.toFixed(2)}\n\n`;
   
-  // Pronostic
+  // Pronostic avec option de pari claire (1 ou 2)
   message += `🎯 <b>PRONOSTIC</b>\n`;
-  message += `    ▶️ <b>${prediction.prediction.winnerName}</b>\n\n`;
+  const betOption = prediction.prediction.winner === 'player1' ? '1️⃣' : '2️⃣';
+  message += `    ${betOption} <b>${prediction.prediction.winnerName}</b>\n\n`;
   
   // Probabilité avec barre
   message += `${confidenceEmoji} <b>CONFIANCE: ${prediction.prediction.confidence.toUpperCase()}</b>\n`;
@@ -308,11 +309,12 @@ function formatTennisSummary(predictions: TennisPrediction[]): string {
       const { time } = formatDateTime(m.date);
       const riskEmoji = m.prediction.riskPercentage <= 30 ? '🟢' : '🟡';
       const surfaceEmoji = SURFACE_EMOJIS[m.surface] || '🏟️';
+      const betOption = m.prediction.winner === 'player1' ? '1️⃣' : '2️⃣';
       
       message += `<b>${i + 1}.</b> ${m.player1} vs ${m.player2}\n`;
       message += `    🏆 ${m.tournament} ${surfaceEmoji}\n`;
       if (time) message += `    ⏰ ${time}`;
-      message += ` | 🎯 <b>${m.prediction.winnerName}</b>\n`;
+      message += ` | 🎯 ${betOption} <b>${m.prediction.winnerName}</b>\n`;
       message += `    ${riskEmoji} ${m.prediction.winProbability}% réussite\n\n`;
     });
     
@@ -408,12 +410,13 @@ export async function publishMajorTournaments(predictions: TennisPrediction[]): 
     const tierEmoji = TIER_EMOJIS[p.tournamentTier] || '🏆';
     const { time } = formatDateTime(p.date);
     const riskEmoji = p.prediction.riskPercentage <= 30 ? '🟢' : '🟡';
+    const betOption = p.prediction.winner === 'player1' ? '1️⃣' : '2️⃣';
     
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `${tierEmoji} <b>${p.tournament.toUpperCase()}</b>\n`;
     message += `👤 ${p.player1} vs ${p.player2}\n`;
     if (time) message += `⏰ ${time} | `;
-    message += `🎯 <b>${p.prediction.winnerName}</b>\n`;
+    message += `🎯 ${betOption} <b>${p.prediction.winnerName}</b>\n`;
     message += `${riskEmoji} ${p.prediction.winProbability}% | Cote: ${p.betting.winnerOdds.toFixed(2)}\n\n`;
   });
   
@@ -446,12 +449,13 @@ export async function publishTennisValueBets(predictions: TennisPrediction[]): P
   valueBets.slice(0, 5).forEach((p, i) => {
     const tierEmoji = TIER_EMOJIS[p.tournamentTier] || '🎾';
     const { time } = formatDateTime(p.date);
+    const betOption = p.prediction.winner === 'player1' ? '1️⃣' : '2️⃣';
     
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `<b>${i + 1}. ${p.player1} vs ${p.player2}</b>\n`;
     message += `${tierEmoji} ${p.tournament}\n`;
     if (time) message += `⏰ ${time} | `;
-    message += `🎯 <b>${p.prediction.winnerName}</b>\n`;
+    message += `🎯 ${betOption} <b>${p.prediction.winnerName}</b>\n`;
     message += `📊 Cote: ${p.betting.winnerOdds.toFixed(2)} | EV: <b>+${p.betting.expectedValue}%</b>\n`;
     message += `🔥 Réussite: <b>${p.prediction.winProbability}%</b>\n\n`;
   });
