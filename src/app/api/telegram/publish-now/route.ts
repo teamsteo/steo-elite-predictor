@@ -39,6 +39,7 @@ export async function GET(request: Request) {
       date: m.date,
       displayDate: m.displayDate,
       recommendation: m.recommendations?.[0]?.label,
+      predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
       confidence: m.confidence,
       riskPercentage: m.riskPercentage,
       winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
