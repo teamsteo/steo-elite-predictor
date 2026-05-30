@@ -98,9 +98,15 @@ export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'postponed' | 'can
 // ============================================
 
 // API officielle - 500 requêtes/mois gratuites
-// Obtenir une clé: https://the-odds-api.com
-const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
+// Utilise THE_ODDS_API_KEY (même clé que le foot pour partager le quota)
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || '';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
+
+// Quota partagé avec le foot
+const MONTHLY_QUOTA = 500;
+const DAILY_BUDGET = 3; // Max 3 requêtes/jour pour le tennis (conservateur)
+let dailyTennisRequests = 0;
+let lastTennisRequestDate = '';
 
 // Sports tennis disponibles
 const TENNIS_SPORTS = [
@@ -153,10 +159,23 @@ async function fetchFromOddsAPI(): Promise<TennisMatch[]> {
     return [];
   }
 
+  // Vérifier le budget journalier
+  const today = new Date().toISOString().split('T')[0];
+  if (lastTennisRequestDate !== today) {
+    dailyTennisRequests = 0;
+    lastTennisRequestDate = today;
+  }
+  
+  if (dailyTennisRequests >= DAILY_BUDGET) {
+    console.log(`[TennisCollector] ⚠️ Budget journalier tennis atteint (${dailyTennisRequests}/${DAILY_BUDGET})`);
+    return [];
+  }
+
   const matches: TennisMatch[] = [];
 
   try {
-    // Récupérer matchs ATP
+    // Récupérer matchs ATP (1 requête)
+    dailyTennisRequests++;
     const atpResponse = await fetch(
       `${ODDS_API_BASE}/sports/tennis_atp/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
       { next: { revalidate: 300 } } // Cache 5 min
@@ -176,23 +195,28 @@ async function fetchFromOddsAPI(): Promise<TennisMatch[]> {
       console.log(`[TennisCollector] ⚠️ The Odds API ATP error: ${atpResponse.status}`);
     }
 
-    // Récupérer matchs WTA
-    const wtaResponse = await fetch(
-      `${ODDS_API_BASE}/sports/tennis_wta/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
-      { next: { revalidate: 300 } }
-    );
+    // Récupérer matchs WTA (1 requête) - seulement si budget le permet
+    if (dailyTennisRequests < DAILY_BUDGET) {
+      dailyTennisRequests++;
+      const wtaResponse = await fetch(
+        `${ODDS_API_BASE}/sports/tennis_wta/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
+        { next: { revalidate: 300 } }
+      );
 
-    if (wtaResponse.ok) {
-      const data = await wtaResponse.json();
-      const events: OddsAPIEvent[] = data || [];
-      
-      for (const event of events) {
-        const match = parseOddsAPIEvent(event, 'wta');
-        if (match) matches.push(match);
+      if (wtaResponse.ok) {
+        const data = await wtaResponse.json();
+        const events: OddsAPIEvent[] = data || [];
+        
+        for (const event of events) {
+          const match = parseOddsAPIEvent(event, 'wta');
+          if (match) matches.push(match);
+        }
+        
+        console.log(`[TennisCollector] ✅ The Odds API WTA: ${events.length} matchs`);
       }
-      
-      console.log(`[TennisCollector] ✅ The Odds API WTA: ${events.length} matchs`);
     }
+
+    console.log(`[TennisCollector] 📊 Requêtes tennis aujourd'hui: ${dailyTennisRequests}/${DAILY_BUDGET}`);
 
   } catch (error) {
     console.error('[TennisCollector] ❌ Erreur The Odds API:', error);
