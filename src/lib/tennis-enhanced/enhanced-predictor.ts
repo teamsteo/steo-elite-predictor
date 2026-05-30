@@ -18,6 +18,13 @@ import {
   getTournamentImportanceFactor,
   detectTournamentTier,
 } from './smart-collector';
+import {
+  findPlayerProfile,
+  getSurfaceAdvantage,
+  getGrandSlamPerformance,
+  calculateFormBoost,
+  PlayerProfile,
+} from './player-database';
 
 // ============================================
 // INTERFACES
@@ -170,16 +177,7 @@ const WTA_RANKINGS: Record<string, number> = {
   'pegula': 4, 'rybakina': 5, 'jabeur': 6, 'vondrousova': 7, 'zheng': 8, 'sakkari': 9, 'kasatkina': 10,
 };
 
-// Performance par surface pour joueurs connus
-const SURFACE_SPECIALISTS: Record<string, { best: Surface; worst: Surface }> = {
-  'sinner': { best: 'hard', worst: 'grass' },
-  'alcaraz': { best: 'clay', worst: 'indoor' },
-  'djokovic': { best: 'hard', worst: 'grass' },
-  'nadal': { best: 'clay', worst: 'grass' },
-  'swiatek': { best: 'clay', worst: 'grass' },
-  'sabalenka': { best: 'hard', worst: 'clay' },
-  'rybakina': { best: 'grass', worst: 'clay' },
-};
+// Les données de surface sont maintenant dans player-database.ts
 
 // ============================================
 // FONCTIONS DE CALCUL
@@ -206,19 +204,19 @@ function getPlayerRanking(name: string, category: Category): number {
   return 500;
 }
 
-function getSurfaceAdvantage(
+function getEnhancedSurfaceAdvantage(
   player: string,
   surface: Surface,
   category: Category
-): number {
-  const specialist = SURFACE_SPECIALISTS[player.toLowerCase()];
+): { score: number; profile: PlayerProfile | null } {
+  const profile = findPlayerProfile(player, category === 'wta' ? 'wta' : 'atp');
   
-  if (specialist) {
-    if (specialist.best === surface) return 15;
-    if (specialist.worst === surface) return -10;
+  if (profile) {
+    const score = getSurfaceAdvantage(profile, surface);
+    return { score, profile };
   }
   
-  return 0; // Neutre
+  return { score: 0, profile: null };
 }
 
 function calculateFatigueScore(
@@ -265,21 +263,31 @@ export function predictMatch(
   const weights = DEFAULT_WEIGHTS;
   const tierFactor = getTournamentImportanceFactor(match.tournamentTier);
   
-  // 1. Classement
-  const p1Ranking = player1Data?.ranking ?? getPlayerRanking(match.player1, match.category);
-  const p2Ranking = player2Data?.ranking ?? getPlayerRanking(match.player2, match.category);
+  // Récupérer les profils enrichis
+  const p1Profile = findPlayerProfile(match.player1, match.category === 'wta' ? 'wta' : 'atp');
+  const p2Profile = findPlayerProfile(match.player2, match.category === 'wta' ? 'wta' : 'atp');
+  
+  // 1. Classement (utiliser le profil si disponible)
+  const p1Ranking = p1Profile?.ranking ?? player1Data?.ranking ?? getPlayerRanking(match.player1, match.category);
+  const p2Ranking = p2Profile?.ranking ?? player2Data?.ranking ?? getPlayerRanking(match.player2, match.category);
   
   const rankingDiff = p2Ranking - p1Ranking; // Positif si P1 mieux classé
   const rankingScore = Math.tanh(rankingDiff / 50) * 100; // -100 à +100
   
-  // 2. Surface
-  const p1SurfaceAdv = getSurfaceAdvantage(match.player1, match.surface, match.category);
-  const p2SurfaceAdv = getSurfaceAdvantage(match.player2, match.surface, match.category);
+  // 2. Surface (avec données enrichies)
+  const p1SurfaceResult = getEnhancedSurfaceAdvantage(match.player1, match.surface, match.category);
+  const p2SurfaceResult = getEnhancedSurfaceAdvantage(match.player2, match.surface, match.category);
+  const p1SurfaceAdv = p1SurfaceResult.score;
+  const p2SurfaceAdv = p2SurfaceResult.score;
   const surfaceScore = (p1SurfaceAdv - p2SurfaceAdv);
   
-  // 3. Forme récente
+  // 3. Forme récente (avec données enrichies)
   let formScore = 0;
-  if (player1Data?.recentForm && player2Data?.recentForm) {
+  if (p1Profile && p2Profile) {
+    const p1FormBoost = calculateFormBoost(p1Profile);
+    const p2FormBoost = calculateFormBoost(p2Profile);
+    formScore = (p1FormBoost - p2FormBoost) * 5; // Scale 0-50
+  } else if (player1Data?.recentForm && player2Data?.recentForm) {
     const p1FormRate = player1Data.recentForm.last10.filter(r => r === 'W').length / 10;
     const p2FormRate = player2Data.recentForm.last10.filter(r => r === 'W').length / 10;
     formScore = (p1FormRate - p2FormRate) * 100;
@@ -301,13 +309,30 @@ export function predictMatch(
     tournamentScore = (tierFactor - 1) * 50; // Bonus si tournoi important
   }
   
-  // 7. Fatigue
-  const fatigueScore = calculateFatigueScore(match.player1, 0) - 
-                       calculateFatigueScore(match.player2, 0);
+  // 7. Fatigue (amélioré avec profil)
+  let fatigueScore = 0;
+  if (p1Profile && p2Profile) {
+    // Malus si retour de blessure
+    if (p1Profile.returningFromInjury) fatigueScore -= 15;
+    if (p2Profile.returningFromInjury) fatigueScore += 15;
+  } else {
+    fatigueScore = calculateFatigueScore(match.player1, 0) - 
+                   calculateFatigueScore(match.player2, 0);
+  }
   
-  // 8. Motivation
-  const motivationScore = calculateMotivationScore(match.player1, match.tournamentTier, p1Ranking) -
-                         calculateMotivationScore(match.player2, match.tournamentTier, p2Ranking);
+  // 8. Motivation (amélioré avec historique tournoi)
+  let motivationScore = calculateMotivationScore(match.player1, match.tournamentTier, p1Ranking) -
+                       calculateMotivationScore(match.player2, match.tournamentTier, p2Ranking);
+  
+  // Bonus si le joueur performe bien dans ce tournoi
+  if (p1Profile && ['grand_slam', 'masters_1000', 'wta_1000'].includes(match.tournamentTier)) {
+    const p1GSPerf = getGrandSlamPerformance(p1Profile, match.tournament);
+    motivationScore += (p1GSPerf - 70) / 5; // Normaliser autour de 70%
+  }
+  if (p2Profile && ['grand_slam', 'masters_1000', 'wta_1000'].includes(match.tournamentTier)) {
+    const p2GSPerf = getGrandSlamPerformance(p2Profile, match.tournament);
+    motivationScore -= (p2GSPerf - 70) / 5;
+  }
   
   // ============================================
   // CALCUL SCORE FINAL
@@ -399,7 +424,7 @@ export function predictMatch(
   const keyInsights: string[] = [];
   const warnings: string[] = [];
   
-  // Insights
+  // Insights (enrichis avec profils)
   if (Math.abs(rankingDiff) > 50) {
     keyInsights.push(`Écart de classement important: ${Math.abs(rankingDiff)} places`);
   }
@@ -407,7 +432,23 @@ export function predictMatch(
     keyInsights.push('Grand Chelem - motivation maximale attendue');
   }
   if (Math.abs(surfaceScore) > 10) {
-    keyInsights.push(`Avantage surface significatif`);
+    const advantaged = surfaceScore > 0 ? match.player1 : match.player2;
+    keyInsights.push(`Avantage surface significatif pour ${advantaged}`);
+  }
+  
+  // Insights basés sur les profils
+  if (p1Profile?.strengths.length && p1Profile.strengths.length > 0) {
+    keyInsights.push(`${match.player1}: ${p1Profile.strengths[0]}`);
+  }
+  if (p2Profile?.strengths.length && p2Profile.strengths.length > 0) {
+    keyInsights.push(`${match.player2}: ${p2Profile.strengths[0]}`);
+  }
+  
+  if (p1Profile?.returningFromInjury) {
+    warnings.push(`${match.player1} revient de blessure`);
+  }
+  if (p2Profile?.returningFromInjury) {
+    warnings.push(`${match.player2} revient de blessure`);
   }
   
   // Warnings
