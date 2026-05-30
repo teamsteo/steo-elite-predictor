@@ -1,13 +1,12 @@
 /**
- * Tennis Smart Collector - Collecte sécurisée avec protection anti-ban RENFORCÉE
+ * Tennis Smart Collector - Collecte via API OFFICIELLE (comme ESPN pour le foot)
  * 
- * ⚠️ STRATÉGIE SÉCURISÉE:
- * 1. Utiliser les APIs officielles en PRIORITÉ (ATP, WTA)
- * 2. Scraping UNIQUEMENT si APIs indisponibles
- * 3. Cache TRÈS long pour minimiser les requêtes
- * 4. Délais plus importants entre requêtes
- * 5. Circuit breaker plus strict
- * 6. Mode "safe" sans scraping possible
+ * ✅ STRATÉGIE SÉCURISÉE:
+ * 1. The Odds API - API OFFICIELLE GRATUITE (500 req/mois) - AUCUN RISQUE
+ * 2. Fallback: données statiques avec classements ATP/WTA
+ * 3. Cache intelligent pour économiser les requêtes
+ * 
+ * ⚠️ PAS DE SCRAPING - Utilise uniquement des APIs officielles
  */
 
 // ============================================
@@ -95,279 +94,246 @@ export type Category = 'atp' | 'wta' | 'challenger' | 'itf';
 export type MatchStatus = 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled';
 
 // ============================================
-// CONFIGURATION ANTI-BAN RENFORCÉE
+// THE ODDS API - CONFIGURATION
 // ============================================
 
-// User-Agents rotatifs (6 différents)
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1',
+// API officielle - 500 requêtes/mois gratuites
+// Obtenir une clé: https://the-odds-api.com
+const ODDS_API_KEY = process.env.ODDS_API_KEY || '';
+const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
+
+// Sports tennis disponibles
+const TENNIS_SPORTS = [
+  'tennis_atp',      // ATP Tour
+  'tennis_wta',      // WTA Tour
+  'tennis_challenger', // Challenger
 ];
 
-// Rate limits TRÈS conservateurs
-const RATE_LIMITS = {
-  // APIs officielles - plus permissif
-  atptour: { requestsPerMinute: 15, minDelayMs: 3000, maxDelayMs: 6000 },
-  wtatennis: { requestsPerMinute: 15, minDelayMs: 3000, maxDelayMs: 6000 },
-  
-  // Sources de scraping - TRÈS restrictif
-  betexplorer: { requestsPerMinute: 3, minDelayMs: 15000, maxDelayMs: 30000 }, // 3 req/min, 15-30s délai
-  oddsportal: { requestsPerMinute: 2, minDelayMs: 20000, maxDelayMs: 40000 },
-  flashscore: { requestsPerMinute: 3, minDelayMs: 15000, maxDelayMs: 30000 },
-  
-  // Autres
-  tennisexplorer: { requestsPerMinute: 5, minDelayMs: 10000, maxDelayMs: 20000 },
-};
-
-// Cache TRÈS long pour éviter les requêtes
+// Cache
 const CACHE_TTL = {
-  rankings: 24 * 60 * 60 * 1000,      // 24 heures (au lieu de 6h)
-  matches: 60 * 60 * 1000,           // 1 heure (au lieu de 30min)
-  odds: 15 * 60 * 1000,              // 15 minutes (au lieu de 2min)
-  playerStats: 48 * 60 * 60 * 1000,  // 48 heures (au lieu de 24h)
-  tournamentInfo: 7 * 24 * 60 * 60 * 1000, // 7 jours
+  matches: 30 * 60 * 1000,      // 30 minutes
+  odds: 5 * 60 * 1000,          // 5 minutes
+  rankings: 24 * 60 * 60 * 1000, // 24 heures
 };
 
-// Configuration du mode de collecte
-const COLLECT_MODE = {
-  useOfficialApis: true,      // Toujours utiliser les APIs officielles
-  allowScraping: false,       // DÉSACTIVER le scraping par défaut (trop risqué)
-  fallbackToStatic: true,     // Utiliser des données statiques si nécessaire
-};
+let cachedMatches: TennisMatch[] = [];
+let lastFetchTime = 0;
 
 // ============================================
-// CIRCUIT BREAKER STRICT
+// THE ODDS API - FONCTIONS
 // ============================================
 
-interface CircuitState {
-  status: 'closed' | 'open' | 'half-open';
-  failures: number;
-  lastFailure: Date | null;
-  nextRetry: Date | null;
-  blockedUntil: Date | null;  // Nouveau: blocage prolongé
+interface OddsAPIEvent {
+  id: string;
+  sport_key: string;
+  sport_title: string;
+  commence_time: string;
+  home_team: string;
+  away_team: string;
+  bookmakers?: Array<{
+    key: string;
+    title: string;
+    markets: Array<{
+      key: string;
+      outcomes: Array<{
+        name: string;
+        price: number;
+        point?: number;
+      }>;
+    }>;
+  }>;
 }
 
-const circuitBreakers = new Map<string, CircuitState>();
-
-function getCircuitBreaker(source: string): CircuitState {
-  if (!circuitBreakers.has(source)) {
-    circuitBreakers.set(source, {
-      status: 'closed',
-      failures: 0,
-      lastFailure: null,
-      nextRetry: null,
-      blockedUntil: null,
-    });
+/**
+ * Récupère les matchs depuis The Odds API (API OFFICIELLE)
+ */
+async function fetchFromOddsAPI(): Promise<TennisMatch[]> {
+  if (!ODDS_API_KEY) {
+    console.log('[TennisCollector] ⚠️ ODDS_API_KEY non configurée');
+    return [];
   }
-  return circuitBreakers.get(source)!;
-}
 
-function recordSuccess(source: string): void {
-  const cb = getCircuitBreaker(source);
-  cb.failures = 0;
-  cb.status = 'closed';
-  cb.blockedUntil = null;
-}
+  const matches: TennisMatch[] = [];
 
-function recordFailure(source: string): void {
-  const cb = getCircuitBreaker(source);
-  cb.failures++;
-  cb.lastFailure = new Date();
-  
-  // 2 échecs = blocage (plus strict)
-  if (cb.failures >= 2) {
-    cb.status = 'open';
-    // Blocage plus long: 30 minutes au lieu de 5
-    cb.nextRetry = new Date(Date.now() + 30 * 60 * 1000);
-    cb.blockedUntil = new Date(Date.now() + 60 * 60 * 1000); // 1h de blocage total
-    console.warn(`[SmartCollector] ⚠️ Circuit breaker OPEN pour ${source} - Blocage 30min`);
-  }
-}
-
-function canMakeRequest(source: string): boolean {
-  const cb = getCircuitBreaker(source);
-  
-  // Vérifier le blocage prolongé
-  if (cb.blockedUntil && new Date() < cb.blockedUntil) {
-    return false;
-  }
-  
-  if (cb.status === 'closed') return true;
-  if (cb.status === 'open') {
-    if (cb.nextRetry && new Date() >= cb.nextRetry) {
-      cb.status = 'half-open';
-      return true;
-    }
-    return false;
-  }
-  return true;
-}
-
-// ============================================
-// CACHE INTELLIGENT
-// ============================================
-
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-  ttl: number;
-  source: string;
-}
-
-const cache = new Map<string, CacheEntry<unknown>>();
-
-function getCached<T>(key: string): T | null {
-  const entry = cache.get(key);
-  if (!entry) return null;
-  
-  if (Date.now() - entry.timestamp > entry.ttl) {
-    cache.delete(key);
-    return null;
-  }
-  
-  return entry.data as T;
-}
-
-function setCache<T>(key: string, data: T, ttl: number, source: string): void {
-  cache.set(key, {
-    data,
-    timestamp: Date.now(),
-    ttl,
-    source,
-  });
-}
-
-// ============================================
-// RATE LIMITER STRICT
-// ============================================
-
-const requestHistory = new Map<string, number[]>();
-let globalRequestCount = 0;
-let lastGlobalReset = Date.now();
-
-async function waitForRateLimit(source: string): Promise<void> {
-  const config = RATE_LIMITS[source as keyof typeof RATE_LIMITS];
-  if (!config) return;
-  
-  const now = Date.now();
-  const history = requestHistory.get(source) || [];
-  
-  // Vérifier limite globale (max 50 req/min toutes sources confondues)
-  if (now - lastGlobalReset > 60000) {
-    globalRequestCount = 0;
-    lastGlobalReset = now;
-  }
-  
-  if (globalRequestCount >= 50) {
-    const waitTime = 60000 - (now - lastGlobalReset) + 1000;
-    console.log(`[SmartCollector] ⏳ Limite globale atteinte, attente ${Math.round(waitTime/1000)}s`);
-    await sleep(waitTime);
-  }
-  
-  // Nettoyer les anciennes requêtes
-  const recentRequests = history.filter(t => now - t < 60000);
-  
-  if (recentRequests.length >= config.requestsPerMinute) {
-    const oldestRequest = Math.min(...recentRequests);
-    const waitTime = 60000 - (now - oldestRequest) + 5000; // +5s marge
-    console.log(`[SmartCollector] ⏳ Rate limit ${source}, attente ${Math.round(waitTime/1000)}s`);
-    await sleep(waitTime);
-  }
-  
-  // Délai aléatoire PLUS LONG
-  const randomDelay = config.minDelayMs + 
-    Math.random() * (config.maxDelayMs - config.minDelayMs);
-  
-  console.log(`[SmartCollector] ⏱️ Délai ${source}: ${Math.round(randomDelay/1000)}s`);
-  await sleep(randomDelay);
-  
-  // Enregistrer cette requête
-  recentRequests.push(Date.now());
-  requestHistory.set(source, recentRequests);
-  globalRequestCount++;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ============================================
-// FETCH PROTÉGÉ
-// ============================================
-
-function getRandomUserAgent(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-async function safeFetch(
-  url: string,
-  source: string,
-  options: RequestInit = {}
-): Promise<Response | null> {
-  // Vérifier circuit breaker
-  if (!canMakeRequest(source)) {
-    console.log(`[SmartCollector] 🚫 Circuit breaker OPEN pour ${source}`);
-    return null;
-  }
-  
-  // Vérifier si scraping autorisé
-  const isScrapingSource = ['betexplorer', 'oddsportal', 'flashscore', 'tennisexplorer'].includes(source);
-  if (isScrapingSource && !COLLECT_MODE.allowScraping) {
-    console.log(`[SmartCollector] 🚫 Scraping désactivé pour ${source}`);
-    return null;
-  }
-  
-  // Attendre le rate limit
-  await waitForRateLimit(source);
-  
   try {
-    console.log(`[SmartCollector] 🌐 Fetch ${source}: ${url.substring(0, 60)}...`);
-    
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'User-Agent': getRandomUserAgent(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'DNT': '1',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0',
-        ...options.headers,
-      },
-    });
-    
-    if (response.ok) {
-      recordSuccess(source);
-      return response;
-    } else if (response.status === 429) {
-      console.log(`[SmartCollector] 🚫 Rate limited par ${source} (429)`);
-      recordFailure(source);
-      return null;
-    } else if (response.status === 403) {
-      console.log(`[SmartCollector] 🚫 Bloqué par ${source} (403) - IP probablement bannie`);
-      recordFailure(source);
-      // Bloquer cette source plus longtemps
-      const cb = getCircuitBreaker(source);
-      cb.blockedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
-      return null;
+    // Récupérer matchs ATP
+    const atpResponse = await fetch(
+      `${ODDS_API_BASE}/sports/tennis_atp/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
+      { next: { revalidate: 300 } } // Cache 5 min
+    );
+
+    if (atpResponse.ok) {
+      const data = await atpResponse.json();
+      const events: OddsAPIEvent[] = data || [];
+      
+      for (const event of events) {
+        const match = parseOddsAPIEvent(event, 'atp');
+        if (match) matches.push(match);
+      }
+      
+      console.log(`[TennisCollector] ✅ The Odds API ATP: ${events.length} matchs`);
+    } else {
+      console.log(`[TennisCollector] ⚠️ The Odds API ATP error: ${atpResponse.status}`);
     }
-    
-    return response;
+
+    // Récupérer matchs WTA
+    const wtaResponse = await fetch(
+      `${ODDS_API_BASE}/sports/tennis_wta/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
+      { next: { revalidate: 300 } }
+    );
+
+    if (wtaResponse.ok) {
+      const data = await wtaResponse.json();
+      const events: OddsAPIEvent[] = data || [];
+      
+      for (const event of events) {
+        const match = parseOddsAPIEvent(event, 'wta');
+        if (match) matches.push(match);
+      }
+      
+      console.log(`[TennisCollector] ✅ The Odds API WTA: ${events.length} matchs`);
+    }
+
   } catch (error) {
-    console.error(`[SmartCollector] ❌ Erreur fetch ${source}:`, error);
-    recordFailure(source);
+    console.error('[TennisCollector] ❌ Erreur The Odds API:', error);
+  }
+
+  return matches;
+}
+
+/**
+ * Parse un événement The Odds API en TennisMatch
+ */
+function parseOddsAPIEvent(event: OddsAPIEvent, category: Category): TennisMatch | null {
+  try {
+    // Extraire les cotes
+    let odds1 = 1.85;
+    let odds2 = 1.85;
+    let bookmaker = 'Average';
+
+    if (event.bookmakers && event.bookmakers.length > 0) {
+      const firstBookmaker = event.bookmakers[0];
+      bookmaker = firstBookmaker.title;
+      
+      const h2hMarket = firstBookmaker.markets.find(m => m.key === 'h2h');
+      if (h2hMarket) {
+        const homeOutcome = h2hMarket.outcomes.find(o => o.name === event.home_team);
+        const awayOutcome = h2hMarket.outcomes.find(o => o.name === event.away_team);
+        
+        if (homeOutcome) odds1 = homeOutcome.price;
+        if (awayOutcome) odds2 = awayOutcome.price;
+      }
+    }
+
+    // Détecter le tournoi
+    const tournamentName = event.sport_title || 'Tennis Tournament';
+    const tournamentSlug = tournamentName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    
+    // Détecter le tier du tournoi
+    const tier = detectTournamentTier(tournamentSlug, category);
+    const surface = detectSurfaceImproved(tournamentSlug);
+
+    return {
+      id: `oddsapi_${event.id}`,
+      player1: event.home_team,
+      player2: event.away_team,
+      player1Id: generatePlayerId(event.home_team),
+      player2Id: generatePlayerId(event.away_team),
+      tournament: tournamentName,
+      tournamentId: tournamentSlug,
+      tournamentTier: tier,
+      surface,
+      round: 'Match',
+      date: new Date(event.commence_time),
+      odds1,
+      odds2,
+      bookmaker,
+      category,
+      status: 'scheduled',
+    };
+  } catch (error) {
+    console.error('[TennisCollector] Erreur parsing event:', error);
     return null;
   }
 }
 
 // ============================================
-// DÉTECTION IMPORTANCE TOURNOI
+// DONNÉES STATIQUES (FALLBACK)
+// ============================================
+
+const CURRENT_TOURNAMENTS = [
+  // Roland Garros - fin mai/début juin
+  { name: 'Roland Garros', slug: 'roland-garros', tier: 'grand_slam' as TournamentTier, surface: 'clay' as Surface, category: 'atp' as Category, month: [4, 5] },
+  // Wimbledon - fin juin/début juillet
+  { name: 'Wimbledon', slug: 'wimbledon', tier: 'grand_slam' as TournamentTier, surface: 'grass' as Surface, category: 'atp' as Category, month: [5, 6] },
+  // US Open - fin août/début septembre
+  { name: 'US Open', slug: 'us-open', tier: 'grand_slam' as TournamentTier, surface: 'hard' as Surface, category: 'atp' as Category, month: [7, 8] },
+  // Australian Open - janvier
+  { name: 'Australian Open', slug: 'australian-open', tier: 'grand_slam' as TournamentTier, surface: 'hard' as Surface, category: 'atp' as Category, month: [0] },
+];
+
+function generateSampleMatches(): TennisMatch[] {
+  const now = new Date();
+  const month = now.getMonth();
+  
+  // Trouver le tournoi actuel
+  const currentTournament = CURRENT_TOURNAMENTS.find(t => t.month.includes(month));
+  
+  if (!currentTournament) {
+    console.log('[TennisCollector] 📅 Pas de tournoi majeur en cours');
+    return [];
+  }
+
+  // Générer des matchs de démonstration basés sur les classements
+  const topATP = [
+    { name: 'Jannik Sinner', rank: 1 },
+    { name: 'Carlos Alcaraz', rank: 2 },
+    { name: 'Alexander Zverev', rank: 3 },
+    { name: 'Daniil Medvedev', rank: 4 },
+    { name: 'Taylor Fritz', rank: 5 },
+    { name: 'Casper Ruud', rank: 6 },
+    { name: 'Novak Djokovic', rank: 7 },
+    { name: 'Alex de Minaur', rank: 8 },
+  ];
+
+  const matches: TennisMatch[] = [];
+  
+  // Générer quelques matchs
+  for (let i = 0; i < Math.min(4, topATP.length - 1); i += 2) {
+    const p1 = topATP[i];
+    const p2 = topATP[i + 1];
+    
+    // Cotes basées sur le classement
+    const rankDiff = p2.rank - p1.rank;
+    const odds1 = Math.max(1.1, 1.5 + (rankDiff * 0.05));
+    const odds2 = Math.max(1.5, 2.5 - (rankDiff * 0.03));
+    
+    matches.push({
+      id: `demo_${currentTournament.slug}_${i}`,
+      player1: p1.name,
+      player2: p2.name,
+      player1Id: generatePlayerId(p1.name),
+      player2Id: generatePlayerId(p2.name),
+      tournament: currentTournament.name,
+      tournamentId: currentTournament.slug,
+      tournamentTier: currentTournament.tier,
+      surface: currentTournament.surface,
+      round: i < 2 ? 'Quarts de finale' : 'Demi-finale',
+      date: new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000),
+      odds1: Math.round(odds1 * 100) / 100,
+      odds2: Math.round(odds2 * 100) / 100,
+      bookmaker: 'Average',
+      category: currentTournament.category,
+      status: 'scheduled',
+    });
+  }
+
+  console.log(`[TennisCollector] 📦 Matchs générés pour ${currentTournament.name}: ${matches.length}`);
+  return matches;
+}
+
+// ============================================
+// DÉTECTION TOURNOI
 // ============================================
 
 const GRAND_SLAMS = [
@@ -481,259 +447,48 @@ export function detectSurfaceImproved(tournamentSlug: string): Surface {
 }
 
 // ============================================
-// COLLECTE PRINCIPALE - MODE SÉCURISÉ
+// COLLECTE PRINCIPALE
 // ============================================
 
 export async function collectMatches(): Promise<TennisMatch[]> {
-  console.log('[SmartCollector] 🎾 Début collecte - Mode sécurisé');
+  console.log('[TennisCollector] 🎾 Début collecte - Mode API officielle');
   
-  // Vérifier le cache d'abord
-  const cacheKey = 'tennis_matches_today';
-  const cached = getCached<TennisMatch[]>(cacheKey);
-  if (cached && cached.length > 0) {
-    console.log(`[SmartCollector] ✅ Cache HIT: ${cached.length} matchs`);
-    return cached;
+  // Vérifier le cache
+  const now = Date.now();
+  if (cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_TTL.matches) {
+    console.log(`[TennisCollector] 📦 Cache HIT: ${cachedMatches.length} matchs`);
+    return cachedMatches;
   }
   
-  const matches: TennisMatch[] = [];
+  let matches: TennisMatch[] = [];
   
-  // 1. Essayer les APIs officielles (ATP, WTA)
-  if (COLLECT_MODE.useOfficialApis) {
-    console.log('[SmartCollector] 📡 Tentative APIs officielles...');
-    
-    // Les APIs officielles ne nécessitent pas de scraping agressif
-    // On utilise des endpoints publics si disponibles
-    try {
-      const officialMatches = await collectFromOfficialSources();
-      matches.push(...officialMatches);
-    } catch (error) {
-      console.log('[SmartCollector] ⚠️ APIs officielles non disponibles');
-    }
-  }
+  // 1. Essayer The Odds API (API OFFICIELLE - AUCUN RISQUE)
+  console.log('[TennisCollector] 📡 Appel The Odds API...');
+  const oddsApiMatches = await fetchFromOddsAPI();
+  matches.push(...oddsApiMatches);
   
-  // 2. Si pas assez de matchs et scraping autorisé
-  if (matches.length < 3 && COLLECT_MODE.allowScraping) {
-    console.log('[SmartCollector] 📡 Fallback vers scraping...');
-    const scrapedMatches = await collectFromBetExplorer();
-    matches.push(...scrapedMatches);
-  }
-  
-  // 3. Si toujours rien, utiliser les données statiques
-  if (matches.length === 0 && COLLECT_MODE.fallbackToStatic) {
-    console.log('[SmartCollector] 📦 Utilisation données statiques');
-    return getStaticMatches();
+  // 2. Si pas de matchs, utiliser les données de démonstration
+  if (matches.length === 0) {
+    console.log('[TennisCollector] 📦 Utilisation données de démonstration');
+    matches = generateSampleMatches();
   }
   
   // Mettre en cache
   if (matches.length > 0) {
-    setCache(cacheKey, matches, CACHE_TTL.matches, 'collector');
-    console.log(`[SmartCollector] ✅ ${matches.length} matchs collectés et mis en cache`);
+    cachedMatches = matches;
+    lastFetchTime = now;
+    console.log(`[TennisCollector] ✅ ${matches.length} matchs collectés et mis en cache`);
   }
   
   return matches;
-}
-
-// ============================================
-// COLLECTE APIs OFFICIELLES
-// ============================================
-
-async function collectFromOfficialSources(): Promise<TennisMatch[]> {
-  // Les APIs officielles ATP/WTA nécessitent généralement une clé API
-  // Pour l'instant, on retourne les données statiques des classements
-  // qui peuvent aider à générer des prédictions de qualité
-  
-  console.log('[SmartCollector] 📊 Chargement classements officiels...');
-  
-  // Retourner des matchs basés sur les tournois en cours connus
-  return getKnownTournamentMatches();
-}
-
-// ============================================
-// DONNÉES STATIQUES / TOURNOIS CONNUS
-// ============================================
-
-function getKnownTournamentMatches(): TennisMatch[] {
-  // Tournois actuels ou à venir basés sur le calendrier
-  const now = new Date();
-  const month = now.getMonth();
-  
-  // Exemple: French Open fin mai/début juin
-  if (month >= 4 && month <= 5) {
-    return generateRolandGarrosMatches();
-  }
-  
-  // Wimbledon fin juin/début juillet
-  if (month >= 5 && month <= 6) {
-    return generateWimbledonMatches();
-  }
-  
-  // US Open fin août/début septembre
-  if (month >= 7 && month <= 8) {
-    return generateUSOpenMatches();
-  }
-  
-  // Autres périodes: utiliser des données génériques
-  return [];
-}
-
-function generateRolandGarrosMatches(): TennisMatch[] {
-  // Données fictives pour démonstration
-  // En production, ces données viendraient des APIs officielles
-  return [];
-}
-
-function generateWimbledonMatches(): TennisMatch[] {
-  return [];
-}
-
-function generateUSOpenMatches(): TennisMatch[] {
-  return [];
-}
-
-function getStaticMatches(): TennisMatch[] {
-  // Données statiques de secours
-  // Ces matchs sont des exemples génériques
-  console.log('[SmartCollector] 📦 Retour données statiques de secours');
-  return [];
-}
-
-// ============================================
-// COLLECTE BETEXPLORER (SI AUTORISÉ)
-// ============================================
-
-async function collectFromBetExplorer(): Promise<TennisMatch[]> {
-  const matches: TennisMatch[] = [];
-  
-  // Vérifier si le scraping est autorisé
-  if (!COLLECT_MODE.allowScraping) {
-    console.log('[SmartCollector] 🚫 Scraping BetExplorer désactivé');
-    return matches;
-  }
-  
-  try {
-    const response = await safeFetch(
-      'https://www.betexplorer.com/tennis/',
-      'betexplorer'
-    );
-    
-    if (!response) {
-      console.log('[SmartCollector] ⚠️ BetExplorer non disponible');
-      return matches;
-    }
-    
-    const html = await response.text();
-    
-    // Parser le HTML
-    const matchPattern = /href="\/tennis\/([a-z-]+)\/([a-z-]+)\/([a-z-]+)\/([a-zA-Z0-9]+)\/"/g;
-    const oddsPattern = /data-odd="(\d+\.?\d*)"/g;
-    
-    const odds: number[] = [];
-    let oddsMatch;
-    while ((oddsMatch = oddsPattern.exec(html)) !== null) {
-      odds.push(parseFloat(oddsMatch[1]));
-    }
-    
-    const seenMatches = new Set<string>();
-    let matchMatch;
-    let oddsIndex = 0;
-    
-    while ((matchMatch = matchPattern.exec(html)) !== null) {
-      const categoryPath = matchMatch[1];
-      const tournamentSlug = matchMatch[2];
-      const playersSlug = matchMatch[3];
-      const matchId = matchMatch[4];
-      
-      const key = `${categoryPath}_${tournamentSlug}_${matchId}`;
-      if (seenMatches.has(key)) continue;
-      seenMatches.add(key);
-      
-      const category = detectCategory(categoryPath);
-      const tier = detectTournamentTier(tournamentSlug, category);
-      const surface = detectSurfaceImproved(tournamentSlug);
-      const { player1, player2 } = parsePlayers(playersSlug);
-      
-      const odds1 = odds[oddsIndex] || 1.85;
-      const odds2 = odds[oddsIndex + 1] || 1.85;
-      oddsIndex += 2;
-      
-      matches.push({
-        id: `betexp_${matchId}`,
-        player1,
-        player2,
-        player1Id: generatePlayerId(player1),
-        player2Id: generatePlayerId(player2),
-        tournament: formatTournamentName(tournamentSlug),
-        tournamentId: tournamentSlug,
-        tournamentTier: tier,
-        surface,
-        round: 'Match',
-        date: new Date(),
-        odds1,
-        odds2,
-        bookmaker: 'BetExplorer',
-        category,
-        status: 'scheduled',
-      });
-    }
-    
-    console.log(`[SmartCollector] ✅ BetExplorer: ${matches.length} matchs`);
-    
-  } catch (error) {
-    console.error('[SmartCollector] ❌ Erreur BetExplorer:', error);
-  }
-  
-  return matches;
-}
-
-async function collectFromFlashScore(): Promise<TennisMatch[]> {
-  console.log('[SmartCollector] FlashScore: non implémenté');
-  return [];
 }
 
 // ============================================
 // FONCTIONS UTILITAIRES
 // ============================================
 
-function detectCategory(path: string): Category {
-  if (path.includes('atp')) return 'atp';
-  if (path.includes('wta')) return 'wta';
-  if (path.includes('challenger')) return 'challenger';
-  return 'itf';
-}
-
-function parsePlayers(slug: string): { player1: string; player2: string } {
-  const parts = slug.split('-');
-  const half = Math.floor(parts.length / 2);
-  
-  const formatName = (nameParts: string[]) => {
-    return nameParts
-      .map(p => p.charAt(0).toUpperCase() + p.slice(1))
-      .join(' ');
-  };
-  
-  return {
-    player1: formatName(parts.slice(0, half)),
-    player2: formatName(parts.slice(half)),
-  };
-}
-
 function generatePlayerId(name: string): string {
   return `player_${name.toLowerCase().replace(/[^a-z]/g, '')}`;
-}
-
-function formatTournamentName(slug: string): string {
-  return slug
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
-}
-
-function isSameMatch(m1: TennisMatch, m2: TennisMatch): boolean {
-  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
-  return (
-    normalize(m1.player1) === normalize(m2.player1) &&
-    normalize(m1.player2) === normalize(m2.player2) &&
-    normalize(m1.tournament) === normalize(m2.tournament)
-  );
 }
 
 // ============================================
@@ -741,11 +496,5 @@ function isSameMatch(m1: TennisMatch, m2: TennisMatch): boolean {
 // ============================================
 
 export {
-  safeFetch,
-  getCached,
-  setCache,
-  canMakeRequest,
-  waitForRateLimit,
   CACHE_TTL,
-  COLLECT_MODE,
 };

@@ -1,16 +1,9 @@
 /**
  * Tennis External Data Sources - Sources de données officielles
  * 
- * APIs intégrées:
- * 1. ATP Tour API (classements, statistiques joueurs)
- * 2. WTA Tennis API (classements, statistiques joueuses)
- * 3. Odds APIs (cotes en temps réel)
- * 4. OpenElevation (données géographiques)
- * 
- * Toutes les requêtes passent par le SmartCollector pour protection anti-ban
+ * Utilise des données statiques pour les classements ATP/WTA
+ * Pas de scraping - Aucun risque de bannissement
  */
-
-import { safeFetch, getCached, setCache, CACHE_TTL } from './smart-collector';
 
 // ============================================
 // INTERFACES
@@ -36,40 +29,16 @@ export interface PlayerStats {
   height: number;
   weight: number;
   prizeMoney: number;
-  
-  // Stats de carrière
   careerTitles: number;
   careerWins: number;
   careerLosses: number;
   careerWinRate: number;
-  
-  // Stats par surface
   surfaceStats: {
     hard: SurfaceStatDetail;
     clay: SurfaceStatDetail;
     grass: SurfaceStatDetail;
     indoor: SurfaceStatDetail;
   };
-  
-  // Stats de service
-  serveStats: {
-    aces: number;
-    doubleFaults: number;
-    firstServePct: number;
-    firstServeWon: number;
-    secondServeWon: number;
-    breakPointsSaved: number;
-    serviceGamesWon: number;
-  };
-  
-  // Stats de retour
-  returnStats: {
-    firstReturnWon: number;
-    secondReturnWon: number;
-    breakPointsConverted: number;
-    returnGamesWon: number;
-  };
-  
   lastUpdated: string;
 }
 
@@ -80,131 +49,16 @@ export interface SurfaceStatDetail {
   titles: number;
 }
 
-export interface LiveOdds {
-  matchId: string;
-  player1: string;
-  player2: string;
-  bookmaker: string;
-  odds1: number;
-  odds2: number;
-  movement: 'up' | 'down' | 'stable';
-  lastUpdated: string;
-}
-
 // ============================================
-// CONFIGURATION DES SOURCES
-// ============================================
-
-const SOURCES = {
-  // APIs officielles (gratuites ou freemium)
-  ATP_TOUR: {
-    name: 'ATP Tour',
-    baseUrl: 'https://www.atptour.com',
-    endpoints: {
-      rankings: '/en/rankings/singles',
-      player: '/en/players',
-    },
-    rateLimit: { requestsPerMinute: 20, minDelay: 2000 },
-  },
-  
-  WTA_TENNIS: {
-    name: 'WTA Tennis',
-    baseUrl: 'https://www.wtatennis.com',
-    endpoints: {
-      rankings: '/rankings/singles',
-      player: '/players',
-    },
-    rateLimit: { requestsPerMinute: 15, minDelay: 2500 },
-  },
-  
-  // APIs de cotes (gratuites)
-  ODDS_API: {
-    name: 'The Odds API',
-    baseUrl: 'https://api.the-odds-api.com/v4',
-    // Note: nécessite une clé API
-    rateLimit: { requestsPerMinute: 10, minDelay: 6000 },
-  },
-  
-  // Sources alternatives
-  TENNIS_EXPLORER: {
-    name: 'Tennis Explorer',
-    baseUrl: 'https://www.tennisexplorer.com',
-    rateLimit: { requestsPerMinute: 15, minDelay: 4000 },
-  },
-};
-
-// ============================================
-// CLASSEMENTS ATP
+// CLASSEMENTS ATP (DONNÉES STATIQUES)
 // ============================================
 
 export async function fetchATPRankings(limit: number = 100): Promise<OfficialRanking[]> {
-  const cacheKey = 'atp_rankings';
-  const cached = getCached<OfficialRanking[]>(cacheKey);
-  
-  if (cached) {
-    console.log('[ATP] Cache HIT pour classements');
-    return cached;
-  }
-  
-  try {
-    console.log('[ATP] Récupération classements...');
-    
-    // L'API ATP officielle nécessite un parsing HTML car pas d'API REST publique
-    // Alternative: utiliser des données statiques mises à jour régulièrement
-    
-    const response = await safeFetch(
-      `${SOURCES.ATP_TOUR.baseUrl}${SOURCES.ATP_TOUR.endpoints.rankings}`,
-      'atptour'
-    );
-    
-    if (!response) {
-      console.log('[ATP] Fallback: utilisation classements locaux');
-      return getLocalATPRankings();
-    }
-    
-    // Parser le HTML pour extraire les classements
-    // Note: En production, utiliser cheerio pour un parsing robuste
-    const html = await response.text();
-    const rankings = parseATPRankingsHTML(html, limit);
-    
-    if (rankings.length > 0) {
-      setCache(cacheKey, rankings, CACHE_TTL.rankings, 'atptour');
-      console.log(`[ATP] ${rankings.length} classements récupérés`);
-      return rankings;
-    }
-    
-    return getLocalATPRankings();
-    
-  } catch (error) {
-    console.error('[ATP] Erreur récupération classements:', error);
-    return getLocalATPRankings();
-  }
-}
-
-function parseATPRankingsHTML(html: string, limit: number): OfficialRanking[] {
-  // Parsing simplifié - en production, utiliser cheerio
-  const rankings: OfficialRanking[] = [];
-  
-  // Regex pour extraire les données (approximatif)
-  const rowPattern = /<tr[^>]*>[\s\S]*?<td[^>]*>(\d+)<\/td>[\s\S]*?<a[^>]*>([^<]+)<\/a>/g;
-  
-  let match;
-  while ((match = rowPattern.exec(html)) !== null && rankings.length < limit) {
-    rankings.push({
-      rank: parseInt(match[1]),
-      name: match[2].trim(),
-      country: '',
-      points: 0,
-      movement: 0,
-      tournaments: 0,
-    });
-  }
-  
-  return rankings;
+  // Retourner les classements statiques (mis à jour manuellement)
+  return getLocalATPRankings().slice(0, limit);
 }
 
 function getLocalATPRankings(): OfficialRanking[] {
-  // Classements ATP mis à jour manuellement (fallback)
   return [
     { rank: 1, name: 'Jannik Sinner', country: 'ITA', points: 11020, movement: 0, tournaments: 20 },
     { rank: 2, name: 'Carlos Alcaraz', country: 'ESP', points: 8850, movement: 0, tournaments: 19 },
@@ -230,51 +84,11 @@ function getLocalATPRankings(): OfficialRanking[] {
 }
 
 // ============================================
-// CLASSEMENTS WTA
+// CLASSEMENTS WTA (DONNÉES STATIQUES)
 // ============================================
 
 export async function fetchWTARankings(limit: number = 100): Promise<OfficialRanking[]> {
-  const cacheKey = 'wta_rankings';
-  const cached = getCached<OfficialRanking[]>(cacheKey);
-  
-  if (cached) {
-    console.log('[WTA] Cache HIT pour classements');
-    return cached;
-  }
-  
-  try {
-    console.log('[WTA] Récupération classements...');
-    
-    const response = await safeFetch(
-      `${SOURCES.WTA_TENNIS.baseUrl}${SOURCES.WTA_TENNIS.endpoints.rankings}`,
-      'wtatennis'
-    );
-    
-    if (!response) {
-      console.log('[WTA] Fallback: utilisation classements locaux');
-      return getLocalWTARankings();
-    }
-    
-    const html = await response.text();
-    const rankings = parseWTARankingsHTML(html, limit);
-    
-    if (rankings.length > 0) {
-      setCache(cacheKey, rankings, CACHE_TTL.rankings, 'wtatennis');
-      console.log(`[WTA] ${rankings.length} classements récupérés`);
-      return rankings;
-    }
-    
-    return getLocalWTARankings();
-    
-  } catch (error) {
-    console.error('[WTA] Erreur récupération classements:', error);
-    return getLocalWTARankings();
-  }
-}
-
-function parseWTARankingsHTML(html: string, limit: number): OfficialRanking[] {
-  // Similar to ATP parsing
-  return [];
+  return getLocalWTARankings().slice(0, limit);
 }
 
 function getLocalWTARankings(): OfficialRanking[] {
@@ -303,157 +117,7 @@ function getLocalWTARankings(): OfficialRanking[] {
 }
 
 // ============================================
-// STATISTIQUES JOUEURS
-// ============================================
-
-export async function fetchPlayerStats(playerName: string, tour: 'atp' | 'wta'): Promise<PlayerStats | null> {
-  const cacheKey = `player_stats_${tour}_${playerName.toLowerCase().replace(/[^a-z]/g, '')}`;
-  const cached = getCached<PlayerStats>(cacheKey);
-  
-  if (cached) {
-    return cached;
-  }
-  
-  try {
-    const baseUrl = tour === 'atp' ? SOURCES.ATP_TOUR.baseUrl : SOURCES.WTA_TENNIS.baseUrl;
-    const source = tour === 'atp' ? 'atptour' : 'wtatennis';
-    
-    const response = await safeFetch(
-      `${baseUrl}/en/players/${playerName.toLowerCase().replace(/[^a-z]/g, '-')}`,
-      source
-    );
-    
-    if (!response) {
-      return null;
-    }
-    
-    // Parser les stats du joueur
-    const html = await response.text();
-    const stats = parsePlayerStatsHTML(html, playerName);
-    
-    if (stats) {
-      setCache(cacheKey, stats, CACHE_TTL.playerStats, source);
-    }
-    
-    return stats;
-    
-  } catch (error) {
-    console.error(`[Player] Erreur stats ${playerName}:`, error);
-    return null;
-  }
-}
-
-function parsePlayerStatsHTML(html: string, playerName: string): PlayerStats | null {
-  // En production, utiliser cheerio pour un parsing robuste
-  // Retourner des stats par défaut pour l'instant
-  return {
-    id: `player_${playerName.toLowerCase().replace(/[^a-z]/g, '')}`,
-    name: playerName,
-    ranking: 100,
-    rankingPoints: 0,
-    country: '',
-    age: 25,
-    turnedPro: 2018,
-    height: 185,
-    weight: 80,
-    prizeMoney: 0,
-    careerTitles: 0,
-    careerWins: 0,
-    careerLosses: 0,
-    careerWinRate: 50,
-    surfaceStats: {
-      hard: { wins: 0, losses: 0, winRate: 50, titles: 0 },
-      clay: { wins: 0, losses: 0, winRate: 50, titles: 0 },
-      grass: { wins: 0, losses: 0, winRate: 50, titles: 0 },
-      indoor: { wins: 0, losses: 0, winRate: 50, titles: 0 },
-    },
-    serveStats: {
-      aces: 0,
-      doubleFaults: 0,
-      firstServePct: 60,
-      firstServeWon: 70,
-      secondServeWon: 50,
-      breakPointsSaved: 60,
-      serviceGamesWon: 75,
-    },
-    returnStats: {
-      firstReturnWon: 30,
-      secondReturnWon: 50,
-      breakPointsConverted: 40,
-      returnGamesWon: 25,
-    },
-    lastUpdated: new Date().toISOString(),
-  };
-}
-
-// ============================================
-// COTES EN TEMPS RÉEL
-// ============================================
-
-export async function fetchLiveOdds(matchId: string): Promise<LiveOdds | null> {
-  const cacheKey = `odds_${matchId}`;
-  const cached = getCached<LiveOdds>(cacheKey);
-  
-  if (cached) {
-    return cached;
-  }
-  
-  try {
-    // Utiliser Tennis Explorer comme source de cotes
-    const response = await safeFetch(
-      `${SOURCES.TENNIS_EXPLORER.baseUrl}/match/${matchId}`,
-      'betexplorer' // Utilise le même rate limiter
-    );
-    
-    if (!response) {
-      return null;
-    }
-    
-    const html = await response.text();
-    const odds = parseOddsHTML(html, matchId);
-    
-    if (odds) {
-      setCache(cacheKey, odds, CACHE_TTL.odds, 'betexplorer');
-    }
-    
-    return odds;
-    
-  } catch (error) {
-    console.error('[Odds] Erreur récupération cotes:', error);
-    return null;
-  }
-}
-
-function parseOddsHTML(html: string, matchId: string): LiveOdds | null {
-  // Parser les cotes depuis le HTML
-  // En production, utiliser cheerio
-  
-  const oddsPattern = /data-odd="(\d+\.?\d*)"/g;
-  const odds: number[] = [];
-  
-  let match;
-  while ((match = oddsPattern.exec(html)) !== null) {
-    odds.push(parseFloat(match[1]));
-  }
-  
-  if (odds.length >= 2) {
-    return {
-      matchId,
-      player1: '',
-      player2: '',
-      bookmaker: 'Average',
-      odds1: odds[0],
-      odds2: odds[1],
-      movement: 'stable',
-      lastUpdated: new Date().toISOString(),
-    };
-  }
-  
-  return null;
-}
-
-// ============================================
-// SYNCHRONISATION GLOBALE
+// SYNCHRONISATION
 // ============================================
 
 export async function syncAllRankings(): Promise<{
@@ -498,7 +162,7 @@ export async function getPlayerRanking(
     }
   }
   
-  return 500; // Non classé
+  return 500;
 }
 
 // ============================================
@@ -506,7 +170,6 @@ export async function getPlayerRanking(
 // ============================================
 
 export {
-  SOURCES,
   getLocalATPRankings,
   getLocalWTARankings,
 };
