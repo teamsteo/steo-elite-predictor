@@ -46,6 +46,14 @@
     {
       "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-valuebets",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-predictions?secret=steo-elite-cron-2026&mode=major",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-predictions?secret=steo-elite-cron-2026&mode=summary",
+      "schedule": "0 9 * * *"
     }
   ]
 }
