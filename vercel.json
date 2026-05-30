@@ -20,37 +20,30 @@
   ],
   "crons": [
     {
-      "comment": "00h UTC - Vérification résultats football du soir",
       "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-evening",
       "schedule": "0 0 * * *"
     },
     {
-      "comment": "04h UTC - Vérification résultats football du matin",
       "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-morning",
       "schedule": "0 4 * * *"
     },
     {
-      "comment": "05h UTC - Vérification résultats NBA nuit",
       "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-night",
       "schedule": "0 5 * * *"
     },
     {
-      "comment": "05h30 UTC - GÉNÉRATION UNIQUE des prédictions (scraping + ML)",
       "path": "/api/cron/generate-daily?secret=steo-elite-cron-2026",
       "schedule": "30 5 * * *"
     },
     {
-      "comment": "06h UTC - Mise à jour données fondamentales",
       "path": "/api/cron?secret=steo-elite-cron-2026&action=update-fundamentals",
       "schedule": "0 6 * * *"
     },
     {
-      "comment": "07h UTC - Publication Telegram: Résumé global (lit fichier, pas de scraping)",
       "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-summary",
       "schedule": "0 7 * * *"
     },
     {
-      "comment": "08h UTC - Publication Telegram: Value bets (lit fichier, pas de scraping)",
       "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-valuebets",
       "schedule": "0 8 * * *"
     }
