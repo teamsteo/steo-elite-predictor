@@ -776,24 +776,37 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-summary':
-        // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
+        // Publier le résumé quotidien sur Telegram (lit fichier pré-calculé, PAS de scraping)
         try {
-          const matches = await getMatchesWithRealOdds();
-          const predictions = matches.map((m: any) => ({
-            homeTeam: m.homeTeam,
-            awayTeam: m.awayTeam,
-            sport: m.sport,
-            league: m.league,
-            date: m.date,
-            displayDate: m.displayDate,
-            recommendation: m.recommendations?.[0]?.label,
-            confidence: m.confidence,
-            valueBetDetected: m.valueBets?.length > 0,
-            riskPercentage: m.riskPercentage,
-            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-            oddsHome: m.oddsHome,
-            oddsAway: m.oddsAway,
-            oddsDraw: m.oddsDraw,
+          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+          const dailyData = loadDailyPredictions();
+          
+          if (!dailyData) {
+            result = { 
+              telegram: { 
+                success: false, 
+                message: 'Aucune prédiction disponible. Exécutez /api/cron/generate-daily d\'abord.'
+              } 
+            };
+            break;
+          }
+          
+          // Convertir au format attendu par Telegram
+          const predictions = dailyData.predictions.map(p => ({
+            homeTeam: p.homeTeam,
+            awayTeam: p.awayTeam,
+            sport: p.sport,
+            league: p.league || p.tournament,
+            date: p.date,
+            recommendation: p.recommendation,
+            confidence: p.confidence,
+            valueBetDetected: p.valueBet,
+            valueBetType: p.valueBetType,
+            riskPercentage: p.riskPercentage,
+            winProbability: p.winProbability,
+            oddsHome: p.oddsHome,
+            oddsAway: p.oddsAway,
+            oddsDraw: p.oddsDraw,
           }));
           
           const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
@@ -805,6 +818,7 @@ export async function GET(request: NextRequest) {
               total: predictions.length,
               published: filteredCount,
               excluded: predictions.length - filteredCount,
+              source: 'precalculated',
               message: telegramResult 
                 ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
                 : 'Erreur publication Telegram'
@@ -816,25 +830,37 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-valuebets':
-        // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
+        // Publier uniquement les value bets sur Telegram (lit fichier pré-calculé, PAS de scraping)
         try {
-          const matches = await getMatchesWithRealOdds();
-          const predictions = matches.map((m: any) => ({
-            homeTeam: m.homeTeam,
-            awayTeam: m.awayTeam,
-            sport: m.sport,
-            league: m.league,
-            date: m.date,
-            displayDate: m.displayDate,
-            recommendation: m.recommendations?.[0]?.label,
-            confidence: m.confidence,
-            riskPercentage: m.riskPercentage,
-            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-            valueBetDetected: m.valueBets?.length > 0,
-            valueBetType: m.valueBets?.[0]?.type,
-            oddsHome: m.oddsHome,
-            oddsAway: m.oddsAway,
-            oddsDraw: m.oddsDraw,
+          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+          const dailyData = loadDailyPredictions();
+          
+          if (!dailyData) {
+            result = { 
+              telegram: { 
+                success: false, 
+                message: 'Aucune prédiction disponible. Exécutez /api/cron/generate-daily d\'abord.'
+              } 
+            };
+            break;
+          }
+          
+          // Convertir au format attendu par Telegram
+          const predictions = dailyData.predictions.map(p => ({
+            homeTeam: p.homeTeam,
+            awayTeam: p.awayTeam,
+            sport: p.sport,
+            league: p.league || p.tournament,
+            date: p.date,
+            recommendation: p.recommendation,
+            confidence: p.confidence,
+            valueBetDetected: p.valueBet,
+            valueBetType: p.valueBetType,
+            riskPercentage: p.riskPercentage,
+            winProbability: p.winProbability,
+            oddsHome: p.oddsHome,
+            oddsAway: p.oddsAway,
+            oddsDraw: p.oddsDraw,
           }));
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
@@ -848,6 +874,7 @@ export async function GET(request: NextRequest) {
             telegram: { 
               success: telegramResult, 
               total: valueBetsCount,
+              source: 'precalculated',
               message: telegramResult 
                 ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
                 : 'Erreur ou aucun value bet à publier'
