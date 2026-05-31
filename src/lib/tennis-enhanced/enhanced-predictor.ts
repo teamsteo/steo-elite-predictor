@@ -335,7 +335,41 @@ export function predictMatch(
   }
   
   // ============================================
-  // CALCUL SCORE FINAL
+  // VALIDATION CROISÉE: NOS ANALYSES vs BOOKMAKERS
+  // ============================================
+  
+  // 1. Favori selon les cotes (cote basse = favori)
+  const oddsFavorite: 'player1' | 'player2' = match.odds1 < match.odds2 ? 'player1' : 'player2';
+  const oddsFavoriteImplied = match.odds1 < match.odds2 
+    ? (1 / match.odds1) * 100 
+    : (1 / match.odds2) * 100;
+  
+  // 2. Favori selon notre analyse SANS les cotes (classement + surface + forme + motivation)
+  const ourAnalysisScore = 
+    rankingScore * weights.ranking +
+    surfaceScore * weights.surface +
+    formScore * weights.form +
+    h2hScore * weights.h2h +
+    tournamentScore * weights.tournament +
+    fatigueScore * weights.fatigue +
+    motivationScore * weights.motivation;
+  
+  const ourFavorite: 'player1' | 'player2' = ourAnalysisScore >= 0 ? 'player1' : 'player2';
+  
+  // 3. Comparaison: y a-t-il divergence?
+  const hasDivergence = oddsFavorite !== ourFavorite;
+  
+  // 4. Calcul de l'écart de confiance
+  // Si bookmaker dit 70% et nous 80% sur le même joueur → petit écart (OK)
+  // Si bookmaker dit joueur A favori et nous joueur B → GRAND écart (ALERTE)
+  const ourFavoriteProbability = ourAnalysisScore >= 0 
+    ? 1 / (1 + Math.exp(-ourAnalysisScore / 30))
+    : 1 - 1 / (1 + Math.exp(-ourAnalysisScore / 30));
+  
+  const probabilityGap = Math.abs(ourFavoriteProbability * 100 - oddsFavoriteImplied);
+  
+  // ============================================
+  // CALCUL SCORE FINAL (avec validation croisée)
   // ============================================
   
   const totalScore = 
@@ -347,38 +381,52 @@ export function predictMatch(
     tournamentScore * weights.tournament +
     fatigueScore * weights.fatigue +
     motivationScore * weights.motivation;
-  
+
   // Conversion en probabilité avec fonction sigmoïde calibrée
   const rawProbability = 1 / (1 + Math.exp(-totalScore / 30));
-  
+
   // Calibration selon importance du tournoi
   const calibratedProbability = rawProbability * TIER_MULTIPLIERS[match.tournamentTier];
   const finalProbability = Math.min(0.95, Math.max(0.05, calibratedProbability));
-  
+
   // Déterminer le gagnant
   const predictedWinner: 'player1' | 'player2' = finalProbability >= 0.5 ? 'player1' : 'player2';
   const winProbability = finalProbability >= 0.5 ? finalProbability : 1 - finalProbability;
   
   // ============================================
-  // CONFIANCE
+  // CONFIANCE AJUSTÉE SELON VALIDATION CROISÉE
   // ============================================
   
   const thresholds = getConfidenceThresholds(match.tournamentTier);
   let confidence: 'very_high' | 'high' | 'medium' | 'low';
   let riskPercentage: number;
+  let crossValidationStatus: 'confirmed' | 'neutral' | 'divergence' | 'excluded';
   
-  if (winProbability * 100 >= thresholds.very_high) {
-    confidence = 'very_high';
-    riskPercentage = 10 + (1 - winProbability) * 20;
-  } else if (winProbability * 100 >= thresholds.high) {
-    confidence = 'high';
-    riskPercentage = 20 + (thresholds.very_high - winProbability * 100) / 2;
-  } else if (winProbability * 100 >= thresholds.medium) {
-    confidence = 'medium';
-    riskPercentage = 35 + (thresholds.high - winProbability * 100) / 2;
-  } else {
+  if (hasDivergence) {
+    // DIVERGENCE: Notre analyse et les bookmakers ne sont pas d'accord
+    // → On exclut ce pari (trop risqué)
     confidence = 'low';
-    riskPercentage = 50;
+    riskPercentage = 75; // Risque élevé
+    crossValidationStatus = 'excluded';
+  } else if (probabilityGap < 10) {
+    // COHÉRENCE FORTE: Même favori ET probabilité proche
+    // → Confiance augmentée
+    confidence = winProbability * 100 >= thresholds.very_high ? 'very_high' : 'high';
+    riskPercentage = Math.max(10, 15 + (1 - winProbability) * 25);
+    crossValidationStatus = 'confirmed';
+  } else if (probabilityGap < 20) {
+    // COHÉRENCE MOYENNE: Même favori mais écart de probabilité
+    // → Confiance normale
+    confidence = winProbability * 100 >= thresholds.high ? 'high' : 
+                 winProbability * 100 >= thresholds.medium ? 'medium' : 'low';
+    riskPercentage = 25 + (probabilityGap / 2);
+    crossValidationStatus = 'neutral';
+  } else {
+    // COHÉRENCE FAIBLE: Même favori mais gros écart de probabilité
+    // → Signaler le doute
+    confidence = 'medium';
+    riskPercentage = 45;
+    crossValidationStatus = 'divergence';
   }
   
   // ============================================
@@ -424,6 +472,19 @@ export function predictMatch(
   const keyInsights: string[] = [];
   const warnings: string[] = [];
   
+  // ============================================
+  // INSIGHTS: VALIDATION CROISÉE
+  // ============================================
+  
+  if (crossValidationStatus === 'confirmed') {
+    keyInsights.push(`✅ Analyse confirmée par les cotes (écart ${probabilityGap.toFixed(0)}%)`);
+  } else if (crossValidationStatus === 'excluded') {
+    warnings.push(`⚠️ DIVERGENCE: Bookmakers favorisent ${oddsFavorite === 'player1' ? match.player1 : match.player2}, notre analyse favorise ${ourFavorite === 'player1' ? match.player1 : match.player2}`);
+    warnings.push('❌ Pari EXCLU - incohérence entre analyse et cotes');
+  } else if (crossValidationStatus === 'divergence') {
+    warnings.push(`⚠️ Écart important avec les bookmakers (${probabilityGap.toFixed(0)}%) - prudence`);
+  }
+  
   // Insights (enrichis avec profils)
   if (Math.abs(rankingDiff) > 50) {
     keyInsights.push(`Écart de classement important: ${Math.abs(rankingDiff)} places`);
@@ -463,7 +524,7 @@ export function predictMatch(
   }
   
   // ============================================
-  // BETTING RECOMMENDATION
+  // BETTING RECOMMENDATION (avec validation croisée)
   // ============================================
   
   const winnerOdds = predictedWinner === 'player1' ? match.odds1 : match.odds2;
@@ -479,9 +540,12 @@ export function predictMatch(
   else if (expectedValue > 0) valueRating = 'fair';
   else valueRating = 'poor';
   
-  const recommendedBet = kellyStake >= 0.5 && 
-                         confidence !== 'low' && 
-                         expectedValue > 0.02;
+  // Recommandation: EXCLURE si divergence avec bookmakers
+  const recommendedBet = 
+    crossValidationStatus !== 'excluded' &&  // Pas de divergence
+    kellyStake >= 0.5 && 
+    confidence !== 'low' && 
+    expectedValue > 0.02;
   
   // ============================================
   // ANALYSE TEXTUELLE
