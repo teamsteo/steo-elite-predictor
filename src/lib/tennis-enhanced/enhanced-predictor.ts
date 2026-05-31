@@ -100,17 +100,170 @@ export interface ValidationResult {
 // CONFIGURATION DU MODÈLE
 // ============================================
 
-// Poids ajustables (seront calibrés par entraînement)
-const DEFAULT_WEIGHTS: ModelWeights = {
-  ranking: 0.22,      // Réduit car moins fiable que les cotes
-  surface: 0.15,      // Important mais pas dominant
+// Poids de base (seront calibrés par entraînement)
+const BASE_WEIGHTS: ModelWeights = {
+  ranking: 0.22,      // Classement ATP/WTA
+  surface: 0.15,      // Spécialiste surface
   form: 0.12,         // Forme récente
   h2h: 0.10,          // Historique tête-à-tête
-  odds: 0.20,         // Les cotes contiennent beaucoup d'information
+  odds: 0.20,         // Cotes bookmakers
   tournament: 0.08,   // Importance du tournoi
   fatigue: 0.07,      // Fatigue du joueur
   motivation: 0.06,   // Motivation/contexte
 };
+
+// 🎯 PONDÉRATION DYNAMIQUE SELON LE TOUR DU TOURNOI
+function getDynamicWeights(round: string, tier: TournamentTier): ModelWeights {
+  const weights = { ...BASE_WEIGHTS };
+  
+  const roundLower = round.toLowerCase();
+  
+  // 1er tour / Début de tournoi
+  if (roundLower.includes('1st') || roundLower.includes('first') || 
+      roundLower.includes('r32') || roundLower.includes('r64') || roundLower === 'match') {
+    // Classement TRÈS important (favori vs inconnu)
+    weights.ranking = 0.28;
+    weights.form = 0.10;
+    weights.h2h = 0.05;  // Pas d'historique avec inconnus
+    weights.surface = 0.18;  // Surface importante pour les outsiders
+  }
+  // Quarts de finale
+  else if (roundLower.includes('quarter') || roundLower.includes('qf')) {
+    // Équilibre entre classement et forme
+    weights.ranking = 0.20;
+    weights.form = 0.18;
+    weights.h2h = 0.12;
+    weights.surface = 0.15;
+  }
+  // Demi-finale / Finale
+  else if (roundLower.includes('semi') || roundLower.includes('final') || 
+           roundLower.includes('sf') || roundLower.includes('f')) {
+    // Forme et H2H très importants (les deux sont forts)
+    weights.ranking = 0.15;
+    weights.form = 0.20;
+    weights.h2h = 0.18;
+    weights.surface = 0.15;
+    weights.motivation = 0.10;  // Enjeu maximal
+  }
+  
+  // Grand Chelem: motivation plus importante
+  if (tier === 'grand_slam') {
+    weights.motivation = Math.min(0.12, weights.motivation + 0.04);
+  }
+  
+  return weights;
+}
+
+// 🏠 FACTEUR DOMICILE (jouer dans son pays)
+const HOME_ADVANTAGE: Record<string, string[]> = {
+  'france': ['french open', 'roland garros', 'paris', 'lyon', 'marseille', 'montpellier'],
+  'spain': ['madrid', 'barcelona', 'valencia'],
+  'italy': ['rome', 'milan', 'naples'],
+  'usa': ['us open', 'indian wells', 'miami', 'cincinnati', 'new york'],
+  'uk': ['wimbledon', 'london', 'queen'],
+  'germany': ['munich', 'hamburg', 'stuttgart', 'berlin'],
+  'australia': ['australian open', 'melbourne', 'sydney', 'brisbane', 'adelaide'],
+};
+
+// Joueurs par nationalité
+const PLAYER_NATIONALITY: Record<string, string> = {
+  // France
+  'gael monfils': 'france', 'ugo humbert': 'france', 'adrian mannarino': 'france',
+  'arthur fils': 'france', 'giovanni mpetsi perdicard': 'france', 'corentin moutet': 'france',
+  'caroline garcia': 'france', 'varvara gracheva': 'france',
+  // Espagne
+  'carlos alcaraz': 'spain', 'rafael nadal': 'spain', 'pablo carreno busta': 'spain',
+  'roberto bautista agut': 'spain', 'alejandro davidovich fokina': 'spain',
+  // Italie
+  'jannik sinner': 'italy', 'lorenzo musetti': 'italy', 'matteo berrettini': 'italy',
+  'jasmine paolini': 'italy',
+  // USA
+  'taylor fritz': 'usa', 'tommy paul': 'usa', 'ben shelton': 'usa', 'frances tiafoe': 'usa',
+  'sebastian korda': 'usa', 'coco gauff': 'usa', 'jessica pegula': 'usa', 'madison keys': 'usa',
+  'danielle collins': 'usa',
+  // UK
+  'andy murray': 'uk', 'cameron norrie': 'uk', 'jack draper': 'uk', 'emma raducanu': 'uk',
+  // Allemagne
+  'alexander zverev': 'germany', 'jan-lennard struff': 'germany',
+  // Australie
+  'nick kyrgios': 'australia', 'alex de minaur': 'australia', 'thanasi kokkinakis': 'australia',
+  // Russie
+  'daniil medvedev': 'russia', 'andrey rublev': 'russia', 'karen khachanov': 'russia',
+  // Norvège
+  'casper ruud': 'norway',
+  // Serbie
+  'novak djokovic': 'serbia',
+  // Grèce
+  'stefanos tsitsipas': 'greece',
+  // Pologne
+  'iga swiatek': 'poland', 'hubert hurkacz': 'poland',
+  // Belarus
+  'aryna sabalenka': 'belarus', 'victoria azarenka': 'belarus',
+  // Kazakhstan
+  'elena rybakina': 'kazakhstan', 'alexander bublik': 'kazakhstan',
+  // Tunisie
+  'ons jabeur': 'tunisia',
+  // Tchéquie
+  'marketa vondrousova': 'czech', 'barbora krejcikova': 'czech', 'petra kvitova': 'czech',
+  // Lettonie
+  'jelena ostapenko': 'latvia',
+  // Danemark
+  'holger rune': 'denmark',
+  // Canada
+  'felix auger aliassime': 'canada', 'bianca andreescu': 'canada', 'leylah fernandez': 'canada',
+  // Brésil
+  'beatriz haddad maia': 'brazil',
+  // Argentine
+  'francisco cerundolo': 'argentina', 'sebastian baez': 'argentina',
+  // Chine
+  'qinwen zheng': 'china', 'zheng qinwen': 'china',
+  // Russie
+  'daria kasatkina': 'russia', 'lyudmila samsonova': 'russia',
+};
+
+function getHomeAdvantage(player: string, tournament: string): number {
+  const nationality = PLAYER_NATIONALITY[player.toLowerCase()];
+  if (!nationality) return 0;
+  
+  const homeTournaments = HOME_ADVANTAGE[nationality] || [];
+  const tournamentLower = tournament.toLowerCase();
+  
+  for (const homeT of homeTournaments) {
+    if (tournamentLower.includes(homeT)) {
+      return 10; // +10% de bonus pour le facteur domicile
+    }
+  }
+  
+  return 0;
+}
+
+function getCountryName(code: string): string {
+  const names: Record<string, string> = {
+    'france': 'France',
+    'spain': 'Espagne',
+    'italy': 'Italie',
+    'usa': 'USA',
+    'uk': 'Royaume-Uni',
+    'germany': 'Allemagne',
+    'australia': 'Australie',
+    'russia': 'Russie',
+    'norway': 'Norvège',
+    'serbia': 'Serbie',
+    'greece': 'Grèce',
+    'poland': 'Pologne',
+    'belarus': 'Biélorussie',
+    'kazakhstan': 'Kazakhstan',
+    'tunisia': 'Tunisie',
+    'czech': 'Tchéquie',
+    'latvia': 'Lettonie',
+    'denmark': 'Danemark',
+    'canada': 'Canada',
+    'brazil': 'Brésil',
+    'argentina': 'Argentine',
+    'china': 'Chine',
+  };
+  return names[code] || code;
+}
 
 // Facteurs d'ajustement par importance de tournoi
 const TIER_MULTIPLIERS: Record<TournamentTier, number> = {
@@ -260,7 +413,8 @@ export function predictMatch(
   player1Data?: PlayerData,
   player2Data?: PlayerData
 ): EnhancedPrediction {
-  const weights = DEFAULT_WEIGHTS;
+  // 🎯 Pondération dynamique selon le tour du tournoi
+  const weights = getDynamicWeights(match.round || 'Match', match.tournamentTier);
   const tierFactor = getTournamentImportanceFactor(match.tournamentTier);
   
   // Récupérer les profils enrichis
@@ -333,6 +487,14 @@ export function predictMatch(
     const p2GSPerf = getGrandSlamPerformance(p2Profile, match.tournament);
     motivationScore -= (p2GSPerf - 70) / 5;
   }
+  
+  // 🏠 FACTEUR DOMICILE - Bonus si le joueur joue dans son pays
+  const p1HomeAdvantage = getHomeAdvantage(match.player1, match.tournament);
+  const p2HomeAdvantage = getHomeAdvantage(match.player2, match.tournament);
+  const homeScore = p1HomeAdvantage - p2HomeAdvantage;
+  
+  // Ajouter le bonus domicile à la motivation
+  motivationScore += homeScore;
   
   // ============================================
   // VALIDATION CROISÉE: NOS ANALYSES vs BOOKMAKERS
@@ -495,6 +657,14 @@ export function predictMatch(
   if (Math.abs(surfaceScore) > 10) {
     const advantaged = surfaceScore > 0 ? match.player1 : match.player2;
     keyInsights.push(`Avantage surface significatif pour ${advantaged}`);
+  }
+  
+  // 🏠 Insight facteur domicile
+  if (p1HomeAdvantage > 0) {
+    keyInsights.push(`🏠 ${match.player1} joue à domicile (${getCountryName(PLAYER_NATIONALITY[match.player1.toLowerCase()])})`);
+  }
+  if (p2HomeAdvantage > 0) {
+    keyInsights.push(`🏠 ${match.player2} joue à domicile (${getCountryName(PLAYER_NATIONALITY[match.player2.toLowerCase()])})`);
   }
   
   // Insights basés sur les profils
