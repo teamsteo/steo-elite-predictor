@@ -25,6 +25,20 @@ import {
   calculateFormBoost,
   PlayerProfile,
 } from './player-database';
+import {
+  calculateH2HScore,
+  detectMatchupProblem,
+} from './h2h-database';
+import {
+  compareForm,
+  getFormAnalysis,
+  detectFormWarnings,
+  detectFormStrengths,
+} from './form-analyzer';
+import {
+  comparePressure,
+  getPressureInsight,
+} from './ranking-pressure';
 
 // ============================================
 // INTERFACES
@@ -54,6 +68,7 @@ export interface EnhancedPrediction {
     tournament: { score: number; description: string };
     fatigue: { score: number; description: string };
     motivation: { score: number; description: string };
+    pressure: { score: number; description: string };  // 🆕 Pression classement
   };
   
   // Paris
@@ -84,6 +99,7 @@ export interface ModelWeights {
   tournament: number;
   fatigue: number;
   motivation: number;
+  pressure?: number;  // 🆕 Points à défendre / Pression classement
 }
 
 export interface ValidationResult {
@@ -101,16 +117,23 @@ export interface ValidationResult {
 // ============================================
 
 // Poids de base (seront calibrés par entraînement)
+// ✨ OPTIMISÉ: Poids ajustés après analyse des facteurs les plus prédictifs
 const BASE_WEIGHTS: ModelWeights = {
-  ranking: 0.22,      // Classement ATP/WTA
-  surface: 0.15,      // Spécialiste surface
-  form: 0.12,         // Forme récente
-  h2h: 0.10,          // Historique tête-à-tête
-  odds: 0.20,         // Cotes bookmakers
-  tournament: 0.08,   // Importance du tournoi
-  fatigue: 0.07,      // Fatigue du joueur
+  ranking: 0.20,      // Classement ATP/WTA (légèrement réduit)
+  surface: 0.12,      // Spécialiste surface
+  form: 0.15,         // Forme récente (AUGMENTÉ - facteur clé)
+  h2h: 0.08,          // Historique tête-à-tête
+  odds: 0.18,         // Cotes bookmakers (légèrement réduit)
+  tournament: 0.07,   // Importance du tournoi
+  fatigue: 0.08,      // Fatigue du joueur (AUGMENTÉ)
   motivation: 0.06,   // Motivation/contexte
+  pressure: 0.06,     // 🆕 Points à défendre / Pression classement
 };
+
+// Interface étendue pour les poids
+interface ExtendedModelWeights extends ModelWeights {
+  pressure: number;
+}
 
 // 🎯 PONDÉRATION DYNAMIQUE SELON LE TOUR DU TOURNOI
 function getDynamicWeights(round: string, tier: TournamentTier): ModelWeights {
@@ -435,21 +458,27 @@ export function predictMatch(
   const p2SurfaceAdv = p2SurfaceResult.score;
   const surfaceScore = (p1SurfaceAdv - p2SurfaceAdv);
   
-  // 3. Forme récente (avec données enrichies)
-  let formScore = 0;
-  if (p1Profile && p2Profile) {
-    const p1FormBoost = calculateFormBoost(p1Profile);
-    const p2FormBoost = calculateFormBoost(p2Profile);
-    formScore = (p1FormBoost - p2FormBoost) * 5; // Scale 0-50
-  } else if (player1Data?.recentForm && player2Data?.recentForm) {
-    const p1FormRate = player1Data.recentForm.last10.filter(r => r === 'W').length / 10;
-    const p2FormRate = player2Data.recentForm.last10.filter(r => r === 'W').length / 10;
-    formScore = (p1FormRate - p2FormRate) * 100;
-  }
+  // 3. Forme récente (AVEC DONNÉES ENRICHIES - NOUVEAU)
+  const formComparison = compareForm(match.player1, match.player2);
+  const formScore = formComparison.score;
+  const p1FormAnalysis = formComparison.p1Form;
+  const p2FormAnalysis = formComparison.p2Form;
   
-  // 4. H2H
-  let h2hScore = 0;
-  // En production, récupérer depuis la base H2H
+  // 4. H2H (AVEC BASE DE DONNÉES - NOUVEAU)
+  const h2hResult = calculateH2HScore(match.player1, match.player2, match.surface);
+  const h2hScore = h2hResult.score;
+  
+  // Détecter les match-up problems
+  const matchupProblem = detectMatchupProblem(match.player1, match.player2);
+  
+  // 🆕 9. PRESSION / POINTS À DÉFENDRE
+  const pressureComparison = comparePressure(
+    match.player1, 
+    match.player2, 
+    match.tournament,
+    match.category === 'wta'
+  );
+  const pressureScore = pressureComparison.score;
   
   // 5. Cotes
   const impliedP1 = (1 / match.odds1) * 100;
@@ -506,7 +535,7 @@ export function predictMatch(
     ? (1 / match.odds1) * 100 
     : (1 / match.odds2) * 100;
   
-  // 2. Favori selon notre analyse SANS les cotes (classement + surface + forme + motivation)
+  // 2. Favori selon notre analyse SANS les cotes (classement + surface + forme + motivation + H2H + pression)
   const ourAnalysisScore = 
     rankingScore * weights.ranking +
     surfaceScore * weights.surface +
@@ -514,7 +543,8 @@ export function predictMatch(
     h2hScore * weights.h2h +
     tournamentScore * weights.tournament +
     fatigueScore * weights.fatigue +
-    motivationScore * weights.motivation;
+    motivationScore * weights.motivation +
+    pressureScore * (weights.pressure || 0.06);
   
   const ourFavorite: 'player1' | 'player2' = ourAnalysisScore >= 0 ? 'player1' : 'player2';
   
@@ -531,7 +561,7 @@ export function predictMatch(
   const probabilityGap = Math.abs(ourFavoriteProbability * 100 - oddsFavoriteImplied);
   
   // ============================================
-  // CALCUL SCORE FINAL (avec validation croisée)
+  // CALCUL SCORE FINAL (avec validation croisée + NOUVEAUX FACTEURS)
   // ============================================
   
   const totalScore = 
@@ -542,7 +572,8 @@ export function predictMatch(
     oddsScore * weights.odds +
     tournamentScore * weights.tournament +
     fatigueScore * weights.fatigue +
-    motivationScore * weights.motivation;
+    motivationScore * weights.motivation +
+    pressureScore * (weights.pressure || 0.06);  // 🆕 Pression classement
 
   // Conversion en probabilité avec fonction sigmoïde calibrée
   const rawProbability = 1 / (1 + Math.exp(-totalScore / 30));
@@ -606,12 +637,11 @@ export function predictMatch(
     },
     form: {
       score: formScore,
-      description: formScore > 20 ? `${match.player1} en meilleure forme` :
-                   formScore < -20 ? `${match.player2} en meilleure forme` : 'Forme équilibrée',
+      description: formComparison.description,
     },
     h2h: {
       score: h2hScore,
-      description: 'Pas de données H2H disponibles',
+      description: h2hResult.description,
     },
     odds: {
       score: oddsScore,
@@ -628,6 +658,10 @@ export function predictMatch(
     motivation: {
       score: motivationScore,
       description: 'Analyse motivation basique',
+    },
+    pressure: {
+      score: pressureScore,
+      description: pressureComparison.description,
     },
   };
   
@@ -666,6 +700,45 @@ export function predictMatch(
   if (p2HomeAdvantage > 0) {
     keyInsights.push(`🏠 ${match.player2} joue à domicile (${getCountryName(PLAYER_NATIONALITY[match.player2.toLowerCase()])})`);
   }
+  
+  // 🆕 INSIGHTS H2H (Head-to-Head)
+  if (h2hResult.record && h2hResult.record.totalMatches >= 3) {
+    if (Math.abs(h2hScore) > 30) {
+      const dominant = h2hScore > 0 ? match.player1 : match.player2;
+      keyInsights.push(`📊 H2H: ${dominant} domine les confrontations`);
+    }
+  }
+  
+  // 🆕 INSIGHT MATCH-UP PROBLEM
+  if (matchupProblem.exists && matchupProblem.dominantPlayer) {
+    const dominantName = matchupProblem.dominantPlayer.toLowerCase().includes(match.player1.toLowerCase()) 
+      ? match.player1 : match.player2;
+    keyInsights.push(`⚔️ Match-up favorable: ${dominantName} pose problème à son adversaire`);
+  }
+  
+  // 🆕 INSIGHTS FORME RÉCENTE
+  if (p1FormAnalysis && p1FormAnalysis.currentStreak.type === 'win' && p1FormAnalysis.currentStreak.count >= 4) {
+    keyInsights.push(`🔥 ${match.player1}: ${p1FormAnalysis.currentStreak.count} victoires consécutives`);
+  }
+  if (p2FormAnalysis && p2FormAnalysis.currentStreak.type === 'win' && p2FormAnalysis.currentStreak.count >= 4) {
+    keyInsights.push(`🔥 ${match.player2}: ${p2FormAnalysis.currentStreak.count} victoires consécutives`);
+  }
+  
+  // Détecter les warnings de forme
+  if (p1FormAnalysis) {
+    const formWarnings = detectFormWarnings(p1FormAnalysis);
+    formWarnings.forEach(w => warnings.push(`${match.player1}: ${w}`));
+  }
+  if (p2FormAnalysis) {
+    const formWarnings = detectFormWarnings(p2FormAnalysis);
+    formWarnings.forEach(w => warnings.push(`${match.player2}: ${w}`));
+  }
+  
+  // 🆕 INSIGHTS PRESSION / POINTS À DÉFENDRE
+  const p1PressureInsight = getPressureInsight(pressureComparison.p1Pressure);
+  const p2PressureInsight = getPressureInsight(pressureComparison.p2Pressure);
+  if (p1PressureInsight) keyInsights.push(p1PressureInsight);
+  if (p2PressureInsight) keyInsights.push(p2PressureInsight);
   
   // Insights basés sur les profils
   if (p1Profile?.strengths.length && p1Profile.strengths.length > 0) {
@@ -753,7 +826,7 @@ export function predictMatch(
     analysis,
     keyInsights,
     warnings,
-    modelVersion: 'tennis-enhanced-v2.0',
+    modelVersion: 'tennis-enhanced-v3.0-optimized',  // ✨ H2H + Forme + Pression
     generatedAt: new Date(),
   };
 }
@@ -861,4 +934,4 @@ function generateAnalysis(
 // EXPORTS
 // ============================================
 
-export { DEFAULT_WEIGHTS, TIER_MULTIPLIERS };
+export { BASE_WEIGHTS as DEFAULT_WEIGHTS, TIER_MULTIPLIERS };
