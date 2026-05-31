@@ -766,9 +766,10 @@ export function getCollectorStatus(): CollectorStatus {
 
 /**
  * Collecte principale avec système hybride intelligent
+ * ⚠️ FALLBACK DÉSACTIVÉ - Seuls les vrais matchs sont retournés
  */
 export async function collectMatches(): Promise<TennisMatch[]> {
-  console.log('[TennisCollector] 🎾 Début collecte - SYSTÈME HYBRIDE');
+  console.log('[TennisCollector] 🎾 Début collecte - SYSTÈME HYBRIDE (FALLBACK DÉSACTIVÉ)');
   
   // Vérifier le cache
   const now = Date.now();
@@ -778,7 +779,7 @@ export async function collectMatches(): Promise<TennisMatch[]> {
   }
   
   let matches: TennisMatch[] = [];
-  let source: 'betexplorer' | 'oddsapi' | 'demo' = 'demo';
+  let source: 'betexplorer' | 'oddsapi' | 'none' = 'none';
   
   // 1. PRIORITÉ: BetExplorer (avec anti-ban)
   if (!antiBanState.isBanned) {
@@ -800,18 +801,18 @@ export async function collectMatches(): Promise<TennisMatch[]> {
     }
   }
   
-  // 3. FALLBACK: Données de démonstration
+  // 3. PLUS DE FALLBACK - On retourne vide si aucune source n'a de matchs
   if (matches.length === 0) {
-    matches = generateSampleMatches();
-    source = 'demo';
+    console.log('[TennisCollector] ⚠️ AUCUN MATCH RÉEL DISPONIBLE');
+    console.log('[TennisCollector] ℹ️ Sources tentées: BetExplorer, Odds API');
+    console.log('[TennisCollector] ℹ️ Vérifiez THE_ODDS_API_KEY dans les variables d\'environnement');
+    return [];
   }
   
   // Mettre en cache
-  if (matches.length > 0) {
-    cachedMatches = matches;
-    lastFetchTime = now;
-    console.log(`[TennisCollector] ✅ ${matches.length} matchs collectés via ${source.toUpperCase()}`);
-  }
+  cachedMatches = matches;
+  lastFetchTime = now;
+  console.log(`[TennisCollector] ✅ ${matches.length} matchs RÉELS collectés via ${source.toUpperCase()}`);
   
   return matches;
 }
