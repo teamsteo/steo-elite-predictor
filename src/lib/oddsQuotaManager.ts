@@ -35,7 +35,7 @@ export interface QuotaStatus {
 // CONFIGURATION
 // ============================================
 
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || '';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Cache valide 6 heures (suffisant pour une journée de matchs)
@@ -252,16 +252,78 @@ export async function getOddsForSports(sports: string[]): Promise<Record<string,
   return results;
 }
 
+// Cache pour les sports tennis disponibles
+let tennisSportsCache: string[] | null = null;
+
 /**
- * Récupère tous les matchs de tennis (ATP + WTA) en optimisant
+ * Récupère les clés des tournois tennis disponibles dynamiquement
+ */
+async function getAvailableTennisSports(): Promise<string[]> {
+  // Utiliser le cache si disponible
+  if (tennisSportsCache && tennisSportsCache.length > 0) {
+    return tennisSportsCache;
+  }
+  
+  try {
+    console.log('[OddsQuota] 🔍 Récupération des tournois tennis disponibles...');
+    
+    const response = await fetch(
+      `${ODDS_API_BASE}/sports/?apiKey=${ODDS_API_KEY}`
+    );
+    
+    if (!response.ok) {
+      console.error(`[OddsQuota] ❌ Erreur récupération sports: ${response.status}`);
+      // Fallback vers les clés connues
+      return ['tennis_atp_french_open', 'tennis_wta_french_open'];
+    }
+    
+    const sports = await response.json();
+    
+    // Filtrer les sports tennis
+    const tennisSports = sports
+      .filter((s: any) => s.group?.toLowerCase() === 'tennis' || s.key?.startsWith('tennis_'))
+      .map((s: any) => s.key);
+    
+    console.log(`[OddsQuota] 🎾 ${tennisSports.length} tournois tennis trouvés: ${tennisSports.join(', ')}`);
+    
+    // Mettre en cache
+    tennisSportsCache = tennisSports;
+    
+    return tennisSports;
+    
+  } catch (error) {
+    console.error('[OddsQuota] ❌ Erreur:', error);
+    // Fallback
+    return ['tennis_atp_french_open', 'tennis_wta_french_open'];
+  }
+}
+
+/**
+ * Récupère tous les matchs de tennis (détection automatique des tournois)
  */
 export async function getTennisOdds(): Promise<any[]> {
-  const odds = await getOddsForSports(['tennis_atp', 'tennis_wta']);
+  // Récupérer les tournois tennis disponibles
+  const tennisSports = await getAvailableTennisSports();
   
-  return [
-    ...(odds['tennis_atp'] || []),
-    ...(odds['tennis_wta'] || []),
-  ];
+  if (tennisSports.length === 0) {
+    console.log('[OddsQuota] ⚠️ Aucun tournoi tennis disponible');
+    return [];
+  }
+  
+  // Récupérer les matchs pour tous les tournois
+  const odds = await getOddsForSports(tennisSports);
+  
+  // Combiner tous les matchs
+  const allMatches: any[] = [];
+  for (const sport of tennisSports) {
+    if (odds[sport] && odds[sport].length > 0) {
+      allMatches.push(...odds[sport].map((m: any) => ({ ...m, sport_key: sport })));
+    }
+  }
+  
+  console.log(`[OddsQuota] 🎾 Total: ${allMatches.length} matchs tennis récupérés`);
+  
+  return allMatches;
 }
 
 /**
