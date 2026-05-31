@@ -343,70 +343,53 @@ function normalizeSurface(surface: string): 'hard' | 'clay' | 'grass' | 'indoor'
 }
 
 // ============================================
-// 3. MATCHS À VENIR (THE ODDS API)
+// 3. MATCHS À VENIR (VIA QUOTA MANAGER)
 // ============================================
 
 /**
- * Récupère les matchs à venir depuis The Odds API
+ * Récupère les matchs à venir via le gestionnaire de quota centralisé
+ * IMPORTANT: N'appelle l'API que si le cache est vide/expiré
  */
 export async function fetchUpcomingMatches(): Promise<UpcomingMatch[]> {
+  // Vérifier le cache local d'abord
+  if (upcomingMatchesCache && Date.now() - upcomingMatchesCache.timestamp < 30 * 60 * 1000) {
+    console.log('[TennisLiveData] 📦 Cache local HIT');
+    return upcomingMatchesCache.matches;
+  }
+  
   const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
   
   if (!apiKey) {
     console.log('[TennisLiveData] ⚠️ THE_ODDS_API_KEY non configurée');
+    console.log('[TennisLiveData] ℹ️ Obtenez une clé gratuite: https://the-odds-api.com/');
     return [];
   }
   
-  // Vérifier le cache
-  if (upcomingMatchesCache && Date.now() - upcomingMatchesCache.timestamp < 30 * 60 * 1000) {
-    return upcomingMatchesCache.matches;
-  }
-  
-  const matches: UpcomingMatch[] = [];
+  console.log('[TennisLiveData] 🎾 Récupération matchs via Quota Manager...');
   
   try {
-    console.log('[TennisLiveData] 🎾 Récupération matchs à venir (Odds API)...');
+    // Utiliser le gestionnaire de quota centralisé
+    const { getTennisOdds } = await import('../oddsQuotaManager');
+    const oddsData = await getTennisOdds();
     
-    // ATP
-    const atpResponse = await fetch(
-      `${ODDS_API_BASE}/sports/tennis_atp/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`,
-      { next: { revalidate: 1800 } }
-    );
+    const matches: UpcomingMatch[] = [];
     
-    if (atpResponse.ok) {
-      const atpData = await atpResponse.json();
-      for (const event of atpData) {
-        const match = parseOddsAPIEvent(event, 'atp');
-        if (match) matches.push(match);
-      }
-      console.log(`[TennisLiveData] ✅ ${atpData.length} matchs ATP`);
+    for (const event of oddsData) {
+      const match = parseOddsAPIEvent(event, event.sport_key?.includes('wta') ? 'wta' : 'atp');
+      if (match) matches.push(match);
     }
     
-    // WTA
-    const wtaResponse = await fetch(
-      `${ODDS_API_BASE}/sports/tennis_wta/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`,
-      { next: { revalidate: 1800 } }
-    );
-    
-    if (wtaResponse.ok) {
-      const wtaData = await wtaResponse.json();
-      for (const event of wtaData) {
-        const match = parseOddsAPIEvent(event, 'wta');
-        if (match) matches.push(match);
-      }
-      console.log(`[TennisLiveData] ✅ ${wtaData.length} matchs WTA`);
-    }
-    
-    // Mettre en cache
+    // Mettre en cache local
     upcomingMatchesCache = { matches, timestamp: Date.now() };
     
-    console.log(`[TennisLiveData] ✅ TOTAL: ${matches.length} matchs à venir`);
+    console.log(`[TennisLiveData] ✅ ${matches.length} matchs récupérés`);
+    
+    return matches;
     
   } catch (error) {
     console.error('[TennisLiveData] Erreur matchs à venir:', error);
+    return [];
   }
-  
-  return matches;
 }
 
 function parseOddsAPIEvent(event: any, category: 'atp' | 'wta'): UpcomingMatch | null {

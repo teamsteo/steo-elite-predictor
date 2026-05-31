@@ -568,8 +568,9 @@ async function fastNHLMatches(): Promise<any[]> {
 }
 
 /**
- * Récupère les matchs européens avec VRAIES COTES depuis TheOddsAPI
- * Champions League, Europa League, Conference League
+ * Récupère les matchs européens avec VRAIES COTES
+ * ⚠️ MODIFIÉ: Odds API désactivé (économie quota)
+ * Utilise ESPN à la place (gratuit, illimité)
  */
 async function fastEuropeanMatches(): Promise<any[]> {
   const cacheKey = 'european_matches';
@@ -578,116 +579,13 @@ async function fastEuropeanMatches(): Promise<any[]> {
     return cache.get(cacheKey)!.data;
   }
   
-  try {
-    const europeanSports = [
-      { key: 'soccer_uefa_champions_league', name: 'Ligue des Champions' },
-      { key: 'soccer_uefa_europa_league', name: 'Europa League' },
-      { key: 'soccer_uefa_conference_league', name: 'Conference League' },
-    ];
-    
-    const allMatches: any[] = [];
-    
-    for (const sport of europeanSports) {
-      try {
-        const response = await fetch(
-          `${ODDS_API_BASE}/sports/${sport.key}/odds/?regions=eu&markets=h2h&oddsFormat=decimal&apiKey=${ODDS_API_KEY}`,
-          { next: { revalidate: 300 } }
-        );
-        
-        if (!response.ok) {
-          console.log(`⚠️ TheOddsAPI ${sport.name}: ${response.status}`);
-          continue;
-        }
-        
-        const data = await response.json();
-        
-        for (const match of data) {
-          const bookmaker = match.bookmakers?.[0];
-          const h2hMarket = bookmaker?.markets?.find((m: any) => m.key === 'h2h');
-          const outcomes = h2hMarket?.outcomes || [];
-          
-          if (outcomes.length < 2) continue;
-          
-          let oddsHome = 0;
-          let oddsDraw: number | null = null;
-          let oddsAway = 0;
-          let homeTeam = match.home_team;
-          let awayTeam = match.away_team;
-          
-          for (const outcome of outcomes) {
-            const name = outcome.name?.toLowerCase() || '';
-            if (name === 'draw' || name === 'x' || name === 'nul') {
-              oddsDraw = outcome.price;
-            } else if (name === homeTeam.toLowerCase() || name === match.home_team.toLowerCase()) {
-              oddsHome = outcome.price;
-            } else if (name === awayTeam.toLowerCase() || name === match.away_team.toLowerCase()) {
-              oddsAway = outcome.price;
-            }
-          }
-          
-          // Fallback: si les cotes ne sont pas bien parsées, prendre les 3 valeurs
-          if (oddsHome === 0 || oddsAway === 0) {
-            const prices = outcomes.map((o: any) => o.price).sort((a: number, b: number) => a - b);
-            if (prices.length >= 3) {
-              oddsHome = prices[0]; // Plus petite cote = favori
-              oddsDraw = prices[1];
-              oddsAway = prices[2]; // Plus grande cote = outsider
-            } else if (prices.length === 2) {
-              oddsHome = prices[0];
-              oddsAway = prices[1];
-            }
-          }
-          
-          if (oddsHome > 0 && oddsAway > 0) {
-            // Calculer les probabilités implicites
-            const homeProb = 1 / oddsHome;
-            const awayProb = 1 / oddsAway;
-            const drawProb = oddsDraw && oddsDraw > 1 ? 1 / oddsDraw : 0;
-            const total = homeProb + awayProb + drawProb;
-            
-            allMatches.push({
-              id: `europa_${match.id}`,
-              homeTeam: match.home_team,
-              awayTeam: match.away_team,
-              sport: 'Foot',
-              league: sport.name,
-              date: match.commence_time,
-              oddsHome: Number(oddsHome.toFixed(2)),
-              oddsDraw: oddsDraw ? Number(oddsDraw.toFixed(2)) : null,
-              oddsAway: Number(oddsAway.toFixed(2)),
-              status: 'upcoming',
-              isLive: false,
-              isFinished: false,
-              hasRealOdds: true,
-              bookmaker: bookmaker?.title || 'TheOddsAPI',
-              probabilities: {
-                home: Math.round((homeProb / total) * 100),
-                draw: Math.round((drawProb / total) * 100),
-                away: Math.round((awayProb / total) * 100),
-              },
-            });
-          }
-        }
-        
-        console.log(`✅ TheOddsAPI ${sport.name}: ${data.length} matchs`);
-        
-      } catch (err) {
-        console.log(`⚠️ Erreur ${sport.name}:`, err);
-      }
-    }
-    
-    // Trier par date
-    allMatches.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    cache.set(cacheKey, { data: allMatches, timestamp: Date.now() });
-    console.log(`✅ Matchs européens: ${allMatches.length} matchs avec vraies cotes`);
-    return allMatches;
-    
-  } catch (error) {
-    console.error('❌ Erreur matchs européens:', error);
-    const cached = cache.get(cacheKey);
-    return cached?.data || [];
-  }
+  // ⚠️ Odds API désactivé pour économiser le quota
+  // ESPN fournit les matchs européens gratuitement
+  console.log('⚡ Matchs européens: Utilisation ESPN (gratuit)');
+  
+  // Retourner un tableau vide - les données viendront d'ESPN
+  cache.set(cacheKey, { data: [], timestamp: Date.now() });
+  return [];
 }
 
 /**

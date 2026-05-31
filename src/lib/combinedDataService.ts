@@ -85,65 +85,17 @@ function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | nul
 
 /**
  * FALLBACK: Récupère les cotes depuis The Odds API
- * Utilisé quand ESPN n'a pas de cotes disponibles
+ * ⚠️ DÉSACTIVÉ - Utilise trop de quota
+ * ESPN est gratuit et couvre la plupart des sports
+ * Le tennis utilise le quota manager via live-data-service
  */
 async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw: number | null; away: number }>> {
   const oddsMap = new Map<string, { home: number; draw: number | null; away: number }>();
   
-  // Utiliser le cache si disponible
-  if (oddsApiCache && oddsApiCache.size > 0) {
-    return oddsApiCache;
-  }
-  
-  try {
-    console.log('📡 Fallback: Récupération The Odds API...');
-    
-    const response = await fetch(
-      `${ODDS_API_BASE}/sports/upcoming/odds/?apiKey=${ODDS_API_KEY}&regions=eu,uk&markets=h2h&oddsFormat=decimal`,
-      { next: { revalidate: 300 } }
-    );
-    
-    if (!response.ok) {
-      console.log(`⚠️ The Odds API non disponible: ${response.status}`);
-      return oddsMap;
-    }
-    
-    const data = await response.json();
-    
-    for (const match of data) {
-      const bookmaker = match.bookmakers?.[0];
-      const h2hMarket = bookmaker?.markets?.find((m: any) => m.key === 'h2h');
-      const outcomes = h2hMarket?.outcomes || [];
-      
-      let oddsHome = 0;
-      let oddsDraw: number | null = null;
-      let oddsAway = 0;
-      
-      for (const outcome of outcomes) {
-        const name = outcome.name?.toLowerCase() || '';
-        if (name === 'draw' || name === 'x' || name === 'nul') {
-          oddsDraw = outcome.price;
-        } else if (oddsHome === 0) {
-          oddsHome = outcome.price;
-        } else {
-          oddsAway = outcome.price;
-        }
-      }
-      
-      if (oddsHome > 0 && oddsAway > 0) {
-        // Normaliser les noms pour le matching
-        const key = `${match.home_team?.toLowerCase()}_${match.away_team?.toLowerCase()}`;
-        oddsMap.set(key, { home: oddsHome, draw: oddsDraw, away: oddsAway });
-      }
-    }
-    
-    // Mettre en cache
-    oddsApiCache = oddsMap;
-    console.log(`✅ The Odds API: ${oddsMap.size} matchs avec cotes`);
-    
-  } catch (error) {
-    console.log('⚠️ Erreur The Odds API:', error);
-  }
+  // ⚠️ NE PLUS UTILISER - Trop coûteux en quota
+  // ESPN fournit les cotes gratuitement pour les sports principaux
+  console.log('📡 Odds API fallback désactivé (économie quota)');
+  console.log('📡 Utilisation des cotes ESPN (gratuit) ou estimations');
   
   return oddsMap;
 }
