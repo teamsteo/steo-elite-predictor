@@ -472,11 +472,13 @@ interface OddsAPIEvent {
 }
 
 /**
- * Récupère les matchs depuis The Odds API (BACKUP)
+ * Récupère les matchs depuis The Odds API via le Live Data Service
+ * Utilise le nouveau service unifié avec données enrichies
  */
 async function fetchFromOddsAPI(): Promise<TennisMatch[]> {
   if (!ODDS_API_KEY) {
     console.log('[TennisCollector] ⚠️ THE_ODDS_API_KEY non configurée');
+    console.log('[TennisCollector] ℹ️ Obtenez une clé gratuite: https://the-odds-api.com/');
     return [];
   }
   
@@ -491,177 +493,52 @@ async function fetchFromOddsAPI(): Promise<TennisMatch[]> {
     return [];
   }
   
-  console.log(`[TennisCollector] 🔄 Utilisation Odds API (backup)...`);
-  
-  const matches: TennisMatch[] = [];
+  console.log(`[TennisCollector] 🔄 Utilisation Odds API via Live Data Service...`);
   
   try {
-    // ATP
+    // Utiliser le nouveau live-data-service
+    const { fetchUpcomingMatches } = await import('./live-data-service');
+    const upcomingMatches = await fetchUpcomingMatches();
+    
+    // Convertir au format TennisMatch
+    const matches: TennisMatch[] = upcomingMatches.map(m => ({
+      id: m.id,
+      player1: m.player1,
+      player2: m.player2,
+      player1Id: m.player1Id,
+      player2Id: m.player2Id,
+      tournament: m.tournament,
+      tournamentId: m.tournament.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+      tournamentTier: m.tournamentTier,
+      surface: m.surface,
+      round: m.round,
+      date: m.date,
+      odds1: m.odds1 || 1.85,
+      odds2: m.odds2 || 1.85,
+      bookmaker: 'Odds API',
+      category: m.tournament.includes('WTA') ? 'wta' : 'atp',
+      status: m.status,
+      source: 'oddsapi',
+    }));
+    
     oddsApiDailyRequests++;
-    const atpResponse = await fetch(
-      `${ODDS_API_BASE}/sports/tennis_atp/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
-      { next: { revalidate: 300 } }
-    );
+    console.log(`[TennisCollector] ✅ Odds API: ${matches.length} matchs RÉELS récupérés`);
     
-    if (atpResponse.ok) {
-      const data = await atpResponse.json();
-      const events: OddsAPIEvent[] = data || [];
-      
-      for (const event of events) {
-        const match = parseOddsAPIEvent(event, 'atp');
-        if (match) matches.push(match);
-      }
-      
-      console.log(`[TennisCollector] ✅ Odds API ATP: ${events.length} matchs`);
-    }
-    
-    // WTA si budget le permet
-    if (oddsApiDailyRequests < ODDS_API_DAILY_BUDGET) {
-      oddsApiDailyRequests++;
-      const wtaResponse = await fetch(
-        `${ODDS_API_BASE}/sports/tennis_wta/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`,
-        { next: { revalidate: 300 } }
-      );
-      
-      if (wtaResponse.ok) {
-        const data = await wtaResponse.json();
-        const events: OddsAPIEvent[] = data || [];
-        
-        for (const event of events) {
-          const match = parseOddsAPIEvent(event, 'wta');
-          if (match) matches.push(match);
-        }
-        
-        console.log(`[TennisCollector] ✅ Odds API WTA: ${events.length} matchs`);
-      }
-    }
-    
-    console.log(`[TennisCollector] 📊 Odds API aujourd'hui: ${oddsApiDailyRequests}/${ODDS_API_DAILY_BUDGET}`);
+    return matches;
     
   } catch (error) {
     console.error('[TennisCollector] ❌ Erreur Odds API:', error);
   }
   
-  return matches;
-}
-
-/**
- * Parse un événement Odds API
- */
-function parseOddsAPIEvent(event: OddsAPIEvent, category: Category): TennisMatch | null {
-  try {
-    let odds1 = 1.85;
-    let odds2 = 1.85;
-    let bookmaker = 'Average';
-    
-    if (event.bookmakers && event.bookmakers.length > 0) {
-      const firstBookmaker = event.bookmakers[0];
-      bookmaker = firstBookmaker.title;
-      
-      const h2hMarket = firstBookmaker.markets.find(m => m.key === 'h2h');
-      if (h2hMarket) {
-        const homeOutcome = h2hMarket.outcomes.find(o => o.name === event.home_team);
-        const awayOutcome = h2hMarket.outcomes.find(o => o.name === event.away_team);
-        
-        if (homeOutcome) odds1 = homeOutcome.price;
-        if (awayOutcome) odds2 = awayOutcome.price;
-      }
-    }
-    
-    const tournamentName = event.sport_title || 'Tennis Tournament';
-    const tournamentSlug = tournamentName.toLowerCase().replace(/[^a-z0-9]/g, '-');
-    
-    return {
-      id: `oddsapi_${event.id}`,
-      player1: event.home_team,
-      player2: event.away_team,
-      player1Id: generatePlayerId(event.home_team),
-      player2Id: generatePlayerId(event.away_team),
-      tournament: tournamentName,
-      tournamentId: tournamentSlug,
-      tournamentTier: detectTournamentTier(tournamentSlug, category),
-      surface: detectSurfaceImproved(tournamentSlug),
-      round: 'Match',
-      date: new Date(event.commence_time),
-      odds1,
-      odds2,
-      bookmaker,
-      category,
-      status: 'scheduled',
-      source: 'oddsapi',
-    };
-  } catch (error) {
-    return null;
-  }
+  return [];
 }
 
 // ============================================
-// DONNÉES STATIQUES (FALLBACK)
+// DONNÉES STATIQUES (FALLBACK - DÉSACTIVÉ)
 // ============================================
 
-const CURRENT_TOURNAMENTS = [
-  { name: 'Roland Garros', slug: 'roland-garros', tier: 'grand_slam' as TournamentTier, surface: 'clay' as Surface, category: 'atp' as Category, month: [4, 5] },
-  { name: 'Wimbledon', slug: 'wimbledon', tier: 'grand_slam' as TournamentTier, surface: 'grass' as Surface, category: 'atp' as Category, month: [5, 6] },
-  { name: 'US Open', slug: 'us-open', tier: 'grand_slam' as TournamentTier, surface: 'hard' as Surface, category: 'atp' as Category, month: [7, 8] },
-  { name: 'Australian Open', slug: 'australian-open', tier: 'grand_slam' as TournamentTier, surface: 'hard' as Surface, category: 'atp' as Category, month: [0] },
-];
-
-function generateSampleMatches(): TennisMatch[] {
-  const now = new Date();
-  const month = now.getMonth();
-  
-  const currentTournament = CURRENT_TOURNAMENTS.find(t => t.month.includes(month));
-  
-  if (!currentTournament) {
-    console.log('[TennisCollector] 📅 Pas de tournoi majeur en cours');
-    return [];
-  }
-  
-  const topATP = [
-    { name: 'Jannik Sinner', rank: 1 },
-    { name: 'Carlos Alcaraz', rank: 2 },
-    { name: 'Alexander Zverev', rank: 3 },
-    { name: 'Daniil Medvedev', rank: 4 },
-    { name: 'Taylor Fritz', rank: 5 },
-    { name: 'Casper Ruud', rank: 6 },
-    { name: 'Novak Djokovic', rank: 7 },
-    { name: 'Alex de Minaur', rank: 8 },
-  ];
-  
-  const matches: TennisMatch[] = [];
-  
-  for (let i = 0; i < Math.min(4, topATP.length - 1); i += 2) {
-    const p1 = topATP[i];
-    const p2 = topATP[i + 1];
-    
-    const rankDiff = p2.rank - p1.rank;
-    const odds1 = Math.max(1.1, 1.5 + (rankDiff * 0.05));
-    const odds2 = Math.max(1.5, 2.5 - (rankDiff * 0.03));
-    
-    matches.push({
-      id: `demo_${currentTournament.slug}_${i}`,
-      player1: p1.name,
-      player2: p2.name,
-      player1Id: generatePlayerId(p1.name),
-      player2Id: generatePlayerId(p2.name),
-      tournament: currentTournament.name,
-      tournamentId: currentTournament.slug,
-      tournamentTier: currentTournament.tier,
-      surface: currentTournament.surface,
-      round: i < 2 ? 'Quarts de finale' : 'Demi-finale',
-      date: new Date(now.getTime() + (i + 1) * 24 * 60 * 60 * 1000),
-      odds1: Math.round(odds1 * 100) / 100,
-      odds2: Math.round(odds2 * 100) / 100,
-      bookmaker: 'Average',
-      category: currentTournament.category,
-      status: 'scheduled',
-      source: 'demo',
-    });
-  }
-  
-  console.log(`[TennisCollector] 📦 Matchs générés pour ${currentTournament.name}: ${matches.length}`);
-  return matches;
-}
+// Note: generateSampleMatches() a été supprimé
+// Seuls les matchs RÉELS sont maintenant retournés
 
 // ============================================
 // DÉTECTION TOURNOI & SURFACE
