@@ -465,6 +465,7 @@ export async function publishTennisValueBets(predictions: TennisPrediction[]): P
 
 /**
  * Récupère les pronostics tennis depuis l'API
+ * Utilise /api/tennis (source principale avec données réelles)
  */
 export async function fetchTennisPredictions(filter?: string): Promise<TennisPrediction[]> {
   try {
@@ -472,7 +473,8 @@ export async function fetchTennisPredictions(filter?: string): Promise<TennisPre
       ? `https://${process.env.VERCEL_URL}` 
       : 'http://localhost:3000';
     
-    const url = `${baseUrl}/api/tennis-enhanced?filter=${filter || 'all'}`;
+    // Utiliser /api/tennis (données réelles) au lieu de /api/tennis-enhanced
+    const url = `${baseUrl}/api/tennis`;
     
     const response = await fetch(url);
     
@@ -482,7 +484,15 @@ export async function fetchTennisPredictions(filter?: string): Promise<TennisPre
     }
     
     const data = await response.json();
-    return data.predictions || [];
+    
+    // Mapper les données au format attendu
+    const predictions = (data.predictions || []).map((p: any) => ({
+      ...p,
+      // keyFactors -> keyInsights
+      keyInsights: p.keyFactors || p.keyInsights || [],
+    }));
+    
+    return predictions;
   } catch (error) {
     console.error('❌ Erreur fetch tennis:', error);
     return [];

@@ -30,25 +30,27 @@ export async function GET(request: Request) {
       });
     }
 
-    // Mapper les données
-    const predictions = matches.map((m: any) => ({
-      homeTeam: m.homeTeam,
-      awayTeam: m.awayTeam,
-      sport: m.sport,
-      league: m.league,
-      date: m.date,
-      displayDate: m.displayDate,
-      recommendation: m.recommendations?.[0]?.label,
-      predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-      confidence: m.confidence,
-      riskPercentage: m.riskPercentage,
-      winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-      valueBetDetected: m.valueBets?.length > 0,
-      valueBetType: m.valueBets?.[0]?.type,
-      oddsHome: m.oddsHome,
-      oddsAway: m.oddsAway,
-      oddsDraw: m.oddsDraw,
-    }));
+    // Mapper les données - EXCLURE le tennis (a son propre endpoint)
+    const predictions = matches
+      .filter((m: any) => m.sport?.toLowerCase() !== 'tennis')
+      .map((m: any) => ({
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        sport: m.sport,
+        league: m.league,
+        date: m.date,
+        displayDate: m.displayDate,
+        recommendation: m.recommendations?.[0]?.label,
+        predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+        confidence: m.confidence,
+        riskPercentage: m.riskPercentage,
+        winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+        valueBetDetected: m.valueBets?.length > 0,
+        valueBetType: m.valueBets?.[0]?.type,
+        oddsHome: m.oddsHome,
+        oddsAway: m.oddsAway,
+        oddsDraw: m.oddsDraw,
+      }));
 
     // DEBUG: Voir les risques
     console.log('📊 Prédictions avec risques:', predictions.map(p => ({
