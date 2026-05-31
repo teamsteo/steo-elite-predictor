@@ -152,6 +152,21 @@ export async function GET(request: Request) {
     // 3. Filtrer selon les paramètres
     let filtered = predictions;
     
+    // 🎯 FILTRE QUALITÉ: Exclure Challenger/ITF (prévisibilité faible)
+    const HIGH_QUALITY_TIERS = [
+      'grand_slam',      // Grand Chelem - Très haute prévisibilité
+      'masters_1000',    // Masters ATP - Haute prévisibilité
+      'wta_1000',        // WTA 1000 - Haute prévisibilité
+      'atp_500',         // ATP 500 - Bonne prévisibilité
+      'wta_500',         // WTA 500 - Bonne prévisibilité
+      'atp_250',         // ATP 250 - Prévisibilité correcte
+      'wta_250',         // WTA 250 - Prévisibilité correcte
+    ];
+    
+    const beforeQualityFilter = filtered.length;
+    filtered = filtered.filter(p => HIGH_QUALITY_TIERS.includes(p.tournamentTier));
+    console.log(`🎯 Filtre qualité: ${filtered.length}/${beforeQualityFilter} prédictions gardées (tournois majeurs uniquement)`);
+    
     // Filtre par catégorie
     if (filter === 'atp') {
       filtered = filtered.filter(p => p.category === 'atp');
@@ -242,14 +257,20 @@ export async function GET(request: Request) {
       performance: performanceMetrics,
       generatedAt: new Date().toISOString(),
       modelInfo: {
-        version: 'tennis-enhanced-v2.0',
+        version: 'tennis-enhanced-v2.1',
         improvements: [
+          '🎯 FILTRE QUALITÉ: Tournois majeurs uniquement (Grand Chelem, Masters, ATP/WTA 250+)',
           'Facteur d\'importance des tournois (Grand Chelem, Masters 1000, etc.)',
           'Classements réels ATP/WTA intégrés',
           'Protection anti-ban pour le scraping',
           '8 facteurs d\'analyse (classement, surface, forme, H2H, cotes, tournoi, fatigue, motivation)',
           'Calibration des probabilités par type de tournoi',
         ],
+        qualityFilter: {
+          enabled: true,
+          reason: 'Exclusion des tournois Challenger/ITF (données insuffisantes, prévisibilité faible)',
+          includedTiers: ['grand_slam', 'masters_1000', 'wta_1000', 'atp_500', 'wta_500', 'atp_250', 'wta_250'],
+        },
         weights: {
           ranking: '22%',
           surface: '15%',
@@ -261,12 +282,13 @@ export async function GET(request: Request) {
           motivation: '6%',
         },
         tierMultipliers: {
-          grand_slam: '1.25x (plus prévisible)',
-          masters_1000: '1.15x',
-          atp_500: '1.05x',
-          atp_250: '1.00x (référence)',
-          challenger: '0.70-0.85x',
-          itf: '0.60x (moins prévisible)',
+          grand_slam: '1.25x (très haute prévisibilité)',
+          masters_1000: '1.15x (haute prévisibilité)',
+          wta_1000: '1.12x (haute prévisibilité)',
+          atp_500: '1.05x (bonne prévisibilité)',
+          atp_250: '1.00x (prévisibilité correcte)',
+          challenger: 'EXCLU',
+          itf: 'EXCLU',
         },
       },
     });
