@@ -777,6 +777,7 @@ export async function GET(request: NextRequest) {
         
       case 'telegram-summary':
         // Publier le résumé quotidien sur Telegram (lit fichier pré-calculé, PAS de scraping)
+        // ⚠️ Tennis EXCLU car il a son propre cron dédié (07:30 et 09:00 GMT)
         try {
           const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
           const dailyData = loadDailyPredictions();
@@ -791,24 +792,26 @@ export async function GET(request: NextRequest) {
             break;
           }
           
-          // Convertir au format attendu par Telegram
-          const predictions = dailyData.predictions.map(p => ({
-            homeTeam: p.homeTeam,
-            awayTeam: p.awayTeam,
-            sport: p.sport,
-            league: p.league || p.tournament,
-            date: p.date,
-            recommendation: p.recommendation,
-            predictedResult: p.predictedResult,
-            confidence: p.confidence,
-            valueBetDetected: p.valueBet,
-            valueBetType: p.valueBetType,
-            riskPercentage: p.riskPercentage,
-            winProbability: p.winProbability,
-            oddsHome: p.oddsHome,
-            oddsAway: p.oddsAway,
-            oddsDraw: p.oddsDraw,
-          }));
+          // Convertir au format attendu par Telegram - SANS le tennis
+          const predictions = dailyData.predictions
+            .filter(p => p.sport !== 'tennis') // 🎾 Tennis exclu (cron dédié)
+            .map(p => ({
+              homeTeam: p.homeTeam,
+              awayTeam: p.awayTeam,
+              sport: p.sport,
+              league: p.league || p.tournament,
+              date: p.date,
+              recommendation: p.recommendation,
+              predictedResult: p.predictedResult,
+              confidence: p.confidence,
+              valueBetDetected: p.valueBet,
+              valueBetType: p.valueBetType,
+              riskPercentage: p.riskPercentage,
+              winProbability: p.winProbability,
+              oddsHome: p.oddsHome,
+              oddsAway: p.oddsAway,
+              oddsDraw: p.oddsDraw,
+            }));
           
           const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
           
@@ -832,6 +835,7 @@ export async function GET(request: NextRequest) {
         
       case 'telegram-valuebets':
         // Publier uniquement les value bets sur Telegram (lit fichier pré-calculé, PAS de scraping)
+        // ⚠️ Tennis EXCLU car il a son propre cron dédié
         try {
           const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
           const dailyData = loadDailyPredictions();
@@ -846,24 +850,26 @@ export async function GET(request: NextRequest) {
             break;
           }
           
-          // Convertir au format attendu par Telegram
-          const predictions = dailyData.predictions.map(p => ({
-            homeTeam: p.homeTeam,
-            awayTeam: p.awayTeam,
-            sport: p.sport,
-            league: p.league || p.tournament,
-            date: p.date,
-            recommendation: p.recommendation,
-            predictedResult: p.predictedResult,
-            confidence: p.confidence,
-            valueBetDetected: p.valueBet,
-            valueBetType: p.valueBetType,
-            riskPercentage: p.riskPercentage,
-            winProbability: p.winProbability,
-            oddsHome: p.oddsHome,
-            oddsAway: p.oddsAway,
-            oddsDraw: p.oddsDraw,
-          }));
+          // Convertir au format attendu par Telegram - SANS le tennis
+          const predictions = dailyData.predictions
+            .filter(p => p.sport !== 'tennis') // 🎾 Tennis exclu (cron dédié)
+            .map(p => ({
+              homeTeam: p.homeTeam,
+              awayTeam: p.awayTeam,
+              sport: p.sport,
+              league: p.league || p.tournament,
+              date: p.date,
+              recommendation: p.recommendation,
+              predictedResult: p.predictedResult,
+              confidence: p.confidence,
+              valueBetDetected: p.valueBet,
+              valueBetType: p.valueBetType,
+              riskPercentage: p.riskPercentage,
+              winProbability: p.winProbability,
+              oddsHome: p.oddsHome,
+              oddsAway: p.oddsAway,
+              oddsDraw: p.oddsDraw,
+            }));
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
           const valueBetsCount = predictions.filter(p => 
