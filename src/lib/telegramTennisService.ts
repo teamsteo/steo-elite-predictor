@@ -304,8 +304,8 @@ function formatTennisSummary(predictions: TennisPrediction[]): string {
     
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
     
-    // Lister les matchs
-    matches.slice(0, 5).forEach((m, i) => {
+    // Lister les matchs (tous les matchs safe/modéré, max 20)
+    matches.slice(0, 20).forEach((m, i) => {
       const { time } = formatDateTime(m.date);
       const riskEmoji = m.prediction.riskPercentage <= 30 ? '🟢' : '🟡';
       const surfaceEmoji = SURFACE_EMOJIS[m.surface] || '🏟️';
@@ -318,8 +318,8 @@ function formatTennisSummary(predictions: TennisPrediction[]): string {
       message += `    ${riskEmoji} ${m.prediction.winProbability}% réussite\n\n`;
     });
     
-    if (matches.length > 5) {
-      message += `    <i>... et ${matches.length - 5} autres</i>\n\n`;
+    if (matches.length > 20) {
+      message += `    <i>... et ${matches.length - 20} autres</i>\n\n`;
     }
   }
   
