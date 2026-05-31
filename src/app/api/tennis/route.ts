@@ -171,11 +171,32 @@ export async function GET(request: Request) {
     
     // Filtrer les matchs passés
     const now_date = new Date();
-    const filtered_by_date = predictions.filter(p => {
+    let filtered_by_date = predictions.filter(p => {
       const matchDate = new Date(p.date);
       // Garder les matchs futurs ou du jour même
       return matchDate >= now_date || matchDate.toDateString() === now_date.toDateString();
     });
+    
+    // 🎯 FILTRE QUALITÉ: Ne garder que les tournois à haute prévisibilité
+    // Les tournois majeurs ont plus de données et des joueurs plus stables
+    const HIGH_QUALITY_TIERS = [
+      'grand_slam',      // Grand Chelem - Très haute prévisibilité
+      'masters_1000',    // Masters ATP - Haute prévisibilité
+      'wta_1000',        // WTA 1000 - Haute prévisibilité
+      'atp_500',         // ATP 500 - Bonne prévisibilité
+      'wta_500',         // WTA 500 - Bonne prévisibilité
+      'atp_250',         // ATP 250 - Prévisibilité correcte
+      'wta_250',         // WTA 250 - Prévisibilité correcte
+    ];
+    
+    const beforeFilter = filtered_by_date.length;
+    filtered_by_date = filtered_by_date.filter(p => 
+      HIGH_QUALITY_TIERS.includes(p.tournamentTier)
+    );
+    
+    if (beforeFilter !== filtered_by_date.length) {
+      console.log(`🎯 Filtre qualité: ${filtered_by_date.length}/${beforeFilter} prédictions gardées (tournois majeurs uniquement)`);
+    }
     
     // Mettre en cache
     cachedPredictions = filtered_by_date;
@@ -296,8 +317,9 @@ function calculateStats(predictions: TennisPrediction[]) {
 
 function getModelInfo() {
   return {
-    version: 'tennis-enhanced-v2.0',
+    version: 'tennis-enhanced-v2.1',
     improvements: [
+      '🎯 FILTRE QUALITÉ: Tournois majeurs uniquement (Grand Chelem, Masters, ATP/WTA 250+)',
       'Facteur d\'importance des tournois (Grand Chelem 1.25x, Masters 1.15x, etc.)',
       'Classements réels ATP/WTA intégrés',
       'Protection anti-ban pour le scraping (rotation User-Agents, délais aléatoires)',
@@ -305,6 +327,12 @@ function getModelInfo() {
       'Calibration des probabilités par type de tournoi',
       'Circuit breaker pour éviter les blocages',
     ],
+    qualityFilter: {
+      enabled: true,
+      reason: 'Exclusion des tournois Challenger/ITF (données insuffisantes, prévisibilité faible)',
+      includedTiers: ['grand_slam', 'masters_1000', 'wta_1000', 'atp_500', 'wta_500', 'atp_250', 'wta_250'],
+      excludedTiers: ['challenger_*', 'itf', 'unknown'],
+    },
     weights: {
       ranking: '22%',
       surface: '15%',
@@ -316,19 +344,19 @@ function getModelInfo() {
       motivation: '6%',
     },
     tierMultipliers: {
-      grand_slam: '1.25x (plus prévisible)',
-      masters_1000: '1.15x',
-      wta_1000: '1.12x',
-      atp_500: '1.05x',
-      atp_250: '1.00x (référence)',
-      challenger: '0.70-0.85x',
-      itf: '0.60x (moins prévisible)',
+      grand_slam: '1.25x (très haute prévisibilité)',
+      masters_1000: '1.15x (haute prévisibilité)',
+      wta_1000: '1.12x (haute prévisibilité)',
+      atp_500: '1.05x (bonne prévisibilité)',
+      atp_250: '1.00x (prévisibilité correcte)',
+      challenger: 'EXCLU (données insuffisantes)',
+      itf: 'EXCLU (données insuffisantes)',
     },
     antiBanProtection: {
       userAgents: 'Rotation de 6 User-Agents différents',
       delays: 'Délais aléatoires entre 2-7 secondes',
       circuitBreaker: 'Blocage après 3 échecs, réessai après 5 min',
-      cache: 'Cache intelligent avec TTL variable',
+      cache: 'Cache intelligent avec TTL 6 heures',
     },
   };
 }
