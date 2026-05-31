@@ -67,7 +67,7 @@ export interface UpcomingMatch {
   player1Id: string;
   player2Id: string;
   tournament: string;
-  tournamentTier: 'grand_slam' | 'masters_1000' | 'atp_500' | 'atp_250' | 'wta_1000' | 'wta_500' | 'wta_250' | 'challenger' | 'itf';
+  tournamentTier: 'grand_slam' | 'masters_1000' | 'atp_500' | 'atp_250' | 'wta_1000' | 'wta_500' | 'wta_250' | 'challenger_175' | 'challenger_125' | 'challenger_100' | 'challenger_75' | 'challenger_50' | 'itf' | 'unknown';
   surface: 'hard' | 'clay' | 'grass' | 'indoor';
   date: Date;
   odds1: number | null;
@@ -444,7 +444,7 @@ function detectTournamentTier(tournament: string, category: 'atp' | 'wta'): Upco
   }
   
   if (t.includes('500')) return category === 'atp' ? 'atp_500' : 'wta_500';
-  if (t.includes('challenger')) return 'challenger';
+  if (t.includes('challenger')) return 'challenger_100'; // Valeur par défaut pour challenger
   
   return category === 'atp' ? 'atp_250' : 'wta_250';
 }
@@ -527,7 +527,13 @@ export async function getLivePlayerData(
     const form = await calculateRecentForm(ranking.playerId, category);
     playerData.recentMatches = form.matches;
     playerData.recentWinRate = form.winRate;
-    playerData.surfaceWinRates = form.surfaceStats;
+    // Convertir Record<string, number> en type surface explicite
+    playerData.surfaceWinRates = {
+      hard: form.surfaceStats['hard'] ?? 0.5,
+      clay: form.surfaceStats['clay'] ?? 0.5,
+      grass: form.surfaceStats['grass'] ?? 0.5,
+      indoor: form.surfaceStats['indoor'] ?? 0.5,
+    };
     
     // Mettre en cache
     playersCache.set(cacheKey, playerData);
@@ -549,7 +555,12 @@ export async function getEnrichedUpcomingMatches(): Promise<(UpcomingMatch & {
 })[]> {
   const matches = await fetchUpcomingMatches();
   
-  const enriched = [];
+  type EnrichedMatch = UpcomingMatch & {
+    player1Data?: LivePlayerData;
+    player2Data?: LivePlayerData;
+  };
+  
+  const enriched: EnrichedMatch[] = [];
   
   for (const match of matches) {
     const category = match.tournament.includes('WTA') ? 'wta' : 'atp';
