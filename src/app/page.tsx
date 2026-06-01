@@ -3487,6 +3487,263 @@ function TennisSection() {
   );
 }
 
+// ===== SECTION CHALLENGES NÉGLIGÉS =====
+function ChallengesSection() {
+  const [challenges, setChallenges] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{
+    totalScanned: number;
+    valueBetsFound: number;
+    highConfidenceCount: number;
+    averageValueGap: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchChallenges = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/challenges?minOdds=2.0&minValueGap=8');
+        const data = await response.json();
+        
+        if (data.success) {
+          setChallenges(data.challenges || []);
+          setSummary(data.summary);
+        } else {
+          setError(data.error || 'Erreur lors du chargement');
+        }
+      } catch (err) {
+        setError('Erreur de connexion');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChallenges();
+  }, []);
+
+  const getConfidenceColor = (level: string) => {
+    switch (level) {
+      case 'high': return '#22c55e';
+      case 'medium': return '#eab308';
+      case 'low': return '#f97316';
+      default: return '#888';
+    }
+  };
+
+  const getRiskIcon = (risk: string) => {
+    switch (risk) {
+      case 'calculated': return '✅';
+      case 'moderate': return '⚠️';
+      case 'high': return '🎲';
+      default: return '❓';
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: '12px' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '12px' }}>
+        <h2 style={{
+          fontSize: '16px',
+          fontWeight: 'bold',
+          color: '#ef4444',
+          marginBottom: '4px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <span style={{ 
+            fontSize: '20px',
+            filter: 'drop-shadow(0 2px 4px rgba(239, 68, 68, 0.3))'
+          }}>🔥</span>
+          Challenges Négligés
+        </h2>
+        <p style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>
+          Value bets détectés - Matchs à forte cote susceptibles de rentrer
+        </p>
+        <p style={{ color: '#666', fontSize: '10px' }}>
+          Basé sur l'écart entre notre analyse et les cotes bookmakers
+        </p>
+      </div>
+
+      {/* Stats Summary */}
+      {summary && (
+        <div style={{
+          background: 'linear-gradient(135deg, #1a0a0a 0%, #1a1a1a 100%)',
+          borderRadius: '10px',
+          padding: '12px',
+          marginBottom: '12px',
+          border: '1px solid #ef444430'
+        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#3b82f6' }}>{summary.totalScanned}</div>
+              <div style={{ fontSize: '9px', color: '#888' }}>Analysés</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#22c55e' }}>{summary.valueBetsFound}</div>
+              <div style={{ fontSize: '9px', color: '#888' }}>Challenges</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#eab308' }}>{summary.highConfidenceCount}</div>
+              <div style={{ fontSize: '9px', color: '#888' }}>Haute Conf.</div>
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>+{summary.averageValueGap}%</div>
+              <div style={{ fontSize: '9px', color: '#888' }}>Value Moy.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎰</div>
+          <span style={{ fontSize: '12px' }}>Analyse des value bets en cours...</span>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#ef4444' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>❌</div>
+          <span style={{ fontSize: '12px' }}>{error}</span>
+        </div>
+      )}
+
+      {/* Challenges List */}
+      {!loading && !error && challenges.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+          <div style={{ fontSize: '24px', marginBottom: '8px' }}>🔍</div>
+          <span style={{ fontSize: '12px' }}>Aucun challenge détecté pour le moment</span>
+          <p style={{ fontSize: '10px', color: '#555', marginTop: '8px' }}>
+            Les value bets apparaîtront quand notre analyse détectera un écart avec les bookmakers
+          </p>
+        </div>
+      )}
+
+      {/* Challenges Cards */}
+      {!loading && !error && challenges.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {challenges.map((challenge, idx) => (
+            <div key={challenge.id} style={{
+              background: 'linear-gradient(135deg, #1a1a1a 0%, #1a0a0a 100%)',
+              borderRadius: '12px',
+              padding: '14px',
+              border: challenge.confidenceLevel === 'high' ? '1px solid #22c55e50' : '1px solid #ef444430'
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                <div>
+                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff' }}>
+                    {challenge.challenge.underdog}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#888' }}>
+                    vs {challenge.challenge.favorite} • {challenge.match.tournament}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#22c55e' }}>
+                    @{challenge.challenge.underdogOdds.toFixed(2)}
+                  </div>
+                  <div style={{ 
+                    fontSize: '10px', 
+                    color: getConfidenceColor(challenge.confidenceLevel),
+                    fontWeight: 'bold'
+                  }}>
+                    {challenge.confidenceLevel.toUpperCase()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Value Gap Bar */}
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '4px' }}>
+                  <span style={{ color: '#888' }}>Probabilités</span>
+                  <span style={{ color: '#22c55e', fontWeight: 'bold' }}>+{challenge.challenge.valueGap}% value</span>
+                </div>
+                <div style={{ height: '6px', background: '#333', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ 
+                    height: '100%', 
+                    width: `${Math.min(100, challenge.challenge.ourProbability)}%`, 
+                    background: 'linear-gradient(90deg, #ef4444 0%, #22c55e 100%)',
+                    borderRadius: '3px'
+                  }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666', marginTop: '2px' }}>
+                  <span>Bookmaker: {challenge.challenge.impliedProbability}%</span>
+                  <span>Notre analyse: {challenge.challenge.ourProbability}%</span>
+                </div>
+              </div>
+
+              {/* Reasoning */}
+              {challenge.reasoning && challenge.reasoning.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
+                  {challenge.reasoning.slice(0, 3).map((reason: string, i: number) => (
+                    <span key={i} style={{
+                      background: '#333',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '9px',
+                      color: '#ccc'
+                    }}>
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Footer */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                paddingTop: '8px',
+                borderTop: '1px solid #333'
+              }}>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '10px', color: '#888' }}>
+                  <span>{getRiskIcon(challenge.riskLevel)} {challenge.riskLevel}</span>
+                  <span>🎾 {challenge.match.surface}</span>
+                </div>
+                <div style={{ 
+                  background: '#ef444420',
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  color: '#ef4444',
+                  fontWeight: 'bold'
+                }}>
+                  Score: {challenge.valueScore}/100
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Info */}
+      <div style={{
+        marginTop: '12px',
+        background: '#1a1a1a',
+        borderRadius: '8px',
+        padding: '10px',
+        border: '1px solid #333'
+      }}>
+        <div style={{ fontSize: '10px', color: '#888' }}>
+          <strong style={{ color: '#ef4444' }}>💡 Comment ça marche ?</strong>
+          <p style={{ marginTop: '4px' }}>
+            • <strong>Value Gap</strong>: Écart entre notre analyse et les cotes bookmakers<br/>
+            • Un challenge "HIGH" avec +15% gap = excellente opportunité<br/>
+            • Ces paris comportent un risque - misez de manière responsable
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Tennis Prediction Card Component  
 function TennisPredictionCard({ prediction, index, surfaceColors, surfaceLabels, confidenceColors, confidenceLabels }: { 
   prediction: TennisPrediction;
@@ -3961,7 +4218,7 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
   const [activeTab, setActiveTab] = useState<'safes' | 'moderate' | 'risky' | 'live' | 'finished' | 'all'>('safes');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'loading'>('loading');
-  const [activeSection, setActiveSection] = useState<'football' | 'basketball' | 'nhl' | 'nfl' | 'mlb' | 'tennis' | 'expert' | 'analyse' | 'antitrap' | 'bankroll' | 'results' | 'pronostiqueur' | 'admin' | 'apistatus' | 'parlay' | 'notifications'>('football');
+  const [activeSection, setActiveSection] = useState<'football' | 'basketball' | 'nhl' | 'nfl' | 'mlb' | 'tennis' | 'challenges' | 'expert' | 'analyse' | 'antitrap' | 'bankroll' | 'results' | 'pronostiqueur' | 'admin' | 'apistatus' | 'parlay' | 'notifications'>('football');
   const [timing, setTiming] = useState<TimingInfo>({
     currentHour: new Date().getHours(),
     canRefresh: true,
@@ -4252,6 +4509,7 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         <NavButton icon="🏒" label="NHL" active={activeSection === 'nhl'} onClick={() => setActiveSection('nhl')} color="#06b6d4" />
         <NavButton icon="⚾" label="MLB" active={activeSection === 'mlb'} onClick={() => setActiveSection('mlb')} color="#dc2626" />
         <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" />
+        <NavButton icon="🔥" label="Challenges" active={activeSection === 'challenges'} onClick={() => setActiveSection('challenges')} color="#ef4444" />
         {/* Expert ML - MASQUÉ en mode apprentissage jusqu'à 70% de réussite sur 7 jours */}
         {/* <NavButton icon="🎯" label="Expert ML" active={activeSection === 'expert'} onClick={() => setActiveSection('expert')} color="#14b8a6" /> */}
         <NavButton icon="🔍" label="Analyse" active={activeSection === 'analyse'} onClick={() => setActiveSection('analyse')} color="#8b5cf6" />
@@ -4629,6 +4887,11 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         {/* Section Tennis */}
         {activeSection === 'tennis' && (
           <TennisSection />
+        )}
+
+        {/* Section Challenges Négligés */}
+        {activeSection === 'challenges' && (
+          <ChallengesSection />
         )}
 
         {/* Section API Status - Visible uniquement pour les admins */}
