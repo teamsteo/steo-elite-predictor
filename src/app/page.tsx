@@ -3504,6 +3504,7 @@ function ChallengesSection() {
       },
       confidenceLevel: 'high',
       riskLevel: 'calculated',
+      valueScore: 72,
       reasoning: ['Forme récente excellente', 'Avantage surface']
     },
     {
@@ -3519,6 +3520,7 @@ function ChallengesSection() {
       },
       confidenceLevel: 'medium',
       riskLevel: 'moderate',
+      valueScore: 58,
       reasoning: ['Match ouvert', 'Forme récente']
     }
   ];
