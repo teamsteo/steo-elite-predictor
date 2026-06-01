@@ -3489,51 +3489,38 @@ function TennisSection() {
 
 // ===== SECTION CHALLENGES NÉGLIGÉS =====
 function ChallengesSection() {
-  // Données de démonstration intégrées - pas d'appel API
-  const challenges = [
-    {
-      id: 'demo-1',
-      match: { tournament: 'ATP Masters 1000', surface: 'Dur' },
-      challenge: {
-        underdog: 'J. Sinner',
-        favorite: 'C. Alcaraz',
-        underdogOdds: 2.40,
-        valueGap: 6.3,
-        ourProbability: 48,
-        impliedProbability: 41.7
-      },
-      confidenceLevel: 'high',
-      riskLevel: 'calculated',
-      valueScore: 72,
-      reasoning: ['Forme récente excellente', 'Avantage surface']
-    },
-    {
-      id: 'demo-2',
-      match: { tournament: 'Ligue 1', surface: 'Pelouse' },
-      challenge: {
-        underdog: 'Marseille',
-        favorite: 'PSG',
-        underdogOdds: 4.50,
-        valueGap: 8.2,
-        ourProbability: 28,
-        impliedProbability: 22.2
-      },
-      confidenceLevel: 'medium',
-      riskLevel: 'moderate',
-      valueScore: 58,
-      reasoning: ['Match ouvert', 'Forme récente']
-    }
-  ];
-  
-  const summary = {
-    totalScanned: 15,
-    valueBetsFound: 2,
-    highConfidenceCount: 1,
-    averageValueGap: 7
-  };
-  
-  const loading = false;
-  const error = null;
+  const [challenges, setChallenges] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{
+    totalScanned: number;
+    valueBetsFound: number;
+    highConfidenceCount: number;
+    averageValueGap: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchChallenges = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/challenges?minOdds=2.0&minValueGap=5');
+        const data = await response.json();
+        
+        if (data.success) {
+          setChallenges(data.challenges || []);
+          setSummary(data.summary);
+        } else {
+          setError(data.error || 'Erreur lors du chargement');
+        }
+      } catch (err) {
+        setError('Erreur de connexion');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchChallenges();
+  }, []);
 
   const getConfidenceColor = (level: string) => {
     switch (level) {

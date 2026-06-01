@@ -1,255 +1,221 @@
 import { NextResponse } from 'next/server';
 
-// API simple pour les challenges - sans dépendances externes
-export async function GET() {
+// API Challenges Négligés - Format compatible avec le frontend
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const minOdds = parseFloat(searchParams.get('minOdds') || '2.0');
+    const minValueGap = parseFloat(searchParams.get('minValueGap') || '5');
+    
     const today = new Date();
     
-    // Données de démonstration en dur
-    const data = {
-      valueBets: [
-        {
-          id: 'tennis-001',
-          sport: 'tennis',
-          match: 'J. Sinner vs C. Alcaraz',
-          league: 'ATP Masters 1000',
-          date: new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Victoire Sinner',
-          odds: 2.40,
-          ourProbability: 0.48,
-          bookmakerProbability: 0.417,
-          valueGap: 0.063,
-          valueScore: 72,
-          confidence: 'high',
-          analysis: 'Sinner en forme excellente. Alcaraz moins convaincant sur cette surface.',
-          factors: [
-            { name: 'Forme récente', impact: 'positive' },
-            { name: 'Avantage surface', impact: 'positive' },
-          ],
+    // Données de démonstration complètes
+    const allChallenges = [
+      // Tennis
+      {
+        id: 'tennis-001',
+        sport: 'tennis',
+        match: { 
+          tournament: 'ATP Masters 1000',
+          surface: 'Dur'
         },
-        {
-          id: 'tennis-002',
-          sport: 'tennis',
-          match: 'I. Swiatek vs A. Sabalenka',
-          league: 'WTA 1000',
-          date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Victoire Swiatek',
-          odds: 1.85,
-          ourProbability: 0.62,
-          bookmakerProbability: 0.54,
-          valueGap: 0.08,
-          valueScore: 78,
-          confidence: 'very_high',
-          analysis: 'Swiatek excellente sur cette surface.',
-          factors: [
-            { name: 'Expert surface', impact: 'positive' },
-            { name: 'Forme récente', impact: 'positive' },
-          ],
+        challenge: {
+          underdog: 'J. Sinner',
+          favorite: 'C. Alcaraz',
+          underdogOdds: 2.40,
+          valueGap: 6.3,
+          ourProbability: 48,
+          impliedProbability: 41.7
         },
-        {
-          id: 'football-001',
-          sport: 'football',
-          match: 'PSG vs Marseille',
-          league: 'Ligue 1',
-          leagueId: 'ligue_1',
-          date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Victoire PSG',
-          odds: 1.45,
-          ourProbability: 0.65,
-          bookmakerProbability: 0.69,
-          valueGap: 0.04,
-          valueScore: 55,
-          confidence: 'high',
-          analysis: 'PSG dominate à domicile.',
-          factors: [
-            { name: 'Avantage domicile', impact: 'positive' },
-          ],
-          isEuropeanLeague: true,
-          predictedScore: { home: 2, away: 1 },
-        },
-        {
-          id: 'football-002',
-          sport: 'football',
-          match: 'Manchester City vs Liverpool',
-          league: 'Premier League',
-          leagueId: 'premier_league',
-          date: new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Over 2.5 buts',
-          odds: 1.65,
-          ourProbability: 0.68,
-          bookmakerProbability: 0.61,
-          valueGap: 0.07,
-          valueScore: 62,
-          confidence: 'high',
-          analysis: 'Match au sommet avec beaucoup de buts attendus.',
-          factors: [
-            { name: 'Attaques redoutables', impact: 'positive' },
-          ],
-          isEuropeanLeague: true,
-          predictedScore: { home: 3, away: 2 },
-        },
-        {
-          id: 'football-003',
-          sport: 'football',
-          match: 'Real Madrid vs Barcelona',
-          league: 'La Liga',
-          leagueId: 'la_liga',
-          date: new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Les deux marquent',
-          odds: 1.55,
-          ourProbability: 0.70,
-          bookmakerProbability: 0.65,
-          valueGap: 0.05,
-          valueScore: 55,
-          confidence: 'high',
-          analysis: 'El Clásico - les deux équipes marquent presque systématiquement.',
-          factors: [
-            { name: 'Historique BTTS', impact: 'positive' },
-          ],
-          isEuropeanLeague: true,
-          predictedScore: { home: 2, away: 2 },
-        },
-      ],
-      europeanLeagues: [
-        {
-          id: 'football-001',
-          sport: 'football',
-          match: 'PSG vs Marseille',
-          league: 'Ligue 1',
-          leagueId: 'ligue_1',
-          date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Victoire PSG',
-          odds: 1.45,
-          ourProbability: 0.65,
-          bookmakerProbability: 0.69,
-          valueGap: 0.04,
-          valueScore: 55,
-          confidence: 'high',
-          analysis: 'PSG dominate à domicile.',
-          factors: [{ name: 'Avantage domicile', impact: 'positive' }],
-          isEuropeanLeague: true,
-          predictedScore: { home: 2, away: 1 },
-        },
-        {
-          id: 'football-002',
-          sport: 'football',
-          match: 'Manchester City vs Liverpool',
-          league: 'Premier League',
-          leagueId: 'premier_league',
-          date: new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Over 2.5 buts',
-          odds: 1.65,
-          ourProbability: 0.68,
-          bookmakerProbability: 0.61,
-          valueGap: 0.07,
-          valueScore: 62,
-          confidence: 'high',
-          analysis: 'Match au sommet avec beaucoup de buts attendus.',
-          factors: [{ name: 'Attaques redoutables', impact: 'positive' }],
-          isEuropeanLeague: true,
-          predictedScore: { home: 3, away: 2 },
-        },
-      ],
-      worldCupFriendlies: [
-        {
-          id: 'wc-friendly-001',
-          sport: 'football',
-          match: 'France vs Germany',
-          league: 'Match Amical - Préparation CM 2026',
-          date: new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Les deux marquent',
-          odds: 1.85,
-          ourProbability: 0.60,
-          bookmakerProbability: 0.54,
-          valueGap: 0.06,
-          valueScore: 58,
-          confidence: 'medium',
-          analysis: 'Match de préparation entre deux favoris.',
-          factors: [{ name: 'Équipes offensives', impact: 'positive' }],
-          isWorldCupFriendly: true,
-          predictedScore: { home: 2, away: 1 },
-        },
-      ],
-      worldCupMatches: [
-        {
-          id: 'wc-001',
-          sport: 'football',
-          match: 'France vs Brazil',
-          league: 'Coupe du Monde FIFA',
-          leagueId: 'world_cup',
-          date: new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Match nul',
-          odds: 3.20,
-          ourProbability: 0.35,
-          bookmakerProbability: 0.31,
-          valueGap: 0.04,
-          valueScore: 48,
-          confidence: 'low',
-          analysis: 'Match équilibré entre deux favoris.',
-          factors: [{ name: 'Niveau équivalent', impact: 'positive' }],
-          isWorldCup: true,
-          predictedScore: { home: 1, away: 1 },
-        },
-      ],
-      highOddsChallenges: [
-        {
-          id: 'high-001',
-          sport: 'basketball',
-          match: 'Lakers vs Warriors',
-          league: 'NBA',
-          date: new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
-          betType: 'Total > 235.5 points',
-          odds: 2.80,
-          ourProbability: 0.40,
-          bookmakerProbability: 0.357,
-          valueGap: 0.043,
-          valueScore: 58,
-          confidence: 'medium',
-          analysis: 'Potentiel de score élevé.',
-          factors: [{ name: 'Rythme élevé', impact: 'positive' }],
-        },
-      ],
-      lastUpdated: new Date().toISOString(),
-      summary: {
-        totalValueBets: 5,
-        europeanLeagues: 2,
-        worldCupFriendlies: 1,
-        worldCupMatches: 1,
-        highConfidence: 4,
-        averageOdds: '1.92',
-        byLeague: {
-          ligue1: 1,
-          premierLeague: 1,
-          laLiga: 1,
-          serieA: 0,
-          bundesliga: 0,
-          championsLeague: 0,
-          worldCup: 1,
-          worldCupFriendlies: 1,
-        },
+        confidenceLevel: 'high',
+        riskLevel: 'calculated',
+        valueScore: 72,
+        reasoning: ['Forme récente excellente', 'Avantage surface', 'H2H favorable']
       },
+      {
+        id: 'tennis-002',
+        sport: 'tennis',
+        match: { 
+          tournament: 'WTA 1000 Rome',
+          surface: 'Terre battue'
+        },
+        challenge: {
+          underdog: 'I. Swiatek',
+          favorite: 'A. Sabalenka',
+          underdogOdds: 1.85,
+          valueGap: 8.0,
+          ourProbability: 62,
+          impliedProbability: 54
+        },
+        confidenceLevel: 'very_high',
+        riskLevel: 'calculated',
+        valueScore: 78,
+        reasoning: ['Experte sur terre battue', 'Forme récente', 'H2H dominé']
+      },
+      // Football - Championnats Européens
+      {
+        id: 'football-001',
+        sport: 'football',
+        match: { 
+          tournament: 'Ligue 1',
+          surface: 'Pelouse'
+        },
+        challenge: {
+          underdog: 'Marseille',
+          favorite: 'PSG',
+          underdogOdds: 4.50,
+          valueGap: 8.2,
+          ourProbability: 28,
+          impliedProbability: 22.2
+        },
+        confidenceLevel: 'medium',
+        riskLevel: 'moderate',
+        valueScore: 58,
+        reasoning: ['Classico ouvert', 'PSG en reconstruction', 'Marseille motivé']
+      },
+      {
+        id: 'football-002',
+        sport: 'football',
+        match: { 
+          tournament: 'Premier League',
+          surface: 'Pelouse'
+        },
+        challenge: {
+          underdog: 'Liverpool',
+          favorite: 'Manchester City',
+          underdogOdds: 3.20,
+          valueGap: 7.5,
+          ourProbability: 35,
+          impliedProbability: 31.3
+        },
+        confidenceLevel: 'high',
+        riskLevel: 'calculated',
+        valueScore: 65,
+        reasoning: ['Match au sommet', 'Liverpool en forme', 'City fatigué']
+      },
+      {
+        id: 'football-003',
+        sport: 'football',
+        match: { 
+          tournament: 'La Liga',
+          surface: 'Pelouse'
+        },
+        challenge: {
+          underdog: 'Barcelona',
+          favorite: 'Real Madrid',
+          underdogOdds: 2.90,
+          valueGap: 6.8,
+          ourProbability: 38,
+          impliedProbability: 34.5
+        },
+        confidenceLevel: 'high',
+        riskLevel: 'calculated',
+        valueScore: 62,
+        reasoning: ['El Clásico', 'Barça en forme', 'Real blessés']
+      },
+      // Coupe du Monde - Amicaux
+      {
+        id: 'wc-friendly-001',
+        sport: 'football',
+        match: { 
+          tournament: 'Match Amical - Préparation CM 2026',
+          surface: 'Pelouse'
+        },
+        challenge: {
+          underdog: 'Allemagne',
+          favorite: 'France',
+          underdogOdds: 3.40,
+          valueGap: 7.0,
+          ourProbability: 33,
+          impliedProbability: 29.4
+        },
+        confidenceLevel: 'medium',
+        riskLevel: 'moderate',
+        valueScore: 55,
+        reasoning: ['Match amical', 'Équipes proches', 'Allemands revanchards']
+      },
+      // Coupe du Monde
+      {
+        id: 'wc-001',
+        sport: 'football',
+        match: { 
+          tournament: 'Coupe du Monde FIFA 2026',
+          surface: 'Pelouse'
+        },
+        challenge: {
+          underdog: 'Brésil',
+          favorite: 'France',
+          underdogOdds: 2.60,
+          valueGap: 5.5,
+          ourProbability: 42,
+          impliedProbability: 38.5
+        },
+        confidenceLevel: 'medium',
+        riskLevel: 'moderate',
+        valueScore: 52,
+        reasoning: ['Match équilibré', 'Deux favoris', 'Brésil en reconstruction']
+      },
+      // Basketball NBA
+      {
+        id: 'nba-001',
+        sport: 'basketball',
+        match: { 
+          tournament: 'NBA Playoffs',
+          surface: 'Parquet'
+        },
+        challenge: {
+          underdog: 'Lakers',
+          favorite: 'Warriors',
+          underdogOdds: 2.80,
+          valueGap: 6.5,
+          ourProbability: 40,
+          impliedProbability: 35.7
+        },
+        confidenceLevel: 'high',
+        riskLevel: 'calculated',
+        valueScore: 60,
+        reasoning: ['LeBron en forme', 'Match serré attendu', 'Warriors fatigués']
+      }
+    ];
+    
+    // Filtrer selon les paramètres
+    const filteredChallenges = allChallenges.filter(c => 
+      c.challenge.underdogOdds >= minOdds && 
+      c.challenge.valueGap >= minValueGap
+    );
+    
+    // Calculer le résumé
+    const summary = {
+      totalScanned: 50,
+      valueBetsFound: filteredChallenges.length,
+      highConfidenceCount: filteredChallenges.filter(c => 
+        c.confidenceLevel === 'high' || c.confidenceLevel === 'very_high'
+      ).length,
+      averageValueGap: filteredChallenges.length > 0 
+        ? Math.round(filteredChallenges.reduce((sum, c) => sum + c.challenge.valueGap, 0) / filteredChallenges.length * 10) / 10
+        : 0
     };
 
-    return NextResponse.json(data);
+    return NextResponse.json({
+      success: true,
+      challenges: filteredChallenges,
+      summary,
+      lastUpdated: new Date().toISOString()
+    });
+    
   } catch (error) {
     console.error('Erreur API challenges:', error);
     return NextResponse.json(
       { 
+        success: false,
         error: 'Erreur lors de la récupération des données',
-        valueBets: [],
-        europeanLeagues: [],
-        worldCupFriendlies: [],
-        worldCupMatches: [],
-        highOddsChallenges: [],
-        lastUpdated: new Date().toISOString(),
+        challenges: [],
         summary: {
-          totalValueBets: 0,
-          europeanLeagues: 0,
-          worldCupFriendlies: 0,
-          worldCupMatches: 0,
-          highConfidence: 0,
-          averageOdds: '0.00',
-        },
+          totalScanned: 0,
+          valueBetsFound: 0,
+          highConfidenceCount: 0,
+          averageValueGap: 0
+        }
       },
       { status: 200 }
     );
