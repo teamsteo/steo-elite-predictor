@@ -2,8 +2,13 @@ import { NextResponse } from 'next/server';
 import { 
   getUpcomingWorldCupFriendlies, 
   getValueBetsFromFriendlies,
-  FriendlyMatch 
 } from '@/lib/world-cup-friendly-analyzer';
+import {
+  getUpcomingMatches,
+  getValueBetsFromFootball,
+  LEAGUE_NAMES,
+  analyzeFootballMatch,
+} from '@/lib/football-analyzer';
 
 // ============================================
 // INTERFACES
@@ -14,6 +19,7 @@ interface ValueBet {
   sport: 'football' | 'tennis' | 'basketball' | 'hockey' | 'baseball';
   match: string;
   league: string;
+  leagueId?: string;
   date: string;
   betType: string;
   odds: number;
@@ -28,13 +34,15 @@ interface ValueBet {
     impact: 'positive' | 'neutral' | 'negative';
   }[];
   isWorldCupFriendly?: boolean;
+  isWorldCup?: boolean;
+  isEuropeanLeague?: boolean;
+  predictedScore?: { home: number; away: number };
 }
 
 // ============================================
-// DONNÉES DE DÉMONSTRATION
+// DONNÉES DE DÉMONSTRATION - TENNIS
 // ============================================
 
-// En production, ces données viendraient d'APIs externes ou de la base de données
 function getTennisValueBets(): ValueBet[] {
   const today = new Date();
   
@@ -102,32 +110,119 @@ function getTennisValueBets(): ValueBet[] {
   ];
 }
 
+// ============================================
+// MATCHS DE FOOTBALL - CHAMPIONNATS EUROPÉENS
+// ============================================
+
+function getEuropeanLeagueMatches(): ValueBet[] {
+  const matches = getUpcomingMatches();
+  
+  // Filtrer pour ne garder que les championnats européens
+  const europeanLeagues = ['ligue_1', 'premier_league', 'la_liga', 'serie_a', 'bundesliga', 'champions_league', 'europa_league'];
+  
+  const europeanMatches = matches.filter(m => europeanLeagues.includes(m.league));
+  
+  return europeanMatches.map(match => {
+    const analysis = analyzeFootballMatch(match);
+    
+    return {
+      id: match.id,
+      sport: 'football' as const,
+      match: `${match.homeTeam} vs ${match.awayTeam}`,
+      league: LEAGUE_NAMES[match.league] || match.league,
+      leagueId: match.league,
+      date: match.date,
+      betType: analysis.valueBet.recommendedBet,
+      odds: analysis.valueBet.odds,
+      ourProbability: analysis.valueBet.ourProbability,
+      bookmakerProbability: analysis.valueBet.impliedProbability,
+      valueGap: analysis.valueBet.valueGap,
+      valueScore: analysis.valueBet.valueScore,
+      confidence: analysis.confidence,
+      analysis: analysis.insights.join(' '),
+      factors: Object.entries(analysis.factors).map(([key, factor]) => ({
+        name: factor.description,
+        impact: factor.score > 5 ? 'positive' as const : factor.score < -5 ? 'negative' as const : 'neutral' as const,
+      })),
+      isEuropeanLeague: true,
+      predictedScore: analysis.predictedScore,
+    };
+  });
+}
+
+// ============================================
+// MATCHS DE COUPE DU MONDE
+// ============================================
+
+function getWorldCupMatches(): ValueBet[] {
+  const matches = getUpcomingMatches('world_cup');
+  
+  return matches.map(match => {
+    const analysis = analyzeFootballMatch(match);
+    
+    return {
+      id: match.id,
+      sport: 'football' as const,
+      match: `${match.homeTeam} vs ${match.awayTeam}`,
+      league: 'Coupe du Monde FIFA',
+      leagueId: 'world_cup',
+      date: match.date,
+      betType: analysis.valueBet.recommendedBet,
+      odds: analysis.valueBet.odds,
+      ourProbability: analysis.valueBet.ourProbability,
+      bookmakerProbability: analysis.valueBet.impliedProbability,
+      valueGap: analysis.valueBet.valueGap,
+      valueScore: analysis.valueBet.valueScore,
+      confidence: analysis.confidence,
+      analysis: analysis.insights.join(' '),
+      factors: Object.entries(analysis.factors).map(([key, factor]) => ({
+        name: factor.description,
+        impact: factor.score > 5 ? 'positive' as const : factor.score < -5 ? 'negative' as const : 'neutral' as const,
+      })),
+      isWorldCup: true,
+      predictedScore: analysis.predictedScore,
+    };
+  });
+}
+
+// ============================================
+// CHALLENGES À GROSSES COTES
+// ============================================
+
 function getHighOddsChallenges(): ValueBet[] {
   const today = new Date();
   
-  return [
+  // Récupérer les value bets football avec grosses cotes
+  const footballValueBets = getValueBetsFromFootball(40);
+  
+  const footballHighOdds = footballValueBets
+    .filter(fb => fb.valueBet.odds >= 2.5)
+    .map(fb => ({
+      id: fb.id,
+      sport: 'football' as const,
+      match: `${fb.homeTeam} vs ${fb.awayTeam}`,
+      league: LEAGUE_NAMES[fb.league] || fb.league,
+      date: fb.date,
+      betType: fb.valueBet.recommendedBet,
+      odds: fb.valueBet.odds,
+      ourProbability: fb.valueBet.ourProbability,
+      bookmakerProbability: fb.valueBet.impliedProbability,
+      valueGap: fb.valueBet.valueGap,
+      valueScore: fb.valueBet.valueScore,
+      confidence: fb.confidence,
+      analysis: fb.insights.join(' '),
+      factors: Object.entries(fb.factors).map(([key, factor]) => ({
+        name: factor.description,
+        impact: factor.score > 5 ? 'positive' as const : factor.score < -5 ? 'negative' as const : 'neutral' as const,
+      })),
+      isEuropeanLeague: true,
+      predictedScore: fb.predictedScore,
+    }));
+  
+  // Ajouter d'autres sports
+  const otherHighOdds: ValueBet[] = [
     {
-      id: 'high-odds-001',
-      sport: 'football',
-      match: 'Équipe A vs Équipe B',
-      league: 'Champions League',
-      date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-      betType: 'Les deux marquent - Oui',
-      odds: 3.20,
-      ourProbability: 0.38,
-      bookmakerProbability: 0.312,
-      valueGap: 0.068,
-      valueScore: 68,
-      confidence: 'medium',
-      analysis: 'Les deux équipes ont des attaques prolifiques mais des défenses perméables. Historique de matchs avec beaucoup de buts.',
-      factors: [
-        { name: 'Attaques fortes', impact: 'positive' },
-        { name: 'Défenses faibles', impact: 'positive' },
-        { name: 'Historique BTTS', impact: 'positive' },
-      ],
-    },
-    {
-      id: 'high-odds-002',
+      id: 'high-odds-nba-001',
       sport: 'basketball',
       match: 'Lakers vs Warriors',
       league: 'NBA',
@@ -147,7 +242,7 @@ function getHighOddsChallenges(): ValueBet[] {
       ],
     },
     {
-      id: 'high-odds-003',
+      id: 'high-odds-tennis-001',
       sport: 'tennis',
       match: 'Outsider vs Favori',
       league: 'ATP 250',
@@ -167,6 +262,8 @@ function getHighOddsChallenges(): ValueBet[] {
       ],
     },
   ];
+  
+  return [...footballHighOdds, ...otherHighOdds];
 }
 
 // ============================================
@@ -175,16 +272,15 @@ function getHighOddsChallenges(): ValueBet[] {
 
 export async function GET() {
   try {
-    // 1. Récupérer les matchs amicaux de préparation Coupe du Monde
+    // 1. Matchs amicaux de préparation Coupe du Monde
     const worldCupFriendliesMatches = getUpcomingWorldCupFriendlies();
     const worldCupFriendliesValueBets = getValueBetsFromFriendlies(worldCupFriendliesMatches, 40);
     
-    // Transformer en format ValueBet
     const worldCupFriendlies: ValueBet[] = worldCupFriendliesValueBets.map((match) => ({
       id: match.id,
       sport: 'football' as const,
       match: `${match.homeTeam} vs ${match.awayTeam}`,
-      league: 'Match Amical International',
+      league: 'Match Amical - Préparation CM 2026',
       date: match.date,
       betType: match.valueBet.recommendedBet,
       odds: match.valueBet.odds,
@@ -194,34 +290,59 @@ export async function GET() {
       valueScore: match.valueBet.valueScore,
       confidence: match.confidence,
       analysis: match.insights.join(' '),
-      factors: Object.entries(match.factors).map(([key, factor]) => ({
+      factors: Object.entries(match.factors).map(([, factor]) => ({
         name: factor.description,
         impact: factor.score > 10 ? 'positive' as const : factor.score < -10 ? 'negative' as const : 'neutral' as const,
       })),
       isWorldCupFriendly: true,
     }));
 
-    // 2. Récupérer les value bets tennis classiques
+    // 2. Matchs de la Coupe du Monde (phase finale)
+    const worldCupMatches = getWorldCupMatches();
+
+    // 3. Championnats européens
+    const europeanMatches = getEuropeanLeagueMatches();
+
+    // 4. Value bets tennis
     const tennisValueBets = getTennisValueBets();
 
-    // 3. Récupérer les challenges à grosses cotes
+    // 5. Challenges à grosses cotes
     const highOddsChallenges = getHighOddsChallenges();
 
-    // 4. Construire la réponse
+    // Tous les value bets
+    const allValueBets = [
+      ...tennisValueBets,
+      ...europeanMatches.filter(m => m.valueScore >= 50),
+      ...worldCupMatches,
+    ];
+
+    // Réponse
     const response = {
-      valueBets: tennisValueBets,
+      valueBets: allValueBets,
+      europeanLeagues: europeanMatches,
       worldCupFriendlies,
+      worldCupMatches,
       highOddsChallenges,
       lastUpdated: new Date().toISOString(),
       summary: {
-        totalValueBets: tennisValueBets.length + worldCupFriendlies.length + highOddsChallenges.length,
-        highConfidence: [...tennisValueBets, ...worldCupFriendlies, ...highOddsChallenges]
-          .filter(b => b.confidence === 'high' || b.confidence === 'very_high').length,
-        averageOdds: (
-          [...tennisValueBets, ...worldCupFriendlies, ...highOddsChallenges]
-            .reduce((acc, b) => acc + b.odds, 0) / 
-          (tennisValueBets.length + worldCupFriendlies.length + highOddsChallenges.length || 1)
-        ).toFixed(2),
+        totalValueBets: allValueBets.length,
+        europeanLeagues: europeanMatches.length,
+        worldCupFriendlies: worldCupFriendlies.length,
+        worldCupMatches: worldCupMatches.length,
+        highConfidence: allValueBets.filter(b => b.confidence === 'high' || b.confidence === 'very_high').length,
+        averageOdds: allValueBets.length > 0 
+          ? (allValueBets.reduce((acc, b) => acc + b.odds, 0) / allValueBets.length).toFixed(2)
+          : '0.00',
+        byLeague: {
+          ligue1: europeanMatches.filter(m => m.leagueId === 'ligue_1').length,
+          premierLeague: europeanMatches.filter(m => m.leagueId === 'premier_league').length,
+          laLiga: europeanMatches.filter(m => m.leagueId === 'la_liga').length,
+          serieA: europeanMatches.filter(m => m.leagueId === 'serie_a').length,
+          bundesliga: europeanMatches.filter(m => m.leagueId === 'bundesliga').length,
+          championsLeague: europeanMatches.filter(m => m.leagueId === 'champions_league').length,
+          worldCup: worldCupMatches.length,
+          worldCupFriendlies: worldCupFriendlies.length,
+        },
       },
     };
 
@@ -241,8 +362,6 @@ export async function POST(request: Request) {
     const { action, matchId } = body;
 
     if (action === 'publish') {
-      // Publier un challenge sur Telegram
-      // En production, cela appellerait le service Telegram
       console.log(`Publishing challenge ${matchId} to Telegram...`);
       
       return NextResponse.json({
@@ -252,8 +371,6 @@ export async function POST(request: Request) {
     }
 
     if (action === 'refresh') {
-      // Forcer le rafraîchissement des données
-      // En production, cela invaliderait le cache
       return NextResponse.json({
         success: true,
         message: 'Données rafraîchies',

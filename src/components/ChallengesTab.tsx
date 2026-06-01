@@ -12,8 +12,6 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Clock, 
-  MapPin,
-  Users,
   Target,
   Sparkles,
   Loader2,
@@ -31,6 +29,7 @@ interface ValueBet {
   sport: 'football' | 'tennis' | 'basketball' | 'hockey' | 'baseball';
   match: string;
   league: string;
+  leagueId?: string;
   date: string;
   betType: string;
   odds: number;
@@ -45,13 +44,36 @@ interface ValueBet {
     impact: 'positive' | 'neutral' | 'negative';
   }[];
   isWorldCupFriendly?: boolean;
+  isWorldCup?: boolean;
+  isEuropeanLeague?: boolean;
+  predictedScore?: { home: number; away: number };
 }
 
 interface ChallengeData {
   valueBets: ValueBet[];
+  europeanLeagues: ValueBet[];
   worldCupFriendlies: ValueBet[];
+  worldCupMatches: ValueBet[];
   highOddsChallenges: ValueBet[];
   lastUpdated: string;
+  summary: {
+    totalValueBets: number;
+    europeanLeagues: number;
+    worldCupFriendlies: number;
+    worldCupMatches: number;
+    highConfidence: number;
+    averageOdds: string;
+    byLeague?: {
+      ligue1: number;
+      premierLeague: number;
+      laLiga: number;
+      serieA: number;
+      bundesliga: number;
+      championsLeague: number;
+      worldCup: number;
+      worldCupFriendlies: number;
+    };
+  };
 }
 
 // ============================================
@@ -62,7 +84,7 @@ export function ChallengesTab() {
   const [data, setData] = useState<ChallengeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'wc_friendly' | 'high_odds'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'european' | 'world_cup' | 'wc_friendly' | 'high_odds'>('all');
 
   const fetchData = async () => {
     setLoading(true);
@@ -90,12 +112,16 @@ export function ChallengesTab() {
     if (!data) return [];
     
     switch (activeFilter) {
+      case 'european':
+        return data.europeanLeagues;
+      case 'world_cup':
+        return [...data.worldCupMatches, ...data.worldCupFriendlies];
       case 'wc_friendly':
         return data.worldCupFriendlies;
       case 'high_odds':
         return data.highOddsChallenges;
       default:
-        return [...data.valueBets, ...data.worldCupFriendlies, ...data.highOddsChallenges]
+        return [...data.valueBets, ...data.worldCupFriendlies, ...data.worldCupMatches]
           .sort((a, b) => b.valueScore - a.valueScore);
     }
   };
@@ -124,6 +150,38 @@ export function ChallengesTab() {
       default:
         return 'bg-red-500';
     }
+  };
+
+  // Obtenir le badge de ligue
+  const getLeagueBadge = (bet: ValueBet) => {
+    if (bet.isWorldCup) {
+      return (
+        <Badge className="bg-amber-500 text-white text-xs">
+          <Globe className="h-3 w-3 mr-1" />
+          Coupe du Monde
+        </Badge>
+      );
+    }
+    if (bet.isWorldCupFriendly) {
+      return (
+        <Badge className="bg-blue-500 text-white text-xs">
+          <Globe className="h-3 w-3 mr-1" />
+          Amical CM 2026
+        </Badge>
+      );
+    }
+    if (bet.isEuropeanLeague) {
+      return (
+        <Badge variant="outline" className="text-xs border-purple-500/50 text-purple-500">
+          {bet.league}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-xs">
+        {bet.league}
+      </Badge>
+    );
   };
 
   // Formater la date
@@ -198,7 +256,7 @@ export function ChallengesTab() {
       </div>
 
       {/* Statistiques rapides */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
         <Card className="bg-gradient-to-br from-orange-500/10 to-orange-600/5 border-orange-500/20">
           <CardContent className="py-3">
             <div className="flex items-center gap-2">
@@ -231,9 +289,23 @@ export function ChallengesTab() {
               <Globe className="h-5 w-5 text-blue-500" />
               <div>
                 <p className="text-2xl font-bold">
-                  {data?.worldCupFriendlies.length || 0}
+                  {data?.summary.byLeague?.worldCupFriendlies || 0}
                 </p>
                 <p className="text-xs text-muted-foreground">Amicaux CM</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-amber-500" />
+              <div>
+                <p className="text-2xl font-bold">
+                  {data?.summary.byLeague?.worldCup || 0}
+                </p>
+                <p className="text-xs text-muted-foreground">Coupe du Monde</p>
               </div>
             </div>
           </CardContent>
@@ -245,10 +317,21 @@ export function ChallengesTab() {
               <TrendingUp className="h-5 w-5 text-purple-500" />
               <div>
                 <p className="text-2xl font-bold">
-                  {filteredBets.length > 0 
-                    ? (filteredBets.reduce((acc, b) => acc + b.odds, 0) / filteredBets.length).toFixed(2)
-                    : '0.00'
-                  }
+                  {data?.summary.europeanLeagues || 0}
+                </p>
+                <p className="text-xs text-muted-foreground">Champ. Europ.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="bg-gradient-to-br from-rose-500/10 to-rose-600/5 border-rose-500/20">
+          <CardContent className="py-3">
+            <div className="flex items-center gap-2">
+              <Flame className="h-5 w-5 text-rose-500" />
+              <div>
+                <p className="text-2xl font-bold">
+                  {data?.summary.averageOdds || '0.00'}
                 </p>
                 <p className="text-xs text-muted-foreground">Cote moyenne</p>
               </div>
@@ -268,24 +351,70 @@ export function ChallengesTab() {
           Tous
         </Button>
         <Button
+          variant={activeFilter === 'european' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setActiveFilter('european')}
+          className={activeFilter === 'european' ? 'bg-purple-500 hover:bg-purple-600' : 'border-purple-500/50 text-purple-500 hover:bg-purple-500/10'}
+        >
+          <Trophy className="h-4 w-4 mr-1" />
+          Championnats Européens
+        </Button>
+        <Button
+          variant={activeFilter === 'world_cup' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setActiveFilter('world_cup')}
+          className={activeFilter === 'world_cup' ? 'bg-amber-500 hover:bg-amber-600' : 'border-amber-500/50 text-amber-500 hover:bg-amber-500/10'}
+        >
+          <Globe className="h-4 w-4 mr-1" />
+          Coupe du Monde
+        </Button>
+        <Button
           variant={activeFilter === 'wc_friendly' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setActiveFilter('wc_friendly')}
-          className={activeFilter === 'wc_friendly' ? 'bg-orange-500 hover:bg-orange-600' : ''}
+          className={activeFilter === 'wc_friendly' ? 'bg-blue-500 hover:bg-blue-600' : 'border-blue-500/50 text-blue-500 hover:bg-blue-500/10'}
         >
           <Globe className="h-4 w-4 mr-1" />
-          Amicaux Coupe du Monde
+          Amicaux CM
         </Button>
         <Button
           variant={activeFilter === 'high_odds' ? 'default' : 'outline'}
           size="sm"
           onClick={() => setActiveFilter('high_odds')}
-          className={activeFilter === 'high_odds' ? 'bg-orange-500 hover:bg-orange-600' : ''}
+          className={activeFilter === 'high_odds' ? 'bg-rose-500 hover:bg-rose-600' : 'border-rose-500/50 text-rose-500 hover:bg-rose-500/10'}
         >
           <TrendingUp className="h-4 w-4 mr-1" />
           Grosses Cotes
         </Button>
       </div>
+
+      {/* Répartition par championnat */}
+      {data?.summary.byLeague && activeFilter === 'european' && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex flex-wrap gap-3">
+              <Badge variant="outline" className="text-xs">
+                🇫🇷 Ligue 1: {data.summary.byLeague.ligue1}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League: {data.summary.byLeague.premierLeague}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                🇪🇸 La Liga: {data.summary.byLeague.laLiga}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                🇮🇹 Serie A: {data.summary.byLeague.serieA}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                🇩🇪 Bundesliga: {data.summary.byLeague.bundesliga}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                🏆 Champions League: {data.summary.byLeague.championsLeague}
+              </Badge>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Liste des value bets */}
       {filteredBets.length === 0 ? (
@@ -308,10 +437,18 @@ export function ChallengesTab() {
             <Card 
               key={bet.id} 
               className={`overflow-hidden transition-all hover:shadow-lg ${
-                bet.isWorldCupFriendly ? 'border-blue-500/30 bg-blue-500/5' : ''
+                bet.isWorldCup ? 'border-amber-500/30 bg-amber-500/5' :
+                bet.isWorldCupFriendly ? 'border-blue-500/30 bg-blue-500/5' :
+                bet.isEuropeanLeague ? 'border-purple-500/30 bg-purple-500/5' : ''
               }`}
             >
-              {/* Badge spécial pour amical CM */}
+              {/* Badge spécial */}
+              {bet.isWorldCup && (
+                <div className="bg-amber-500 text-white text-xs font-medium px-3 py-1 flex items-center gap-1">
+                  <Trophy className="h-3 w-3" />
+                  Coupe du Monde FIFA - Phase finale
+                </div>
+              )}
               {bet.isWorldCupFriendly && (
                 <div className="bg-blue-500 text-white text-xs font-medium px-3 py-1 flex items-center gap-1">
                   <Globe className="h-3 w-3" />
@@ -326,9 +463,7 @@ export function ChallengesTab() {
                     <CardTitle className="text-lg">{bet.match}</CardTitle>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {bet.league}
-                    </Badge>
+                    {getLeagueBadge(bet)}
                     <Badge 
                       className={`${getConfidenceColor(bet.confidence)} text-white text-xs`}
                     >
@@ -362,6 +497,14 @@ export function ChallengesTab() {
                     </p>
                   </div>
                 </div>
+
+                {/* Score prédit */}
+                {bet.predictedScore && (
+                  <div className="flex items-center gap-2 text-sm bg-muted/30 px-3 py-2 rounded-lg">
+                    <span className="text-muted-foreground">Score prédit:</span>
+                    <span className="font-bold">{bet.predictedScore.home} - {bet.predictedScore.away}</span>
+                  </div>
+                )}
 
                 {/* Value Score */}
                 <div className="space-y-1">
