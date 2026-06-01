@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ import {
   Clock, 
   Target,
   Sparkles,
-  Loader2,
   RefreshCw,
   Globe,
   CircleDot
@@ -46,55 +45,172 @@ interface ValueBet {
 }
 
 // ============================================
+// DONNÉES DE DÉMONSTRATION
+// ============================================
+
+function getDemoData(): ValueBet[] {
+  const today = new Date();
+  
+  return [
+    {
+      id: 'tennis-001',
+      sport: 'tennis',
+      match: 'J. Sinner vs C. Alcaraz',
+      league: 'ATP Masters 1000',
+      date: new Date(today.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Victoire Sinner',
+      odds: 2.40,
+      ourProbability: 0.48,
+      bookmakerProbability: 0.417,
+      valueGap: 0.063,
+      valueScore: 72,
+      confidence: 'high',
+      analysis: 'Sinner en forme excellente avec 85% de victoires sur ses 10 derniers matchs. Alcaraz moins convaincant sur cette surface rapide.',
+      factors: [
+        { name: 'Forme récente', impact: 'positive' },
+        { name: 'Avantage surface', impact: 'positive' },
+      ],
+    },
+    {
+      id: 'tennis-002',
+      sport: 'tennis',
+      match: 'I. Swiatek vs A. Sabalenka',
+      league: 'WTA 1000',
+      date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Victoire Swiatek',
+      odds: 1.85,
+      ourProbability: 0.62,
+      bookmakerProbability: 0.54,
+      valueGap: 0.08,
+      valueScore: 78,
+      confidence: 'very_high',
+      analysis: 'Swiatek excellente sur cette surface. Elle a remporté 12 de ses 15 derniers matchs sur dur.',
+      factors: [
+        { name: 'Expert surface', impact: 'positive' },
+        { name: 'Forme récente', impact: 'positive' },
+      ],
+    },
+    {
+      id: 'football-001',
+      sport: 'football',
+      match: 'PSG vs Marseille',
+      league: 'Ligue 1',
+      date: new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Victoire PSG',
+      odds: 1.45,
+      ourProbability: 0.65,
+      bookmakerProbability: 0.69,
+      valueGap: 0.04,
+      valueScore: 55,
+      confidence: 'high',
+      analysis: 'PSG dominate à domicile avec 18 victoires en 20 matchs au Parc des Princes.',
+      factors: [
+        { name: 'Avantage domicile', impact: 'positive' },
+        { name: 'Forme récente', impact: 'positive' },
+      ],
+      isEuropeanLeague: true,
+      predictedScore: { home: 2, away: 1 },
+    },
+    {
+      id: 'football-002',
+      sport: 'football',
+      match: 'Manchester City vs Liverpool',
+      league: 'Premier League',
+      date: new Date(today.getTime() + 4 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Over 2.5 buts',
+      odds: 1.65,
+      ourProbability: 0.68,
+      bookmakerProbability: 0.61,
+      valueGap: 0.07,
+      valueScore: 62,
+      confidence: 'high',
+      analysis: 'Match au sommet avec beaucoup de buts attendus. Les deux équipes ont des attaques redoutables.',
+      factors: [
+        { name: 'Attaques redoutables', impact: 'positive' },
+        { name: 'Historique BTTS', impact: 'positive' },
+      ],
+      isEuropeanLeague: true,
+      predictedScore: { home: 3, away: 2 },
+    },
+    {
+      id: 'football-003',
+      sport: 'football',
+      match: 'Real Madrid vs Barcelona',
+      league: 'La Liga',
+      date: new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Les deux marquent',
+      odds: 1.55,
+      ourProbability: 0.70,
+      bookmakerProbability: 0.65,
+      valueGap: 0.05,
+      valueScore: 55,
+      confidence: 'high',
+      analysis: 'El Clásico - les deux équipes marquent presque systématiquement lors de leurs confrontations.',
+      factors: [
+        { name: 'Historique BTTS', impact: 'positive' },
+        { name: 'Forme offensive', impact: 'positive' },
+      ],
+      isEuropeanLeague: true,
+      predictedScore: { home: 2, away: 2 },
+    },
+    {
+      id: 'wc-friendly-001',
+      sport: 'football',
+      match: 'France vs Germany',
+      league: 'Match Amical - Préparation CM 2026',
+      date: new Date(today.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Les deux marquent',
+      odds: 1.85,
+      ourProbability: 0.60,
+      bookmakerProbability: 0.54,
+      valueGap: 0.06,
+      valueScore: 58,
+      confidence: 'medium',
+      analysis: 'Match de préparation entre deux favoris de la Coupe du Monde. Les deux équipes ont des attaques prolifiques.',
+      factors: [
+        { name: 'Équipes offensives', impact: 'positive' },
+        { name: 'Enjeu match amical', impact: 'neutral' },
+      ],
+      isWorldCupFriendly: true,
+      predictedScore: { home: 2, away: 1 },
+    },
+    {
+      id: 'wc-001',
+      sport: 'football',
+      match: 'France vs Brazil',
+      league: 'Coupe du Monde FIFA',
+      date: new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      betType: 'Match nul',
+      odds: 3.20,
+      ourProbability: 0.35,
+      bookmakerProbability: 0.31,
+      valueGap: 0.04,
+      valueScore: 48,
+      confidence: 'low',
+      analysis: 'Match équilibré entre deux favoris de la Coupe du Monde. Score serré attendu.',
+      factors: [
+        { name: 'Niveau équivalent', impact: 'positive' },
+        { name: 'Enjeu compétition', impact: 'neutral' },
+      ],
+      isWorldCup: true,
+      predictedScore: { home: 1, away: 1 },
+    },
+  ];
+}
+
+// ============================================
 // COMPOSANT PRINCIPAL
 // ============================================
 
 export function ChallengesTab() {
-  const [valueBets, setValueBets] = useState<ValueBet[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [valueBets] = useState<ValueBet[]>(getDemoData());
   const [activeFilter, setActiveFilter] = useState<'all' | 'european' | 'world_cup' | 'high_odds'>('all');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/challenges', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP: ${response.status}`);
-      }
-      
-      const result = await response.json();
-      
-      if (result.error) {
-        throw new Error(result.error);
-      }
-      
-      // Prendre tous les value bets
-      const allBets = [
-        ...(result.valueBets || []),
-        ...(result.worldCupFriendlies || []),
-        ...(result.worldCupMatches || []),
-      ];
-      
-      setValueBets(allBets);
-    } catch (err) {
-      console.error('Erreur chargement challenges:', err);
-      setError(err instanceof Error ? err.message : 'Erreur inconnue');
-    } finally {
-      setLoading(false);
-    }
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    setTimeout(() => setIsRefreshing(false), 1000);
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   // Filtrer les paris
   const getFilteredBets = (): ValueBet[] => {
@@ -138,41 +254,6 @@ export function ChallengesTab() {
   const filteredBets = getFilteredBets();
 
   // ============================================
-  // RENDU LOADING
-  // ============================================
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 space-y-4">
-        <Loader2 className="h-12 w-12 animate-spin text-orange-500" />
-        <p className="text-muted-foreground">Chargement des challenges...</p>
-      </div>
-    );
-  }
-
-  // ============================================
-  // RENDU ERROR
-  // ============================================
-
-  if (error) {
-    return (
-      <Card className="border-red-500/50 bg-red-500/5">
-        <CardContent className="py-8">
-          <div className="flex flex-col items-center space-y-4">
-            <AlertTriangle className="h-12 w-12 text-red-500" />
-            <p className="text-red-500 font-medium">Erreur de chargement</p>
-            <p className="text-sm text-muted-foreground">{error}</p>
-            <Button variant="outline" onClick={fetchData}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Réessayer
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // ============================================
   // RENDU PRINCIPAL
   // ============================================
 
@@ -190,8 +271,8 @@ export function ChallengesTab() {
           </p>
         </div>
         
-        <Button variant="outline" size="sm" onClick={fetchData}>
-          <RefreshCw className="h-4 w-4 mr-2" />
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+          <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
           Actualiser
         </Button>
       </div>
@@ -299,7 +380,7 @@ export function ChallengesTab() {
             <div className="flex flex-col items-center space-y-3 text-center">
               <Trophy className="h-12 w-12 text-muted-foreground/50" />
               <p className="text-muted-foreground">
-                Aucun challenge disponible pour le moment
+                Aucun challenge disponible pour ce filtre
               </p>
             </div>
           </CardContent>
@@ -439,7 +520,7 @@ export function ChallengesTab() {
             <div className="text-sm">
               <p className="font-medium text-yellow-600">Avertissement</p>
               <p className="text-muted-foreground">
-                Les paris sportifs comportent des risques. Pariez de manière responsable.
+                Les paris sportifs comportent des risques. Pariez de manière responsable et ne misez jamais plus que ce que vous pouvez vous permettre de perdre.
               </p>
             </div>
           </div>
