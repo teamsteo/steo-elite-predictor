@@ -3493,7 +3493,7 @@ function ChallengesSection() {
   const challenges = [
     {
       id: 'demo-1',
-      match: { tournament: 'ATP Masters 1000' },
+      match: { tournament: 'ATP Masters 1000', surface: 'Dur' },
       challenge: {
         underdog: 'J. Sinner',
         favorite: 'C. Alcaraz',
@@ -3503,11 +3503,12 @@ function ChallengesSection() {
         impliedProbability: 41.7
       },
       confidenceLevel: 'high',
+      riskLevel: 'calculated',
       reasoning: ['Forme récente excellente', 'Avantage surface']
     },
     {
       id: 'demo-2',
-      match: { tournament: 'Ligue 1' },
+      match: { tournament: 'Ligue 1', surface: 'Pelouse' },
       challenge: {
         underdog: 'Marseille',
         favorite: 'PSG',
@@ -3517,6 +3518,7 @@ function ChallengesSection() {
         impliedProbability: 22.2
       },
       confidenceLevel: 'medium',
+      riskLevel: 'moderate',
       reasoning: ['Match ouvert', 'Forme récente']
     }
   ];
