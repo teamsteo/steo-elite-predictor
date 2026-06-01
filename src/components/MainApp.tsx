@@ -15,7 +15,8 @@ import { StatsTab } from '@/components/StatsTab';
 import { ExportManager } from '@/components/ExportManager';
 import { ParlayBuilder } from '@/components/ParlayBuilder';
 import { NotificationManager } from '@/components/NotificationManager';
-import { Crown, Shield, Sparkles, Trophy, BarChart3, Calculator, Download, Bell, PieChart } from 'lucide-react';
+import { ChallengesTab } from '@/components/ChallengesTab';
+import { Crown, Shield, Sparkles, Trophy, BarChart3, Calculator, Download, Bell, PieChart, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 
@@ -23,7 +24,7 @@ interface MainAppProps {
   onLogout?: () => void;
 }
 
-type TabType = 'pronos' | 'stats' | 'analytics' | 'parlay' | 'tools';
+type TabType = 'pronos' | 'stats' | 'analytics' | 'parlay' | 'tools' | 'challenges';
 
 export function MainApp({ onLogout }: MainAppProps) {
   const [activeTab, setActiveTab] = useState<TabType>('pronos');
@@ -99,6 +100,15 @@ export function MainApp({ onLogout }: MainAppProps) {
             Analytics
           </Button>
           <Button
+            variant={activeTab === 'challenges' ? 'default' : 'outline'}
+            onClick={() => setActiveTab('challenges')}
+            className={`gap-2 ${activeTab === 'challenges' ? 'bg-orange-500 text-white hover:bg-orange-600' : 'border-orange-500/50 text-orange-500 hover:bg-orange-500/10'}`}
+          >
+            <Flame className="h-4 w-4" />
+            Challenges
+            <Badge variant="secondary" className="ml-1 text-xs bg-orange-100 text-orange-600">HOT</Badge>
+          </Button>
+          <Button
             variant={activeTab === 'parlay' ? 'default' : 'outline'}
             onClick={() => setActiveTab('parlay')}
             className={`gap-2 ${activeTab === 'parlay' ? 'bg-primary text-primary-foreground' : ''}`}
@@ -142,6 +152,12 @@ export function MainApp({ onLogout }: MainAppProps) {
         {activeTab === 'analytics' && (
           <div className="space-y-6">
             <AnalyticsDashboard />
+          </div>
+        )}
+
+        {activeTab === 'challenges' && (
+          <div className="space-y-6">
+            <ChallengesTab />
           </div>
         )}
 
