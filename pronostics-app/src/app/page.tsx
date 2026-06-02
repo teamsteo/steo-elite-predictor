@@ -2830,7 +2830,8 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         <NavButton icon="🏀" label="Basket" active={activeSection === 'basketball'} onClick={() => setActiveSection('basketball')} color="#f97316" />
         <NavButton icon="🏈" label="NFL" active={activeSection === 'nfl'} onClick={() => setActiveSection('nfl')} color="#3b82f6" />
         <NavButton icon="🏒" label="NHL" active={activeSection === 'nhl'} onClick={() => setActiveSection('nhl')} color="#06b6d4" />
-        <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" />
+        {/* Onglet Tennis masqué - utiliser Telegram pour les prédictions tennis */}
+        {/* <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" /> */}
         {/* Expert ML - MASQUÉ en mode apprentissage jusqu'à 70% de réussite sur 7 jours */}
         {/* <NavButton icon="🎯" label="Expert ML" active={activeSection === 'expert'} onClick={() => setActiveSection('expert')} color="#14b8a6" /> */}
         <NavButton icon="🔍" label="Analyse" active={activeSection === 'analyse'} onClick={() => setActiveSection('analyse')} color="#8b5cf6" />
@@ -3075,10 +3076,10 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
           <NHLSection matches={matches.filter(m => m.sport === 'Hockey')} loading={loading} lastUpdate={lastUpdate} />
         )}
 
-        {/* Section Tennis */}
-        {activeSection === 'tennis' && (
+        {/* Section Tennis - MASQUÉE (utiliser Telegram pour les prédictions tennis) */}
+        {/* {activeSection === 'tennis' && (
           <TennisSection />
-        )}
+        )} */}
 
         {/* Section API Status - Visible pour tous */}
         {activeSection === 'apistatus' && (
