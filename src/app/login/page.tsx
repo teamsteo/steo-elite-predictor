@@ -143,30 +143,19 @@ export default function LoginPage() {
             <div className="mt-6 pt-6 border-t border-slate-700">
               <p className="text-sm text-slate-400 mb-3 flex items-center gap-2">
                 <Shield className="w-4 h-4" />
-                Identifiants de démonstration :
+                Identifiants de connexion :
               </p>
               <div className="space-y-2">
                 <button
                   type="button"
                   onClick={() => {
                     setUsername('admin');
-                    setPassword('Elite2024!');
+                    setPassword('admin12');
                   }}
                   className="w-full text-left p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-orange-500 transition-colors"
                 >
                   <p className="text-white font-medium">Admin</p>
-                  <p className="text-slate-400 text-sm">admin / Elite2024!</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUsername('demo');
-                    setPassword('Demo2024!');
-                  }}
-                  className="w-full text-left p-3 rounded-lg bg-slate-700/30 border border-slate-600 hover:border-orange-500 transition-colors"
-                >
-                  <p className="text-white font-medium">Demo</p>
-                  <p className="text-slate-400 text-sm">demo / Demo2024!</p>
+                  <p className="text-slate-400 text-sm">admin / admin12</p>
                 </button>
               </div>
             </div>
