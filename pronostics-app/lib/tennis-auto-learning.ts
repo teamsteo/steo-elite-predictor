@@ -541,8 +541,11 @@ export function getPerformanceReport(): {
 // EXPORT
 // ============================================
 
-export {
+export type {
   PredictionRecord,
   LearningMetrics,
+};
+
+export {
   DEFAULT_WEIGHTS,
 };
