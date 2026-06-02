@@ -1,19 +1,25 @@
 import { NextResponse } from 'next/server';
 
 /**
- * API Tennis - Prédictions ML OPTIMISÉES
+ * API Tennis - Prédictions ML OPTIMISÉES V2 - 2026
  *
- * 🎯 OPTIMISATIONS v3.0:
- * 1. Cache intelligent The Odds API (économie de crédits)
- * 2. Classements ATP/WTA en temps réel (Jeff Sackmann - GRATUIT)
- * 3. Seuils de confiance CONSERVATEURS (réduit les faux positifs)
- * 
- * 📊 PROBLÈME CORRIGÉ:
- * - Avant: 1 victoire sur 3 pour des matchs "90% fiables"
- * - Solution: Données live + validation croisée + seuils stricts
+ * 🎯 VERSIONS DISPONIBLES:
+ * - v2 (défaut): Moteur 2026 avec classements live, forme réelle, auto-apprentissage
+ * - v1 (optimized): Moteur optimisé original avec cache intelligent
+ * - v0 (basic): Moteur basique fallback
+ *
+ * 🔧 NOUVEAUTÉS V2:
+ * 1. Classements ATP/WTA 2026 en temps réel (Jeff Sackmann)
+ * 2. Forme récente calculée depuis les matchs réels 2026
+ * 3. Auto-apprentissage depuis les résultats passés
+ * 4. Calibration automatique des seuils
+ * 5. Publication Telegram automatique
  */
 
-// Import du système optimisé
+// Import du système V2
+import { predictMatchV2, fetchATPRankings2026, fetchWTARankings2026, getModelPerformance } from '../../../lib/tennis-enhanced/prediction-engine-v2';
+
+// Import du système optimisé V1 (fallback)
 import { 
   collectMatches, 
   getTournamentImportanceFactor,
@@ -21,8 +27,8 @@ import {
   Surface,
   Category
 } from '../../../lib/tennis-enhanced/smart-collector';
-import { predictMatchOptimized, OptimizedPrediction } from '../../../lib/tennis-enhanced/optimized-predictor';
-import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor'; // Fallback
+import { predictMatchOptimized } from '../../../lib/tennis-enhanced/optimized-predictor';
+import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor';
 import { 
   savePrediction, 
   loadMetrics, 
@@ -92,9 +98,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get('filter') || 'all';
     const forceRefresh = searchParams.get('refresh') === 'true';
-    const useOptimized = searchParams.get('optimized') !== 'false'; // Par défaut: optimisé
+    const version = searchParams.get('version') || 'v2'; // v2 | v1 | v0
     
-    console.log('🎾 API Tennis Optimized v3.0: Requête reçue');
+    console.log(`🎾 API Tennis V2 2026: Requête reçue (version: ${version})`);
     
     // Vérifier le cache
     const now = Date.now();
@@ -107,6 +113,7 @@ export async function GET(request: Request) {
         source: 'cache',
         modelInfo: getModelInfo(),
         quotaStatus: getQuotaStatus(),
+        version,
       });
     }
     
@@ -114,14 +121,14 @@ export async function GET(request: Request) {
     console.log('📡 Collecte des matchs...');
     const matches = await collectMatches();
     
+    // Récupérer les classements 2026 (pour V2 et affichage)
+    const [atpRankings2026, wtaRankings2026] = await Promise.all([
+      fetchATPRankings2026().catch(() => []),
+      fetchWTARankings2026().catch(() => []),
+    ]);
+    
     if (matches.length === 0) {
-      console.log('⚠️ Aucun match collecté, essai classements ATP/WTA...');
-      
-      // Tenter de récupérer au moins les classements
-      const [atpRankings, wtaRankings] = await Promise.all([
-        fetchATPRankings(20).catch(() => []),
-        fetchWTARankings(20).catch(() => []),
-      ]);
+      console.log('⚠️ Aucun match collecté, affichage classements 2026...');
       
       return NextResponse.json({
         predictions: [],
@@ -130,25 +137,64 @@ export async function GET(request: Request) {
         source: 'empty',
         message: 'Aucun match disponible actuellement. Les tournois actifs apparaîtront automatiquement.',
         rankings: {
-          atp: atpRankings.slice(0, 10),
-          wta: wtaRankings.slice(0, 10),
+          atp: atpRankings2026.slice(0, 10).map(r => ({ rank: r.rank, name: r.playerName, country: r.country, points: r.points })),
+          wta: wtaRankings2026.slice(0, 10).map(r => ({ rank: r.rank, name: r.playerName, country: r.country, points: r.points })),
         },
         modelInfo: getModelInfo(),
         quotaStatus: getQuotaStatus(),
+        version,
       });
     }
     
     console.log(`✅ ${matches.length} matchs collectés`);
     
-    // Générer les prédictions avec le modèle OPTIMISÉ
+    // Générer les prédictions selon la version
     const predictions: TennisPrediction[] = [];
     
     for (const match of matches) {
       try {
         let prediction: TennisPrediction;
         
-        if (useOptimized) {
-          // Utiliser le prédicteur OPTIMISÉ (avec données live)
+        if (version === 'v2') {
+          // NOUVEAU MOTEUR V2 - 2026
+          const v2Pred = await predictMatchV2(match);
+          
+          prediction = {
+            matchId: v2Pred.matchId,
+            player1: v2Pred.player1,
+            player2: v2Pred.player2,
+            tournament: v2Pred.tournament,
+            tournamentTier: v2Pred.tournamentTier,
+            tournamentImportance: getTournamentImportanceFactor(v2Pred.tournamentTier),
+            surface: v2Pred.surface,
+            round: match.round,
+            date: match.date.toISOString(),
+            odds1: match.odds1,
+            odds2: match.odds2,
+            category: match.category,
+            prediction: {
+              winner: v2Pred.prediction.winner,
+              winnerName: v2Pred.prediction.winnerName,
+              winProbability: v2Pred.prediction.winProbability,
+              confidence: v2Pred.prediction.confidence,
+              riskPercentage: v2Pred.prediction.riskPercentage,
+            },
+            betting: {
+              recommendedBet: v2Pred.betting.recommendedBet,
+              kellyStake: v2Pred.betting.kellyStake,
+              winnerOdds: v2Pred.betting.winnerOdds,
+              expectedValue: v2Pred.betting.expectedValue,
+              valueRating: v2Pred.betting.valueRating,
+            },
+            crossValidation: v2Pred.crossValidation,
+            analysis: v2Pred.analysis?.keyFactor || '',
+            keyFactors: v2Pred.keyInsights,
+            warnings: v2Pred.warnings,
+            modelVersion: v2Pred.modelVersion,
+            dataSource: v2Pred.dataSource,
+          };
+        } else if (version === 'v1') {
+          // MOTEUR V1 - OPTIMISÉ
           const optimizedPred = await predictMatchOptimized(match);
           
           prediction = {
@@ -186,7 +232,7 @@ export async function GET(request: Request) {
             dataSource: optimizedPred.dataSource,
           };
         } else {
-          // Fallback vers l'ancien prédicteur
+          // MOTEUR V0 - BASIQUE
           const basicPred = predictMatch(match);
           
           prediction = {
@@ -423,13 +469,19 @@ function calculateStats(predictions: TennisPrediction[]) {
 
 function getModelInfo() {
   return {
-    version: 'tennis-optimized-v3.0',
+    version: 'tennis-v2.0-2026',
+    availableVersions: {
+      v2: 'Moteur 2026 avec classements live, forme réelle, auto-apprentissage',
+      v1: 'Moteur optimisé original avec cache intelligent',
+      v0: 'Moteur basique fallback',
+    },
     optimizations: [
-      '🎯 CACHE INTELLIGENT: 12h pour classements, 2h pour cotes',
-      '📊 CLASSEMENTS LIVE: Jeff Sackmann GitHub (GRATUIT, mis à jour chaque semaine)',
-      '🔒 SEUILS STRICTS: very_high nécessite 80%+ (vs 70% avant)',
-      '✅ VALIDATION CROISÉE: Exclusion automatique des divergences avec bookmakers',
-      '💰 ÉCONOMIE API: Budget 5 req/jour = 150/mois max',
+      '📊 CLASSEMENTS LIVE 2026: Jeff Sackmann GitHub (GRATUIT)',
+      '🔥 FORME RÉELLE: Calculée depuis les matchs 2026',
+      '🧠 AUTO-APPRENTISSAGE: Calibration depuis résultats passés',
+      '🔒 SEUILS STRICTS: very_high nécessite 82%+ avec validation bookmakers',
+      '✅ VALIDATION CROISÉE: Exclusion automatique des divergences',
+      '📱 TELEGRAM: Publication automatique configurable',
     ],
     qualityFilter: {
       enabled: true,
@@ -438,21 +490,19 @@ function getModelInfo() {
       excludedTiers: ['challenger_*', 'itf', 'unknown'],
     },
     confidenceThresholds: {
-      very_high: '80%+ (validé par bookmakers)',
-      high: '70%+',
-      medium: '60%+',
-      low: '<60%',
+      very_high: '82%+ (validé par bookmakers)',
+      high: '72%+',
+      medium: '62%+',
+      low: '<62%',
     },
     weights: {
-      ranking: '22% (LIVE depuis Jeff Sackmann)',
-      surface: '12%',
-      form: '15%',
-      h2h: '8%',
-      odds: '15% (réduit - pas assez fiable seul)',
-      tournament: '8%',
-      fatigue: '8%',
-      motivation: '6%',
-      pressure: '6%',
+      ranking: '22% (LIVE 2026)',
+      form: '18% (calculé matchs réels)',
+      surface: '15%',
+      odds: '12% (réduit)',
+      h2h: '10%',
+      fatigue: '10%',
+      pressure: '8%',
     },
     crossValidation: {
       enabled: true,
@@ -469,10 +519,17 @@ function getModelInfo() {
         'crossValidation = confirmed',
         'confidence = very_high',
         'winProbability >= 75%',
-        'kellyStake >= 2.0',
         'expectedValue >= 10%',
         'tier NOT IN (itf, challenger)',
       ],
+    },
+    telegramAutoPublish: {
+      enabled: true,
+      schedule: {
+        major: '07:30 UTC - Grands tournois',
+        summary: '09:00 UTC - Résumé quotidien',
+        valuebets: '17:00 UTC - Value bets',
+      },
     },
   };
 }
