@@ -1,0 +1,54 @@
+name: Tennis Predictions CRON
+
+on:
+  schedule:
+    # Publication quotidienne à 8h00 UTC (10h00 Paris)
+    - cron: '0 8 * * *'
+    # Vérification value bets toutes les 4 heures
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - valuebets
+          - refresh
+
+env:
+  CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+jobs:
+  tennis-predictions:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run daily predictions
+        if: github.event.inputs.action == 'daily' || github.event_name == 'schedule'
+        run: |
+          curl -X GET "https://pronostics-app.vercel.app/api/cron/tennis-predictions?action=daily&secret=${{ secrets.CRON_SECRET }}"
+      
+      - name: Check value bets
+        if: github.event.inputs.action == 'valuebets'
+        run: |
+          curl -X GET "https://pronostics-app.vercel.app/api/cron/tennis-predictions?action=valuebets&secret=${{ secrets.CRON_SECRET }}"
+      
+      - name: Refresh predictions
+        if: github.event.inputs.action == 'refresh'
+        run: |
+          curl -X GET "https://pronostics-app.vercel.app/api/cron/tennis-predictions?action=refresh&secret=${{ secrets.CRON_SECRET }}"

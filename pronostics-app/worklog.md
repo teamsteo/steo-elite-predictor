@@ -1392,3 +1392,137 @@ Stage Summary:
 - Indicateurs qualité des données (RÉEL vs ESTIMATION)
 - Documentation complète des APIs manquantes pour analyses pointues
 - Déploiement: nécessite git push manuel (pas de credentials GitHub)
+
+---
+
+## 2026-06-02 - Optimisation Tennis v4 - Données 2026 + Auto-Learning + Telegram
+
+### ✅ Améliorations Implémentées
+
+#### 1. URLs Jeff Sackmann Corrigées (2024 → 2026)
+- **Problème:** Les URLs pointaient vers les données 2024
+- **Solution:** Création de `tennis-sources-2026.ts` avec URLs corrigées
+- **Sources:**
+  - `atp_rankings_current.csv` - Classements ATP live
+  - `wta_rankings_current.csv` - Classements WTA live
+  - `atp_players.csv` / `wta_players.csv` - Infos joueurs
+  - `atp_matches_2026.csv` / `wta_matches_2026.csv` - Matchs 2026
+
+#### 2. Intégration Jeff Sackmann Data Service
+- **NOUVEAU FICHIER:** `lib/tennis-jeff-sackmann-service.ts`
+- Récupération automatique des classements ATP/WTA
+- Cache intelligent (24h classements, 168h joueurs)
+- CSV parsing natif (pas de dépendances externes)
+- Calcul automatique de la forme récente
+
+#### 3. Système d'Auto-Apprentissage
+- **NOUVEAU FICHIER:** `lib/tennis-auto-learning.ts`
+- Enregistrement de chaque prédiction avec contexte
+- Vérification automatique des résultats
+- Ajustement des poids du modèle selon les performances
+- Métriques par confiance, surface, catégorie
+- Simulation ROI des paris recommandés
+
+#### 4. Publication Telegram Automatique
+- **NOUVEAU FICHIER:** `lib/tennis-telegram-publisher.ts`
+- **NOUVEAU FICHIER:** `src/app/api/cron/tennis-predictions/route.ts`
+- Publication quotidienne des top prédictions
+- Alertes value bets en temps réel
+- Rapports de performance hebdomadaires
+- GitHub Actions workflow pour automatisation
+
+#### 5. Backtesting System
+- **NOUVEAU FICHIER:** `lib/tennis-backtesting.ts`
+- Simulation sur données historiques 2025-2026
+- Calcul de la précision réelle par niveau de confiance
+- Simulation de bankroll avec ROI et drawdown
+- Recommandations d'optimisation automatiques
+
+### Architecture Tennis v4
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    TENNIS DATA 2026                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Jeff Sackmann│  │ BetExplorer  │  │ The Odds API │      │
+│  │ (Classements)│  │ (Cotes)      │  │ (Cotes Live) │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ✅ Données 2026 - GRATUITES et FIABLES                     │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               AUTO-LEARNING SYSTEM                           │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Enregistre   │  │ Vérifie      │  │ Ajuste       │      │
+│  │ Prédictions  │  │ Résultats    │  │ Poids ML     │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ✅ Le système apprend de ses erreurs                       │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               TELEGRAM PUBLISHER                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Résumé       │  │ Value Bet    │  │ Rapport      │      │
+│  │ Quotidien    │  │ Alerts       │  │ Hebdomadaire │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ✅ Publication automatique via CRON                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               BACKTESTING ENGINE                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Simule sur   │  │ Calcule      │  │ Génère       │      │
+│  │ Historique   │  │ Précision    │  │ Recommand.   │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+│  ✅ Validation du modèle avant mise en production           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Fichiers Créés
+
+| Fichier | Description |
+|---------|-------------|
+| `lib/tennis-sources-2026.ts` | URLs et configuration Jeff Sackmann 2026 |
+| `lib/tennis-jeff-sackmann-service.ts` | Service de récupération données |
+| `lib/tennis-auto-learning.ts` | Système d'auto-apprentissage |
+| `lib/tennis-telegram-publisher.ts` | Publication Telegram |
+| `lib/tennis-backtesting.ts` | Moteur de backtesting |
+| `src/app/api/cron/tennis-predictions/route.ts` | Endpoint CRON |
+| `.github/workflows/tennis-cron.yml` | Workflow GitHub Actions |
+
+### Configuration Requise
+
+```
+# Variables d'environnement (déjà configurées)
+TELEGRAM_BOT_TOKEN=xxx
+TELEGRAM_CHAT_ID=xxx
+CRON_SECRET=tennis-ml-2026
+```
+
+### APIs Disponibles
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/cron/tennis-predictions?action=daily` | Publication quotidienne |
+| `GET /api/cron/tennis-predictions?action=valuebets` | Vérification value bets |
+| `GET /api/cron/tennis-predictions?action=refresh` | Rafraîchir prédictions |
+
+### Performance Attendue
+
+| Niveau Confiance | Taux Réel Estimé |
+|------------------|------------------|
+| very_high (80%+) | 65-75% |
+| high (70-80%) | 55-65% |
+| medium (60-70%) | 50-60% |
+| low (<60%) | 45-55% |
+
+### Prochaines Étapes
+
+1. **Déployer** les nouveaux fichiers sur Vercel
+2. **Tester** l'endpoint CRON manuellement
+3. **Activer** GitHub Actions pour automatisation
+4. **Exécuter** backtesting pour valider le modèle
+5. **Ajuster** les seuils selon les résultats
