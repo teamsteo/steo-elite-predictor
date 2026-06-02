@@ -536,4 +536,4 @@ if (require.main === module) {
     .catch(err => console.error('❌ Backtest error:', err));
 }
 
-export { HistoricalMatch, SimulatedPrediction };
+export type { HistoricalMatch, SimulatedPrediction };
