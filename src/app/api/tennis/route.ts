@@ -1,16 +1,19 @@
 import { NextResponse } from 'next/server';
 
 /**
- * API Tennis - Prédictions ML avancées avec système Enhanced
+ * API Tennis - Prédictions ML OPTIMISÉES
  *
- * Utilise le nouveau système avec:
- * - Facteur d'importance des tournois (Grand Chelem, Masters, etc.)
- * - Classements réels ATP/WTA
- * - Protection anti-ban pour le scraping
- * - 8 facteurs ML au lieu de 5
+ * 🎯 OPTIMISATIONS v3.0:
+ * 1. Cache intelligent The Odds API (économie de crédits)
+ * 2. Classements ATP/WTA en temps réel (Jeff Sackmann - GRATUIT)
+ * 3. Seuils de confiance CONSERVATEURS (réduit les faux positifs)
+ * 
+ * 📊 PROBLÈME CORRIGÉ:
+ * - Avant: 1 victoire sur 3 pour des matchs "90% fiables"
+ * - Solution: Données live + validation croisée + seuils stricts
  */
 
-// Import du système enhanced
+// Import du système optimisé
 import { 
   collectMatches, 
   getTournamentImportanceFactor,
@@ -18,13 +21,15 @@ import {
   Surface,
   Category
 } from '../../../lib/tennis-enhanced/smart-collector';
-import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor';
+import { predictMatchOptimized, OptimizedPrediction } from '../../../lib/tennis-enhanced/optimized-predictor';
+import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor'; // Fallback
 import { 
   savePrediction, 
   loadMetrics, 
   loadPredictions as loadValidationPredictions 
 } from '../../../lib/tennis-enhanced/validation-system';
 import { fetchATPRankings, fetchWTARankings } from '../../../lib/tennis-enhanced/external-sources';
+import { getQuotaStatus } from '../../../lib/oddsQuotaManager';
 
 // ============================================
 // INTERFACES
@@ -57,10 +62,17 @@ interface TennisPrediction {
     expectedValue: number;
     valueRating: string;
   };
+  crossValidation?: {
+    status: 'confirmed' | 'neutral' | 'divergence' | 'excluded';
+    bookmakerFavorite: 'player1' | 'player2';
+    ourFavorite: 'player1' | 'player2';
+    probabilityGap: number;
+  };
   analysis: string;
   keyFactors: string[];
   warnings: string[];
   modelVersion: string;
+  dataSource?: 'live' | 'cached' | 'fallback';
 }
 
 // ============================================
@@ -80,8 +92,9 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get('filter') || 'all';
     const forceRefresh = searchParams.get('refresh') === 'true';
+    const useOptimized = searchParams.get('optimized') !== 'false'; // Par défaut: optimisé
     
-    console.log('🎾 API Tennis Enhanced: Requête reçue');
+    console.log('🎾 API Tennis Optimized v3.0: Requête reçue');
     
     // Vérifier le cache
     const now = Date.now();
@@ -93,11 +106,12 @@ export async function GET(request: Request) {
         generatedAt: new Date(lastFetchTime).toISOString(),
         source: 'cache',
         modelInfo: getModelInfo(),
+        quotaStatus: getQuotaStatus(),
       });
     }
     
     // Collecter les matchs avec protection anti-ban
-    console.log('📡 Collecte des matchs avec protection anti-ban...');
+    console.log('📡 Collecte des matchs...');
     const matches = await collectMatches();
     
     if (matches.length === 0) {
@@ -120,50 +134,96 @@ export async function GET(request: Request) {
           wta: wtaRankings.slice(0, 10),
         },
         modelInfo: getModelInfo(),
+        quotaStatus: getQuotaStatus(),
       });
     }
     
     console.log(`✅ ${matches.length} matchs collectés`);
     
-    // Générer les prédictions améliorées
+    // Générer les prédictions avec le modèle OPTIMISÉ
     const predictions: TennisPrediction[] = [];
     
     for (const match of matches) {
       try {
-        const prediction = predictMatch(match);
+        let prediction: TennisPrediction;
         
-        predictions.push({
-          matchId: prediction.matchId,
-          player1: prediction.player1,
-          player2: prediction.player2,
-          tournament: prediction.tournament,
-          tournamentTier: prediction.tournamentTier,
-          tournamentImportance: getTournamentImportanceFactor(prediction.tournamentTier),
-          surface: prediction.surface,
-          round: match.round,
-          date: match.date.toISOString(),
-          odds1: match.odds1,
-          odds2: match.odds2,
-          category: match.category,
-          prediction: {
-            winner: prediction.predictedWinner,
-            winnerName: prediction.predictedWinner === 'player1' ? prediction.player1 : prediction.player2,
-            winProbability: prediction.winProbability,
-            confidence: prediction.confidence,
-            riskPercentage: prediction.riskPercentage,
-          },
-          betting: {
-            recommendedBet: prediction.betting.recommendedBet,
-            kellyStake: prediction.betting.kellyStake,
-            winnerOdds: prediction.betting.winnerOdds,
-            expectedValue: prediction.betting.expectedValue,
-            valueRating: prediction.betting.valueRating,
-          },
-          analysis: prediction.analysis,
-          keyFactors: prediction.keyInsights,
-          warnings: prediction.warnings,
-          modelVersion: prediction.modelVersion,
-        });
+        if (useOptimized) {
+          // Utiliser le prédicteur OPTIMISÉ (avec données live)
+          const optimizedPred = await predictMatchOptimized(match);
+          
+          prediction = {
+            matchId: optimizedPred.matchId,
+            player1: optimizedPred.player1,
+            player2: optimizedPred.player2,
+            tournament: optimizedPred.tournament,
+            tournamentTier: optimizedPred.tournamentTier,
+            tournamentImportance: getTournamentImportanceFactor(optimizedPred.tournamentTier),
+            surface: optimizedPred.surface,
+            round: match.round,
+            date: match.date.toISOString(),
+            odds1: match.odds1,
+            odds2: match.odds2,
+            category: match.category,
+            prediction: {
+              winner: optimizedPred.predictedWinner,
+              winnerName: optimizedPred.predictedWinner === 'player1' ? optimizedPred.player1 : optimizedPred.player2,
+              winProbability: optimizedPred.winProbability,
+              confidence: optimizedPred.confidence,
+              riskPercentage: optimizedPred.riskPercentage,
+            },
+            betting: {
+              recommendedBet: optimizedPred.betting.recommendedBet,
+              kellyStake: optimizedPred.betting.kellyStake,
+              winnerOdds: optimizedPred.betting.winnerOdds,
+              expectedValue: optimizedPred.betting.expectedValue,
+              valueRating: optimizedPred.betting.valueRating,
+            },
+            crossValidation: optimizedPred.crossValidation,
+            analysis: optimizedPred.analysis,
+            keyFactors: optimizedPred.keyInsights,
+            warnings: optimizedPred.warnings,
+            modelVersion: optimizedPred.modelVersion,
+            dataSource: optimizedPred.dataSource,
+          };
+        } else {
+          // Fallback vers l'ancien prédicteur
+          const basicPred = predictMatch(match);
+          
+          prediction = {
+            matchId: basicPred.matchId,
+            player1: basicPred.player1,
+            player2: basicPred.player2,
+            tournament: basicPred.tournament,
+            tournamentTier: basicPred.tournamentTier,
+            tournamentImportance: getTournamentImportanceFactor(basicPred.tournamentTier),
+            surface: basicPred.surface,
+            round: match.round,
+            date: match.date.toISOString(),
+            odds1: match.odds1,
+            odds2: match.odds2,
+            category: match.category,
+            prediction: {
+              winner: basicPred.predictedWinner,
+              winnerName: basicPred.predictedWinner === 'player1' ? basicPred.player1 : basicPred.player2,
+              winProbability: basicPred.winProbability,
+              confidence: basicPred.confidence,
+              riskPercentage: basicPred.riskPercentage,
+            },
+            betting: {
+              recommendedBet: basicPred.betting.recommendedBet,
+              kellyStake: basicPred.betting.kellyStake,
+              winnerOdds: basicPred.betting.winnerOdds,
+              expectedValue: basicPred.betting.expectedValue,
+              valueRating: basicPred.betting.valueRating,
+            },
+            analysis: basicPred.analysis,
+            keyFactors: basicPred.keyInsights,
+            warnings: basicPred.warnings,
+            modelVersion: basicPred.modelVersion,
+          };
+        }
+        
+        predictions.push(prediction);
       } catch (error) {
         console.error(`Erreur prédiction match ${match.id}:`, error);
       }
@@ -173,20 +233,18 @@ export async function GET(request: Request) {
     const now_date = new Date();
     let filtered_by_date = predictions.filter(p => {
       const matchDate = new Date(p.date);
-      // Garder les matchs futurs ou du jour même
       return matchDate >= now_date || matchDate.toDateString() === now_date.toDateString();
     });
     
-    // 🎯 FILTRE QUALITÉ: Ne garder que les tournois à haute prévisibilité
-    // Les tournois majeurs ont plus de données et des joueurs plus stables
+    // 🎯 FILTRE QUALITÉ: Tournois majeurs uniquement
     const HIGH_QUALITY_TIERS = [
-      'grand_slam',      // Grand Chelem - Très haute prévisibilité
-      'masters_1000',    // Masters ATP - Haute prévisibilité
-      'wta_1000',        // WTA 1000 - Haute prévisibilité
-      'atp_500',         // ATP 500 - Bonne prévisibilité
-      'wta_500',         // WTA 500 - Bonne prévisibilité
-      'atp_250',         // ATP 250 - Prévisibilité correcte
-      'wta_250',         // WTA 250 - Prévisibilité correcte
+      'grand_slam',
+      'masters_1000',
+      'wta_1000',
+      'atp_500',
+      'wta_500',
+      'atp_250',
+      'wta_250',
     ];
     
     const beforeFilter = filtered_by_date.length;
@@ -195,28 +253,38 @@ export async function GET(request: Request) {
     );
     
     if (beforeFilter !== filtered_by_date.length) {
-      console.log(`🎯 Filtre qualité: ${filtered_by_date.length}/${beforeFilter} prédictions gardées (tournois majeurs uniquement)`);
+      console.log(`🎯 Filtre qualité: ${filtered_by_date.length}/${beforeFilter} prédictions gardées`);
+    }
+    
+    // 🚨 FILTRE VALIDATION CROISÉE: Exclure les divergences
+    const divergenceFiltered = filtered_by_date.filter(p => 
+      !p.crossValidation || p.crossValidation.status !== 'excluded'
+    );
+    
+    if (divergenceFiltered.length !== filtered_by_date.length) {
+      console.log(`🚨 Filtre validation: ${divergenceFiltered.length}/${filtered_by_date.length} (divergences exclues)`);
     }
     
     // Mettre en cache
-    cachedPredictions = filtered_by_date;
+    cachedPredictions = divergenceFiltered;
     lastFetchTime = now;
     
-    console.log(`📊 ${filtered_by_date.length} prédictions générées`);
+    console.log(`📊 ${divergenceFiltered.length} prédictions générées`);
     
     // Calculer les stats
-    const stats = calculateStats(filtered_by_date);
+    const stats = calculateStats(divergenceFiltered);
     
     // Charger les métriques de performance
     const performanceMetrics = loadMetrics();
     
     return NextResponse.json({
-      predictions: filterPredictions(filtered_by_date, filter),
+      predictions: filterPredictions(divergenceFiltered, filter),
       stats,
       performance: performanceMetrics,
       generatedAt: new Date().toISOString(),
-      source: 'enhanced',
+      source: 'optimized',
       modelInfo: getModelInfo(),
+      quotaStatus: getQuotaStatus(),
     });
     
   } catch (error) {
@@ -253,28 +321,56 @@ function filterPredictions(predictions: TennisPrediction[], filter: string): Ten
         p.prediction.confidence === 'very_high' || p.prediction.confidence === 'high'
       );
       break;
+    case 'confirmed':
+      // Uniquement les prédictions confirmées par les bookmakers
+      filtered = predictions.filter(p => 
+        p.crossValidation?.status === 'confirmed'
+      );
+      break;
     case 'major':
-      // Tournois majeurs uniquement
       filtered = predictions.filter(p => 
         ['grand_slam', 'masters_1000', 'wta_1000'].includes(p.tournamentTier)
       );
       break;
     case 'safe':
-      // Safe uniquement (risque <= 30%)
       filtered = predictions.filter(p => p.prediction.riskPercentage <= 30);
+      break;
+    case 'live':
+      // Uniquement les prédictions avec données live
+      filtered = predictions.filter(p => p.dataSource === 'live');
       break;
   }
   
-  // Trier par importance puis par probabilité
+  // Trier par confiance puis par importance
+  const confidenceOrder = { very_high: 0, high: 1, medium: 2, low: 3 };
+  
   return filtered.sort((a, b) => {
+    // D'abord par confiance
+    const confA = confidenceOrder[a.prediction.confidence] ?? 2;
+    const confB = confidenceOrder[b.prediction.confidence] ?? 2;
+    if (confA !== confB) return confA - confB;
+    
+    // Ensuite par importance du tournoi
     if (b.tournamentImportance !== a.tournamentImportance) {
       return b.tournamentImportance - a.tournamentImportance;
     }
+    
+    // Enfin par probabilité
     return b.prediction.winProbability - a.prediction.winProbability;
   });
 }
 
 function calculateStats(predictions: TennisPrediction[]) {
+  // Stats validation croisée
+  const confirmed = predictions.filter(p => p.crossValidation?.status === 'confirmed').length;
+  const neutral = predictions.filter(p => p.crossValidation?.status === 'neutral').length;
+  const divergence = predictions.filter(p => p.crossValidation?.status === 'divergence').length;
+  
+  // Stats source de données
+  const live = predictions.filter(p => p.dataSource === 'live').length;
+  const cached = predictions.filter(p => p.dataSource === 'cached').length;
+  const fallback = predictions.filter(p => p.dataSource === 'fallback').length;
+  
   return {
     total: predictions.length,
     byCategory: {
@@ -308,6 +404,16 @@ function calculateStats(predictions: TennisPrediction[]) {
       moderate: predictions.filter(p => p.prediction.riskPercentage > 30 && p.prediction.riskPercentage <= 50).length,
       risky: predictions.filter(p => p.prediction.riskPercentage > 50).length,
     },
+    byValidation: {
+      confirmed,
+      neutral,
+      divergence,
+    },
+    byDataSource: {
+      live,
+      cached,
+      fallback,
+    },
     recommendedBets: predictions.filter(p => p.betting.recommendedBet).length,
     averageProbability: predictions.length > 0
       ? Math.round(predictions.reduce((sum, p) => sum + p.prediction.winProbability, 0) / predictions.length)
@@ -317,46 +423,56 @@ function calculateStats(predictions: TennisPrediction[]) {
 
 function getModelInfo() {
   return {
-    version: 'tennis-enhanced-v2.1',
-    improvements: [
-      '🎯 FILTRE QUALITÉ: Tournois majeurs uniquement (Grand Chelem, Masters, ATP/WTA 250+)',
-      'Facteur d\'importance des tournois (Grand Chelem 1.25x, Masters 1.15x, etc.)',
-      'Classements réels ATP/WTA intégrés',
-      'Protection anti-ban pour le scraping (rotation User-Agents, délais aléatoires)',
-      '8 facteurs d\'analyse (classement, surface, forme, H2H, cotes, tournoi, fatigue, motivation)',
-      'Calibration des probabilités par type de tournoi',
-      'Circuit breaker pour éviter les blocages',
+    version: 'tennis-optimized-v3.0',
+    optimizations: [
+      '🎯 CACHE INTELLIGENT: 12h pour classements, 2h pour cotes',
+      '📊 CLASSEMENTS LIVE: Jeff Sackmann GitHub (GRATUIT, mis à jour chaque semaine)',
+      '🔒 SEUILS STRICTS: very_high nécessite 80%+ (vs 70% avant)',
+      '✅ VALIDATION CROISÉE: Exclusion automatique des divergences avec bookmakers',
+      '💰 ÉCONOMIE API: Budget 5 req/jour = 150/mois max',
     ],
     qualityFilter: {
       enabled: true,
-      reason: 'Exclusion des tournois Challenger/ITF (données insuffisantes, prévisibilité faible)',
+      reason: 'Exclusion des tournois mineurs et des divergences bookmakers',
       includedTiers: ['grand_slam', 'masters_1000', 'wta_1000', 'atp_500', 'wta_500', 'atp_250', 'wta_250'],
       excludedTiers: ['challenger_*', 'itf', 'unknown'],
     },
+    confidenceThresholds: {
+      very_high: '80%+ (validé par bookmakers)',
+      high: '70%+',
+      medium: '60%+',
+      low: '<60%',
+    },
     weights: {
-      ranking: '22%',
-      surface: '15%',
-      form: '12%',
-      h2h: '10%',
-      odds: '20%',
+      ranking: '22% (LIVE depuis Jeff Sackmann)',
+      surface: '12%',
+      form: '15%',
+      h2h: '8%',
+      odds: '15% (réduit - pas assez fiable seul)',
       tournament: '8%',
-      fatigue: '7%',
+      fatigue: '8%',
       motivation: '6%',
+      pressure: '6%',
     },
-    tierMultipliers: {
-      grand_slam: '1.25x (très haute prévisibilité)',
-      masters_1000: '1.15x (haute prévisibilité)',
-      wta_1000: '1.12x (haute prévisibilité)',
-      atp_500: '1.05x (bonne prévisibilité)',
-      atp_250: '1.00x (prévisibilité correcte)',
-      challenger: 'EXCLU (données insuffisantes)',
-      itf: 'EXCLU (données insuffisantes)',
+    crossValidation: {
+      enabled: true,
+      description: 'Compare notre analyse avec les cotes des bookmakers',
+      statuses: {
+        confirmed: 'Notre analyse et bookmakers sont d\'accord',
+        neutral: 'Léger écart entre nos analyses',
+        divergence: 'Désaccord significatif - pari exclu',
+        excluded: 'Favoris différents - pari automatiquement exclu',
+      },
     },
-    antiBanProtection: {
-      userAgents: 'Rotation de 6 User-Agents différents',
-      delays: 'Délais aléatoires entre 2-7 secondes',
-      circuitBreaker: 'Blocage après 3 échecs, réessai après 5 min',
-      cache: 'Cache intelligent avec TTL 6 heures',
+    recommendationCriteria: {
+      required: [
+        'crossValidation = confirmed',
+        'confidence = very_high',
+        'winProbability >= 75%',
+        'kellyStake >= 2.0',
+        'expectedValue >= 10%',
+        'tier NOT IN (itf, challenger)',
+      ],
     },
   };
 }
