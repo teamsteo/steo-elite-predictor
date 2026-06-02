@@ -85,8 +85,9 @@ const JEFF_SACKMANN_BASE = 'https://raw.githubusercontent.com/JeffSackmann/tenni
 const JEFF_SACKMANN_WTA_BASE = 'https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
-// Cache
-const CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 heures
+// Cache - AUGMENTÉ pour économiser les crédits API
+const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 heures (était 6h)
+const MATCHES_CACHE_DURATION = 2 * 60 * 60 * 1000; // 2 heures pour les matchs à venir
 let rankingsCache: { atp: LiveRanking[]; wta: LiveRanking[]; timestamp: number } | null = null;
 let playersCache: Map<string, LivePlayerData> = new Map();
 let upcomingMatchesCache: { matches: UpcomingMatch[]; timestamp: number } | null = null;
@@ -348,12 +349,13 @@ function normalizeSurface(surface: string): 'hard' | 'clay' | 'grass' | 'indoor'
 
 /**
  * Récupère les matchs à venir via le gestionnaire de quota centralisé
- * IMPORTANT: N'appelle l'API que si le cache est vide/expiré
+ * IMPORTANT: Cache de 2 heures pour économiser les crédits API
+ * Les cotes ne changent pas significativement en 2h pour les matchs du lendemain
  */
 export async function fetchUpcomingMatches(): Promise<UpcomingMatch[]> {
-  // Vérifier le cache local d'abord
-  if (upcomingMatchesCache && Date.now() - upcomingMatchesCache.timestamp < 30 * 60 * 1000) {
-    console.log('[TennisLiveData] 📦 Cache local HIT');
+  // Vérifier le cache local d'abord - AUGMENTÉ à 2h
+  if (upcomingMatchesCache && Date.now() - upcomingMatchesCache.timestamp < MATCHES_CACHE_DURATION) {
+    console.log('[TennisLiveData] 📦 Cache local HIT (2h)');
     return upcomingMatchesCache.matches;
   }
   

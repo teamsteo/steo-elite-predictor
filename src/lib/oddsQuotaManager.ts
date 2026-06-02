@@ -38,14 +38,14 @@ export interface QuotaStatus {
 const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
-// Cache valide 6 heures (suffisant pour une journée de matchs)
-const CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 heures en ms
+// Cache valide 12 heures (les cotes ne changent pas beaucoup)
+const CACHE_DURATION = 12 * 60 * 60 * 1000; // 12 heures en ms (était 6h)
 
 // Quota mensuel (gratuit = 500)
 const MONTHLY_QUOTA = 500;
 
-// Quota journalier alloué (on garde de la marge)
-const DAILY_BUDGET = 10; // 10 requêtes/jour max = 300/mois (marge de 200)
+// Quota journalier alloué - RÉDUIT pour économiser
+const DAILY_BUDGET = 5; // 5 requêtes/jour max = 150/mois (marge de 350 pour pics)
 
 // Variables globales pour le cache en mémoire
 let memoryCache: CachedOddsData | null = null;
@@ -252,11 +252,29 @@ export async function getOddsForSports(sports: string[]): Promise<Record<string,
   return results;
 }
 
+// Tournois tennis les plus courants - LISTE STATIQUE pour économiser les appels API
+// Pas besoin d'appeler l'API pour découvrir les tournois disponibles
+const TENNIS_SPORTS_STATIC = [
+  'tennis_atp',           // ATP générique
+  'tennis_wta',           // WTA générique
+  'tennis_atp_australian_open',
+  'tennis_wta_australian_open',
+  'tennis_atp_french_open',
+  'tennis_wta_french_open',
+  'tennis_atp_wimbledon',
+  'tennis_wta_wimbledon',
+  'tennis_atp_us_open',
+  'tennis_wta_us_open',
+  'tennis_atp_masters',   // Masters 1000
+  'tennis_wta_1000',      // WTA 1000
+];
+
 // Cache pour les sports tennis disponibles
 let tennisSportsCache: string[] | null = null;
 
 /**
- * Récupère les clés des tournois tennis disponibles dynamiquement
+ * Récupère les clés des tournois tennis - UTILISE LISTE STATIQUE
+ * Plus aucun appel API pour découvrir les tournois
  */
 async function getAvailableTennisSports(): Promise<string[]> {
   // Utiliser le cache si disponible
@@ -264,38 +282,12 @@ async function getAvailableTennisSports(): Promise<string[]> {
     return tennisSportsCache;
   }
   
-  try {
-    console.log('[OddsQuota] 🔍 Récupération des tournois tennis disponibles...');
-    
-    const response = await fetch(
-      `${ODDS_API_BASE}/sports/?apiKey=${ODDS_API_KEY}`
-    );
-    
-    if (!response.ok) {
-      console.error(`[OddsQuota] ❌ Erreur récupération sports: ${response.status}`);
-      // Fallback vers les clés connues
-      return ['tennis_atp_french_open', 'tennis_wta_french_open'];
-    }
-    
-    const sports = await response.json();
-    
-    // Filtrer les sports tennis
-    const tennisSports = sports
-      .filter((s: any) => s.group?.toLowerCase() === 'tennis' || s.key?.startsWith('tennis_'))
-      .map((s: any) => s.key);
-    
-    console.log(`[OddsQuota] 🎾 ${tennisSports.length} tournois tennis trouvés: ${tennisSports.join(', ')}`);
-    
-    // Mettre en cache
-    tennisSportsCache = tennisSports;
-    
-    return tennisSports;
-    
-  } catch (error) {
-    console.error('[OddsQuota] ❌ Erreur:', error);
-    // Fallback
-    return ['tennis_atp_french_open', 'tennis_wta_french_open'];
-  }
+  // Utiliser la liste statique (pas d'appel API)
+  tennisSportsCache = TENNIS_SPORTS_STATIC;
+  
+  console.log(`[OddsQuota] 🎾 ${TENNIS_SPORTS_STATIC.length} tournois tennis (liste statique)`);
+  
+  return TENNIS_SPORTS_STATIC;
 }
 
 /**

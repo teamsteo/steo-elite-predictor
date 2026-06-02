@@ -306,7 +306,9 @@ const TIER_MULTIPLIERS: Record<TournamentTier, number> = {
   'unknown': 0.75,
 };
 
-// Seuils de confiance ajustés par tier
+// Seuils de confiance ajustés par tier - PLUS CONSERVATEUR
+// Après analyse: 1 victoire sur 3 pour des matchs "90% fiables" = problème
+// Nouveaux seuils beaucoup plus stricts
 function getConfidenceThresholds(tier: TournamentTier): {
   very_high: number;
   high: number;
@@ -314,11 +316,12 @@ function getConfidenceThresholds(tier: TournamentTier): {
 } {
   const base = TIER_MULTIPLIERS[tier] || 1.0;
   
-  // Plus le tournoi est important, plus on peut être confiant
+  // Seuils PLUS ÉLEVÉS pour éviter les faux positifs
+  // "very_high" ne devrait être utilisé que pour des matchs vraiment sûrs
   return {
-    very_high: 70 / base,  // Ex: Grand Slam = 56%, Challenger = 87%
-    high: 62 / base,
-    medium: 55 / base,
+    very_high: 85 / base,  // Ex: Grand Slam = 68%, Challenger = 95% (très strict)
+    high: 75 / base,       // Ex: Grand Slam = 60%
+    medium: 65 / base,     // Ex: Grand Slam = 52%
   };
 }
 
@@ -783,12 +786,18 @@ export function predictMatch(
   else if (expectedValue > 0) valueRating = 'fair';
   else valueRating = 'poor';
   
-  // Recommandation: EXCLURE si divergence avec bookmakers
+  // Recommandation: TRÈS STRICT - exclure tout pari douteux
+  // Un pari ne doit être recommandé que si:
+  // 1. Pas de divergence avec les bookmakers
+  // 2. Confiance élevée ou très élevée
+  // 3. Value positive significative
+  // 4. Win probability >= 70% (ajouté)
   const recommendedBet = 
-    crossValidationStatus !== 'excluded' &&  // Pas de divergence
-    kellyStake >= 0.5 && 
-    confidence !== 'low' && 
-    expectedValue > 0.02;
+    crossValidationStatus === 'confirmed' &&  // Doit être confirmé par les cotes
+    (confidence === 'very_high' || confidence === 'high') &&  // Confiance suffisante
+    winProbability >= 0.65 &&  // Au moins 65% de chances de gagner
+    kellyStake >= 1.0 &&       // Kelly suffisant
+    expectedValue > 0.05;      // Value positive significative (5%+)
   
   // ============================================
   // ANALYSE TEXTUELLE
