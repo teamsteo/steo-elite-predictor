@@ -1980,7 +1980,7 @@ function TennisSection() {
       </div>
 
       {/* Stats */}
-      {stats && (
+      {stats && stats.bySurface && stats.byConfidence && (
         <div style={{
           background: 'linear-gradient(135deg, #1a1a2a 0%, #2a1a3a 100%)',
           borderRadius: '10px',
@@ -1994,11 +1994,11 @@ function TennisSection() {
               <div style={{ fontSize: '9px', color: '#888' }}>Total</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#22c55e' }}>{stats.atp}</div>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#22c55e' }}>{stats.atp || 0}</div>
               <div style={{ fontSize: '9px', color: '#888' }}>ATP</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f97316' }}>{stats.wta}</div>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f97316' }}>{stats.wta || 0}</div>
               <div style={{ fontSize: '9px', color: '#888' }}>WTA</div>
             </div>
             <div style={{ textAlign: 'center' }}>
