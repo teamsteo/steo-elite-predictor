@@ -359,7 +359,7 @@ export async function fetchATPMatches2026(): Promise<ProcessedMatch[]> {
   
   try {
     const res = await fetch(JEFF_SACKMANN_URLS.atpMatches2026, { headers: HEADERS });
-    if (!resRes.ok) throw new Error(`Status: ${res.status}`);
+    if (!res.ok) throw new Error(`Status: ${res.status}`);
     
     const csv = await res.text();
     const rows = parseCSV(csv);

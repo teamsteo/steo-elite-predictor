@@ -6,7 +6,10 @@
     "dev": "next dev -p 3000",
     "build": "rm -rf backup_* && next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "tennis:backtest": "npx ts-node scripts/run-tennis-backtest.ts",
+    "tennis:daily": "curl -s \"http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=daily\"",
+    "tennis:learn": "curl -s \"http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=learn\""
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

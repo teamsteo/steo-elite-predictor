@@ -1526,3 +1526,158 @@ CRON_SECRET=tennis-ml-2026
 3. **Activer** GitHub Actions pour automatisation
 4. **Exécuter** backtesting pour valider le modèle
 5. **Ajuster** les seuils selon les résultats
+
+---
+
+## 2026-06-02 - Système Tennis ML Complet v2026
+
+### ✅ 4 Recommandations Implémentées
+
+#### 1. Amélioration Données avec Jeff Sackmann (ATP Tour API)
+- **Source:** Jeff Sackmann GitHub - Classements ATP/WTA GRATUITS
+- **URLs 2026:** `atp_rankings_current.csv`, `wta_rankings_current.csv`
+- **Données:** Classements live, infos joueurs, matchs historiques
+- **Cache:** 24h classements, 12h données joueurs, 2h cotes
+- **Fichier:** `lib/tennis-jeff-sackmann-service.ts`
+
+#### 2. Système d'Auto-Apprentissage
+- **Enregistrement:** Chaque prédiction sauvegardée avec timestamp
+- **Vérification:** Résultats automatiquement vérifiés
+- **Ajustement:** Poids du modèle adaptés selon les performances
+- **Métriques:** Par facteur (classement, surface, forme, H2H), par confiance, ROI
+- **Fichier:** `lib/tennis-auto-learning.ts`
+
+#### 3. Publication Telegram Automatique (CRON)
+- **Endpoint:** `/api/cron/tennis-auto-publish`
+- **Actions disponibles:**
+  - `daily`: Publication quotidienne à 8h00 UTC
+  - `valuebets`: Alertes value bets toutes les 4h
+  - `learn`: Auto-apprentissage à 20h00 UTC
+  - `backtest`: Rapport hebdomadaire dimanche 9h00 UTC
+- **Configuration:** `vercel.json` avec 4 CRON jobs tennis
+- **Fichier:** `src/app/api/cron/tennis-auto-publish/route.ts`
+
+#### 4. Backtesting sur Données Historiques
+- **Script:** `scripts/run-tennis-backtest.ts`
+- **Commande:** `npm run tennis:backtest`
+- **Métriques:** Précision par confiance, surface, niveau tournoi
+- **Simulation:** Bankroll avec Kelly criterion
+- **Fichier:** `lib/tennis-backtesting.ts`
+
+### Architecture du Système Tennis
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                TENNIS AUTO-PUBLISH CRON                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Daily 8h UTC │  │ Value Bets   │  │ Learn 20h    │      │
+│  │ Publications │  │ Alertes 4h   │  │ Auto-ML      │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               JEFF SACKMANN DATA SERVICE                     │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐            │
+│  │ ATP Rankings│ │ WTA Rankings│ │ Matchs 2026 │            │
+│  │ (Top 500)   │ │ (Top 500)   │ │ Historique  │            │
+│  └─────────────┘ └─────────────┘ └─────────────┘            │
+│  ✅ Gratuit, fiable, mise à jour hebdomadaire               │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               TENNIS AUTO-LEARNING SYSTEM                    │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐            │
+│  │ Record Pred │ │ Verify Res  │ │ Adjust Wgts │            │
+│  │ + Tracking  │ │ + Metrics   │ │ + ML        │            │
+│  └─────────────┘ └─────────────┘ └─────────────┘            │
+│  📊 Poids adaptatifs: ranking 22%, forme 15%, cotes 15%...  │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│               TELEGRAM PUBLISHER                             │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐            │
+│  │ Résumé Quot.│ │ Value Bets  │ │ Rapport Heb.│            │
+│  │ + Top 5     │ │ Alertes EV  │ │ Backtest    │            │
+│  └─────────────┘ └─────────────┘ └─────────────┘            │
+│  📱 Variables: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Fichiers Créés/Modifiés
+
+| Fichier | Description |
+|---------|-------------|
+| `lib/tennis-sources-2026.ts` | URLs et configuration données 2026 |
+| `lib/tennis-jeff-sackmann-service.ts` | Service récupération données ATP/WTA |
+| `lib/tennis-auto-learning.ts` | Système auto-apprentissage ML |
+| `lib/tennis-backtesting.ts` | Backtesting sur données historiques |
+| `lib/tennis-telegram-publisher.ts` | Publication automatique Telegram |
+| `src/app/api/cron/tennis-auto-publish/route.ts` | Endpoint CRON unifié |
+| `scripts/run-tennis-backtest.ts` | Script exécutable backtesting |
+| `vercel.json` | Configuration CRON jobs tennis |
+| `package.json` | Scripts npm tennis:backtest, tennis:daily, tennis:learn |
+
+### CRON Jobs Configurés (vercel.json)
+
+| Action | Schedule | Description |
+|--------|----------|-------------|
+| `daily` | `0 8 * * *` | Publication quotidienne 8h UTC |
+| `valuebets` | `0 */4 * * *` | Alertes value bets toutes les 4h |
+| `learn` | `0 20 * * *` | Auto-apprentissage 20h UTC |
+| `backtest` | `0 9 * * 0` | Rapport hebdomadaire dimanche 9h UTC |
+
+### Seuils de Confiance Stricts
+
+| Niveau | Seuil | Description |
+|--------|-------|-------------|
+| `very_high` | 80%+ | Confiance maximale, recommandé pour paris |
+| `high` | 70%+ | Bonne confiance |
+| `medium` | 60%+ | Confiance modérée |
+| `low` | <60% | Non recommandé |
+
+### Poids du Modèle Multi-Factoriel
+
+| Facteur | Poids | Description |
+|---------|-------|-------------|
+| Classement | 22% | Écart de classement ATP/WTA |
+| Forme | 15% | Résultats 10 derniers matchs |
+| Cotes | 15% | Probabilité implicite bookmakers |
+| Surface | 12% | Spécialiste surface (clay, grass, hard) |
+| H2H | 8% | Historique tête-à-tête |
+| Tournoi | 8% | Importance du tournoi (GS > Masters > ATP 250) |
+| Fatigue | 8% | Jours de repos, blessures |
+| Motivation | 6% | Points à défendre, contexte |
+| Pression | 6% | Enjeu classement |
+
+### Commandes Disponibles
+
+```bash
+# Backtesting
+npm run tennis:backtest
+
+# Publication quotidienne (local)
+npm run tennis:daily
+
+# Auto-apprentissage (local)
+npm run tennis:learn
+
+# Appel API direct
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=daily"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=valuebets"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=learn"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=backtest"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=status"
+```
+
+### Variables d'Environnement Requises
+
+```
+TELEGRAM_BOT_TOKEN=xxx    # Bot Telegram pour publications
+TELEGRAM_CHAT_ID=xxx      # Channel/Chat ID pour publications
+CRON_SECRET=steo-elite-cron-2026  # Secret pour authentification CRON
+GITHUB_TOKEN=ghp_xxx      # Token GitHub pour persistance
+```
+
