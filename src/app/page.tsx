@@ -4508,7 +4508,8 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         {/* <NavButton icon="🏈" label="NFL" active={activeSection === 'nfl'} onClick={() => setActiveSection('nfl')} color="#3b82f6" /> */}
         <NavButton icon="🏒" label="NHL" active={activeSection === 'nhl'} onClick={() => setActiveSection('nhl')} color="#06b6d4" />
         <NavButton icon="⚾" label="MLB" active={activeSection === 'mlb'} onClick={() => setActiveSection('mlb')} color="#dc2626" />
-        <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" />
+        {/* Tennis - MASQUÉ (utiliser Telegram pour les prédictions) */}
+        {/* <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" /> */}
         <NavButton icon="🔥" label="Challenges" active={activeSection === 'challenges'} onClick={() => setActiveSection('challenges')} color="#ef4444" />
         {/* Expert ML - MASQUÉ en mode apprentissage jusqu'à 70% de réussite sur 7 jours */}
         {/* <NavButton icon="🎯" label="Expert ML" active={activeSection === 'expert'} onClick={() => setActiveSection('expert')} color="#14b8a6" /> */}
@@ -4884,10 +4885,10 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
           <MLBSection />
         )}
 
-        {/* Section Tennis */}
-        {activeSection === 'tennis' && (
+        {/* Section Tennis - MASQUÉ (utiliser Telegram pour les prédictions) */}
+        {/* {activeSection === 'tennis' && (
           <TennisSection />
-        )}
+        )} */}
 
         {/* Section Challenges Négligés */}
         {activeSection === 'challenges' && (
