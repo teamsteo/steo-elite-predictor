@@ -325,42 +325,90 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   valueBetDetected?: boolean;
   oddsHome?: number;
   oddsAway?: number;
+  oddsDraw?: number | null;
 }>): Promise<boolean> {
   // Filtrer safe et modéré
   const filtered = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
   
-  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré
+  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré -> Afficher directement les Kamikaze
   if (filtered.length === 0 && predictions.length > 0) {
-    console.log('⚠️ Aucun pronostic safe/modéré - redirection vers Kamikaze');
-    
-    // Envoyer un message informant de la situation
-    const today = new Date().toLocaleDateString('fr-FR', { 
-      weekday: 'long', day: 'numeric', month: 'long' 
+    console.log('⚠️ Aucun pronostic safe/modéré - affichage Kamikaze direct');
+
+    // Filtrer les matchs Kamikaze (risque >= 51%)
+    const kamikazePicks = predictions.filter(p => isKamikaze(p.riskPercentage));
+
+    const today = new Date().toLocaleDateString('fr-FR', {
+      weekday: 'long', day: 'numeric', month: 'long'
     });
-    
+
     let message = '';
     message += '╔════════════════════════╗\n';
     message += `║  📢 <b>PRONOSTICS DU JOUR</b>  ║\n`;
     message += '╚════════════════════════╝\n\n';
-    
+
     message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
-    
+
     message += `⚠️ <b>AUCUN PRONOSTIC SAFE/MODÉRÉ</b>\n\n`;
-    message += `📊 <b>${predictions.length} match${predictions.length > 1 ? 's' : ''} programmé${predictions.length > 1 ? 's' : ''}</b>\n`;
+    message += `📊 <b>${predictions.length} match${predictions.length > 1 ? 's' : ''} analysé${predictions.length > 1 ? 's' : ''}</b>\n`;
     message += `    mais aucun ne répond aux critères:\n`;
     message += `    🟢 Safe (risque ≤ 30%)\n`;
     message += `    🟡 Modéré (risque 31-50%)\n\n`;
-    
-    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-    
-    message += `💡 Consultez la section Kamikaze pour\n`;
-    message += `    les pronostics à haut risque.\n\n`;
-    
-    message += `📲 <b>Commande API:</b>\n`;
-    message += `    /api/cron?action=telegram-kamikaze\n`;
-    
+
+    // Afficher DIRECTEMENT les matchs Kamikaze disponibles
+    if (kamikazePicks.length > 0) {
+      message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
+      message += `🔥 <b>${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''}</b>\n\n`;
+
+      kamikazePicks.slice(0, 5).forEach((m, i) => {
+        const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
+        const { time } = formatDateTime(m.date, m.displayDate);
+        const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+        const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
+
+        // Option de pari
+        const betOption = getBetOption(m.predictedResult, m.sport);
+
+        message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+        message += `${sportEmoji} ${m.sport}`;
+        if (m.league) message += ` | ${m.league}`;
+        message += `\n`;
+
+        if (time) message += `⏰ ${time} | `;
+        message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
+
+        if (m.oddsHome && m.oddsAway) {
+          message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
+          if (m.oddsDraw) message += ` X:${m.oddsDraw.toFixed(2)}`;
+          message += ` 2:${m.oddsAway.toFixed(2)}\n`;
+        }
+
+        message += `💥 Risque: <b>${m.riskPercentage}%</b>`;
+        if (maxOdds > 0) message += ` | 💰 x${maxOdds.toFixed(2)}`;
+        message += `\n`;
+        message += `🔥 Réussite: <b>${winProb}%</b>\n\n`;
+      });
+
+      if (kamikazePicks.length > 5) {
+        message += `<i>... et ${kamikazePicks.length - 5} autres</i>\n\n`;
+      }
+
+      message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `⚠️ <b>ATTENTION</b>\n`;
+      message += `Ces pronostics sont très risqués.\n`;
+      message += `Ne pariez que ce que vous pouvez perdre.\n`;
+    } else {
+      // Aucun Kamikaze non plus
+      message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `ℹ️ <b>AUCUN MATCH DISPONIBLE</b>\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      message += `Aucun pronostic à publier aujourd'hui.\n`;
+      message += `Revenez demain pour les prochains matchs!\n`;
+    }
+
     return sendTelegramMessage(message);
   }
   

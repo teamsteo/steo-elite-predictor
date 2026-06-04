@@ -151,21 +151,24 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
     p.crossValidation.status !== 'excluded'
   );
   
-  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré
+  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré -> Afficher directement les Kamikaze
   if (publishable.length === 0 && predictions.length > 0) {
     console.log(`[TennisAutoPublish] ⚠️ ${predictions.length} matchs mais aucun safe/modéré`);
-    
-    const infoMessage = buildNoMatchMessage(atpRankings, wtaRankings, true);
-    
+
+    // Filtrer les Kamikaze (risque >= 51%)
+    const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage));
+
+    const infoMessage = buildNoMatchMessage(atpRankings, wtaRankings, true, kamikazePicks);
+
     if (!test) {
       await sendTelegramMessage(infoMessage);
     }
-    
+
     return {
       success: true,
-      published: 0,
+      published: kamikazePicks.length,
       mode: 'summary',
-      message: `${predictions.length} matchs mais aucun safe/modéré - voir Kamikaze`,
+      message: `${predictions.length} matchs - ${kamikazePicks.length} Kamikaze affichés`,
       timestamp: new Date().toISOString(),
     };
   }
@@ -563,21 +566,21 @@ function buildKamikazeMessage(predictions: any[]): string {
   return message;
 }
 
-function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[], hasMatchesButNotSafe: boolean = false): string {
+function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[], hasMatchesButNotSafe: boolean = false, kamikazePicks: any[] = []): string {
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
   });
-  
+
   let message = '';
-  
+
   message += '╔════════════════════════════╗\n';
   message += '║  🎾 TENNIS 2026 - INFO     ║\n';
   message += '╚════════════════════════════╝\n\n';
-  
+
   message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
-  
+
   if (hasMatchesButNotSafe) {
     // Il y a des matchs mais aucun n'est safe/modéré
     message += `⚠️ <b>AUCUN PRONOSTIC SAFE/MODÉRÉ</b>\n\n`;
@@ -585,13 +588,48 @@ function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[], hasMatchesB
     message += `    mais aucun ne répond aux critères:\n`;
     message += `    🟢 Safe (risque ≤ 30%)\n`;
     message += `    🟡 Modéré (risque 31-50%)\n\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-    message += `💡 Consultez la section Kamikaze pour\n`;
-    message += `    les pronostics à haut risque.\n\n`;
-    message += `📲 <b>Commande:</b>\n`;
-    message += `    /api/cron/tennis-auto-publish?mode=kamikaze\n`;
+
+    // Afficher DIRECTEMENT les matchs Kamikaze disponibles
+    if (kamikazePicks.length > 0) {
+      message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
+      message += `🔥 <b>${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''}</b>\n\n`;
+
+      kamikazePicks.slice(0, 5).forEach((p, i) => {
+        const tierEmoji = p.tournamentTier === 'grand_slam' ? '🏆' :
+                          ['masters_1000', 'wta_1000'].includes(p.tournamentTier) ? '🥇' : '🎾';
+        const maxOdds = Math.max(p.odds1 || 1, p.odds2 || 1);
+        const betOption = p.prediction?.winner === 'player1' ? '1️⃣' : '2️⃣';
+
+        message += `<b>${i + 1}. ${p.player1} vs ${p.player2}</b>\n`;
+        message += `${tierEmoji} ${p.tournament}\n`;
+        message += `🎯 ${betOption} <b>${p.prediction?.winnerName || 'N/A'}</b>\n`;
+        message += `📊 Cotes: ${(p.odds1 || 1).toFixed(2)} / ${(p.odds2 || 1).toFixed(2)}\n`;
+        message += `💥 Risque: <b>${p.prediction?.riskPercentage}%</b>`;
+        message += ` | 💰 x${maxOdds.toFixed(2)}\n`;
+        message += `🔥 Réussite: <b>${p.prediction?.winProbability}%</b>\n\n`;
+      });
+
+      if (kamikazePicks.length > 5) {
+        message += `<i>... et ${kamikazePicks.length - 5} autres</i>\n\n`;
+      }
+
+      message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `⚠️ <b>ATTENTION</b>\n`;
+      message += `Ces pronostics sont très risqués.\n`;
+      message += `Ne pariez que ce que vous pouvez perdre.\n`;
+    } else {
+      // Pas de Kamikaze non plus
+      message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += `ℹ️ <b>AUCUN MATCH KAMIKAZE</b>\n`;
+      message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      message += `Les matchs du jour ne présentent pas\n`;
+      message += `d'opportunités à haut risque identifiables.\n\n`;
+      message += `📅 Revenez demain!\n`;
+    }
   } else {
     // Aucun match programmé du tout
     message += `ℹ️ <b>Aucun match programmé aujourd'hui</b>\n\n`;
@@ -605,7 +643,7 @@ function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[], hasMatchesB
     message += `    🏀 Basketball\n`;
     message += `    🏒 Hockey\n`;
   }
-  
+
   return message;
 }
 
