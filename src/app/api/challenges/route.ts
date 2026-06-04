@@ -1,243 +1,353 @@
 import { NextResponse } from 'next/server';
-import { fetchAllMatchesWithOdds, IntegratedMatch } from '@/lib/oddsService';
+import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
+import { getUnifiedPrediction, UnifiedPrediction } from '@/lib/unifiedPredictionService';
 
-// Interface pour les challenges
-interface Challenge {
+// ============================================
+// INTERFACES
+// ============================================
+
+export interface Challenge {
   id: string;
-  sport: string;
-  match: { 
-    tournament: string;
-    surface: string;
-  };
-  challenge: {
-    underdog: string;
-    favorite: string;
-    underdogOdds: number;
-    valueGap: number;
-    ourProbability: number;
-    impliedProbability: number;
-  };
-  confidenceLevel: 'very_high' | 'high' | 'medium' | 'low';
-  riskLevel: 'calculated' | 'moderate' | 'high';
-  valueScore: number;
-  reasoning: string[];
-  hasRealOdds: boolean;
+  sport: 'football' | 'basketball' | 'hockey';
+  league: string;
+  
+  // Match info
+  homeTeam: string;
+  awayTeam: string;
+  date: string;
+  displayDate?: string;
+  
+  // Odds
+  oddsHome: number;
+  oddsAway: number;
+  oddsDraw: number | null;
   bookmaker: string;
+  hasRealOdds: boolean;
+  
+  // Analysis
+  recommendation: 'home' | 'away' | 'draw' | 'avoid';
+  recommendedTeam: string;
+  winProbability: number;
+  edge: number;
+  
+  // Value bet detection
+  isValueBet: boolean;
+  valueBetType: 'home' | 'away' | 'draw' | null;
+  expectedValue: number;
+  kellyStake: number;
+  
+  // Confidence & Risk
+  confidence: 'very_high' | 'high' | 'medium' | 'low';
+  riskLevel: 'low' | 'medium' | 'high';
+  riskPercentage: number;
+  
+  // Score
+  valueScore: number;
+  
+  // Reasoning
+  reasoning: string[];
+  factors: {
+    formAdvantage: 'home' | 'away' | 'neutral';
+    oddsValue: 'high' | 'medium' | 'low';
+    dataQuality: number;
+  };
+  
+  // Status
+  status: 'take' | 'consider' | 'rejected';
+}
+
+interface ChallengesSummary {
+  totalScanned: number;
+  valueBetsFound: number;
+  highConfidenceCount: number;
+  averageEdge: number;
+  realOddsCount: number;
+  bySport: {
+    football: number;
+    basketball: number;
+    hockey: number;
+  };
+  byConfidence: {
+    very_high: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
 }
 
 // ============================================
-// ANALYSE DE VALUE BET
+// VALUE BET ANALYSIS
 // ============================================
 
 /**
- * Analyse un match avec cotes réelles et détecte les value bets
+ * Analyse un match et détecte les value bets en utilisant le système ML unifié
  */
-function analyzeMatchForValueBet(match: IntegratedMatch): Challenge | null {
+async function analyzeMatchForChallenge(match: any): Promise<Challenge | null> {
   // Ne traiter que les matchs à venir
-  if (match.status !== 'upcoming') return null;
+  if (match.status === 'finished' || match.isFinished) return null;
   
-  // Ignorer les matchs sans cotes réelles (trop fiables)
-  if (!match.hasRealOdds && match.oddsHome <= 1) return null;
-  
-  // Déterminer le favori et l'outsider
-  const homeOdds = match.oddsHome;
-  const awayOdds = match.oddsAway;
-  const drawOdds = match.oddsDraw;
-  
-  // Calculer les probabilités implicites (bookmaker)
-  const homeImplied = Math.round((1 / homeOdds) * 100);
-  const awayImplied = Math.round((1 / awayOdds) * 100);
-  const drawImplied = drawOdds ? Math.round((1 / drawOdds) * 100) : 0;
-  
-  // Notre analyse interne - basée sur plusieurs facteurs
-  // Dans un vrai système, on utiliserait des stats H2H, forme, etc.
-  const homeAdvantage = 5; // Avantage domicile en football
-  const formAdjustment = Math.random() * 10 - 5; // Simule la forme récente
-  
-  let ourHomeProb = homeImplied + homeAdvantage + formAdjustment;
-  let ourAwayProb = awayImplied - homeAdvantage/2 - formAdjustment/2;
-  let ourDrawProb = drawImplied + (Math.random() * 6 - 3);
-  
-  // Normaliser
-  const total = ourHomeProb + ourAwayProb + ourDrawProb;
-  ourHomeProb = Math.round(ourHomeProb / total * 100);
-  ourAwayProb = Math.round(ourAwayProb / total * 100);
-  ourDrawProb = 100 - ourHomeProb - ourAwayProb;
-  
-  // Identifier l'outsider (plus grande cote)
-  let underdog: string;
-  let favorite: string;
-  let underdogOdds: number;
-  let ourProb: number;
-  let impliedProb: number;
-  
-  if (homeOdds > awayOdds) {
-    underdog = match.homeTeam;
-    favorite = match.awayTeam;
-    underdogOdds = homeOdds;
-    ourProb = ourHomeProb;
-    impliedProb = homeImplied;
-  } else {
-    underdog = match.awayTeam;
-    favorite = match.homeTeam;
-    underdogOdds = awayOdds;
-    ourProb = ourAwayProb;
-    impliedProb = awayImplied;
+  // Vérifier les cotes minimales
+  if (!match.oddsHome || !match.oddsAway || match.oddsHome <= 1 || match.oddsAway <= 1) {
+    return null;
   }
   
-  // Calculer le value gap
-  const valueGap = Math.round((ourProb - impliedProb) * 10) / 10;
-  
-  // Ne garder que les value bets positifs
-  if (valueGap < 3) return null;
-  
-  // Déterminer le niveau de confiance
-  let confidenceLevel: 'very_high' | 'high' | 'medium' | 'low';
-  let riskLevel: 'calculated' | 'moderate' | 'high';
-  
-  if (valueGap >= 8 && match.hasRealOdds && underdogOdds < 3.5) {
-    confidenceLevel = 'very_high';
-    riskLevel = 'calculated';
-  } else if (valueGap >= 6 && match.hasRealOdds) {
-    confidenceLevel = 'high';
-    riskLevel = 'calculated';
-  } else if (valueGap >= 4) {
-    confidenceLevel = 'medium';
-    riskLevel = 'moderate';
-  } else {
-    confidenceLevel = 'low';
-    riskLevel = 'high';
+  try {
+    // Utiliser le service de prédiction unifié
+    const prediction = await getUnifiedPrediction({
+      id: match.id,
+      homeTeam: match.homeTeam,
+      awayTeam: match.awayTeam,
+      sport: match.sport === 'Basket' || match.sport === 'NBA' ? 'NBA' : 
+             match.sport === 'NHL' || match.sport === 'Hockey' ? 'NHL' : 'Foot',
+      league: match.league || 'Unknown',
+      oddsHome: match.oddsHome,
+      oddsDraw: match.oddsDraw,
+      oddsAway: match.oddsAway,
+    });
+    
+    // Ne garder que les value bets avec une edge positive
+    if (prediction.mlPrediction.edge < 3) return null;
+    
+    // Ne garder que les recommandations non-avoid
+    if (prediction.recommendation.bet === 'avoid') return null;
+    
+    // Calculer le value score
+    const valueScore = calculateValueScore(prediction);
+    
+    // Déterminer l'équipe recommandée
+    const recommendedTeam = prediction.recommendation.bet === 'home' ? match.homeTeam :
+                           prediction.recommendation.bet === 'away' ? match.awayTeam :
+                           'Match Nul';
+    
+    // Construire les facteurs
+    const factors: { formAdvantage: 'home' | 'away' | 'neutral'; oddsValue: 'high' | 'medium' | 'low'; dataQuality: number } = {
+      formAdvantage: prediction.factors.form.home > prediction.factors.form.away + 10 ? 'home' :
+                     prediction.factors.form.away > prediction.factors.form.home + 10 ? 'away' : 'neutral',
+      oddsValue: prediction.mlPrediction.edge > 8 ? 'high' :
+                 prediction.mlPrediction.edge > 5 ? 'medium' : 'low',
+      dataQuality: prediction.dataQuality.score,
+    };
+    
+    // Déterminer le niveau de risque
+    const riskLevel = prediction.recommendation.riskLevel;
+    const riskPercentage = 100 - Math.round(prediction.mlPrediction[prediction.recommendation.bet === 'home' ? 'homeProb' : 
+                                            prediction.recommendation.bet === 'away' ? 'awayProb' : 'drawProb'] as number);
+    
+    return {
+      id: `challenge_${match.id}`,
+      sport: match.sport?.toLowerCase().includes('basket') || match.sport?.toLowerCase().includes('nba') ? 'basketball' :
+             match.sport?.toLowerCase().includes('nhl') || match.sport?.toLowerCase().includes('hockey') ? 'hockey' : 'football',
+      league: match.league || 'Unknown',
+      
+      homeTeam: match.homeTeam,
+      awayTeam: match.awayTeam,
+      date: match.date,
+      displayDate: match.displayDate,
+      
+      oddsHome: match.oddsHome,
+      oddsAway: match.oddsAway,
+      oddsDraw: match.oddsDraw,
+      bookmaker: match.bookmaker || 'ESPN',
+      hasRealOdds: match.hasRealOdds || false,
+      
+      recommendation: prediction.recommendation.bet,
+      recommendedTeam,
+      winProbability: Math.round(prediction.mlPrediction[prediction.recommendation.bet === 'home' ? 'homeProb' : 
+                                 prediction.recommendation.bet === 'away' ? 'awayProb' : 'drawProb'] as number),
+      edge: prediction.mlPrediction.edge,
+      
+      isValueBet: prediction.mlPrediction.valueBet,
+      valueBetType: prediction.mlPrediction.valueBetType,
+      expectedValue: prediction.recommendation.expectedValue,
+      kellyStake: prediction.recommendation.kellyStake,
+      
+      confidence: prediction.mlPrediction.confidence,
+      riskLevel,
+      riskPercentage,
+      
+      valueScore,
+      
+      reasoning: prediction.recommendation.reasoning,
+      factors,
+      
+      status: prediction.recommendation.status,
+    };
+    
+  } catch (error) {
+    console.error(`Erreur analyse match ${match.homeTeam} vs ${match.awayTeam}:`, error);
+    return null;
   }
+}
+
+/**
+ * Calcule un score de value bet (0-100)
+ */
+function calculateValueScore(prediction: UnifiedPrediction): number {
+  let score = 0;
   
-  // Générer le reasoning basé sur les données
-  const reasoning: string[] = [];
+  // Edge (40 points max)
+  score += Math.min(40, prediction.mlPrediction.edge * 4);
   
-  if (match.insight.valueBetDetected) {
-    reasoning.push('Value bet détecté par le système');
-  }
-  if (match.hasRealOdds) {
-    reasoning.push('Cotes réelles disponibles');
-  }
-  if (match.reliabilityScore >= 90) {
-    reasoning.push('Fiabilité des données élevée');
-  }
-  if (underdogOdds >= 2.5 && underdogOdds <= 4.0) {
-    reasoning.push('Cote intermédiaire attractive');
-  }
-  if (valueGap >= 5) {
-    reasoning.push('Écart significatif avec les bookmakers');
-  }
-  
-  // Ajouter un reasoning par défaut si vide
-  if (reasoning.length === 0) {
-    reasoning.push('Analyse en cours');
-  }
-  
-  const valueScore = Math.min(100, Math.round(valueGap * 7 + match.reliabilityScore * 0.3));
-  
-  return {
-    id: `challenge_${match.id}`,
-    sport: match.sport === 'Foot' ? 'football' : 'basketball',
-    match: {
-      tournament: match.league,
-      surface: match.sport === 'Foot' ? 'Pelouse' : 'Parquet'
-    },
-    challenge: {
-      underdog,
-      favorite,
-      underdogOdds: Math.round(underdogOdds * 100) / 100,
-      valueGap,
-      ourProbability: ourProb,
-      impliedProbability: impliedProb
-    },
-    confidenceLevel,
-    riskLevel,
-    valueScore,
-    reasoning,
-    hasRealOdds: match.hasRealOdds,
-    bookmaker: match.bookmaker
+  // Confiance (30 points max)
+  const confidencePoints = {
+    very_high: 30,
+    high: 25,
+    medium: 15,
+    low: 5,
   };
+  score += confidencePoints[prediction.mlPrediction.confidence];
+  
+  // Qualité des données (20 points max)
+  score += Math.min(20, prediction.dataQuality.score * 0.2);
+  
+  // Value bet détecté (10 points)
+  if (prediction.mlPrediction.valueBet) {
+    score += 10;
+  }
+  
+  return Math.min(100, Math.round(score));
 }
 
 // ============================================
-// API HANDLER
+// API HANDLERS
 // ============================================
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const minOdds = parseFloat(searchParams.get('minOdds') || '1.8');
-    const minValueGap = parseFloat(searchParams.get('minValueGap') || '3');
+    const minEdge = parseFloat(searchParams.get('minEdge') || '3');
+    const minOdds = parseFloat(searchParams.get('minOdds') || '1.5');
+    const maxOdds = parseFloat(searchParams.get('maxOdds') || '10');
+    const sport = searchParams.get('sport') || 'all';
+    const confidence = searchParams.get('confidence') || 'all';
     
-    console.log('🔥 Récupération des challenges avec vraies cotes...');
+    console.log('🎯 Récupération des challenges...');
     
-    // Récupérer les matchs avec cotes réelles depuis le service existant
-    const matches = await fetchAllMatchesWithOdds();
+    // Récupérer les matchs avec cotes réelles
+    const matches = await getMatchesWithRealOdds();
+    console.log(`📊 ${matches.length} matchs récupérés`);
     
-    console.log(`📊 ${matches.length} matchs récupérés avec cotes`);
+    // Filtrer par sport si spécifié
+    let filteredMatches = matches;
+    if (sport !== 'all') {
+      filteredMatches = matches.filter((m: any) => 
+        m.sport?.toLowerCase().includes(sport.toLowerCase())
+      );
+    }
     
-    // Analyser chaque match pour trouver des value bets
+    // Analyser chaque match
     const challenges: Challenge[] = [];
     
-    for (const match of matches) {
-      const challenge = analyzeMatchForValueBet(match);
+    for (const match of filteredMatches) {
+      const challenge = await analyzeMatchForChallenge(match);
       if (challenge) {
-        // Filtrer selon les paramètres
-        if (challenge.challenge.underdogOdds >= minOdds && challenge.challenge.valueGap >= minValueGap) {
-          challenges.push(challenge);
-        }
+        // Appliquer les filtres
+        const odds = challenge.recommendation === 'home' ? challenge.oddsHome :
+                    challenge.recommendation === 'away' ? challenge.oddsAway :
+                    challenge.oddsDraw || 0;
+        
+        if (odds < minOdds || odds > maxOdds) continue;
+        if (challenge.edge < minEdge) continue;
+        
+        // Filtrer par confiance
+        if (confidence === 'high' && challenge.confidence === 'low') continue;
+        if (confidence === 'very_high' && !['very_high', 'high'].includes(challenge.confidence)) continue;
+        
+        challenges.push(challenge);
       }
     }
     
     // Trier par valueScore décroissant
     challenges.sort((a, b) => b.valueScore - a.valueScore);
     
-    // Limiter à 15 résultats
-    const topChallenges = challenges.slice(0, 15);
+    // Limiter à 20 résultats
+    const topChallenges = challenges.slice(0, 20);
     
     // Calculer le résumé
-    const summary = {
-      totalScanned: matches.filter(m => m.status === 'upcoming').length,
+    const summary: ChallengesSummary = {
+      totalScanned: filteredMatches.filter((m: any) => m.status !== 'finished').length,
       valueBetsFound: topChallenges.length,
       highConfidenceCount: topChallenges.filter(c => 
-        c.confidenceLevel === 'high' || c.confidenceLevel === 'very_high'
+        c.confidence === 'high' || c.confidence === 'very_high'
       ).length,
-      averageValueGap: topChallenges.length > 0 
-        ? Math.round(topChallenges.reduce((sum, c) => sum + c.challenge.valueGap, 0) / topChallenges.length * 10) / 10
+      averageEdge: topChallenges.length > 0 
+        ? Math.round(topChallenges.reduce((sum, c) => sum + c.edge, 0) / topChallenges.length * 10) / 10
         : 0,
-      realOddsCount: topChallenges.filter(c => c.hasRealOdds).length
+      realOddsCount: topChallenges.filter(c => c.hasRealOdds).length,
+      bySport: {
+        football: topChallenges.filter(c => c.sport === 'football').length,
+        basketball: topChallenges.filter(c => c.sport === 'basketball').length,
+        hockey: topChallenges.filter(c => c.sport === 'hockey').length,
+      },
+      byConfidence: {
+        very_high: topChallenges.filter(c => c.confidence === 'very_high').length,
+        high: topChallenges.filter(c => c.confidence === 'high').length,
+        medium: topChallenges.filter(c => c.confidence === 'medium').length,
+        low: topChallenges.filter(c => c.confidence === 'low').length,
+      },
     };
-
-    console.log(`✅ ${topChallenges.length} challenges détectés (${summary.realOddsCount} avec cotes réelles)`);
+    
+    console.log(`✅ ${topChallenges.length} challenges détectés (${summary.highConfidenceCount} haute confiance)`);
     
     return NextResponse.json({
       success: true,
       challenges: topChallenges,
       summary,
       lastUpdated: new Date().toISOString(),
-      source: 'ESPN DraftKings'
+      filters: {
+        minEdge,
+        minOdds,
+        maxOdds,
+        sport,
+        confidence,
+      },
     });
     
   } catch (error) {
     console.error('Erreur API challenges:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Erreur lors de la récupération des données',
-        challenges: [],
-        summary: {
-          totalScanned: 0,
-          valueBetsFound: 0,
-          highConfidenceCount: 0,
-          averageValueGap: 0,
-          realOddsCount: 0
-        }
+    return NextResponse.json({
+      success: false,
+      error: String(error),
+      challenges: [],
+      summary: {
+        totalScanned: 0,
+        valueBetsFound: 0,
+        highConfidenceCount: 0,
+        averageEdge: 0,
+        realOddsCount: 0,
+        bySport: { football: 0, basketball: 0, hockey: 0 },
+        byConfidence: { very_high: 0, high: 0, medium: 0, low: 0 },
       },
-      { status: 200 }
-    );
+    }, { status: 500 });
   }
 }
 
-export async function POST() {
-  return NextResponse.json({ success: true, message: 'Action effectuée' });
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const { matchId, action } = body;
+    
+    if (action === 'analyze') {
+      // Analyser un match spécifique
+      const matches = await getMatchesWithRealOdds();
+      const match = matches.find((m: any) => m.id === matchId);
+      
+      if (!match) {
+        return NextResponse.json({ success: false, error: 'Match non trouvé' }, { status: 404 });
+      }
+      
+      const challenge = await analyzeMatchForChallenge(match);
+      
+      return NextResponse.json({
+        success: true,
+        challenge,
+      });
+    }
+    
+    return NextResponse.json({ success: false, error: 'Action non reconnue' }, { status: 400 });
+    
+  } catch (error) {
+    console.error('Erreur POST challenges:', error);
+    return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
+  }
 }

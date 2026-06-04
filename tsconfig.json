@@ -44,6 +44,10 @@
     "scripts",
     "skills",
     "_archived_trading",
-    "_archived_trading/**"
+    "_archived_trading/**",
+    "pronostics-app",
+    "pronostics-app/**",
+    "pronostics-app-disabled",
+    "pronostics-app-disabled/**"
   ]
 }
