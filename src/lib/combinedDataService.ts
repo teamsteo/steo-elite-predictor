@@ -309,6 +309,16 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
           estimatedCount++;
         }
         
+        // 🎯 Calculer le risque et la prédiction à partir des cotes
+        const homeProb = oddsHome > 0 ? Math.round((1 / oddsHome) * 100) : 50;
+        const awayProb = oddsAway > 0 ? Math.round((1 / oddsAway) * 100) : 50;
+        const favoriteProb = Math.max(homeProb, awayProb);
+        const riskPercentage = 100 - favoriteProb;
+        const predictedResult = homeProb > awayProb ? 'home' : 'away';
+        const winProbability = favoriteProb;
+        const confidence = favoriteProb >= 70 ? 'high' : favoriteProb >= 55 ? 'medium' : 'low';
+        const recommendation = homeProb > awayProb ? homeTeam : awayTeam;
+
         allMatches.push({
           id: `espn_${event.id}`,
           homeTeam,
@@ -336,6 +346,12 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
           // 🌍 Flag pour matchs internationaux (confiance réduite)
           isInternational,
           competitionType: isInternational ? 'international' : 'domestic' as 'international' | 'domestic',
+          // 🎯 Prédiction calculée depuis les cotes
+          riskPercentage,
+          winProbability,
+          predictedResult,
+          confidence,
+          recommendation,
         });
       }
     }
