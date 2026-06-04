@@ -13,6 +13,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Seuils de risque
 const MAX_RISK_PERCENTAGE = 50; // Safe + Modéré uniquement
+const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
@@ -23,13 +24,21 @@ export function isSafeOrModerate(riskPercentage?: number): boolean {
 }
 
 /**
+ * Vérifie si un pronostic est Kamikaze (haut risque)
+ */
+export function isKamikaze(riskPercentage?: number): boolean {
+  if (riskPercentage === undefined) return false;
+  return riskPercentage >= KAMIKAZE_MIN_RISK;
+}
+
+/**
  * Retourne le label du niveau de risque
  */
 export function getRiskLabel(riskPercentage?: number): string {
   if (riskPercentage === undefined) return 'Non évalué';
   if (riskPercentage <= 30) return 'Safe';
   if (riskPercentage <= 50) return 'Modéré';
-  return 'Risqué';
+  return 'Kamikaze';
 }
 
 // Emojis pour les sports
@@ -475,6 +484,85 @@ export async function publishValueBetsToTelegram(predictions: Array<{
 }
 
 /**
+ * Publie les pronostics Kamikaze (haut risque, haute récompense)
+ */
+export async function publishKamikazeToTelegram(predictions: Array<{
+  homeTeam: string;
+  awayTeam: string;
+  sport: string;
+  league?: string;
+  date: string;
+  displayDate?: string;
+  recommendation?: string;
+  predictedResult?: 'home' | 'away' | 'draw';
+  confidence?: string;
+  riskPercentage?: number;
+  winProbability?: number;
+  valueBetDetected?: boolean;
+  valueBetType?: string | null;
+  oddsHome?: number;
+  oddsAway?: number;
+  oddsDraw?: number | null;
+}>): Promise<boolean> {
+  // Filtrer: uniquement Kamikaze (risque > 50%)
+  const kamikazePicks = predictions.filter(p => isKamikaze(p.riskPercentage));
+
+  if (kamikazePicks.length === 0) {
+    console.log('⚠️ Aucun pronostic Kamikaze à publier');
+    return false;
+  }
+
+  // Trier par cote décroissante (plus haute cote = plus gros gain potentiel)
+  kamikazePicks.sort((a, b) => {
+    const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+    const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+    return oddsB - oddsA;
+  });
+
+  let message = '';
+
+  message += '╔════════════════════════╗\n';
+  message += `║ 💣 <b>SÉLECTION KAMIKAZE</b>  ║\n`;
+  message += '╚════════════════════════╝\n\n';
+
+  message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
+  message += `🔥 <b>${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''} à gros potentiel</b>\n\n`;
+
+  kamikazePicks.slice(0, 5).forEach((m, i) => {
+    const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
+    const { time } = formatDateTime(m.date, m.displayDate);
+    const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+    const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
+
+    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+    message += `${sportEmoji} ${m.sport}`;
+    if (m.league) message += ` | ${m.league}`;
+    message += `\n`;
+
+    if (time) message += `⏰ ${time} | `;
+    message += `🎯 <b>${m.recommendation || 'N/A'}</b>\n`;
+
+    if (m.oddsHome && m.oddsAway) {
+      message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
+      if (m.oddsDraw) message += ` X:${m.oddsDraw.toFixed(2)}`;
+      message += ` 2:${m.oddsAway.toFixed(2)}\n`;
+    }
+
+    message += `💥 Risque: <b>${m.riskPercentage}%</b>\n`;
+    message += `💰 Gain potentiel: <b>x${maxOdds.toFixed(2)}</b>\n`;
+    message += `🔥 Réussite: <b>${winProb}%</b>\n\n`;
+  });
+
+  message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+  message += `⚠️ <b>ATTENTION</b>\n`;
+  message += `Ces pronostics sont très risqués.\n`;
+  message += `Ne pariez que ce que vous pouvez perdre.\n`;
+
+  return sendTelegramMessage(message);
+}
+
+/**
  * Publie une alerte live
  */
 export async function publishLiveAlertToTelegram(match: {
@@ -609,9 +697,11 @@ export default {
   publishPredictionToTelegram,
   publishDailySummaryToTelegram,
   publishValueBetsToTelegram,
+  publishKamikazeToTelegram,
   publishLiveAlertToTelegram,
   publishResultsToTelegram,
   getTelegramChatId,
   testTelegramConnection,
   isSafeOrModerate,
+  isKamikaze,
 };

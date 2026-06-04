@@ -13,7 +13,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { sendTelegramMessage, isSafeOrModerate } from '@/lib/telegramService';
+import { sendTelegramMessage, isSafeOrModerate, isKamikaze } from '@/lib/telegramService';
 
 // Import des services tennis
 import { predictMatchV2, fetchATPRankings2026, fetchWTARankings2026 } from '@/lib/tennis-enhanced/prediction-engine-v2';
@@ -47,7 +47,7 @@ interface PublishResult {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const secret = searchParams.get('secret');
-  const mode = searchParams.get('mode') || 'summary'; // summary | major | valuebets | results
+  const mode = searchParams.get('mode') || 'summary'; // summary | major | valuebets | results | kamikaze
   const test = searchParams.get('test') === 'true';
   
   // Vérification du secret
@@ -70,6 +70,9 @@ export async function GET(request: Request) {
         break;
       case 'results':
         result = await publishResults(test);
+        break;
+      case 'kamikaze':
+        result = await publishKamikaze(test);
         break;
       case 'summary':
       default:
@@ -296,6 +299,72 @@ async function publishValueBets(test: boolean): Promise<PublishResult> {
 }
 
 // ============================================
+// PUBLICATION: KAMIKAZE (HAUT RISQUE)
+// ============================================
+
+async function publishKamikaze(test: boolean): Promise<PublishResult> {
+  console.log('[TennisAutoPublish] 💣 Génération sélection Kamikaze...');
+  
+  const matches = await collectMatches();
+  
+  if (matches.length === 0) {
+    return {
+      success: true,
+      published: 0,
+      mode: 'kamikaze',
+      message: 'Aucun match disponible pour Kamikaze',
+      timestamp: new Date().toISOString(),
+    };
+  }
+  
+  // Générer les prédictions
+  const predictions: any[] = [];
+  for (const match of matches) {
+    try {
+      const prediction = await predictMatchV2(match);
+      predictions.push(prediction);
+    } catch (error) {
+      console.error('[TennisAutoPublish] Erreur prédiction:', error);
+    }
+  }
+  
+  // Filtrer UNIQUEMENT les Kamikaze (risque > 50%)
+  const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage));
+  
+  if (kamikazePicks.length === 0) {
+    return {
+      success: true,
+      published: 0,
+      mode: 'kamikaze',
+      message: 'Aucun pronostic Kamikaze détecté',
+      timestamp: new Date().toISOString(),
+    };
+  }
+  
+  // Trier par cote décroissante (plus gros potentiel)
+  kamikazePicks.sort((a, b) => {
+    const oddsA = Math.max(a.odds1 || 1, a.odds2 || 1);
+    const oddsB = Math.max(b.odds1 || 1, b.odds2 || 1);
+    return oddsB - oddsA;
+  });
+  
+  // Construire et envoyer le message
+  const message = buildKamikazeMessage(kamikazePicks);
+  
+  if (!test) {
+    await sendTelegramMessage(message);
+  }
+  
+  return {
+    success: true,
+    published: kamikazePicks.length,
+    mode: 'kamikaze',
+    message: `💣 ${kamikazePicks.length} pronostics Kamikaze publiés`,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+// ============================================
 // PUBLICATION: RÉSULTATS
 // ============================================
 
@@ -438,6 +507,39 @@ function buildValueBetsMessage(predictions: any[]): string {
     message += `📊 Cote: ${p.betting.winnerOdds.toFixed(2)} | EV: <b>+${p.betting.expectedValue}%</b>\n`;
     message += `🔥 Réussite: <b>${p.prediction.winProbability}%</b>\n\n`;
   }
+  
+  return message;
+}
+
+function buildKamikazeMessage(predictions: any[]): string {
+  let message = '';
+  
+  message += '╔════════════════════════════╗\n';
+  message += '║ 💣 TENNIS KAMIKAZE 2026 💣 ║\n';
+  message += '╚════════════════════════════╝\n\n';
+  
+  message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
+  message += `🔥 <b>${predictions.length} opportunité${predictions.length > 1 ? 's' : ''} à gros potentiel</b>\n\n`;
+  
+  for (let i = 0; i < predictions.length; i++) {
+    const p = predictions[i];
+    const betOption = p.prediction.winner === 'player1' ? '1️⃣' : '2️⃣';
+    const maxOdds = Math.max(p.odds1 || 1, p.odds2 || 1);
+    
+    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `<b>${i + 1}. ${p.player1} vs ${p.player2}</b>\n`;
+    message += `🏆 ${p.tournament}\n`;
+    message += `🎯 ${betOption} <b>${p.prediction.winnerName}</b>\n`;
+    message += `📊 Cotes: 1️⃣ ${(p.odds1 || 1).toFixed(2)} | 2️⃣ ${(p.odds2 || 1).toFixed(2)}\n`;
+    message += `💥 Risque: <b>${p.prediction.riskPercentage}%</b>\n`;
+    message += `💰 Gain potentiel: <b>x${maxOdds.toFixed(2)}</b>\n`;
+    message += `🔥 Réussite: <b>${p.prediction.winProbability}%</b>\n\n`;
+  }
+  
+  message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  message += `⚠️ <b>ATTENTION</b>\n`;
+  message += `Ces pronostics sont très risqués.\n`;
+  message += `Ne pariez que ce que vous pouvez perdre.\n`;
   
   return message;
 }

@@ -8,7 +8,7 @@ import { getUnifiedPrediction, UnifiedPrediction } from '@/lib/unifiedPrediction
 
 export interface Challenge {
   id: string;
-  sport: 'football' | 'basketball' | 'hockey';
+  sport: 'football' | 'basketball' | 'hockey' | 'tennis';
   league: string;
   
   // Match info
@@ -66,6 +66,7 @@ interface ChallengesSummary {
     football: number;
     basketball: number;
     hockey: number;
+    tennis: number;
   };
   byConfidence: {
     very_high: number;
@@ -208,6 +209,68 @@ function calculateValueScore(prediction: UnifiedPrediction): number {
   return Math.min(100, Math.round(score));
 }
 
+/**
+ * Convertit une prédiction tennis en Challenge
+ */
+function convertTennisToChallenge(match: any): Challenge | null {
+  if (!match.predictedResult || !match.winProbability) return null;
+  
+  const confidence = match.confidence || 'medium';
+  const riskPercentage = match.riskPercentage || 50;
+  
+  // Calculer le value score pour le tennis
+  let valueScore = 0;
+  valueScore += Math.min(40, (match.edge || 0) * 4);
+  const confidencePoints: Record<string, number> = { very_high: 30, high: 25, medium: 15, low: 5 };
+  valueScore += confidencePoints[confidence] || 15;
+  if (match.valueBet) valueScore += 10;
+  valueScore = Math.min(100, Math.round(valueScore));
+  
+  // Déterminer le niveau de risque
+  const riskLevel = riskPercentage <= 30 ? 'low' : riskPercentage <= 50 ? 'medium' : 'high';
+  
+  return {
+    id: `challenge_${match.id}`,
+    sport: 'tennis',
+    league: match.league || 'Tennis',
+    
+    homeTeam: match.homeTeam,
+    awayTeam: match.awayTeam,
+    date: match.date,
+    
+    oddsHome: match.oddsHome || 1,
+    oddsAway: match.oddsAway || 1,
+    oddsDraw: null,
+    bookmaker: 'Tennis API',
+    hasRealOdds: match.hasRealOdds || false,
+    
+    recommendation: match.predictedResult,
+    recommendedTeam: match.recommendation || match.homeTeam,
+    winProbability: match.winProbability,
+    edge: match.edge || 0,
+    
+    isValueBet: match.valueBet || false,
+    valueBetType: match.valueBet ? match.predictedResult : null,
+    expectedValue: match.edge || 0,
+    kellyStake: 0,
+    
+    confidence,
+    riskLevel,
+    riskPercentage,
+    
+    valueScore,
+    
+    reasoning: [`Tennis prediction with ${match.winProbability}% win probability`],
+    factors: {
+      formAdvantage: 'neutral',
+      oddsValue: match.edge > 8 ? 'high' : match.edge > 5 ? 'medium' : 'low',
+      dataQuality: 80,
+    },
+    
+    status: match.valueBet ? 'take' : 'consider',
+  };
+}
+
 // ============================================
 // API HANDLERS
 // ============================================
@@ -223,14 +286,53 @@ export async function GET(request: Request) {
     
     console.log('🎯 Récupération des challenges...');
     
-    // Récupérer les matchs avec cotes réelles
+    // Récupérer les matchs avec cotes réelles (football, basket, hockey)
     const matches = await getMatchesWithRealOdds();
-    console.log(`📊 ${matches.length} matchs récupérés`);
+    console.log(`📊 ${matches.length} matchs récupérés (foot/basket/hockey)`);
+    
+    // 🎾 Récupérer aussi les prédictions tennis
+    let tennisMatches: any[] = [];
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : 'http://localhost:3000';
+      const tennisResponse = await fetch(`${baseUrl}/api/tennis`, { cache: 'no-store' });
+      if (tennisResponse.ok) {
+        const tennisData = await tennisResponse.json();
+        tennisMatches = (tennisData.predictions || []).map((p: any) => ({
+          id: p.matchId,
+          homeTeam: p.player1,
+          awayTeam: p.player2,
+          sport: 'Tennis',
+          league: p.tournament,
+          date: p.date,
+          oddsHome: p.odds1,
+          oddsAway: p.odds2,
+          oddsDraw: null,
+          hasRealOdds: p.odds1 > 1 && p.odds2 > 1,
+          status: 'scheduled',
+          // Map tennis prediction data
+          predictedResult: p.prediction?.winner === 'player1' ? 'home' : 'away',
+          winProbability: p.prediction?.winProbability,
+          riskPercentage: p.prediction?.riskPercentage,
+          confidence: p.prediction?.confidence,
+          recommendation: p.prediction?.winnerName,
+          edge: p.betting?.expectedValue || 0,
+          valueBet: p.betting?.recommendedBet,
+        }));
+        console.log(`🎾 ${tennisMatches.length} matchs tennis récupérés`);
+      }
+    } catch (e) {
+      console.log('⚠️ Erreur récupération tennis:', e);
+    }
+    
+    // Combiner tous les matchs
+    const allMatches = [...matches, ...tennisMatches];
     
     // Filtrer par sport si spécifié
-    let filteredMatches = matches;
+    let filteredMatches = allMatches;
     if (sport !== 'all') {
-      filteredMatches = matches.filter((m: any) => 
+      filteredMatches = allMatches.filter((m: any) => 
         m.sport?.toLowerCase().includes(sport.toLowerCase())
       );
     }
@@ -239,21 +341,37 @@ export async function GET(request: Request) {
     const challenges: Challenge[] = [];
     
     for (const match of filteredMatches) {
-      const challenge = await analyzeMatchForChallenge(match);
-      if (challenge) {
-        // Appliquer les filtres
-        const odds = challenge.recommendation === 'home' ? challenge.oddsHome :
-                    challenge.recommendation === 'away' ? challenge.oddsAway :
-                    challenge.oddsDraw || 0;
-        
-        if (odds < minOdds || odds > maxOdds) continue;
-        if (challenge.edge < minEdge) continue;
-        
-        // Filtrer par confiance
-        if (confidence === 'high' && challenge.confidence === 'low') continue;
-        if (confidence === 'very_high' && !['very_high', 'high'].includes(challenge.confidence)) continue;
-        
-        challenges.push(challenge);
+      // Pour le tennis, on a déjà les prédictions, pas besoin d'analyser
+      if (match.sport === 'Tennis' && match.predictedResult) {
+        const challenge = convertTennisToChallenge(match);
+        if (challenge) {
+          const odds = challenge.recommendation === 'home' ? challenge.oddsHome :
+                      challenge.recommendation === 'away' ? challenge.oddsAway : 0;
+          
+          if (odds >= minOdds && odds <= maxOdds && challenge.edge >= minEdge) {
+            if (confidence === 'high' && challenge.confidence === 'low') continue;
+            if (confidence === 'very_high' && !['very_high', 'high'].includes(challenge.confidence)) continue;
+            challenges.push(challenge);
+          }
+        }
+      } else {
+        // Pour les autres sports, utiliser l'analyse ML
+        const challenge = await analyzeMatchForChallenge(match);
+        if (challenge) {
+          // Appliquer les filtres
+          const odds = challenge.recommendation === 'home' ? challenge.oddsHome :
+                      challenge.recommendation === 'away' ? challenge.oddsAway :
+                      challenge.oddsDraw || 0;
+          
+          if (odds < minOdds || odds > maxOdds) continue;
+          if (challenge.edge < minEdge) continue;
+          
+          // Filtrer par confiance
+          if (confidence === 'high' && challenge.confidence === 'low') continue;
+          if (confidence === 'very_high' && !['very_high', 'high'].includes(challenge.confidence)) continue;
+          
+          challenges.push(challenge);
+        }
       }
     }
     
@@ -278,6 +396,7 @@ export async function GET(request: Request) {
         football: topChallenges.filter(c => c.sport === 'football').length,
         basketball: topChallenges.filter(c => c.sport === 'basketball').length,
         hockey: topChallenges.filter(c => c.sport === 'hockey').length,
+        tennis: topChallenges.filter(c => c.sport === 'tennis').length,
       },
       byConfidence: {
         very_high: topChallenges.filter(c => c.confidence === 'very_high').length,
@@ -315,7 +434,7 @@ export async function GET(request: Request) {
         highConfidenceCount: 0,
         averageEdge: 0,
         realOddsCount: 0,
-        bySport: { football: 0, basketball: 0, hockey: 0 },
+        bySport: { football: 0, basketball: 0, hockey: 0, tennis: 0 },
         byConfidence: { very_high: 0, high: 0, medium: 0, low: 0 },
       },
     }, { status: 500 });

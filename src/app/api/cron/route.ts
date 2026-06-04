@@ -21,7 +21,9 @@ import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
 import { 
   publishDailySummaryToTelegram, 
   publishValueBetsToTelegram,
-  isSafeOrModerate
+  publishKamikazeToTelegram,
+  isSafeOrModerate,
+  isKamikaze
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
@@ -951,9 +953,111 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'telegram-kamikaze':
+        // Publier les pronostics Kamikaze (haut risque) sur Telegram
+        // 🎾 Tennis INCLUS dans le kamikaze
+        try {
+          // Récupérer tous les matchs (incluant tennis)
+          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+          const dailyData = loadDailyPredictions();
+          
+          let predictions: any[] = [];
+          let source = 'precalculated';
+          
+          if (dailyData && dailyData.predictions.length > 0) {
+            predictions = dailyData.predictions.map(p => ({
+              homeTeam: p.homeTeam,
+              awayTeam: p.awayTeam,
+              sport: p.sport,
+              league: p.league || p.tournament,
+              date: p.date,
+              recommendation: p.recommendation,
+              predictedResult: p.predictedResult,
+              confidence: p.confidence,
+              valueBetDetected: p.valueBet,
+              valueBetType: p.valueBetType,
+              riskPercentage: p.riskPercentage,
+              winProbability: p.winProbability,
+              oddsHome: p.oddsHome,
+              oddsAway: p.oddsAway,
+              oddsDraw: p.oddsDraw,
+            }));
+          } else {
+            // FALLBACK: Générer depuis ESPN
+            console.log('📡 Fallback kamikaze: Génération depuis ESPN...');
+            source = 'espn-live';
+            
+            const matches = await getMatchesWithRealOdds();
+            
+            predictions = matches.map((m: any) => ({
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: m.sport,
+              league: m.league,
+              date: m.date,
+              displayDate: m.displayDate,
+              recommendation: m.recommendations?.[0]?.label,
+              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              confidence: m.confidence,
+              valueBetDetected: m.valueBets?.length > 0,
+              valueBetType: m.valueBets?.[0]?.type,
+              riskPercentage: m.riskPercentage,
+              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+              oddsHome: m.oddsHome,
+              oddsAway: m.oddsAway,
+              oddsDraw: m.oddsDraw,
+            }));
+          }
+          
+          // Ajouter les prédictions tennis pour le kamikaze
+          try {
+            const tennisResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/tennis`);
+            if (tennisResponse.ok) {
+              const tennisData = await tennisResponse.json();
+              const tennisPredictions = (tennisData.predictions || []).map((p: any) => ({
+                homeTeam: p.player1,
+                awayTeam: p.player2,
+                sport: 'Tennis',
+                league: p.tournament,
+                date: p.date,
+                recommendation: p.prediction?.winnerName,
+                predictedResult: p.prediction?.winner === 'player1' ? 'home' : 'away',
+                confidence: p.prediction?.confidence,
+                valueBetDetected: p.betting?.recommendedBet,
+                riskPercentage: p.prediction?.riskPercentage,
+                winProbability: p.prediction?.winProbability,
+                oddsHome: p.odds1,
+                oddsAway: p.odds2,
+                oddsDraw: null,
+              }));
+              predictions = [...predictions, ...tennisPredictions];
+              console.log(`🎾 Tennis ajouté au kamikaze: ${tennisPredictions.length} matchs`);
+            }
+          } catch (e) {
+            console.log('⚠️ Impossible de récupérer tennis pour kamikaze:', e);
+          }
+          
+          const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
+          
+          const telegramResult = await publishKamikazeToTelegram(predictions);
+          result = { 
+            telegram: { 
+              success: telegramResult, 
+              total: kamikazeCount,
+              source,
+              message: telegramResult 
+                ? `💣 ${kamikazeCount} pronostic(s) Kamikaze publié(s) sur Telegram`
+                : 'Erreur ou aucun pronostic Kamikaze à publier'
+            } 
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+        
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze'] },
           { status: 400 }
         );
     }
