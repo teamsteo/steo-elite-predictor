@@ -329,8 +329,43 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   // Filtrer safe et modéré
   const filtered = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
   
+  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré
+  if (filtered.length === 0 && predictions.length > 0) {
+    console.log('⚠️ Aucun pronostic safe/modéré - redirection vers Kamikaze');
+    
+    // Envoyer un message informant de la situation
+    const today = new Date().toLocaleDateString('fr-FR', { 
+      weekday: 'long', day: 'numeric', month: 'long' 
+    });
+    
+    let message = '';
+    message += '╔════════════════════════╗\n';
+    message += `║  📢 <b>PRONOSTICS DU JOUR</b>  ║\n`;
+    message += '╚════════════════════════╝\n\n';
+    
+    message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
+    
+    message += `⚠️ <b>AUCUN PRONOSTIC SAFE/MODÉRÉ</b>\n\n`;
+    message += `📊 <b>${predictions.length} match${predictions.length > 1 ? 's' : ''} programmé${predictions.length > 1 ? 's' : ''}</b>\n`;
+    message += `    mais aucun ne répond aux critères:\n`;
+    message += `    🟢 Safe (risque ≤ 30%)\n`;
+    message += `    🟡 Modéré (risque 31-50%)\n\n`;
+    
+    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    
+    message += `💡 Consultez la section Kamikaze pour\n`;
+    message += `    les pronostics à haut risque.\n\n`;
+    
+    message += `📲 <b>Commande API:</b>\n`;
+    message += `    /api/cron?action=telegram-kamikaze\n`;
+    
+    return sendTelegramMessage(message);
+  }
+  
   if (filtered.length === 0) {
-    console.log('⚠️ Aucun pronostic safe/modéré à publier');
+    console.log('⚠️ Aucun pronostic à publier');
     return false;
   }
 

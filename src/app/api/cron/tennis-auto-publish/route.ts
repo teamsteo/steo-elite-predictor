@@ -116,8 +116,8 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
   const matches = await collectMatches();
   
   if (matches.length === 0) {
-    // Aucun match, envoyer un message d'info
-    const infoMessage = buildNoMatchMessage(atpRankings, wtaRankings);
+    // Aucun match programmé du tout
+    const infoMessage = buildNoMatchMessage(atpRankings, wtaRankings, false);
     
     if (!test) {
       await sendTelegramMessage(infoMessage);
@@ -150,6 +150,25 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
     isSafeOrModerate(p.prediction.riskPercentage) &&
     p.crossValidation.status !== 'excluded'
   );
+  
+  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré
+  if (publishable.length === 0 && predictions.length > 0) {
+    console.log(`[TennisAutoPublish] ⚠️ ${predictions.length} matchs mais aucun safe/modéré`);
+    
+    const infoMessage = buildNoMatchMessage(atpRankings, wtaRankings, true);
+    
+    if (!test) {
+      await sendTelegramMessage(infoMessage);
+    }
+    
+    return {
+      success: true,
+      published: 0,
+      mode: 'summary',
+      message: `${predictions.length} matchs mais aucun safe/modéré - voir Kamikaze`,
+      timestamp: new Date().toISOString(),
+    };
+  }
   
   // Trier par confiance et importance
   publishable.sort((a, b) => {
@@ -544,7 +563,7 @@ function buildKamikazeMessage(predictions: any[]): string {
   return message;
 }
 
-function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[]): string {
+function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[], hasMatchesButNotSafe: boolean = false): string {
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long',
     day: 'numeric',
@@ -559,31 +578,32 @@ function buildNoMatchMessage(atpRankings: any[], wtaRankings: any[]): string {
   
   message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
   
-  message += `ℹ️ <b>Aucun match programmé aujourd'hui</b>\n\n`;
-  
-  // Top 5 ATP
-  if (atpRankings.length > 0) {
+  if (hasMatchesButNotSafe) {
+    // Il y a des matchs mais aucun n'est safe/modéré
+    message += `⚠️ <b>AUCUN PRONOSTIC SAFE/MODÉRÉ</b>\n\n`;
+    message += `📊 Des matchs sont programmés aujourd'hui,\n`;
+    message += `    mais aucun ne répond aux critères:\n`;
+    message += `    🟢 Safe (risque ≤ 30%)\n`;
+    message += `    🟡 Modéré (risque 31-50%)\n\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `<b>🏆 TOP 5 ATP 2026</b>\n`;
+    message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    message += `💡 Consultez la section Kamikaze pour\n`;
+    message += `    les pronostics à haut risque.\n\n`;
+    message += `📲 <b>Commande:</b>\n`;
+    message += `    /api/cron/tennis-auto-publish?mode=kamikaze\n`;
+  } else {
+    // Aucun match programmé du tout
+    message += `ℹ️ <b>Aucun match programmé aujourd'hui</b>\n\n`;
+    message += `📅 Revenez demain pour les prochains\n`;
+    message += `    pronostics tennis!\n\n`;
     message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    for (let i = 0; i < Math.min(5, atpRankings.length); i++) {
-      const r = atpRankings[i];
-      message += `${i + 1}. ${r.playerName} (${r.country})\n`;
-      message += `    ${r.points.toLocaleString()} pts\n`;
-    }
-    message += '\n';
-  }
-  
-  // Top 5 WTA
-  if (wtaRankings.length > 0) {
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `<b>🏆 TOP 5 WTA 2026</b>\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    for (let i = 0; i < Math.min(5, wtaRankings.length); i++) {
-      const r = wtaRankings[i];
-      message += `${i + 1}. ${r.playerName} (${r.country})\n`;
-      message += `    ${r.points.toLocaleString()} pts\n`;
-    }
+    message += `💡 <b>CONSEIL</b>\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    message += `🧐 Vérifiez aussi les autres sports:\n`;
+    message += `    ⚽ Football\n`;
+    message += `    🏀 Basketball\n`;
+    message += `    🏒 Hockey\n`;
   }
   
   return message;
