@@ -540,6 +540,7 @@ export async function publishValueBetsToTelegram(predictions: Array<{
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
     const { time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+    const betOption = getBetOption(m.predictedResult, m.sport);
     
     message += `━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
@@ -548,7 +549,7 @@ export async function publishValueBetsToTelegram(predictions: Array<{
     message += `\n`;
     
     if (time) message += `⏰ ${time} | `;
-    message += `🎯 <b>${m.recommendation || 'N/A'}</b>\n`;
+    message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
     
     if (m.oddsHome && m.oddsAway) {
       message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
@@ -616,6 +617,7 @@ export async function publishKamikazeToTelegram(predictions: Array<{
     const { time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
     const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
+    const betOption = getBetOption(m.predictedResult, m.sport);
 
     message += `━━━━━━━━━━━━━━━━━━━━━\n`;
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
@@ -624,7 +626,7 @@ export async function publishKamikazeToTelegram(predictions: Array<{
     message += `\n`;
 
     if (time) message += `⏰ ${time} | `;
-    message += `🎯 <b>${m.recommendation || 'N/A'}</b>\n`;
+    message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
 
     if (m.oddsHome && m.oddsAway) {
       message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
