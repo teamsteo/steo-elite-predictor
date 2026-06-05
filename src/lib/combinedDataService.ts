@@ -356,29 +356,23 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       }
     }
     
-    // Filtrer pour garder les matchs à venir, en cours ET terminés (pour affichage)
+    // Filtrer pour garder UNIQUEMENT les matchs à venir d'aujourd'hui et demain
+    // ⚠️ Les matchs terminés ne doivent PAS être publiés comme pronostics
     const currentTime = new Date();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    // Fenêtre pour les matchs terminés d'hier (garder ceux terminés il y a moins de 6h)
-    const sixHoursAgo = new Date(currentTime);
-    sixHoursAgo.setHours(sixHoursAgo.getHours() - 6);
-
     const filteredMatches = allMatches.filter(match => {
       const matchDate = new Date(match.date);
+
+      // 🚫 EXCLURE les matchs terminés - ce sont des résultats, pas des pronostics
+      if (match.isFinished) return false;
 
       // Garder les matchs en cours (live) - peu importe la date
       if (match.isLive) return true;
 
-      // Garder les matchs terminés récemment (moins de 6h) - pour les matchs de nuit
-      if (match.isFinished && matchDate >= sixHoursAgo) return true;
-
       // Garder les matchs à venir d'aujourd'hui
       if (matchDate >= todayStart && matchDate > currentTime) return true;
-
-      // Garder les matchs terminés d'aujourd'hui (pour affichage jusqu'à minuit)
-      if (match.isFinished && matchDate >= todayStart) return true;
 
       // Garder les matchs à venir demain
       const tomorrowStart = new Date();
@@ -444,9 +438,12 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       };
     });
 
+    // ⚠️ TOUJOURS mettre à jour le cache, même si vide
     espnCache = finalMatches;
     espnCacheTime = now;
-    espnCacheDate = today.toDateString();
+    espnCacheDate = new Date().toDateString();
+    
+    console.log(`📅 Date du cache: ${espnCacheDate}`);
     
     console.log(`✅ Total: ${finalMatches.length} matchs (ESPN: ${espnOddsCount}, Odds API: ${oddsApiFallbackCount}, Estimés: ${estimatedCount})`);
     
