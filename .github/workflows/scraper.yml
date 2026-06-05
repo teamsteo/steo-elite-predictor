@@ -15,7 +15,6 @@ on:
 
 env:
   NODE_VERSION: '24'
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   scrape:
@@ -24,10 +23,10 @@ jobs:
     
     steps:
       - name: 📥 Checkout du code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 📦 Installation de Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
