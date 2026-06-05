@@ -40,7 +40,8 @@ export async function GET(request: Request) {
         league: m.league,
         date: m.date,
         displayDate: m.displayDate,
-        recommendation: m.recommendations?.[0]?.label,
+        dateTag: m.dateTag, // 📅 Tag de date (aujourd'hui/demain)
+        recommendation: m.recommendations?.[0]?.label || m.recommendation,
         predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
         confidence: m.confidence,
         riskPercentage: m.riskPercentage,

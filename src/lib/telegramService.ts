@@ -462,7 +462,7 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
     
     // Lister les matchs
     matches.slice(0, 8).forEach((m, i) => {
-      const { time } = formatDateTime(m.date, m.displayDate);
+      const { time, date: matchDate } = formatDateTime(m.date, m.displayDate);
       const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
       const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
       const vbEmoji = m.valueBetDetected ? '💎 ' : '';
@@ -471,7 +471,10 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
       const betOption = getBetOption(m.predictedResult, m.sport);
       const betDisplay = betOption ? `${betOption} ` : '';
       
-      message += `<b>${i + 1}.</b> ${vbEmoji}${m.homeTeam} vs ${m.awayTeam}\n`;
+      // Afficher la date si différente d'aujourd'hui
+      const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? `[${m.dateTag.toUpperCase()}] ` : '';
+      
+      message += `<b>${i + 1}.</b> ${vbEmoji}${dateDisplay}${m.homeTeam} vs ${m.awayTeam}\n`;
       if (time) {
         message += `    ⏰ ${time}`;
       }
