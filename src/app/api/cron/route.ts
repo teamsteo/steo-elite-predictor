@@ -781,64 +781,60 @@ export async function GET(request: NextRequest) {
         // Publier le résumé quotidien sur Telegram
         // ⚠️ Tennis EXCLU car il a son propre cron dédié (07:30 et 09:00 GMT)
         try {
-          // Essayer d'abord le fichier pré-calculé
-          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
-          const dailyData = loadDailyPredictions();
+          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+          console.log('📡 Récupération des matchs depuis ESPN...');
+          const matches = await getMatchesWithRealOdds();
           
-          let predictions: any[] = [];
-          let source = 'precalculated';
+          let predictions: any[] = matches
+            .filter((m: any) => m.sport?.toLowerCase() !== 'tennis') // 🎾 Tennis exclu
+            .map((m: any) => ({
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: m.sport,
+              league: m.league,
+              date: m.date,
+              displayDate: m.displayDate,
+              dateTag: m.dateTag, // 📅 Tag de date (aujourd'hui/demain)
+              recommendation: m.recommendations?.[0]?.label || m.recommendation,
+              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              confidence: m.confidence,
+              valueBetDetected: m.valueBets?.length > 0,
+              valueBetType: m.valueBets?.[0]?.type,
+              riskPercentage: m.riskPercentage,
+              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+              oddsHome: m.oddsHome,
+              oddsAway: m.oddsAway,
+              oddsDraw: m.oddsDraw,
+            }));
+          console.log(`📡 ESPN live: ${predictions.length} matchs récupérés`);
           
-          if (dailyData && dailyData.predictions.length > 0) {
-            // Utiliser les données pré-calculées
-            predictions = dailyData.predictions
-              .filter(p => p.sport !== 'tennis') // 🎾 Tennis exclu (cron dédié)
-              .map(p => ({
-                homeTeam: p.homeTeam,
-                awayTeam: p.awayTeam,
-                sport: p.sport,
-                league: p.league || p.tournament,
-                date: p.date,
-                recommendation: p.recommendation,
-                predictedResult: p.predictedResult,
-                confidence: p.confidence,
-                valueBetDetected: p.valueBet,
-                valueBetType: p.valueBetType,
-                riskPercentage: p.riskPercentage,
-                winProbability: p.winProbability,
-                oddsHome: p.oddsHome,
-                oddsAway: p.oddsAway,
-                oddsDraw: p.oddsDraw,
-              }));
-            console.log(`📦 Utilisation fichier pré-calculé: ${predictions.length} matchs`);
-          } else {
-            // FALLBACK: Générer les prédictions à la volée depuis ESPN
-            console.log('📡 Fallback: Génération prédictions depuis ESPN...');
-            source = 'espn-live';
+          // Si aucun match, essayer le fichier pré-calculé en dernier recours
+          if (predictions.length === 0) {
+            const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+            const dailyData = loadDailyPredictions();
             
-            const matches = await getMatchesWithRealOdds();
-            
-            predictions = matches
-              .filter((m: any) => m.sport?.toLowerCase() !== 'tennis') // 🎾 Tennis exclu
-              .map((m: any) => ({
-                homeTeam: m.homeTeam,
-                awayTeam: m.awayTeam,
-                sport: m.sport,
-                league: m.league,
-                date: m.date,
-                displayDate: m.displayDate,
-                dateTag: m.dateTag, // 📅 Tag de date (aujourd'hui/demain)
-                recommendation: m.recommendations?.[0]?.label || m.recommendation,
-                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-                confidence: m.confidence,
-                valueBetDetected: m.valueBets?.length > 0,
-                valueBetType: m.valueBets?.[0]?.type,
-                riskPercentage: m.riskPercentage,
-                winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-                oddsHome: m.oddsHome,
-                oddsAway: m.oddsAway,
-                oddsDraw: m.oddsDraw,
-              }));
-            console.log(`📡 ESPN live: ${predictions.length} matchs récupérés`);
+            if (dailyData && dailyData.predictions.length > 0) {
+              predictions = dailyData.predictions
+                .filter(p => p.sport !== 'tennis')
+                .map(p => ({
+                  homeTeam: p.homeTeam,
+                  awayTeam: p.awayTeam,
+                  sport: p.sport,
+                  league: p.league || p.tournament,
+                  date: p.date,
+                  recommendation: p.recommendation,
+                  predictedResult: p.predictedResult,
+                  confidence: p.confidence,
+                  valueBetDetected: p.valueBet,
+                  valueBetType: p.valueBetType,
+                  riskPercentage: p.riskPercentage,
+                  winProbability: p.winProbability,
+                  oddsHome: p.oddsHome,
+                  oddsAway: p.oddsAway,
+                  oddsDraw: p.oddsDraw,
+                }));
+              console.log(`📦 Fallback fichier pré-calculé: ${predictions.length} matchs`);
+            }
           }
           
           if (predictions.length === 0) {
@@ -860,7 +856,7 @@ export async function GET(request: NextRequest) {
               total: predictions.length,
               published: filteredCount,
               excluded: predictions.length - filteredCount,
-              source,
+              source: 'espn-live',
               message: telegramResult 
                 ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
                 : 'Erreur publication Telegram'
@@ -875,62 +871,31 @@ export async function GET(request: NextRequest) {
         // Publier uniquement les value bets sur Telegram
         // ⚠️ Tennis EXCLU car il a son propre cron dédié
         try {
-          // Essayer d'abord le fichier pré-calculé
-          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
-          const dailyData = loadDailyPredictions();
+          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+          console.log('📡 Récupération des matchs pour value bets depuis ESPN...');
+          const matches = await getMatchesWithRealOdds();
           
-          let predictions: any[] = [];
-          let source = 'precalculated';
-          
-          if (dailyData && dailyData.predictions.length > 0) {
-            // Utiliser les données pré-calculées
-            predictions = dailyData.predictions
-              .filter(p => p.sport !== 'tennis') // 🎾 Tennis exclu (cron dédié)
-              .map(p => ({
-                homeTeam: p.homeTeam,
-                awayTeam: p.awayTeam,
-                sport: p.sport,
-                league: p.league || p.tournament,
-                date: p.date,
-                recommendation: p.recommendation,
-                predictedResult: p.predictedResult,
-                confidence: p.confidence,
-                valueBetDetected: p.valueBet,
-                valueBetType: p.valueBetType,
-                riskPercentage: p.riskPercentage,
-                winProbability: p.winProbability,
-                oddsHome: p.oddsHome,
-                oddsAway: p.oddsAway,
-                oddsDraw: p.oddsDraw,
-              }));
-          } else {
-            // FALLBACK: Générer les prédictions à la volée depuis ESPN
-            console.log('📡 Fallback value bets: Génération depuis ESPN...');
-            source = 'espn-live';
-            
-            const matches = await getMatchesWithRealOdds();
-            
-            predictions = matches
-              .filter((m: any) => m.sport?.toLowerCase() !== 'tennis')
-              .map((m: any) => ({
-                homeTeam: m.homeTeam,
-                awayTeam: m.awayTeam,
-                sport: m.sport,
-                league: m.league,
-                date: m.date,
-                displayDate: m.displayDate,
-                recommendation: m.recommendations?.[0]?.label,
-                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-                confidence: m.confidence,
-                valueBetDetected: m.valueBets?.length > 0,
-                valueBetType: m.valueBets?.[0]?.type,
-                riskPercentage: m.riskPercentage,
-                winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-                oddsHome: m.oddsHome,
-                oddsAway: m.oddsAway,
-                oddsDraw: m.oddsDraw,
-              }));
-          }
+          let predictions: any[] = matches
+            .filter((m: any) => m.sport?.toLowerCase() !== 'tennis')
+            .map((m: any) => ({
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: m.sport,
+              league: m.league,
+              date: m.date,
+              displayDate: m.displayDate,
+              dateTag: m.dateTag,
+              recommendation: m.recommendations?.[0]?.label,
+              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              confidence: m.confidence,
+              valueBetDetected: m.valueBets?.length > 0,
+              valueBetType: m.valueBets?.[0]?.type,
+              riskPercentage: m.riskPercentage,
+              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+              oddsHome: m.oddsHome,
+              oddsAway: m.oddsAway,
+              oddsDraw: m.oddsDraw,
+            }));
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
           const valueBetsCount = predictions.filter(p => 
@@ -943,7 +908,7 @@ export async function GET(request: NextRequest) {
             telegram: { 
               success: telegramResult, 
               total: valueBetsCount,
-              source,
+              source: 'espn-live',
               message: telegramResult 
                 ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
                 : 'Erreur ou aucun value bet à publier'
@@ -958,57 +923,29 @@ export async function GET(request: NextRequest) {
         // Publier les pronostics Kamikaze (haut risque) sur Telegram
         // 🎾 Tennis INCLUS dans le kamikaze
         try {
-          // Récupérer tous les matchs (incluant tennis)
-          const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
-          const dailyData = loadDailyPredictions();
+          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+          console.log('📡 Récupération des matchs pour kamikaze depuis ESPN...');
+          const matches = await getMatchesWithRealOdds();
           
-          let predictions: any[] = [];
-          let source = 'precalculated';
-          
-          if (dailyData && dailyData.predictions.length > 0) {
-            predictions = dailyData.predictions.map(p => ({
-              homeTeam: p.homeTeam,
-              awayTeam: p.awayTeam,
-              sport: p.sport,
-              league: p.league || p.tournament,
-              date: p.date,
-              recommendation: p.recommendation,
-              predictedResult: p.predictedResult,
-              confidence: p.confidence,
-              valueBetDetected: p.valueBet,
-              valueBetType: p.valueBetType,
-              riskPercentage: p.riskPercentage,
-              winProbability: p.winProbability,
-              oddsHome: p.oddsHome,
-              oddsAway: p.oddsAway,
-              oddsDraw: p.oddsDraw,
-            }));
-          } else {
-            // FALLBACK: Générer depuis ESPN
-            console.log('📡 Fallback kamikaze: Génération depuis ESPN...');
-            source = 'espn-live';
-            
-            const matches = await getMatchesWithRealOdds();
-            
-            predictions = matches.map((m: any) => ({
-              homeTeam: m.homeTeam,
-              awayTeam: m.awayTeam,
-              sport: m.sport,
-              league: m.league,
-              date: m.date,
-              displayDate: m.displayDate,
-              recommendation: m.recommendations?.[0]?.label,
-              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-              confidence: m.confidence,
-              valueBetDetected: m.valueBets?.length > 0,
-              valueBetType: m.valueBets?.[0]?.type,
-              riskPercentage: m.riskPercentage,
-              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-              oddsHome: m.oddsHome,
-              oddsAway: m.oddsAway,
-              oddsDraw: m.oddsDraw,
-            }));
-          }
+          let predictions: any[] = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            dateTag: m.dateTag,
+            recommendation: m.recommendations?.[0]?.label,
+            predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+            confidence: m.confidence,
+            valueBetDetected: m.valueBets?.length > 0,
+            valueBetType: m.valueBets?.[0]?.type,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
           
           // Ajouter les prédictions tennis pour le kamikaze
           try {
@@ -1045,7 +982,7 @@ export async function GET(request: NextRequest) {
             telegram: { 
               success: telegramResult, 
               total: kamikazeCount,
-              source,
+              source: 'espn-live',
               message: telegramResult 
                 ? `💣 ${kamikazeCount} pronostic(s) Kamikaze publié(s) sur Telegram`
                 : 'Erreur ou aucun pronostic Kamikaze à publier'
