@@ -1,18 +1,18 @@
-# ============================================
-# SCRIPT DE SCRAPING INDÉPENDANT
-# ============================================
-# 
-# Ce script est conçu pour tourner sur une machine locale, un VPS,
-# ou un service cloud gratuit comme Render, Fly.io, etc.
-# 
-# ARCHITECTURE:
-# - Scraping (ce script) → Supabase → Vercel (lecture seule)
-# 
-# OPTIONS DE DÉPLOIEMENT GRATUITES:
-# - Render.com (recommandé)
-# - Fly.io
-# - cron-job.org + API Vercel
-# 
+// ============================================
+// SCRIPT DE SCRAPING INDÉPENDANT
+// ============================================
+//
+// Ce script est conçu pour tourner sur une machine locale, un VPS,
+// ou un service cloud gratuit comme Render, Fly.io, etc.
+//
+// ARCHITECTURE:
+// - Scraping (ce script) → Supabase → Vercel (lecture seule)
+//
+// OPTIONS DE DÉPLOIEMENT GRATUITES:
+// - Render.com (recommandé)
+// - Fly.io
+// - cron-job.org + API Vercel
+//
 
 import { createClient } from '@supabase/supabase-js';
 
