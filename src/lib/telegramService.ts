@@ -317,6 +317,7 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   league?: string;
   date: string;
   displayDate?: string;
+  dateTag?: string;
   recommendation?: string;
   predictedResult?: 'home' | 'away' | 'draw';
   confidence?: string;
