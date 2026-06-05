@@ -149,6 +149,7 @@ const CACHE_TTL = {
 
 let cachedMatches: TennisMatch[] = [];
 let lastFetchTime = 0;
+let lastFetchDate = ''; // 📅 Nouvelle variable pour tracker le jour du cache
 
 // Anti-ban state
 interface AntiBanState {
@@ -192,6 +193,7 @@ function getRandomUserAgent(): string {
 }
 
 function getToday(): string {
+  // 📅 Utiliser UTC pour éviter les problèmes de timezone
   return new Date().toISOString().split('T')[0];
 }
 
@@ -649,10 +651,27 @@ export function getCollectorStatus(): CollectorStatus {
 export async function collectMatches(): Promise<TennisMatch[]> {
   console.log('[TennisCollector] 🎾 Début collecte - SYSTÈME HYBRIDE (FALLBACK DÉSACTIVÉ)');
   
-  // Vérifier le cache
+  // 📅 Récupérer la date du jour en UTC
+  const todayUTC = getToday();
+  
+  // Vérifier le cache avec invalidation par date
   const now = Date.now();
-  if (cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_TTL.matches) {
-    console.log(`[TennisCollector] 📦 Cache HIT: ${cachedMatches.length} matchs`);
+  const cacheAge = now - lastFetchTime;
+  const isCacheValid = cacheAge < CACHE_TTL.matches;
+  const isSameDay = lastFetchDate === todayUTC;
+  
+  // 📅 Si le cache est d'un autre jour, l'invalider
+  if (lastFetchDate && lastFetchDate !== todayUTC) {
+    console.log(`[TennisCollector] 🔄 NOUVEAU JOUR DÉTECTÉ - Cache invalidé`);
+    console.log(`   Cache date: ${lastFetchDate} | Aujourd'hui: ${todayUTC}`);
+    cachedMatches = [];
+    lastFetchTime = 0;
+    lastFetchDate = '';
+  }
+  
+  // Utiliser le cache si valide ET du même jour
+  if (cachedMatches.length > 0 && isCacheValid && isSameDay) {
+    console.log(`[TennisCollector] 📦 Cache HIT: ${cachedMatches.length} matchs (age: ${Math.round(cacheAge / 1000)}s)`);
     return cachedMatches;
   }
   
@@ -687,10 +706,12 @@ export async function collectMatches(): Promise<TennisMatch[]> {
     return [];
   }
   
-  // Mettre en cache
+  // Mettre en cache avec la date du jour
   cachedMatches = matches;
   lastFetchTime = now;
+  lastFetchDate = todayUTC; // 📅 Stocker la date du cache
   console.log(`[TennisCollector] ✅ ${matches.length} matchs RÉELS collectés via ${source.toUpperCase()}`);
+  console.log(`[TennisCollector] 📅 Cache date: ${lastFetchDate}`);
   
   return matches;
 }

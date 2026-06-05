@@ -262,10 +262,20 @@ async function fetchFootballPredictions(): Promise<DailyPrediction[]> {
   const predictions: DailyPrediction[] = [];
   
   try {
-    // ESPN API - gratuit, pas de rate limiting
+    // 📅 IMPORTANT: Ajouter le filtre de date pour obtenir les matchs d'AUJOURD'HUI
+    const today = new Date();
+    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+    
+    // ESPN API - gratuit, avec filtre de date pour matchs d'aujourd'hui et demain
     const response = await fetch(
-      'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard',
-      { headers: { 'Accept': 'application/json' } }
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=${todayStr}-${tomorrowStr}`,
+      { 
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store' // ⚠️ Désactiver le cache pour toujours avoir les données fraîches
+      }
     );
     
     if (!response.ok) return predictions;
@@ -297,9 +307,19 @@ async function fetchBasketballPredictions(): Promise<DailyPrediction[]> {
   const predictions: DailyPrediction[] = [];
   
   try {
+    // 📅 IMPORTANT: Ajouter le filtre de date pour obtenir les matchs d'AUJOURD'HUI
+    const today = new Date();
+    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+    
     const response = await fetch(
-      'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
-      { headers: { 'Accept': 'application/json' } }
+      `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${todayStr}-${tomorrowStr}`,
+      { 
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store' // ⚠️ Désactiver le cache
+      }
     );
     
     if (!response.ok) return predictions;
@@ -331,9 +351,19 @@ async function fetchHockeyPredictions(): Promise<DailyPrediction[]> {
   const predictions: DailyPrediction[] = [];
   
   try {
+    // 📅 IMPORTANT: Ajouter le filtre de date pour obtenir les matchs d'AUJOURD'HUI
+    const today = new Date();
+    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+    
     const response = await fetch(
-      'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard',
-      { headers: { 'Accept': 'application/json' } }
+      `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${todayStr}-${tomorrowStr}`,
+      { 
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store' // ⚠️ Désactiver le cache
+      }
     );
     
     if (!response.ok) return predictions;
@@ -735,7 +765,8 @@ function getConfidenceFromProb(prob: number): 'very_high' | 'high' | 'medium' | 
 
 function getEndOfDay(): string {
   const end = new Date();
-  end.setHours(23, 59, 59, 999);
+  // ⚠️ Utiliser UTC pour éviter les problèmes de timezone
+  end.setUTCHours(23, 59, 59, 999);
   return end.toISOString();
 }
 

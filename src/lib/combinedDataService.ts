@@ -19,6 +19,33 @@ let oddsApiCache: Map<string, { home: number; draw: number | null; away: number 
 const ESPN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
+ * 📅 Obtient la date UTC actuelle au format YYYYMMDD
+ * IMPORTANT: Utilise UTC pour éviter les problèmes de timezone sur Vercel
+ */
+function getUTCDateString(): string {
+  const now = new Date();
+  return now.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
+ * 📅 Obtient la date UTC d'hier au format YYYYMMDD
+ */
+function getYesterdayUTCString(): string {
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  return yesterday.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
+ * 📅 Obtient la date UTC de demain au format YYYYMMDD
+ */
+function getTomorrowUTCString(): string {
+  const tomorrow = new Date();
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return tomorrow.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
  * Convertit les cotes américaines en cotes décimales
  */
 function americanToDecimal(americanOdds: string | number | undefined): number {
@@ -144,38 +171,34 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
   console.log('🔄 Récupération matchs (ESPN → Odds API → Estimations)...');
   
   const now = Date.now();
-  const today = new Date().toDateString();
+  const todayUTC = getUTCDateString();
   
-  // Invalider le cache si le jour a changé
-  if (espnCacheDate && espnCacheDate !== today) {
-    console.log('🔄 Nouveau jour détecté - Invalidation du cache');
+  // 📅 TOUJOURS invalider le cache si le jour a changé
+  // IMPORTANT: Comparer en UTC pour éviter les problèmes de timezone
+  if (espnCacheDate && espnCacheDate !== todayUTC) {
+    console.log(`🔄 NOUVEAU JOUR DÉTECTÉ - Invalidation du cache`);
+    console.log(`   Cache date: ${espnCacheDate} | Aujourd'hui: ${todayUTC}`);
     espnCache = [];
     espnCacheTime = 0;
-    oddsApiCache = null; // Reset Odds API cache too
+    espnCacheDate = '';
+    oddsApiCache = null;
   }
   
-  // Utiliser le cache si valide
-  if (espnCache.length > 0 && (now - espnCacheTime) < ESPN_CACHE_TTL) {
-    console.log(`📦 Cache ESPN valide (${espnCache.length} matchs)`);
+  // Utiliser le cache si valide (même jour ET pas expiré)
+  if (espnCache.length > 0 && espnCacheDate === todayUTC && (now - espnCacheTime) < ESPN_CACHE_TTL) {
+    console.log(`📦 Cache ESPN valide (${espnCache.length} matchs) - TTL: ${Math.round((ESPN_CACHE_TTL - (now - espnCacheTime)) / 1000)}s restantes`);
     return espnCache;
   }
   
   const allMatches: any[] = [];
   
   try {
-    // Récupérer les dates d'hier, aujourd'hui ET demain
-    // IMPORTANT: Les matchs NBA/NHL de nuit sont datés du jour précédent dans ESPN
-    // Ex: match à 23:00 UTC le 9 avril peut être en cours le 10 avril à 00:30
-    const today = new Date();
-    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
-
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('-').join('').slice(0, 8);
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+    // 📅 Utiliser les dates UTC pour éviter les problèmes de timezone
+    const todayStr = getUTCDateString();
+    const yesterdayStr = getYesterdayUTCString();
+    const tomorrowStr = getTomorrowUTCString();
+    
+    console.log(`📅 Dates de recherche (UTC): Hier=${yesterdayStr}, Aujourd'hui=${todayStr}, Demain=${tomorrowStr}`);
     
     // 🎯 ÉTAPE 1: Préparer le fallback The Odds API en parallèle
     const oddsApiMapPromise = fetchOddsApiFallback();
@@ -358,9 +381,10 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
     
     // Filtrer pour garder UNIQUEMENT les matchs à venir d'aujourd'hui et demain
     // ⚠️ Les matchs terminés ne doivent PAS être publiés comme pronostics
+    // 📅 Utiliser UTC pour la comparaison de dates
     const currentTime = new Date();
     const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    todayStart.setUTCHours(0, 0, 0, 0);
 
     const filteredMatches = allMatches.filter(match => {
       const matchDate = new Date(match.date);
@@ -376,10 +400,10 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
 
       // Garder les matchs à venir demain
       const tomorrowStart = new Date();
-      tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-      tomorrowStart.setHours(0, 0, 0, 0);
+      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+      tomorrowStart.setUTCHours(0, 0, 0, 0);
       const tomorrowEnd = new Date(tomorrowStart);
-      tomorrowEnd.setHours(23, 59, 59, 999);
+      tomorrowEnd.setUTCHours(23, 59, 59, 999);
 
       if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) return true;
 
@@ -387,12 +411,13 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
     });
 
     // Ajouter un tag de date (hier, aujourd'hui, demain) pour l'affichage
+    // 📅 Utiliser UTC pour la comparaison
     const yesterdayStart = new Date(todayStart);
-    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
     const tomorrowStart = new Date(todayStart);
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
     const tomorrowEnd = new Date(tomorrowStart);
-    tomorrowEnd.setHours(23, 59, 59, 999);
+    tomorrowEnd.setUTCHours(23, 59, 59, 999);
 
     // Fonction pour déterminer le tag de date
     const getDateTag = (matchDate: Date, isLive: boolean, isFinished: boolean): {
@@ -441,10 +466,9 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
     // ⚠️ TOUJOURS mettre à jour le cache, même si vide
     espnCache = finalMatches;
     espnCacheTime = now;
-    espnCacheDate = new Date().toDateString();
+    espnCacheDate = todayUTC; // 📅 Stocker en format UTC
     
-    console.log(`📅 Date du cache: ${espnCacheDate}`);
-    
+    console.log(`📅 Date du cache (UTC): ${espnCacheDate}`);
     console.log(`✅ Total: ${finalMatches.length} matchs (ESPN: ${espnOddsCount}, Odds API: ${oddsApiFallbackCount}, Estimés: ${estimatedCount})`);
     
   } catch (error) {
