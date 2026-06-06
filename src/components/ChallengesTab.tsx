@@ -89,6 +89,7 @@ export function ChallengesTab() {
   const [sportFilter, setSportFilter] = useState('all');
   const [confidenceFilter, setConfidenceFilter] = useState('all');
   const [minEdgeFilter, setMinEdgeFilter] = useState('3');
+  const [modeFilter, setModeFilter] = useState('all'); // 'all', 'valuebets', 'high-odds'
   
   // Fetch challenges
   const fetchChallenges = useCallback(async () => {
@@ -100,6 +101,7 @@ export function ChallengesTab() {
         sport: sportFilter,
         confidence: confidenceFilter,
         minEdge: minEdgeFilter,
+        mode: modeFilter,
       });
       
       const response = await fetch(`/api/challenges?${params}`);
@@ -117,7 +119,7 @@ export function ChallengesTab() {
     } finally {
       setLoading(false);
     }
-  }, [sportFilter, confidenceFilter, minEdgeFilter]);
+  }, [sportFilter, confidenceFilter, minEdgeFilter, modeFilter]);
   
   useEffect(() => {
     fetchChallenges();
@@ -226,6 +228,16 @@ export function ChallengesTab() {
               <span className="text-sm font-medium">Filtres:</span>
             </div>
             
+            <Select value={modeFilter} onValueChange={setModeFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">📊 Tous les value bets</SelectItem>
+                <SelectItem value="high-odds">🔥 Grosses cotes (30-40%)</SelectItem>
+              </SelectContent>
+            </Select>
+            
             <Select value={sportFilter} onValueChange={setSportFilter}>
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Sport" />
@@ -238,29 +250,33 @@ export function ChallengesTab() {
               </SelectContent>
             </Select>
             
-            <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Confiance" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Toutes</SelectItem>
-                <SelectItem value="very_high">Très haute</SelectItem>
-                <SelectItem value="high">Haute</SelectItem>
-                <SelectItem value="medium">Moyenne</SelectItem>
-              </SelectContent>
-            </Select>
-            
-            <Select value={minEdgeFilter} onValueChange={setMinEdgeFilter}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Edge min" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">Edge ≥ 1%</SelectItem>
-                <SelectItem value="3">Edge ≥ 3%</SelectItem>
-                <SelectItem value="5">Edge ≥ 5%</SelectItem>
-                <SelectItem value="8">Edge ≥ 8%</SelectItem>
-              </SelectContent>
-            </Select>
+            {modeFilter !== 'high-odds' && (
+              <>
+                <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue placeholder="Confiance" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes</SelectItem>
+                    <SelectItem value="very_high">Très haute</SelectItem>
+                    <SelectItem value="high">Haute</SelectItem>
+                    <SelectItem value="medium">Moyenne</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <Select value={minEdgeFilter} onValueChange={setMinEdgeFilter}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue placeholder="Edge min" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Edge ≥ 1%</SelectItem>
+                    <SelectItem value="3">Edge ≥ 3%</SelectItem>
+                    <SelectItem value="5">Edge ≥ 5%</SelectItem>
+                    <SelectItem value="8">Edge ≥ 8%</SelectItem>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>

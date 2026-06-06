@@ -283,8 +283,10 @@ export async function GET(request: Request) {
     const maxOdds = parseFloat(searchParams.get('maxOdds') || '10');
     const sport = searchParams.get('sport') || 'all';
     const confidence = searchParams.get('confidence') || 'all';
+    const mode = searchParams.get('mode') || 'all'; // 'all', 'valuebets', 'high-odds'
     
     console.log('🎯 Récupération des challenges...');
+    console.log(`📊 Mode: ${mode}, MinOdds: ${minOdds}, MaxOdds: ${maxOdds}`);
     
     // Récupérer les matchs avec cotes réelles (football, basket, hockey)
     const matches = await getMatchesWithRealOdds();
@@ -348,6 +350,15 @@ export async function GET(request: Request) {
           const odds = challenge.recommendation === 'home' ? challenge.oddsHome :
                       challenge.recommendation === 'away' ? challenge.oddsAway : 0;
           
+          // 🎯 Mode "high-odds": grosses cotes avec probabilité 30-40%
+          if (mode === 'high-odds') {
+            // Cotes >= 2.5 et probabilité de réussite 30-40% (risque 60-70%)
+            if (odds >= 2.5 && challenge.winProbability >= 30 && challenge.winProbability <= 40) {
+              challenges.push(challenge);
+            }
+            continue;
+          }
+          
           if (odds >= minOdds && odds <= maxOdds && challenge.edge >= minEdge) {
             if (confidence === 'high' && challenge.confidence === 'low') continue;
             if (confidence === 'very_high' && !['very_high', 'high'].includes(challenge.confidence)) continue;
@@ -363,6 +374,15 @@ export async function GET(request: Request) {
                       challenge.recommendation === 'away' ? challenge.oddsAway :
                       challenge.oddsDraw || 0;
           
+          // 🎯 Mode "high-odds": grosses cotes avec probabilité 30-40%
+          if (mode === 'high-odds') {
+            // Cotes >= 2.5 et probabilité de réussite 30-40% (risque 60-70%)
+            if (odds >= 2.5 && challenge.winProbability >= 30 && challenge.winProbability <= 40) {
+              challenges.push(challenge);
+            }
+            continue;
+          }
+          
           if (odds < minOdds || odds > maxOdds) continue;
           if (challenge.edge < minEdge) continue;
           
@@ -375,8 +395,16 @@ export async function GET(request: Request) {
       }
     }
     
-    // Trier par valueScore décroissant
-    challenges.sort((a, b) => b.valueScore - a.valueScore);
+    // Trier par valueScore décroissant (ou par cote pour mode high-odds)
+    if (mode === 'high-odds') {
+      challenges.sort((a, b) => {
+        const oddsA = a.recommendation === 'home' ? a.oddsHome : a.recommendation === 'away' ? a.oddsAway : a.oddsDraw || 0;
+        const oddsB = b.recommendation === 'home' ? b.oddsHome : b.recommendation === 'away' ? b.oddsAway : b.oddsDraw || 0;
+        return oddsB - oddsA; // Plus grosses cotes en premier
+      });
+    } else {
+      challenges.sort((a, b) => b.valueScore - a.valueScore);
+    }
     
     // Limiter à 20 résultats
     const topChallenges = challenges.slice(0, 20);

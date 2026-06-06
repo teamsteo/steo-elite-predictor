@@ -41,31 +41,48 @@
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
-      "schedule": "0 7 * * *"
+      "schedule": "0 7 * * *",
+      "comment": "Publication matin: Foot + Basket + NHL"
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
-      "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/cron/tennis-predictions?secret=secretsteo-elitecron2026&mode=major",
-      "schedule": "30 7 * * *"
-    },
-    {
-      "path": "/api/cron/tennis-predictions?secret=secretsteo-elitecron2026&mode=summary",
-      "schedule": "0 9 * * *"
+      "schedule": "0 8 * * *",
+      "comment": "Value bets matin: tous sports"
     },
     {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=major",
-      "schedule": "30 7 * * *"
+      "schedule": "30 7 * * *",
+      "comment": "Tennis matin publication"
     },
     {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=summary",
-      "schedule": "0 9 * * *"
+      "schedule": "0 9 * * *",
+      "comment": "Tennis résumé"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
+      "schedule": "0 12 * * *",
+      "comment": "Publication midi: Foot + Basket + NHL (matchs du soir)"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-kamikaze",
+      "schedule": "0 13 * * *",
+      "comment": "Kamikaze: tous sports (haut risque)"
     },
     {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=valuebets",
-      "schedule": "0 17 * * *"
+      "schedule": "0 17 * * *",
+      "comment": "Tennis value bets soir"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
+      "schedule": "0 18 * * *",
+      "comment": "Publication soir: Foot + Basket + NHL (matchs de nuit)"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
+      "schedule": "0 19 * * *",
+      "comment": "Value bets soir: tous sports"
     }
   ]
 }
