@@ -1,23 +1,20 @@
 // ============================================
-// SCRIPT DE SCRAPING INDÉPENDANT
+// SCRIPT DE SCRAPING INDÉPENDANT - VERSION SÉCURISÉE
 // ============================================
 //
-// Ce script est conçu pour tourner sur une machine locale, un VPS,
-// ou un service cloud gratuit comme Render, Fly.io, etc.
-//
-// ARCHITECTURE:
-// - Scraping (ce script) → Supabase → Vercel (lecture seule)
-//
-// OPTIONS DE DÉPLOIEMENT GRATUITES:
-// - Render.com (recommandé)
-// - Fly.io
-// - cron-job.org + API Vercel
+// Protections anti-bannissement:
+// - Délais augmentés entre requêtes
+// - Backoff exponentiel agressif
+// - Cache pour éviter les doublons
+// - Rotation de User Agents
+// - Détection proactive du rate limiting
+// - Limitation du nombre de requêtes
 //
 
 import { createClient } from '@supabase/supabase-js';
 
 // ============================================
-// CONFIGURATION
+// CONFIGURATION SÉCURISÉE
 // ============================================
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
@@ -31,20 +28,49 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-// Configuration
+// Configuration avec protections renforcées
 const CONFIG = {
-  delayBetweenRequests: parseInt(process.env.SCRAPER_DELAY || '2000'),
-  delayBetweenSources: parseInt(process.env.SCRAPER_SOURCE_DELAY || '5000'),
+  // Délais augmentés pour éviter le rate limiting
+  delayBetweenRequests: parseInt(process.env.SCRAPER_DELAY || '5000'),      // 5s au lieu de 2s
+  delayBetweenSources: parseInt(process.env.SCRAPER_SOURCE_DELAY || '15000'), // 15s au lieu de 5s
   requestTimeout: 30000,
   maxRetries: 3,
+  
+  // Backoff exponentiel: délai de base * 2^tentative
+  backoffMultiplier: 2,
+  maxBackoffDelay: 60000, // 1 minute max
+  
+  // Limite de requêtes par session
+  maxRequestsPerSession: 50,
+  
+  // User agents étendus (10 au lieu de 5)
   userAgents: [
+    // Chrome Windows
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    // Chrome Mac
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+    // Firefox Windows
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
+    // Firefox Mac
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0',
+    // Safari Mac
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    // Edge Windows
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+    // Chrome Linux
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   ],
 };
+
+// Cache en mémoire pour éviter les requêtes dupliquées
+const requestCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Compteur de requêtes
+let requestCount = 0;
 
 const ESPN_FOOTBALL_LEAGUES = [
   { code: 'eng.1', name: 'Premier League' },
@@ -57,7 +83,7 @@ const ESPN_FOOTBALL_LEAGUES = [
 ];
 
 // ============================================
-// UTILITAIRES
+// UTILITAIRES SÉCURISÉS
 // ============================================
 
 function sleep(ms: number): Promise<void> {
@@ -68,40 +94,146 @@ function getRandomUserAgent(): string {
   return CONFIG.userAgents[Math.floor(Math.random() * CONFIG.userAgents.length)];
 }
 
-async function fetchWithRetry(url: string, options: RequestInit = {}): Promise<Response> {
+// Calcul du délai avec jitter (variation aléatoire)
+function getDelayWithJitter(baseDelay: number): number {
+  const jitter = Math.random() * 0.3 * baseDelay; // ±30% de variation
+  return baseDelay + jitter;
+}
+
+// Vérification du cache
+function getCached<T>(key: string): T | null {
+  const cached = requestCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    console.log(`  📦 Cache hit: ${key}`);
+    return cached.data as T;
+  }
+  return null;
+}
+
+// Mise en cache
+function setCache(key: string, data: any): void {
+  requestCache.set(key, { data, timestamp: Date.now() });
+}
+
+// Vérification limite de requêtes
+function checkRequestLimit(): boolean {
+  if (requestCount >= CONFIG.maxRequestsPerSession) {
+    console.error(`🚫 Limite de requêtes atteinte: ${requestCount}/${CONFIG.maxRequestsPerSession}`);
+    return false;
+  }
+  return true;
+}
+
+// ============================================
+// FETCH AVEC PROTECTIONS RENFORCÉES
+// ============================================
+
+interface FetchResult {
+  data: any;
+  fromCache: boolean;
+}
+
+async function fetchWithProtection(url: string): Promise<FetchResult> {
+  // Vérifier le cache d'abord
+  const cacheKey = url;
+  const cached = getCached<any>(cacheKey);
+  if (cached) {
+    return { data: cached, fromCache: true };
+  }
+  
+  // Vérifier la limite
+  if (!checkRequestLimit()) {
+    throw new Error('Limite de requêtes atteinte');
+  }
+  
   let lastError: Error | null = null;
   
   for (let attempt = 1; attempt <= CONFIG.maxRetries; attempt++) {
     try {
+      // Délai avec jitter avant chaque requête
+      const delay = getDelayWithJitter(CONFIG.delayBetweenRequests);
+      if (attempt > 1) {
+        // Backoff exponentiel pour les retries
+        const backoffDelay = Math.min(
+          CONFIG.delayBetweenRequests * Math.pow(CONFIG.backoffMultiplier, attempt - 1),
+          CONFIG.maxBackoffDelay
+        );
+        console.log(`  ⏳ Attente backoff: ${Math.round(backoffDelay / 1000)}s...`);
+        await sleep(backoffDelay);
+      }
+      
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), CONFIG.requestTimeout);
       
+      const userAgent = getRandomUserAgent();
+      
       const response = await fetch(url, {
-        ...options,
         headers: {
-          'User-Agent': getRandomUserAgent(),
+          'User-Agent': userAgent,
           'Accept': 'application/json',
-          ...options.headers,
+          'Accept-Language': 'en-US,en;q=0.9,fr;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
         },
         signal: controller.signal,
       });
       
       clearTimeout(timeoutId);
+      requestCount++;
       
-      if (response.ok) return response;
+      // Vérifier les headers de rate limiting
+      const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+      const rateLimitReset = response.headers.get('x-ratelimit-reset');
       
+      if (rateLimitRemaining && parseInt(rateLimitRemaining) < 10) {
+        console.log(`  ⚠️ Rate limit proche: ${rateLimitRemaining} restantes`);
+        if (rateLimitReset) {
+          const resetTime = parseInt(rateLimitReset) * 1000;
+          const waitTime = resetTime - Date.now();
+          if (waitTime > 0 && waitTime < 300000) { // Max 5 minutes d'attente
+            console.log(`  ⏳ Attente reset: ${Math.round(waitTime / 1000)}s`);
+            await sleep(waitTime + 1000);
+          }
+        }
+      }
+      
+      // Gestion du rate limiting (429)
       if (response.status === 429) {
-        console.log(`⚠️ Rate limited, attente de ${CONFIG.delayBetweenSources * 2}ms...`);
-        await sleep(CONFIG.delayBetweenSources * 2);
+        const retryAfter = response.headers.get('retry-after');
+        let waitTime = CONFIG.delayBetweenSources * 3;
+        
+        if (retryAfter) {
+          waitTime = parseInt(retryAfter) * 1000;
+        }
+        
+        console.log(`  🛑 Rate limited (429)! Attente: ${Math.round(waitTime / 1000)}s`);
+        await sleep(waitTime);
         continue;
       }
       
-      throw new Error(`HTTP ${response.status}`);
+      // Autres erreurs serveur (5xx)
+      if (response.status >= 500) {
+        throw new Error(`Erreur serveur HTTP ${response.status}`);
+      }
+      
+      // Erreurs client (4xx) sauf 429
+      if (response.status >= 400) {
+        throw new Error(`Erreur client HTTP ${response.status}`);
+      }
+      
+      if (response.ok) {
+        const data = await response.json();
+        setCache(cacheKey, data);
+        return { data, fromCache: false };
+      }
+      
     } catch (error: any) {
       lastError = error;
-      console.log(`⚠️ Tentative ${attempt}/${CONFIG.maxRetries} échouée: ${error.message}`);
-      if (attempt < CONFIG.maxRetries) {
-        await sleep(CONFIG.delayBetweenRequests * attempt);
+      console.log(`  ⚠️ Tentative ${attempt}/${CONFIG.maxRetries} échouée: ${error.message}`);
+      
+      // Ne pas retry sur certaines erreurs
+      if (error.message.includes('Limite de requêtes')) {
+        throw error;
       }
     }
   }
@@ -110,7 +242,7 @@ async function fetchWithRetry(url: string, options: RequestInit = {}): Promise<R
 }
 
 // ============================================
-// SCRAPERS
+// SCRAPERS AVEC PROTECTIONS
 // ============================================
 
 async function scrapeESPNFootball(): Promise<any[]> {
@@ -120,16 +252,23 @@ async function scrapeESPNFootball(): Promise<any[]> {
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split('T')[0].replace(/-/g, '');
   
-  for (const league of ESPN_FOOTBALL_LEAGUES) {
+  for (let i = 0; i < ESPN_FOOTBALL_LEAGUES.length; i++) {
+    const league = ESPN_FOOTBALL_LEAGUES[i];
+    
+    // Vérifier la limite avant chaque ligue
+    if (!checkRequestLimit()) {
+      console.log(`  🛑 Arrêt: limite de requêtes atteinte`);
+      break;
+    }
+    
     try {
-      console.log(`  📌 ${league.name}...`);
+      console.log(`  📌 [${i + 1}/${ESPN_FOOTBALL_LEAGUES.length}] ${league.name}...`);
       
-      const response = await fetchWithRetry(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${dateStr}`
-      );
+      const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${dateStr}`;
+      const { data, fromCache } = await fetchWithProtection(url);
       
-      const data = await response.json();
       const events = data.events || [];
+      let matchCount = 0;
       
       for (const event of events) {
         if (event.status?.type?.completed) {
@@ -149,12 +288,22 @@ async function scrapeESPNFootball(): Promise<any[]> {
             status: 'completed',
             source: 'espn',
           });
+          matchCount++;
         }
       }
       
-      await sleep(CONFIG.delayBetweenRequests);
+      console.log(`    ✅ ${matchCount} matchs ${fromCache ? '(cache)' : ''}`);
+      
+      // Délai entre chaque ligue (sauf si du cache)
+      if (!fromCache && i < ESPN_FOOTBALL_LEAGUES.length - 1) {
+        const delay = getDelayWithJitter(CONFIG.delayBetweenSources);
+        console.log(`    ⏳ Pause: ${Math.round(delay / 1000)}s`);
+        await sleep(delay);
+      }
+      
     } catch (error: any) {
-      console.error(`  ❌ Erreur ${league.name}: ${error.message}`);
+      console.error(`    ❌ Erreur ${league.name}: ${error.message}`);
+      // Continuer avec les autres ligues
     }
   }
   
@@ -166,12 +315,15 @@ async function scrapeESPNNBA(): Promise<any[]> {
   console.log('📊 Scraping ESPN NBA...');
   const results: any[] = [];
   
+  if (!checkRequestLimit()) {
+    console.log('  🛑 Arrêt: limite de requêtes atteinte');
+    return results;
+  }
+  
   try {
-    const response = await fetchWithRetry(
-      'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'
-    );
+    const url = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard';
+    const { data, fromCache } = await fetchWithProtection(url);
     
-    const data = await response.json();
     const events = data.events || [];
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -200,7 +352,7 @@ async function scrapeESPNNBA(): Promise<any[]> {
       }
     }
     
-    console.log(`✅ ESPN NBA: ${results.length} résultats`);
+    console.log(`✅ ESPN NBA: ${results.length} résultats ${fromCache ? '(cache)' : ''}`);
   } catch (error: any) {
     console.error(`❌ Erreur NBA: ${error.message}`);
   }
@@ -212,12 +364,15 @@ async function scrapeESPNNHL(): Promise<any[]> {
   console.log('📊 Scraping ESPN NHL...');
   const results: any[] = [];
   
+  if (!checkRequestLimit()) {
+    console.log('  🛑 Arrêt: limite de requêtes atteinte');
+    return results;
+  }
+  
   try {
-    const response = await fetchWithRetry(
-      'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard'
-    );
+    const url = 'https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard';
+    const { data, fromCache } = await fetchWithProtection(url);
     
-    const data = await response.json();
     const events = data.events || [];
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -246,7 +401,7 @@ async function scrapeESPNNHL(): Promise<any[]> {
       }
     }
     
-    console.log(`✅ ESPN NHL: ${results.length} résultats`);
+    console.log(`✅ ESPN NHL: ${results.length} résultats ${fromCache ? '(cache)' : ''}`);
   } catch (error: any) {
     console.error(`❌ Erreur NHL: ${error.message}`);
   }
@@ -304,9 +459,8 @@ async function saveToSupabase(results: any[]): Promise<number> {
         if (!error) saved++;
       }
       
-      await sleep(100);
+      await sleep(150); // Légèrement augmenté
     } catch (error: any) {
-      // Ignorer les erreurs de doublons
       if (!error.message?.includes('duplicate')) {
         console.error(`❌ Erreur sauvegarde ${result.match_id}: ${error.message}`);
       }
@@ -375,7 +529,7 @@ async function updatePendingPredictions(): Promise<{ verified: number; won: numb
         }
       }
       
-      await sleep(100);
+      await sleep(150);
     } catch (error: any) {
       // Ignorer
     }
@@ -390,8 +544,10 @@ async function updatePendingPredictions(): Promise<{ verified: number; won: numb
 // ============================================
 
 async function main() {
-  console.log('🚀 Scraper indépendant - ElitePronosPro');
+  console.log('🚀 Scraper indépendant - ElitePronosPro (Version Sécurisée)');
   console.log(`📅 ${new Date().toLocaleString('fr-FR')}`);
+  console.log(`🔧 Config: délai=${CONFIG.delayBetweenRequests}ms, backoff=x${CONFIG.backoffMultiplier}`);
+  console.log(`🔒 Limite requêtes: ${CONFIG.maxRequestsPerSession}/session`);
   console.log('');
   
   const startTime = Date.now();
@@ -399,15 +555,23 @@ async function main() {
   try {
     // 1. Scraping
     console.log('=== ÉTAPE 1: SCRAPING ===');
-    await sleep(CONFIG.delayBetweenSources);
+    console.log(`📊 Requêtes effectuées: ${requestCount}`);
+    
+    // Délai initial pour éviter le pic au démarrage
+    await sleep(getDelayWithJitter(CONFIG.delayBetweenSources));
     
     const footballResults = await scrapeESPNFootball();
-    await sleep(CONFIG.delayBetweenSources);
+    console.log(`📊 Total requêtes: ${requestCount}`);
+    
+    await sleep(getDelayWithJitter(CONFIG.delayBetweenSources));
     
     const nbaResults = await scrapeESPNNBA();
-    await sleep(CONFIG.delayBetweenSources);
+    console.log(`📊 Total requêtes: ${requestCount}`);
+    
+    await sleep(getDelayWithJitter(CONFIG.delayBetweenSources));
     
     const nhlResults = await scrapeESPNNHL();
+    console.log(`📊 Total requêtes: ${requestCount}`);
     
     const allResults = [...footballResults, ...nbaResults, ...nhlResults];
     console.log(`📊 Total: ${allResults.length} résultats`);
@@ -427,6 +591,7 @@ async function main() {
     const duration = Math.round((Date.now() - startTime) / 1000);
     console.log('=== RÉSUMÉ ===');
     console.log(`⏱️ Durée: ${duration}s`);
+    console.log(`📊 Requêtes ESPN: ${requestCount}`);
     console.log(`📊 Résultats: ${allResults.length}`);
     console.log(`💾 Sauvegardés: ${saved}`);
     console.log(`✅ Vérifiés: ${verified} (${won}W/${lost}L)`);
@@ -435,6 +600,7 @@ async function main() {
     
   } catch (error: any) {
     console.error('❌ Erreur fatale:', error.message);
+    console.error('📊 Requêtes effectuées avant erreur:', requestCount);
     process.exit(1);
   }
 }

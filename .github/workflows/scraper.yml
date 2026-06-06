@@ -19,7 +19,7 @@ env:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     
     steps:
       - name: 📥 Checkout du code
@@ -50,8 +50,8 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SCRAPER_DELAY: '3000'
-          SCRAPER_SOURCE_DELAY: '8000'
+          SCRAPER_DELAY: '5000'
+          SCRAPER_SOURCE_DELAY: '15000'
         run: npx tsx scripts/independent-scraper.ts
 
       - name: 📊 Résumé d'exécution
