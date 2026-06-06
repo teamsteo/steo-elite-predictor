@@ -410,7 +410,7 @@ async function scrapeESPNNHL(): Promise<any[]> {
 }
 
 // ============================================
-// STOCKAGE SUPABASE
+// STOCKAGE SUPABASE - VERSION CORRIGÉE
 // ============================================
 
 async function saveToSupabase(results: any[]): Promise<number> {
@@ -422,25 +422,53 @@ async function saveToSupabase(results: any[]): Promise<number> {
   
   for (const result of results) {
     try {
-      const { data: existing } = await supabase
+      // 1. D'abord chercher par match_id
+      let { data: existing } = await supabase
         .from('predictions')
-        .select('match_id')
+        .select('id, match_id, home_team, away_team')
         .eq('match_id', result.match_id)
         .single();
       
+      // 2. Si pas trouvé, chercher par nom d'équipes (plus flexible)
+      if (!existing) {
+        const { data: byTeams } = await supabase
+          .from('predictions')
+          .select('id, match_id, home_team, away_team')
+          .or(`home_team.ilike.%${result.home_team}%,away_team.ilike.%${result.away_team}%`)
+          .ilike('home_team', `%${result.home_team.split(' ').pop()}%`) // Match par dernier mot (ex: "Lakers")
+          .ilike('away_team', `%${result.away_team.split(' ').pop()}%`)
+          .eq('sport', result.sport === 'football' ? 'Foot' : result.sport)
+          .single();
+        
+        if (byTeams) {
+          existing = byTeams;
+          console.log(`  📝 Match trouvé par équipes: ${result.home_team} vs ${result.away_team}`);
+        }
+      }
+      
       if (existing) {
+        // Mettre à jour l'enregistrement existant
         const { error } = await supabase
           .from('predictions')
           .update({
             home_score: result.home_score,
             away_score: result.away_score,
             status: 'completed',
+            actual_result: result.home_score > result.away_score ? 'home' : 
+                           result.away_score > result.home_score ? 'away' : 'draw',
+            result_match: true, // Sera recalculé si predicted_result existe
             checked_at: new Date().toISOString(),
           })
-          .eq('match_id', result.match_id);
+          .eq('id', existing.id);
         
-        if (!error) saved++;
+        if (!error) {
+          saved++;
+          console.log(`  ✅ Mis à jour: ${result.home_team} ${result.home_score}-${result.away_score} ${result.away_team}`);
+        } else {
+          console.log(`  ⚠️ Erreur update: ${error.message}`);
+        }
       } else {
+        // Créer un nouvel enregistrement uniquement si inexistant
         const { error } = await supabase
           .from('predictions')
           .insert({
@@ -453,15 +481,20 @@ async function saveToSupabase(results: any[]): Promise<number> {
             sport: result.sport,
             match_date: result.match_date,
             status: 'completed',
+            actual_result: result.home_score > result.away_score ? 'home' : 
+                           result.away_score > result.home_score ? 'away' : 'draw',
             checked_at: new Date().toISOString(),
           });
         
-        if (!error) saved++;
+        if (!error) {
+          saved++;
+          console.log(`  ➕ Créé: ${result.home_team} ${result.home_score}-${result.away_score} ${result.away_team}`);
+        }
       }
       
-      await sleep(150); // Légèrement augmenté
+      await sleep(150);
     } catch (error: any) {
-      if (!error.message?.includes('duplicate')) {
+      if (!error.message?.includes('duplicate') && !error.message?.includes('No rows found')) {
         console.error(`❌ Erreur sauvegarde ${result.match_id}: ${error.message}`);
       }
     }
@@ -490,25 +523,35 @@ async function updatePendingPredictions(): Promise<{ verified: number; won: numb
   
   for (const pred of pending) {
     try {
+      // Chercher le résultat par nom d'équipes
+      const homeTeamName = pred.home_team?.split(' ').pop() || pred.home_team;
+      const awayTeamName = pred.away_team?.split(' ').pop() || pred.away_team;
+      
       const { data: matchResult } = await supabase
         .from('predictions')
         .select('*')
-        .eq('home_team', pred.home_team)
-        .eq('away_team', pred.away_team)
+        .ilike('home_team', `%${homeTeamName}%`)
+        .ilike('away_team', `%${awayTeamName}%`)
         .eq('status', 'completed')
         .not('home_score', 'is', null)
+        .limit(1)
         .single();
       
-      if (matchResult) {
+      if (matchResult && matchResult.home_score !== null && matchResult.away_score !== null) {
         const homeScore = matchResult.home_score;
         const awayScore = matchResult.away_score;
         
+        // Calculer le résultat réel
         let actualResult: 'home' | 'draw' | 'away';
         if (homeScore > awayScore) actualResult = 'home';
         else if (awayScore > homeScore) actualResult = 'away';
         else actualResult = 'draw';
         
+        // Vérifier si la prédiction était correcte
         const resultMatch = pred.predicted_result === actualResult;
+        
+        // Calculer le nouveau statut
+        const newStatus = resultMatch ? 'won' : 'lost';
         
         const { error: updateError } = await supabase
           .from('predictions')
@@ -517,7 +560,7 @@ async function updatePendingPredictions(): Promise<{ verified: number; won: numb
             away_score: awayScore,
             actual_result: actualResult,
             result_match: resultMatch,
-            status: resultMatch ? 'won' : 'lost',
+            status: newStatus,
             checked_at: new Date().toISOString(),
           })
           .eq('id', pred.id);
@@ -525,13 +568,15 @@ async function updatePendingPredictions(): Promise<{ verified: number; won: numb
         if (!updateError) {
           verified++;
           if (resultMatch) won++; else lost++;
-          console.log(`  ✅ ${pred.home_team} vs ${pred.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${homeScore}-${awayScore})`);
+          console.log(`  ${resultMatch ? '✅' : '❌'} ${pred.home_team} vs ${pred.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${homeScore}-${awayScore})`);
         }
+      } else {
+        console.log(`  ⏳ Pas de résultat trouvé: ${pred.home_team} vs ${pred.away_team}`);
       }
       
       await sleep(150);
     } catch (error: any) {
-      // Ignorer
+      // Match non trouvé, normal
     }
   }
   
