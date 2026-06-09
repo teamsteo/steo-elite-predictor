@@ -208,6 +208,7 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       // Sports US
       { key: 'basketball/nba', name: 'NBA', sport: 'Basket' },
       { key: 'hockey/nhl', name: 'NHL', sport: 'NHL' },
+      { key: 'baseball/mlb', name: 'MLB', sport: 'Baseball' }, // ⚾ MLB actif en juin
       // Ligues nationales européennes
       { key: 'soccer/eng.1', name: 'Premier League', sport: 'Foot' },
       { key: 'soccer/esp.1', name: 'La Liga', sport: 'Foot' },
@@ -233,6 +234,8 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       { key: 'soccer/uefa.nations', name: 'Nations League', sport: 'Foot', isInternational: true },
       { key: 'soccer/uefa.euro', name: 'Euro', sport: 'Foot', isInternational: true },
       { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Foot', isInternational: true },
+      // 🇺🇸 MLS (actif en été)
+      { key: 'soccer/usa.1', name: 'MLS', sport: 'Foot' },
     ];
     
     // 🎯 ÉTAPE 2: Récupérer ESPN pour hier, aujourd'hui ET demain

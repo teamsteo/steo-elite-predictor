@@ -329,6 +329,68 @@ export const SupabaseStore = {
     }
   },
   
+  async deletePrediction(id: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    
+    try {
+      const { error } = await supabase
+        .from('predictions')
+        .delete()
+        .eq('id', id);
+      
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+  
+  async deleteOldPendingPredictions(daysOld: number = 7): Promise<{ deleted: number; errors: string[] }> {
+    const supabase = getSupabase();
+    if (!supabase) return { deleted: 0, errors: ['Supabase non configuré'] };
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    
+    const errors: string[] = [];
+    let deleted = 0;
+    
+    try {
+      // D'abord récupérer les IDs à supprimer
+      const { data: oldPredictions, error: fetchError } = await supabase
+        .from('predictions')
+        .select('id')
+        .eq('status', 'pending')
+        .lt('match_date', cutoffDate.toISOString());
+      
+      if (fetchError) {
+        return { deleted: 0, errors: [fetchError.message] };
+      }
+      
+      if (!oldPredictions || oldPredictions.length === 0) {
+        return { deleted: 0, errors: [] };
+      }
+      
+      // Supprimer par lots
+      const ids = oldPredictions.map(p => p.id);
+      
+      const { error: deleteError } = await supabase
+        .from('predictions')
+        .delete()
+        .in('id', ids);
+      
+      if (deleteError) {
+        errors.push(deleteError.message);
+      } else {
+        deleted = ids.length;
+      }
+      
+      return { deleted, errors };
+    } catch (e: any) {
+      return { deleted: 0, errors: [e.message] };
+    }
+  },
+  
   // ============================================
   // STATISTIQUES
   // ============================================

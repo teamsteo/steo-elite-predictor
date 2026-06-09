@@ -52,6 +52,8 @@ const SPORT_EMOJIS: Record<string, string> = {
   'NHL': '🏒', 'Hockey': '🏒', 'hockey': '🏒',
   // Tennis
   'Tennis': '🎾', 'tennis': '🎾',
+  // Baseball
+  'Baseball': '⚾', 'baseball': '⚾', 'MLB': '⚾', 'mlb': '⚾',
 };
 
 /**
