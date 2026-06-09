@@ -41,48 +41,39 @@
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
-      "schedule": "0 7 * * *",
-      "comment": "Publication matin: Foot + Basket + NHL"
+      "schedule": "0 7 * * *"
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
-      "schedule": "0 8 * * *",
-      "comment": "Value bets matin: tous sports"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=major",
-      "schedule": "30 7 * * *",
-      "comment": "Tennis matin publication"
+      "schedule": "30 7 * * *"
     },
     {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=summary",
-      "schedule": "0 9 * * *",
-      "comment": "Tennis résumé"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
-      "schedule": "0 12 * * *",
-      "comment": "Publication midi: Foot + Basket + NHL (matchs du soir)"
+      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-kamikaze",
-      "schedule": "0 13 * * *",
-      "comment": "Kamikaze: tous sports (haut risque)"
+      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=valuebets",
-      "schedule": "0 17 * * *",
-      "comment": "Tennis value bets soir"
+      "schedule": "0 17 * * *"
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
-      "schedule": "0 18 * * *",
-      "comment": "Publication soir: Foot + Basket + NHL (matchs de nuit)"
+      "schedule": "0 18 * * *"
     },
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
-      "schedule": "0 19 * * *",
-      "comment": "Value bets soir: tous sports"
+      "schedule": "0 19 * * *"
     }
   ]
 }
