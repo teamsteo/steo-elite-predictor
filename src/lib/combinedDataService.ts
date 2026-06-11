@@ -389,11 +389,25 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
+    // 🕐 Heure limite pour les matchs d'hier (24h maximum)
+    // Les matchs joués il y a plus de 24h sont toujours exclus
+    const yesterdayLimit = new Date(currentTime);
+    yesterdayLimit.setUTCHours(yesterdayLimit.getUTCHours() - 24);
+
     const filteredMatches = allMatches.filter(match => {
       const matchDate = new Date(match.date);
 
       // 🚫 EXCLURE les matchs terminés - ce sont des résultats, pas des pronostics
-      if (match.isFinished) return false;
+      if (match.isFinished) {
+        console.log(`🚫 Match terminé exclu: ${match.homeTeam} vs ${match.awayTeam}`);
+        return false;
+      }
+
+      // 🚫 EXCLURE les matchs de plus de 24h (même s'ils ne sont pas marqués terminés)
+      if (matchDate < yesterdayLimit) {
+        console.log(`🚫 Match trop vieux exclu: ${match.homeTeam} vs ${match.awayTeam} (${matchDate.toISOString()})`);
+        return false;
+      }
 
       // Garder les matchs en cours (live) - peu importe la date
       if (match.isLive) return true;
