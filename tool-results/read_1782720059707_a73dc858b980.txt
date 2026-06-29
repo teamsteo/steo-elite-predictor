@@ -1,0 +1,659 @@
+     1→/**
+     2→ * Service combiné pour les données sportives
+     3→ * 
+     4→ * CASCADE DE COTES (automatique):
+     5→ * 1. ESPN (DraftKings) - GRATUIT ILLIMITÉ
+     6→ * 2. The Odds API - Fallback si ESPN sans cotes
+     7→ * 3. Estimations - Dernier recours (avec tag ⚠️)
+     8→ */
+     9→
+    10→// Configuration The Odds API (fallback)
+    11→const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+    12→const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
+    13→
+    14→// Cache pour les matchs ESPN
+    15→let espnCache: any[] = [];
+    16→let espnCacheTime = 0;
+    17→let espnCacheDate = '';
+    18→let oddsApiCache: Map<string, { home: number; draw: number | null; away: number }> | null = null;
+    19→const ESPN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+    20→
+    21→/**
+    22→ * 📅 Obtient la date UTC actuelle au format YYYYMMDD
+    23→ * IMPORTANT: Utilise UTC pour éviter les problèmes de timezone sur Vercel
+    24→ */
+    25→function getUTCDateString(): string {
+    26→  const now = new Date();
+    27→  return now.toISOString().slice(0, 10).replace(/-/g, '');
+    28→}
+    29→
+    30→/**
+    31→ * 📅 Obtient la date UTC d'hier au format YYYYMMDD
+    32→ */
+    33→function getYesterdayUTCString(): string {
+    34→  const yesterday = new Date();
+    35→  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    36→  return yesterday.toISOString().slice(0, 10).replace(/-/g, '');
+    37→}
+    38→
+    39→/**
+    40→ * 📅 Obtient la date UTC de demain au format YYYYMMDD
+    41→ */
+    42→function getTomorrowUTCString(): string {
+    43→  const tomorrow = new Date();
+    44→  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+    45→  return tomorrow.toISOString().slice(0, 10).replace(/-/g, '');
+    46→}
+    47→
+    48→/**
+    49→ * Convertit les cotes américaines en cotes décimales
+    50→ */
+    51→function americanToDecimal(americanOdds: string | number | undefined): number {
+    52→  if (!americanOdds) return 0;
+    53→  
+    54→  const odds = typeof americanOdds === 'string' 
+    55→    ? parseFloat(americanOdds.replace('+', '')) 
+    56→    : americanOdds;
+    57→  
+    58→  if (isNaN(odds) || odds === 0) return 0;
+    59→  
+    60→  if (odds > 0) {
+    61→    // Positive odds: profit = odds/100, decimal = 1 + odds/100
+    62→    return Math.round((1 + odds / 100) * 100) / 100;
+    63→  } else {
+    64→    // Negative odds: risk = |odds| to win 100, decimal = 1 + 100/|odds|
+    65→    return Math.round((1 + 100 / Math.abs(odds)) * 100) / 100;
+    66→  }
+    67→}
+    68→
+    69→/**
+    70→ * Extrait les cotes depuis les données ESPN (DraftKings)
+    71→ */
+    72→function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | null; oddsAway: number; bookmaker: string } {
+    73→  const competition = event.competitions?.[0];
+    74→  const odds = competition?.odds?.[0];
+    75→  
+    76→  if (!odds) {
+    77→    return { oddsHome: 0, oddsDraw: null, oddsAway: 0, bookmaker: 'None' };
+    78→  }
+    79→  
+    80→  const bookmaker = odds.provider?.name || odds.provider || 'DraftKings';
+    81→  
+    82→  // Format ESPN: odds peuvent être en format américain ou décimal
+    83→  // moneyline format - Attention: drawOdds peut être un objet avec moneyLine
+    84→  let homeOdds = odds.homeTeamOdds?.moneyLine || odds.moneyline?.home?.close?.odds || odds.moneyline?.home?.open?.odds || odds.homeOdds;
+    85→  let awayOdds = odds.awayTeamOdds?.moneyLine || odds.moneyline?.away?.close?.odds || odds.moneyline?.away?.open?.odds || odds.awayOdds;
+    86→  // drawOdds est souvent un objet ESPN avec { moneyLine: number, link: {...} }
+    87→  let drawOdds = odds.drawOdds?.moneyLine || odds.drawOdds || odds.moneyline?.draw?.close?.odds || odds.moneyline?.draw?.open?.odds || null;
+    88→  
+    89→  // S'assurer que drawOdds est un nombre (pas un objet)
+    90→  if (typeof drawOdds !== 'number') {
+    91→    drawOdds = null;
+    92→  }
+    93→  
+    94→  // Si les cotes sont au format américain (entier), les convertir
+    95→  if (homeOdds && Math.abs(homeOdds) > 2) {
+    96→    homeOdds = americanToDecimal(homeOdds);
+    97→  }
+    98→  if (awayOdds && Math.abs(awayOdds) > 2) {
+    99→    awayOdds = americanToDecimal(awayOdds);
+   100→  }
+   101→  if (drawOdds && Math.abs(drawOdds) > 2) {
+   102→    drawOdds = americanToDecimal(drawOdds);
+   103→  }
+   104→  
+   105→  return {
+   106→    oddsHome: homeOdds || 0,
+   107→    oddsDraw: drawOdds || null,
+   108→    oddsAway: awayOdds || 0,
+   109→    bookmaker: bookmaker,
+   110→  };
+   111→}
+   112→
+   113→/**
+   114→ * FALLBACK: Récupère les cotes depuis The Odds API
+   115→ * ⚠️ DÉSACTIVÉ - Utilise trop de quota
+   116→ * ESPN est gratuit et couvre la plupart des sports
+   117→ * Le tennis utilise le quota manager via live-data-service
+   118→ */
+   119→async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw: number | null; away: number }>> {
+   120→  const oddsMap = new Map<string, { home: number; draw: number | null; away: number }>();
+   121→  
+   122→  // ⚠️ NE PLUS UTILISER - Trop coûteux en quota
+   123→  // ESPN fournit les cotes gratuitement pour les sports principaux
+   124→  console.log('📡 Odds API fallback désactivé (économie quota)');
+   125→  console.log('📡 Utilisation des cotes ESPN (gratuit) ou estimations');
+   126→  
+   127→  return oddsMap;
+   128→}
+   129→
+   130→/**
+   131→ * Trouve les cotes Odds API pour un match (matching flexible)
+   132→ */
+   133→function findOddsApiMatch(
+   134→  homeTeam: string,
+   135→  awayTeam: string,
+   136→  oddsApiMap: Map<string, { home: number; draw: number | null; away: number }>
+   137→): { home: number; draw: number | null; away: number } | null {
+   138→  // Essayer plusieurs variantes de clés
+   139→  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '').replace(/^(fc|afc|united|city)/, '');
+   140→  
+   141→  const keys = [
+   142→    `${homeTeam.toLowerCase()}_${awayTeam.toLowerCase()}`,
+   143→    `${awayTeam.toLowerCase()}_${homeTeam.toLowerCase()}`,
+   144→    `${normalize(homeTeam)}_${normalize(awayTeam)}`,
+   145→    `${normalize(awayTeam)}_${normalize(homeTeam)}`,
+   146→  ];
+   147→  
+   148→  for (const key of keys) {
+   149→    const odds = oddsApiMap.get(key);
+   150→    if (odds) return odds;
+   151→  }
+   152→  
+   153→  // Recherche par inclusion de mots
+   154→  for (const [key, odds] of oddsApiMap.entries()) {
+   155→    const [apiHome, apiAway] = key.split('_');
+   156→    if (
+   157→      (homeTeam.toLowerCase().includes(apiHome) || apiHome.includes(homeTeam.toLowerCase().split(' ')[0])) &&
+   158→      (awayTeam.toLowerCase().includes(apiAway) || apiAway.includes(awayTeam.toLowerCase().split(' ')[0]))
+   159→    ) {
+   160→      return odds;
+   161→    }
+   162→  }
+   163→  
+   164→  return null;
+   165→}
+   166→
+   167→/**
+   168→ * Récupère les matchs depuis ESPN (GRATUIT) avec fallback The Odds API
+   169→ */
+   170→export async function getMatchesWithRealOdds(): Promise<any[]> {
+   171→  console.log('🔄 Récupération matchs (ESPN → Odds API → Estimations)...');
+   172→  
+   173→  const now = Date.now();
+   174→  const todayUTC = getUTCDateString();
+   175→  
+   176→  // 📅 TOUJOURS invalider le cache si le jour a changé
+   177→  // IMPORTANT: Comparer en UTC pour éviter les problèmes de timezone
+   178→  if (espnCacheDate && espnCacheDate !== todayUTC) {
+   179→    console.log(`🔄 NOUVEAU JOUR DÉTECTÉ - Invalidation du cache`);
+   180→    console.log(`   Cache date: ${espnCacheDate} | Aujourd'hui: ${todayUTC}`);
+   181→    espnCache = [];
+   182→    espnCacheTime = 0;
+   183→    espnCacheDate = '';
+   184→    oddsApiCache = null;
+   185→  }
+   186→  
+   187→  // Utiliser le cache si valide (même jour ET pas expiré)
+   188→  if (espnCache.length > 0 && espnCacheDate === todayUTC && (now - espnCacheTime) < ESPN_CACHE_TTL) {
+   189→    console.log(`📦 Cache ESPN valide (${espnCache.length} matchs) - TTL: ${Math.round((ESPN_CACHE_TTL - (now - espnCacheTime)) / 1000)}s restantes`);
+   190→    return espnCache;
+   191→  }
+   192→  
+   193→  const allMatches: any[] = [];
+   194→  
+   195→  try {
+   196→    // 📅 Utiliser les dates UTC pour éviter les problèmes de timezone
+   197→    const todayStr = getUTCDateString();
+   198→    const yesterdayStr = getYesterdayUTCString();
+   199→    const tomorrowStr = getTomorrowUTCString();
+   200→    
+   201→    console.log(`📅 Dates de recherche (UTC): Hier=${yesterdayStr}, Aujourd'hui=${todayStr}, Demain=${tomorrowStr}`);
+   202→    
+   203→    // 🎯 ÉTAPE 1: Préparer le fallback The Odds API en parallèle
+   204→    const oddsApiMapPromise = fetchOddsApiFallback();
+   205→    
+   206→    // Sports à récupérer - ESPN couvre tout gratuitement
+   207→    const sports = [
+   208→      // Sports US
+   209→      { key: 'basketball/nba', name: 'NBA', sport: 'Basket' },
+   210→      { key: 'hockey/nhl', name: 'NHL', sport: 'NHL' },
+   211→      { key: 'baseball/mlb', name: 'MLB', sport: 'Baseball' }, // ⚾ MLB actif en juin
+   212→      // Ligues nationales européennes
+   213→      { key: 'soccer/eng.1', name: 'Premier League', sport: 'Foot' },
+   214→      { key: 'soccer/esp.1', name: 'La Liga', sport: 'Foot' },
+   215→      { key: 'soccer/ita.1', name: 'Serie A', sport: 'Foot' },
+   216→      { key: 'soccer/ger.1', name: 'Bundesliga', sport: 'Foot' },
+   217→      { key: 'soccer/fra.1', name: 'Ligue 1', sport: 'Foot' },
+   218→      // Compétitions européennes
+   219→      { key: 'soccer/uefa.champions', name: 'Champions League', sport: 'Foot' },
+   220→      { key: 'soccer/uefa.europa', name: 'Europa League', sport: 'Foot' },
+   221→      { key: 'soccer/uefa.europa.conf', name: 'Conference League', sport: 'Foot' },
+   222→      // Autres ligues
+   223→      { key: 'soccer/ned.1', name: 'Eredivisie', sport: 'Foot' },
+   224→      { key: 'soccer/por.1', name: 'Liga Portugal', sport: 'Foot' },
+   225→      { key: 'soccer/bel.1', name: 'Jupiler Pro League', sport: 'Foot' },
+   226→      { key: 'soccer/tur.1', name: 'Süper Lig', sport: 'Foot' },
+   227→      // 🌍 COMPÉTITIONS INTERNATIONALES - Qualifications Coupe du Monde
+   228→      { key: 'soccer/fifa.worldq.uefa', name: 'Éliminatoires Mondial Europe', sport: 'Foot', isInternational: true },
+   229→      { key: 'soccer/fifa.worldq.conmebol', name: 'Éliminatoires Mondial Amérique Sud', sport: 'Foot', isInternational: true },
+   230→      { key: 'soccer/fifa.worldq.concacaf', name: 'Éliminatoires Mondial Amérique Nord', sport: 'Foot', isInternational: true },
+   231→      { key: 'soccer/fifa.worldq.afc', name: 'Éliminatoires Mondial Asie', sport: 'Foot', isInternational: true },
+   232→      { key: 'soccer/fifa.worldq.caf', name: 'Éliminatoires Mondial Afrique', sport: 'Foot', isInternational: true },
+   233→      // 🌍 Autres compétitions internationales
+   234→      { key: 'soccer/uefa.nations', name: 'Nations League', sport: 'Foot', isInternational: true },
+   235→      { key: 'soccer/uefa.euro', name: 'Euro', sport: 'Foot', isInternational: true },
+   236→      { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Foot', isInternational: true },
+   237→      // 🇺🇸 MLS (actif en été)
+   238→      { key: 'soccer/usa.1', name: 'MLS', sport: 'Foot' },
+   239→    ];
+   240→    
+   241→    // 🎯 ÉTAPE 2: Récupérer ESPN pour hier, aujourd'hui ET demain
+   242→    // Hier = pour les matchs NBA/NHL de nuit encore en cours
+   243→    const fetchPromises: Promise<any>[] = [];
+   244→    for (const sport of sports) {
+   245→      // Hier (pour matchs de nuit encore en cours)
+   246→      fetchPromises.push(
+   247→        fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${yesterdayStr}`)
+   248→          .then(r => r.json())
+   249→          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'yesterday' }))
+   250→          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+   251→      );
+   252→      // Aujourd'hui
+   253→      fetchPromises.push(
+   254→        fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${todayStr}`)
+   255→          .then(r => r.json())
+   256→          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'today' }))
+   257→          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+   258→      );
+   259→      // Demain
+   260→      fetchPromises.push(
+   261→        fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${tomorrowStr}`)
+   262→          .then(r => r.json())
+   263→          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'tomorrow' }))
+   264→          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+   265→      );
+   266→    }
+   267→    
+   268→    const [oddsApiMap, ...espnResults] = await Promise.all([
+   269→      oddsApiMapPromise,
+   270→      ...fetchPromises
+   271→    ]);
+   272→    
+   273→    // Stats
+   274→    let espnOddsCount = 0;
+   275→    let oddsApiFallbackCount = 0;
+   276→    let estimatedCount = 0;
+   277→    
+   278→    for (const result of espnResults) {
+   279→      if (!result?.data?.events) continue;
+   280→      
+   281→      const leagueName = result.sport;
+   282→      const mainSport = result.mainSport;
+   283→      const isInternational = result.isInternational || false;
+   284→      
+   285→      for (const event of result.data.events) {
+   286→        const competition = event.competitions?.[0];
+   287→        const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+   288→        const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+   289→        const statusType = event.status?.type;
+   290→        
+   291→        const homeTeam = home?.team?.displayName || home?.team?.shortDisplayName || 'TBD';
+   292→        const awayTeam = away?.team?.displayName || away?.team?.shortDisplayName || 'TBD';
+   293→        
+   294→        const isLive = statusType?.state === 'in';
+   295→        const isFinished = statusType?.completed === true;
+   296→        
+   297→        // 🎯 CASCADE DE COTES
+   298→        // 1. ESPN (DraftKings)
+   299→        const espnOdds = extractEspnOdds(event);
+   300→        
+   301→        let oddsHome = espnOdds.oddsHome;
+   302→        let oddsDraw = espnOdds.oddsDraw;
+   303→        let oddsAway = espnOdds.oddsAway;
+   304→        let bookmaker = espnOdds.bookmaker;
+   305→        let hasRealOdds = espnOdds.oddsHome > 0 && espnOdds.oddsAway > 0;
+   306→        let oddsSource: 'espn-draftkings' | 'the-odds-api' | 'estimation' = 'espn-draftkings';
+   307→        let isEstimated = false;
+   308→        
+   309→        if (hasRealOdds) {
+   310→          espnOddsCount++;
+   311→        }
+   312→        
+   313→        // 2. FALLBACK: The Odds API si ESPN sans cotes
+   314→        if (!hasRealOdds) {
+   315→          const oddsApiOdds = findOddsApiMatch(homeTeam, awayTeam, oddsApiMap);
+   316→          if (oddsApiOdds && oddsApiOdds.home > 0 && oddsApiOdds.away > 0) {
+   317→            oddsHome = oddsApiOdds.home;
+   318→            oddsDraw = oddsApiOdds.draw;
+   319→            oddsAway = oddsApiOdds.away;
+   320→            bookmaker = 'The Odds API';
+   321→            hasRealOdds = true;
+   322→            oddsSource = 'the-odds-api';
+   323→            oddsApiFallbackCount++;
+   324→          }
+   325→        }
+   326→        
+   327→        // 3. FALLBACK: Estimation si toujours pas de cotes
+   328→        if (!hasRealOdds) {
+   329→          const estimated = estimateOdds(homeTeam, awayTeam, 'home' as any);
+   330→          oddsHome = estimated;
+   331→          oddsAway = estimateOdds(homeTeam, awayTeam, 'away' as any);
+   332→          bookmaker = 'Estimation';
+   333→          oddsSource = 'estimation';
+   334→          isEstimated = true;
+   335→          estimatedCount++;
+   336→        }
+   337→        
+   338→        // 🎯 Calculer le risque et la prédiction à partir des cotes
+   339→        const homeProb = oddsHome > 0 ? Math.round((1 / oddsHome) * 100) : 50;
+   340→        const awayProb = oddsAway > 0 ? Math.round((1 / oddsAway) * 100) : 50;
+   341→        const favoriteProb = Math.max(homeProb, awayProb);
+   342→        const riskPercentage = 100 - favoriteProb;
+   343→        const predictedResult = homeProb > awayProb ? 'home' : 'away';
+   344→        const winProbability = favoriteProb;
+   345→        const confidence = favoriteProb >= 70 ? 'high' : favoriteProb >= 55 ? 'medium' : 'low';
+   346→        const recommendation = homeProb > awayProb ? homeTeam : awayTeam;
+   347→
+   348→        allMatches.push({
+   349→          id: `espn_${event.id}`,
+   350→          homeTeam,
+   351→          awayTeam,
+   352→          sport: mainSport,
+   353→          league: event.competition?.name || event.league?.name || leagueName,
+   354→          date: event.date,
+   355→          status: isLive ? 'live' : isFinished ? 'finished' : 'upcoming',
+   356→          isLive,
+   357→          isFinished,
+   358→          homeScore: home?.score ? parseInt(home.score) : undefined,
+   359→          awayScore: away?.score ? parseInt(away.score) : undefined,
+   360→          clock: event.status?.displayClock,
+   361→          period: event.status?.period,
+   362→          homeRecord: home?.records?.[0]?.summary,
+   363→          awayRecord: away?.records?.[0]?.summary,
+   364→          // 🎯 Cotes avec cascade (ESPN → Odds API → Estimation)
+   365→          oddsHome,
+   366→          oddsDraw,
+   367→          oddsAway,
+   368→          bookmaker,
+   369→          hasRealOdds,
+   370→          oddsSource,
+   371→          isEstimated, // ⚠️ Tag pour identifier les cotes fictives
+   372→          // 🌍 Flag pour matchs internationaux (confiance réduite)
+   373→          isInternational,
+   374→          competitionType: isInternational ? 'international' : 'domestic' as 'international' | 'domestic',
+   375→          // 🎯 Prédiction calculée depuis les cotes
+   376→          riskPercentage,
+   377→          winProbability,
+   378→          predictedResult,
+   379→          confidence,
+   380→          recommendation,
+   381→        });
+   382→      }
+   383→    }
+   384→    
+   385→    // Filtrer pour garder UNIQUEMENT les matchs à venir d'aujourd'hui et demain
+   386→    // ⚠️ Les matchs terminés ne doivent PAS être publiés comme pronostics
+   387→    // 📅 Utiliser UTC pour la comparaison de dates
+   388→    const currentTime = new Date();
+   389→    const todayStart = new Date();
+   390→    todayStart.setUTCHours(0, 0, 0, 0);
+   391→
+   392→    // 🕐 Heure limite pour les matchs d'hier (24h maximum)
+   393→    // Les matchs joués il y a plus de 24h sont toujours exclus
+   394→    const yesterdayLimit = new Date(currentTime);
+   395→    yesterdayLimit.setUTCHours(yesterdayLimit.getUTCHours() - 24);
+   396→
+   397→    const filteredMatches = allMatches.filter(match => {
+   398→      const matchDate = new Date(match.date);
+   399→
+   400→      // 🚫 EXCLURE les matchs terminés - ce sont des résultats, pas des pronostics
+   401→      if (match.isFinished) {
+   402→        console.log(`🚫 Match terminé exclu: ${match.homeTeam} vs ${match.awayTeam}`);
+   403→        return false;
+   404→      }
+   405→
+   406→      // 🚫 EXCLURE les matchs de plus de 24h (même s'ils ne sont pas marqués terminés)
+   407→      if (matchDate < yesterdayLimit) {
+   408→        console.log(`🚫 Match trop vieux exclu: ${match.homeTeam} vs ${match.awayTeam} (${matchDate.toISOString()})`);
+   409→        return false;
+   410→      }
+   411→
+   412→      // Garder les matchs en cours (live) - peu importe la date
+   413→      if (match.isLive) return true;
+   414→
+   415→      // Garder les matchs à venir d'aujourd'hui
+   416→      if (matchDate >= todayStart && matchDate > currentTime) return true;
+   417→
+   418→      // Garder les matchs à venir demain
+   419→      const tomorrowStart = new Date();
+   420→      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+   421→      tomorrowStart.setUTCHours(0, 0, 0, 0);
+   422→      const tomorrowEnd = new Date(tomorrowStart);
+   423→      tomorrowEnd.setUTCHours(23, 59, 59, 999);
+   424→
+   425→      if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) return true;
+   426→
+   427→      return false;
+   428→    });
+   429→
+   430→    // Ajouter un tag de date (hier, aujourd'hui, demain) pour l'affichage
+   431→    // 📅 Utiliser UTC pour la comparaison
+   432→    const yesterdayStart = new Date(todayStart);
+   433→    yesterdayStart.setUTCDate(yesterdayStart.getUTCDate() - 1);
+   434→    const tomorrowStart = new Date(todayStart);
+   435→    tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
+   436→    const tomorrowEnd = new Date(tomorrowStart);
+   437→    tomorrowEnd.setUTCHours(23, 59, 59, 999);
+   438→
+   439→    // Fonction pour déterminer le tag de date
+   440→    const getDateTag = (matchDate: Date, isLive: boolean, isFinished: boolean): {
+   441→      dateTag: 'hier' | 'aujourd\'hui' | 'demain';
+   442→      dateLabel: string;
+   443→      displayDate: string;
+   444→    } => {
+   445→      if (matchDate >= todayStart && matchDate < tomorrowStart) {
+   446→        // Aujourd'hui
+   447→        if (isLive) {
+   448→          return { dateTag: 'aujourd\'hui', dateLabel: '🔴 En cours', displayDate: 'Aujourd\'hui' };
+   449→        }
+   450→        if (isFinished) {
+   451→          return { dateTag: 'aujourd\'hui', dateLabel: '✅ Terminé', displayDate: 'Aujourd\'hui' };
+   452→        }
+   453→        return { dateTag: 'aujourd\'hui', dateLabel: '⏳ À venir', displayDate: 'Aujourd\'hui' };
+   454→      } else if (matchDate >= yesterdayStart && matchDate < todayStart) {
+   455→        // Hier (matchs de nuit encore en cours ou récemment terminés)
+   456→        if (isLive) {
+   457→          return { dateTag: 'hier', dateLabel: '🔴 En cours (nuit)', displayDate: 'Hier' };
+   458→        }
+   459→        if (isFinished) {
+   460→          return { dateTag: 'hier', dateLabel: '✅ Terminé', displayDate: 'Hier' };
+   461→        }
+   462→        return { dateTag: 'hier', dateLabel: '⏳ À venir', displayDate: 'Hier' };
+   463→      } else if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) {
+   464→        // Demain
+   465→        return { dateTag: 'demain', dateLabel: '📅 Demain', displayDate: 'Demain' };
+   466→      }
+   467→      // Par défaut
+   468→      return { dateTag: 'aujourd\'hui', dateLabel: '⏳ À venir', displayDate: 'Aujourd\'hui' };
+   469→    };
+   470→
+   471→    // Enrichir chaque match avec le tag de date
+   472→    const finalMatches = filteredMatches.map(match => {
+   473→      const matchDate = new Date(match.date);
+   474→      const dateInfo = getDateTag(matchDate, match.isLive, match.isFinished);
+   475→      return {
+   476→        ...match,
+   477→        dateTag: dateInfo.dateTag,
+   478→        dateLabel: dateInfo.dateLabel,
+   479→        displayDate: dateInfo.displayDate,
+   480→      };
+   481→    });
+   482→
+   483→    // ⚠️ TOUJOURS mettre à jour le cache, même si vide
+   484→    espnCache = finalMatches;
+   485→    espnCacheTime = now;
+   486→    espnCacheDate = todayUTC; // 📅 Stocker en format UTC
+   487→    
+   488→    console.log(`📅 Date du cache (UTC): ${espnCacheDate}`);
+   489→    console.log(`✅ Total: ${finalMatches.length} matchs (ESPN: ${espnOddsCount}, Odds API: ${oddsApiFallbackCount}, Estimés: ${estimatedCount})`);
+   490→    
+   491→  } catch (error) {
+   492→    console.error('Erreur ESPN:', error);
+   493→  }
+   494→  
+   495→  return espnCache;
+   496→}
+   497→
+   498→/**
+   499→ * Estime les cotes basées sur le niveau des équipes
+   500→ */
+   501→function estimateOdds(homeTeam: string | undefined, awayTeam: string | undefined, type: 'home' | 'away'): number {
+   502→  // Équipes favorites connues - Clubs
+   503→  const topClubTeams = [
+   504→    // Football
+   505→    'Real Madrid', 'Barcelona', 'Manchester City', 'Liverpool', 'Bayern Munich', 'PSG', 'Paris Saint-Germain',
+   506→    'Chelsea', 'Arsenal', 'Inter', 'AC Milan', 'Juventus', 'Napoli', 'Borussia Dortmund', 'Atletico Madrid',
+   507→    'Tottenham', 'Manchester United', 'RB Leipzig', 'Benfica', 'Porto', 'Ajax',
+   508→    // NBA
+   509→    'Celtics', 'Lakers', 'Warriors', 'Nuggets', 'Bucks', 'Suns', 'Heat', '76ers',
+   510→    // NHL
+   511→    'Bruins', 'Rangers', 'Oilers', 'Avalanche', 'Hurricanes', 'Maple Leafs',
+   512→  ];
+   513→  
+   514→  // 🌍 Équipes nationales favorites
+   515→  const topNationalTeams = [
+   516→    // Europe - Top
+   517→    'France', 'England', 'Germany', 'Spain', 'Portugal', 'Netherlands', 'Italy', 'Belgium',
+   518→    // Europe - Niveau 2
+   519→    'Croatia', 'Switzerland', 'Denmark', 'Austria', 'Ukraine', 'Poland', 'Czech Republic', 'Czechia',
+   520→    'Turkey', 'Türkiye', 'Sweden', 'Norway', 'Serbia', 'Hungary', 'Scotland', 'Romania',
+   521→    // Amérique du Sud
+   522→    'Argentina', 'Brazil', 'Uruguay', 'Colombia', 'Chile', 'Ecuador',
+   523→    // Amérique du Nord
+   524→    'USA', 'Mexico', 'Canada',
+   525→    // Afrique
+   526→    'Morocco', 'Senegal', 'Egypt', 'Nigeria', 'Algeria', 'Ivory Coast',
+   527→    // Asie
+   528→    'Japan', 'South Korea', 'Australia', 'Iran',
+   529→  ];
+   530→  
+   531→  // Équipes faibles (pour ajuster les cotes)
+   532→  const weakNationalTeams = [
+   533→    'San Marino', 'Andorra', 'Liechtenstein', 'Faroe Islands', 'Gibraltar', 'Malta', 'Luxembourg',
+   534→    'Moldova', 'Kazakhstan', 'Cyprus', 'Belarus', 'Armenia', 'Azerbaijan', 'Latvia',
+   535→  ];
+   536→  
+   537→  const homeIsTopClub = homeTeam && topClubTeams.some(t => homeTeam.toLowerCase().includes(t.toLowerCase()));
+   538→  const awayIsTopClub = awayTeam && topClubTeams.some(t => awayTeam.toLowerCase().includes(t.toLowerCase()));
+   539→  const homeIsTopNational = homeTeam && topNationalTeams.some(t => homeTeam.toLowerCase().includes(t.toLowerCase()));
+   540→  const awayIsTopNational = awayTeam && topNationalTeams.some(t => awayTeam.toLowerCase().includes(t.toLowerCase()));
+   541→  const homeIsWeak = homeTeam && weakNationalTeams.some(t => homeTeam.toLowerCase().includes(t.toLowerCase()));
+   542→  const awayIsWeak = awayTeam && weakNationalTeams.some(t => awayTeam.toLowerCase().includes(t.toLowerCase()));
+   543→  
+   544→  // Ajustement spécial pour équipes nationales
+   545→  const homeIsTop = homeIsTopClub || homeIsTopNational;
+   546→  const awayIsTop = awayIsTopClub || awayIsTopNational;
+   547→  
+   548→  if (type === 'home') {
+   549→    // Équipe à domicile forte vs équipe faible
+   550→    if (homeIsTop && awayIsWeak) return 1.25;
+   551→    if (homeIsTop && !awayIsTop) return 1.65;
+   552→    if (!homeIsTop && awayIsWeak) return 1.80;
+   553→    if (!homeIsTop && awayIsTop) return 3.80;
+   554→    if (homeIsTop && awayIsTop) return 2.30;
+   555→    return 2.50;
+   556→  } else {
+   557→    // Équipe à l'extérieur forte vs équipe faible à domicile
+   558→    if (!homeIsTop && awayIsTop) return 1.75;
+   559→    if (homeIsWeak && awayIsTop) return 1.40;
+   560→    if (homeIsTop && !awayIsTop) return 4.50;
+   561→    if (homeIsTop && awayIsTop) return 3.00;
+   562→    return 2.80;
+   563→  }
+   564→}
+   565→
+   566→/**
+   567→ * Calcule les probabilités implicites depuis les cotes
+   568→ */
+   569→export function calculateImpliedProbabilities(oddsHome: number, oddsDraw: number | null, oddsAway: number): {
+   570→  home: number;
+   571→  draw: number;
+   572→  away: number;
+   573→  margin: number;
+   574→} {
+   575→  if (!oddsHome || !oddsAway || oddsHome <= 1 || oddsAway <= 1) {
+   576→    return { home: 33, draw: 34, away: 33, margin: 0 };
+   577→  }
+   578→  
+   579→  const homeProb = 1 / oddsHome;
+   580→  const awayProb = 1 / oddsAway;
+   581→  const drawProb = oddsDraw ? 1 / oddsDraw : 0.28;
+   582→  
+   583→  const total = homeProb + awayProb + drawProb;
+   584→  const margin = total - 1;
+   585→  
+   586→  return {
+   587→    home: Math.round((homeProb / total) * 100),
+   588→    draw: Math.round((drawProb / total) * 100),
+   589→    away: Math.round((awayProb / total) * 100),
+   590→    margin: Math.round(margin * 100),
+   591→  };
+   592→}
+   593→
+   594→/**
+   595→ * Détecte les value bets
+   596→ */
+   597→export function detectValueBets(
+   598→  oddsHome: number,
+   599→  oddsDraw: number | null,
+   600→  oddsAway: number,
+   601→  modelProbs: { home: number; draw: number; away: number }
+   602→): { detected: boolean; type: string | null; edge: number; explanation: string } {
+   603→  
+   604→  const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
+   605→  
+   606→  const homeEdge = modelProbs.home - impliedProbs.home;
+   607→  const awayEdge = modelProbs.away - impliedProbs.away;
+   608→  
+   609→  const threshold = 5;
+   610→  
+   611→  if (homeEdge > threshold) {
+   612→    return {
+   613→      detected: true,
+   614→      type: 'home',
+   615→      edge: homeEdge,
+   616→      explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}%)`,
+   617→    };
+   618→  }
+   619→  
+   620→  if (awayEdge > threshold) {
+   621→    return {
+   622→      detected: true,
+   623→      type: 'away',
+   624→      edge: awayEdge,
+   625→      explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}%)`,
+   626→    };
+   627→  }
+   628→  
+   629→  return { detected: false, type: null, edge: 0, explanation: 'Pas de value bet' };
+   630→}
+   631→
+   632→/**
+   633→ * Stats publiques
+   634→ */
+   635→export function getDataStats(): {
+   636→  matchesWithRealOdds: number;
+   637→  matchesWithEstimatedOdds: number;
+   638→  quotaRemaining: number;
+   639→  lastOddsUpdate: string;
+   640→} {
+   641→  const matchesWithOdds = espnCache.filter(m => m.hasRealOdds).length;
+   642→  
+   643→  return {
+   644→    matchesWithRealOdds: matchesWithOdds,
+   645→    matchesWithEstimatedOdds: espnCache.length - matchesWithOdds,
+   646→    quotaRemaining: 999, // ESPN est illimité
+   647→    lastOddsUpdate: new Date(espnCacheTime).toISOString(),
+   648→  };
+   649→}
+   650→
+   651→const combinedDataService = {
+   652→  getMatchesWithRealOdds,
+   653→  calculateImpliedProbabilities,
+   654→  detectValueBets,
+   655→  getDataStats,
+   656→};
+   657→
+   658→export default combinedDataService;
+   659→

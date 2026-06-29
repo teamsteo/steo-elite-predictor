@@ -1,0 +1,815 @@
+     1→/**
+     2→ * Service d'intégration multi-sources pour données sportives réelles
+     3→ * Sources: The Odds API + SportAPI7 (RapidAPI)
+     4→ * 
+     5→ * OPTIMISÉ: 15 matchs max/jour avec croisement des sources
+     6→ * Validation croisée pour données fiables uniquement
+     7→ */
+     8→
+     9→// Constantes de configuration
+    10→const MAX_MATCHES_PER_DAY = 20;
+    11→const CACHE_DURATION_MINUTES = 30;
+    12→const ODDS_TOLERANCE_PERCENT = 5; // Tolérance de 5% pour comparer les cotes
+    13→
+    14→// Types pour les données sportives
+    15→export interface RealMatch {
+    16→  id: string;
+    17→  homeTeam: string;
+    18→  awayTeam: string;
+    19→  sport: string;
+    20→  league?: string;
+    21→  date: Date;
+    22→  oddsHome: number;
+    23→  oddsDraw: number | null;
+    24→  oddsAway: number;
+    25→  status: 'upcoming' | 'live' | 'finished';
+    26→  homeScore?: number;
+    27→  awayScore?: number;
+    28→  bookmaker?: string;
+    29→  // Données enrichies
+    30→  reliabilityScore?: number; // 0-100%
+    31→  sources?: string[];
+    32→  homeInjuries?: number;
+    33→  awayInjuries?: number;
+    34→  homeForm?: string; // ex: "W-W-D-L-W"
+    35→  awayForm?: string;
+    36→}
+    37→
+    38→export interface ApiProvider {
+    39→  name: string;
+    40→  baseUrl: string;
+    41→  apiKey: string | undefined;
+    42→  host?: string;
+    43→  enabled: boolean;
+    44→}
+    45→
+    46→export interface CrossValidatedMatch {
+    47→  match: RealMatch;
+    48→  validation: {
+    49→    isCrossValidated: boolean;
+    50→    sourcesInAgreement: number;
+    51→    oddsDifference: number; // Différence moyenne en %
+    52→    reliabilityScore: number;
+    53→    warnings: string[];
+    54→  };
+    55→}
+    56→
+    57→// Sports prioritaires (dans l'ordre de préférence)
+    58→const PRIORITY_SPORTS = [
+    59→  'soccer_epl',           // Premier League
+    60→  'soccer_france_ligue_one',
+    61→  'soccer_germany_bundesliga',
+    62→  'soccer_italy_serie_a',
+    63→  'soccer_spain_la_liga',
+    64→  'soccer_uefa_champs_league',
+    65→  'basketball_nba',
+    66→  'icehockey_nhl',
+    67→  'soccer_germany_liga3',
+    68→  'soccer',
+    69→];
+    70→
+    71→// Ligues à requêter spécifiquement pour le croisement
+    72→const LEAGUES_TO_FETCH = [
+    73→  'soccer_epl',           // Premier League (croisement avec Football-Data)
+    74→  'soccer_spain_la_liga',
+    75→  'soccer_italy_serie_a', 
+    76→  'soccer_germany_bundesliga',
+    77→  'soccer_france_ligue_one',
+    78→];
+    79→
+    80→// Mapping des sports
+    81→const sportMapping: Record<string, string> = {
+    82→  'soccer': 'Foot',
+    83→  'soccer_france_ligue_one': 'Foot',
+    84→  'soccer_england_premier_league': 'Foot',
+    85→  'soccer_spain_la_liga': 'Foot',
+    86→  'soccer_italy_serie_a': 'Foot',
+    87→  'soccer_germany_bundesliga': 'Foot',
+    88→  'soccer_uefa_champs_league': 'Foot',
+    89→  'basketball': 'NBA',
+    90→  'basketball_nba': 'NBA',
+    91→  'ice_hockey': 'NHL',
+    92→  'icehockey_nhl': 'NHL',
+    93→  'icehockey_ahl': 'AHL',
+    94→  // SportAPI7 mappings
+    95→  'football': 'Foot',
+    96→  '1': 'Foot', // Championnat ID courant
+    97→  '2': 'Foot',
+    98→  '3': 'Foot',
+    99→};
+   100→
+   101→// Mapping des bookmakers (priorité aux FR)
+   102→const bookmakerPriority = [
+   103→  'betclic',
+   104→  'winamax',
+   105→  'parionssport',
+   106→  'pmu',
+   107→  'unibet',
+   108→  'bwin',
+   109→  'bet365',
+   110→  'pinnacle',
+   111→];
+   112→
+   113→// Configuration des providers
+   114→function getProviders(): ApiProvider[] {
+   115→  return [
+   116→    {
+   117→      name: 'the-odds-api',
+   118→      baseUrl: 'https://api.the-odds-api.com/v4',
+   119→      apiKey: process.env.THE_ODDS_API_KEY,
+   120→      enabled: !!process.env.THE_ODDS_API_KEY,
+   121→    },
+   122→    {
+   123→      name: 'sportapi7',
+   124→      baseUrl: 'https://sportapi7.p.rapidapi.com/api/v1',
+   125→      apiKey: process.env.RAPIDAPI_KEY,
+   126→      host: process.env.RAPIDAPI_HOST || 'sportapi7.p.rapidapi.com',
+   127→      enabled: !!process.env.RAPIDAPI_KEY,
+   128→    },
+   129→    {
+   130→      name: 'football-data',
+   131→      baseUrl: 'https://api.football-data.org/v4',
+   132→      apiKey: process.env.FOOTBALL_DATA_API_KEY,
+   133→      enabled: !!process.env.FOOTBALL_DATA_API_KEY,
+   134→    },
+   135→    {
+   136→      name: 'api-sports',
+   137→      baseUrl: 'https://v3.football.api-sports.io',
+   138→      apiKey: process.env.API_SPORTS_KEY,
+   139→      enabled: !!process.env.API_SPORTS_KEY,
+   140→    },
+   141→  ];
+   142→}
+   143→
+   144→// Cache simple en mémoire
+   145→let cachedMatches: CrossValidatedMatch[] = [];
+   146→let lastFetchTime = 0;
+   147→
+   148→/**
+   149→ * SOURCE 1: Récupère les matchs depuis The Odds API
+   150→ * Priorité aux ligues populaires pour le croisement
+   151→ */
+   152→async function fetchFromOddsApi(): Promise<RealMatch[]> {
+   153→  const providers = getProviders();
+   154→  const provider = providers.find(p => p.name === 'the-odds-api');
+   155→  
+   156→  if (!provider?.enabled || !provider.apiKey) {
+   157→    console.log('⚠️ The Odds API non configurée');
+   158→    return [];
+   159→  }
+   160→
+   161→  try {
+   162→    const allMatches: RealMatch[] = [];
+   163→    
+   164→    // D'abord, récupérer les ligues prioritaires (pour croisement)
+   165→    for (const sportKey of LEAGUES_TO_FETCH) {
+   166→      try {
+   167→        const response = await fetch(
+   168→          `${provider.baseUrl}/sports/${sportKey}/odds/?apiKey=${provider.apiKey}&regions=uk,eu&markets=h2h&oddsFormat=decimal&dateFormat=iso`,
+   169→          {
+   170→            next: { revalidate: CACHE_DURATION_MINUTES * 60 },
+   171→          }
+   172→        );
+   173→
+   174→        if (response.ok) {
+   175→          const data = await response.json();
+   176→          const matches = data.map((match: any) => {
+   177→            const bestBookmaker = findBestBookmaker(match.bookmakers);
+   178→            const odds = extractOdds(bestBookmaker?.markets, match.home_team, match.away_team);
+   179→
+   180→            return {
+   181→              id: match.id,
+   182→              homeTeam: match.home_team,
+   183→              awayTeam: match.away_team,
+   184→              sport: 'Foot',
+   185→              league: match.sport_title,
+   186→              date: new Date(match.commence_time),
+   187→              oddsHome: odds?.home || 0,
+   188→              oddsDraw: odds?.draw || null,
+   189→              oddsAway: odds?.away || 0,
+   190→              status: 'upcoming' as const,
+   191→              bookmaker: bestBookmaker?.title,
+   192→              sources: ['the-odds-api'],
+   193→            };
+   194→          }).filter((m: RealMatch) => m.oddsHome > 0 && m.oddsAway > 0);
+   195→          
+   196→          allMatches.push(...matches);
+   197→          console.log(`  📌 ${sportKey}: ${matches.length} matchs`);
+   198→          
+   199→          if (allMatches.length >= MAX_MATCHES_PER_DAY) break;
+   200→        }
+   201→      } catch (e) {
+   202→        console.log(`  ⚠️ ${sportKey}: erreur`);
+   203→      }
+   204→    }
+   205→    
+   206→    // Si pas assez de matchs, récupérer tous les sports
+   207→    if (allMatches.length < MAX_MATCHES_PER_DAY) {
+   208→      const response = await fetch(
+   209→        `${provider.baseUrl}/sports/upcoming/odds/?apiKey=${provider.apiKey}&regions=fr,eu&markets=h2h&oddsFormat=decimal&dateFormat=iso`,
+   210→        {
+   211→          next: { revalidate: CACHE_DURATION_MINUTES * 60 },
+   212→        }
+   213→      );
+   214→
+   215→      if (response.ok) {
+   216→        const data = await response.json();
+   217→        
+   218→        const additionalMatches = data
+   219→          .filter((match: any) => !allMatches.some(m => 
+   220→            m.homeTeam === match.home_team && m.awayTeam === match.away_team
+   221→          ))
+   222→          .map((match: any) => {
+   223→            const bestBookmaker = findBestBookmaker(match.bookmakers);
+   224→            const odds = extractOdds(bestBookmaker?.markets, match.home_team, match.away_team);
+   225→
+   226→            return {
+   227→              id: match.id,
+   228→              homeTeam: match.home_team,
+   229→              awayTeam: match.away_team,
+   230→              sport: sportMapping[match.sport_key] || 'Foot',
+   231→              league: match.sport_title,
+   232→              date: new Date(match.commence_time),
+   233→              oddsHome: odds?.home || 0,
+   234→              oddsDraw: odds?.draw || null,
+   235→              oddsAway: odds?.away || 0,
+   236→              status: 'upcoming' as const,
+   237→              bookmaker: bestBookmaker?.title,
+   238→              sources: ['the-odds-api'],
+   239→            };
+   240→          })
+   241→          .filter((m: RealMatch) => m.oddsHome > 0 && m.oddsAway > 0);
+   242→
+   243→        allMatches.push(...additionalMatches);
+   244→      }
+   245→    }
+   246→
+   247→    console.log(`✅ The Odds API: ${allMatches.length} matchs`);
+   248→    return allMatches.slice(0, MAX_MATCHES_PER_DAY);
+   249→  } catch (error) {
+   250→    console.error('Erreur The Odds API:', error);
+   251→    return [];
+   252→  }
+   253→}
+   254→
+   255→/**
+   256→ * SOURCE 2: Récupère les matchs depuis SportAPI7 (RapidAPI)
+   257→ */
+   258→async function fetchFromSportApi7(): Promise<RealMatch[]> {
+   259→  const providers = getProviders();
+   260→  const provider = providers.find(p => p.name === 'sportapi7');
+   261→  
+   262→  if (!provider?.enabled || !provider.apiKey) {
+   263→    console.log('⚠️ SportAPI7 non configurée');
+   264→    return [];
+   265→  }
+   266→
+   267→  try {
+   268→    // Essayer l'endpoint live
+   269→    const response = await fetch(
+   270→      `${provider.baseUrl}/football/live`,
+   271→      {
+   272→        headers: {
+   273→          'x-rapidapi-key': provider.apiKey,
+   274→          'x-rapidapi-host': provider.host || 'sportapi7.p.rapidapi.com',
+   275→        },
+   276→        next: { revalidate: CACHE_DURATION_MINUTES * 60 },
+   277→      }
+   278→    );
+   279→
+   280→    if (!response.ok) {
+   281→      // Si pas d'abonnement, essayer football-data.org
+   282→      console.log(`⚠️ SportAPI7: Status ${response.status} - Essai Football-Data.org`);
+   283→      return await fetchFromFootballData();
+   284→    }
+   285→
+   286→    const data = await response.json();
+   287→    const matches = parseSportApi7Data(data);
+   288→    
+   289→    console.log(`✅ SportAPI7: ${matches.length} matchs`);
+   290→    return matches;
+   291→  } catch (error) {
+   292→    console.error('Erreur SportAPI7:', error);
+   293→    // Fallback vers Football-Data
+   294→    return await fetchFromFootballData();
+   295→  }
+   296→}
+   297→
+   298→/**
+   299→ * SOURCE 3: Récupère les matchs depuis Football-Data.org (gratuit)
+   300→ * Note: Le plan gratuit ne fournit pas de cotes, mais permet de confirmer les matchs
+   301→ */
+   302→async function fetchFromFootballData(): Promise<RealMatch[]> {
+   303→  const providers = getProviders();
+   304→  const provider = providers.find(p => p.name === 'football-data');
+   305→  
+   306→  if (!provider?.enabled || !provider.apiKey) {
+   307→    console.log('⚠️ Football-Data non configurée');
+   308→    return [];
+   309→  }
+   310→
+   311→  try {
+   312→    const today = new Date();
+   313→    const dateFrom = today.toISOString().split('T')[0];
+   314→    const dateTo = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+   315→
+   316→    const response = await fetch(
+   317→      `${provider.baseUrl}/matches?competitions=PL,PD,BL1,SA,FL1,CL&dateFrom=${dateFrom}&dateTo=${dateTo}`,
+   318→      {
+   319→        headers: {
+   320→          'X-Auth-Token': provider.apiKey,
+   321→        },
+   322→        next: { revalidate: CACHE_DURATION_MINUTES * 60 },
+   323→      }
+   324→    );
+   325→
+   326→    if (!response.ok) {
+   327→      throw new Error(`Football-Data error: ${response.status}`);
+   328→    }
+   329→
+   330→    const data = await response.json();
+   331→    
+   332→    if (!data.matches || !Array.isArray(data.matches)) {
+   333→      return [];
+   334→    }
+   335→
+   336→    // Garder les matchs même sans cotes (pour validation croisée)
+   337→    const matches = data.matches
+   338→      .slice(0, MAX_MATCHES_PER_DAY * 2)
+   339→      .map((match: any) => ({
+   340→        id: `fd-${match.id}`,
+   341→        homeTeam: match.homeTeam?.name || match.homeTeam,
+   342→        awayTeam: match.awayTeam?.name || match.awayTeam,
+   343→        sport: 'Foot',
+   344→        league: match.competition?.name,
+   345→        date: new Date(match.utcDate),
+   346→        // Les cotes ne sont pas disponibles dans le plan gratuit
+   347→        oddsHome: 0,
+   348→        oddsDraw: null,
+   349→        oddsAway: 0,
+   350→        status: match.status === 'IN_PLAY' ? 'live' : 'upcoming',
+   351→        sources: ['football-data'],
+   352→      }))
+   353→      .filter((m: RealMatch) => m.homeTeam && m.awayTeam);
+   354→
+   355→    console.log(`✅ Football-Data: ${matches.length} matchs (pour validation croisée)`);
+   356→    return matches;
+   357→  } catch (error) {
+   358→    console.error('Erreur Football-Data:', error);
+   359→    return [];
+   360→  }
+   361→}
+   362→
+   363→/**
+   364→ * SOURCE 4: Récupère les matchs depuis API-Sports
+   365→ */
+   366→async function fetchFromApiSports(): Promise<RealMatch[]> {
+   367→  const providers = getProviders();
+   368→  const provider = providers.find(p => p.name === 'api-sports');
+   369→  
+   370→  if (!provider?.enabled || !provider.apiKey) {
+   371→    return [];
+   372→  }
+   373→
+   374→  try {
+   375→    const today = new Date().toISOString().split('T')[0];
+   376→    
+   377→    const response = await fetch(
+   378→      `${provider.baseUrl}/fixtures?date=${today}`,
+   379→      {
+   380→        headers: {
+   381→          'x-apisports-key': provider.apiKey,
+   382→        },
+   383→        next: { revalidate: CACHE_DURATION_MINUTES * 60 },
+   384→      }
+   385→    );
+   386→
+   387→    if (!response.ok) {
+   388→      throw new Error(`API-Sports error: ${response.status}`);
+   389→    }
+   390→
+   391→    const data = await response.json();
+   392→    
+   393→    if (!data.response || !Array.isArray(data.response)) {
+   394→      return [];
+   395→    }
+   396→
+   397→    return data.response
+   398→      .slice(0, MAX_MATCHES_PER_DAY)
+   399→      .map((fixture: any) => ({
+   400→        id: `as-${fixture.fixture?.id}`,
+   401→        homeTeam: fixture.teams?.home?.name,
+   402→        awayTeam: fixture.teams?.away?.name,
+   403→        sport: 'Foot',
+   404→        league: fixture.league?.name,
+   405→        date: new Date(fixture.fixture?.date),
+   406→        oddsHome: fixture.bookmakers?.[0]?.bets?.[0]?.values?.[0]?.odd || 0,
+   407→        oddsDraw: fixture.bookmakers?.[0]?.bets?.[0]?.values?.[1]?.odd || null,
+   408→        oddsAway: fixture.bookmakers?.[0]?.bets?.[0]?.values?.[2]?.odd || 0,
+   409→        status: fixture.fixture?.status?.short === 'LIVE' ? 'live' : 'upcoming',
+   410→        sources: ['api-sports'],
+   411→      }))
+   412→      .filter((m: RealMatch) => m.homeTeam && m.awayTeam);
+   413→  } catch (error) {
+   414→    console.error('Erreur API-Sports:', error);
+   415→    return [];
+   416→  }
+   417→}
+   418→
+   419→/**
+   420→ * Parse les données SportAPI7 vers notre format
+   421→ */
+   422→function parseSportApi7Data(data: any): RealMatch[] {
+   423→  if (!data || !Array.isArray(data.events) && !Array.isArray(data)) {
+   424→    return [];
+   425→  }
+   426→
+   427→  const events = data.events || data;
+   428→  
+   429→  return events
+   430→    .slice(0, MAX_MATCHES_PER_DAY)
+   431→    .map((event: any) => {
+   432→      // Extraire les cotes si disponibles
+   433→      const odds = event.odds || event.betOdds || {};
+   434→      const homeOdds = odds.home || odds['1'] || event.homeTeam?.odds || 0;
+   435→      const drawOdds = odds.draw || odds['X'] || odds['N'] || null;
+   436→      const awayOdds = odds.away || odds['2'] || event.awayTeam?.odds || 0;
+   437→
+   438→      return {
+   439→        id: event.id || event.matchId || `sport7-${Date.now()}-${Math.random()}`,
+   440→        homeTeam: event.homeTeam?.name || event.home || event.homeTeam,
+   441→        awayTeam: event.awayTeam?.name || event.away || event.awayTeam,
+   442→        sport: 'Foot',
+   443→        league: event.league?.name || event.tournament?.name,
+   444→        date: new Date(event.startTime || event.date || event.kickoff),
+   445→        oddsHome: typeof homeOdds === 'number' ? homeOdds : parseFloat(homeOdds) || 0,
+   446→        oddsDraw: drawOdds ? (typeof drawOdds === 'number' ? drawOdds : parseFloat(drawOdds)) : null,
+   447→        oddsAway: typeof awayOdds === 'number' ? awayOdds : parseFloat(awayOdds) || 0,
+   448→        status: event.status || 'upcoming',
+   449→        homeScore: event.homeScore,
+   450→        awayScore: event.awayScore,
+   451→        sources: ['sportapi7'],
+   452→      };
+   453→    })
+   454→    .filter((m: RealMatch) => m.oddsHome > 0 && m.oddsAway > 0 && m.homeTeam && m.awayTeam);
+   455→}
+   456→
+   457→/**
+   458→ * CROISEMENT: Valide et fusionne les données des deux sources
+   459→ * Amélioré: Supporte la validation sans cotes (confirmation d'existence)
+   460→ */
+   461→function crossValidateMatches(
+   462→  oddsApiMatches: RealMatch[],
+   463→  sportApiMatches: RealMatch[]
+   464→): CrossValidatedMatch[] {
+   465→  const result: CrossValidatedMatch[] = [];
+   466→  const processedIds = new Set<string>();
+   467→
+   468→  // Fonction pour normaliser le nom d'équipe (plus permissive)
+   469→  const normalizeTeamName = (name: string): string => {
+   470→    return name
+   471→      .toLowerCase()
+   472→      .replace(/[^a-z0-9]/g, '')
+   473→      .replace(/fc|afc|united|city|wanderers|hotspur|albion|athletic|footballclub/g, '')
+   474→      .substring(0, 6); // Premiers caractères pour matching
+   475→  };
+   476→
+   477→  // Fonction pour calculer la similarité des noms (plus permissive)
+   478→  const areTeamsMatching = (team1: string, team2: string): boolean => {
+   479→    const n1 = normalizeTeamName(team1);
+   480→    const n2 = normalizeTeamName(team2);
+   481→    const t1 = team1.toLowerCase();
+   482→    const t2 = team2.toLowerCase();
+   483→    
+   484→    // Matching direct
+   485→    if (n1 === n2) return true;
+   486→    
+   487→    // Matching par inclusion
+   488→    if (t1.includes(t2) || t2.includes(t1)) return true;
+   489→    
+   490→    // Matching par mots clés
+   491→    const words1 = t1.split(/[\s-]+/).filter(w => w.length > 2);
+   492→    const words2 = t2.split(/[\s-]+/).filter(w => w.length > 2);
+   493→    const commonWords = words1.filter(w => words2.includes(w));
+   494→    if (commonWords.length > 0) return true;
+   495→    
+   496→    return false;
+   497→  };
+   498→
+   499→  // Fonction pour comparer les cotes
+   500→  const compareOdds = (odds1: number, odds2: number): number => {
+   501→    if (odds1 === 0 || odds2 === 0) return 100;
+   502→    return Math.abs((odds1 - odds2) / odds1 * 100);
+   503→  };
+   504→
+   505→  // Traiter les matchs de The Odds API
+   506→  for (const oddsMatch of oddsApiMatches) {
+   507→    const matchId = `${oddsMatch.homeTeam}-${oddsMatch.awayTeam}`;
+   508→    if (processedIds.has(matchId)) continue;
+   509→
+   510→    // Chercher un match correspondant dans SportAPI7/Football-Data
+   511→    const correspondingMatch = sportApiMatches.find(sportMatch => {
+   512→      const homeMatch = areTeamsMatching(oddsMatch.homeTeam, sportMatch.homeTeam);
+   513→      const awayMatch = areTeamsMatching(oddsMatch.awayTeam, sportMatch.awayTeam);
+   514→      const dateMatch = Math.abs(new Date(oddsMatch.date).getTime() - new Date(sportMatch.date).getTime()) < 86400000; // 24h de tolérance
+   515→      
+   516→      return homeMatch && awayMatch && dateMatch;
+   517→    });
+   518→
+   519→    const warnings: string[] = [];
+   520→    let reliabilityScore = 50;
+   521→    let sourcesInAgreement = 1;
+   522→
+   523→    if (correspondingMatch) {
+   524→      // Match trouvé dans les deux sources - VALIDATION CROISÉE
+   525→      sourcesInAgreement = 2;
+   526→      
+   527→      // Vérifier si on a des cotes à comparer
+   528→      const hasOddsInSecondSource = correspondingMatch.oddsHome > 0 && correspondingMatch.oddsAway > 0;
+   529→      
+   530→      if (hasOddsInSecondSource) {
+   531→        // Comparer les cotes
+   532→        const homeDiff = compareOdds(oddsMatch.oddsHome, correspondingMatch.oddsHome);
+   533→        const awayDiff = compareOdds(oddsMatch.oddsAway, correspondingMatch.oddsAway);
+   534→        const avgDiff = (homeDiff + awayDiff) / 2;
+   535→
+   536→        if (avgDiff <= ODDS_TOLERANCE_PERCENT) {
+   537→          reliabilityScore = 95 - avgDiff;
+   538→        } else if (avgDiff <= 15) {
+   539→          reliabilityScore = 80 - avgDiff;
+   540→          warnings.push(`Écart de cotes: ${avgDiff.toFixed(1)}%`);
+   541→        } else {
+   542→          reliabilityScore = 65;
+   543→          warnings.push(`Écart important de cotes: ${avgDiff.toFixed(1)}%`);
+   544→        }
+   545→      } else {
+   546→        // Pas de cotes dans la deuxième source, mais match confirmé
+   547→        reliabilityScore = 75;
+   548→        warnings.push('Match confirmé par 2 sources (cotes non disponibles dans la 2ème source)');
+   549→      }
+   550→
+   551→      // Déterminer les sources
+   552→      const sourceList = ['the-odds-api'];
+   553→      if (correspondingMatch.sources?.includes('football-data')) {
+   554→        sourceList.push('football-data');
+   555→      } else if (correspondingMatch.sources?.includes('sportapi7')) {
+   556→        sourceList.push('sportapi7');
+   557→      } else {
+   558→        sourceList.push('secondary-api');
+   559→      }
+   560→
+   561→      // Fusionner les données
+   562→      const fusedMatch: RealMatch = {
+   563→        ...oddsMatch,
+   564→        sources: sourceList,
+   565→        reliabilityScore,
+   566→        league: correspondingMatch.league || oddsMatch.league, // Garder la ligue si disponible
+   567→      };
+   568→
+   569→      result.push({
+   570→        match: fusedMatch,
+   571→        validation: {
+   572→          isCrossValidated: true,
+   573→          sourcesInAgreement,
+   574→          oddsDifference: 0,
+   575→          reliabilityScore,
+   576→          warnings,
+   577→        },
+   578→      });
+   579→
+   580→      processedIds.add(matchId);
+   581→    } else {
+   582→      // Match uniquement dans The Odds API
+   583→      warnings.push('Match validé par une seule source (The Odds API)');
+   584→      
+   585→      result.push({
+   586→        match: { ...oddsMatch, reliabilityScore: 50, sources: ['the-odds-api'] },
+   587→        validation: {
+   588→          isCrossValidated: false,
+   589→          sourcesInAgreement: 1,
+   590→          oddsDifference: 0,
+   591→          reliabilityScore: 50,
+   592→          warnings,
+   593→        },
+   594→      });
+   595→
+   596→      processedIds.add(matchId);
+   597→    }
+   598→  }
+   599→
+   600→  // Ajouter les matchs uniquement dans la source secondaire (non trouvés dans Odds API)
+   601→  for (const sportMatch of sportApiMatches) {
+   602→    const matchId = `${sportMatch.homeTeam}-${sportMatch.awayTeam}`;
+   603→    if (processedIds.has(matchId)) continue;
+   604→    
+   605→    // Ne pas ajouter les matchs sans cotes
+   606→    if (sportMatch.oddsHome === 0 || sportMatch.oddsAway === 0) continue;
+   607→
+   608→    result.push({
+   609→      match: { ...sportMatch, reliabilityScore: 40, sources: sportMatch.sources || ['secondary-api'] },
+   610→      validation: {
+   611→        isCrossValidated: false,
+   612→        sourcesInAgreement: 1,
+   613→        oddsDifference: 0,
+   614→        reliabilityScore: 40,
+   615→        warnings: ['Match validé par une seule source secondaire'],
+   616→      },
+   617→    });
+   618→
+   619→    processedIds.add(matchId);
+   620→  }
+   621→
+   622→  // Trier par score de fiabilité décroissant
+   623→  result.sort((a, b) => b.validation.reliabilityScore - a.validation.reliabilityScore);
+   624→
+   625→  // Limiter au nombre max de matchs
+   626→  return result.slice(0, MAX_MATCHES_PER_DAY);
+   627→}
+   628→
+   629→/**
+   630→ * Trouve le meilleur bookmaker disponible (priorité FR)
+   631→ */
+   632→function findBestBookmaker(bookmakers: any[]): any | null {
+   633→  if (!bookmakers || bookmakers.length === 0) return null;
+   634→
+   635→  for (const preferred of bookmakerPriority) {
+   636→    const found = bookmakers.find(b => 
+   637→      b.key?.toLowerCase().includes(preferred) || 
+   638→      b.title?.toLowerCase().includes(preferred)
+   639→    );
+   640→    if (found) return found;
+   641→  }
+   642→
+   643→  return bookmakers[0];
+   644→}
+   645→
+   646→/**
+   647→ * Extrait les cotes depuis les marchés
+   648→ */
+   649→function extractOdds(markets: any[], homeTeam?: string, awayTeam?: string): { home: number; draw: number | null; away: number } | null {
+   650→  if (!markets || markets.length === 0) return null;
+   651→
+   652→  const h2h = markets.find(m => m.key === 'h2h');
+   653→  if (!h2h || !h2h.outcomes) return null;
+   654→
+   655→  let home: number | undefined, draw: number | undefined, away: number | undefined;
+   656→  
+   657→  for (const outcome of h2h.outcomes) {
+   658→    const name = outcome.name?.toLowerCase() || '';
+   659→    if (name === 'draw' || name === 'x' || name === 'nul') {
+   660→      draw = outcome.price;
+   661→    } else if (homeTeam && name.includes(homeTeam.toLowerCase().split(' ')[0])) {
+   662→      home = outcome.price;
+   663→    } else if (awayTeam && name.includes(awayTeam.toLowerCase().split(' ')[0])) {
+   664→      away = outcome.price;
+   665→    } else if (!home) {
+   666→      home = outcome.price;
+   667→    } else if (!away) {
+   668→      away = outcome.price;
+   669→    }
+   670→  }
+   671→
+   672→  if (!home || !away) return null;
+   673→
+   674→  return {
+   675→    home: typeof home === 'number' ? home : parseFloat(home),
+   676→    draw: draw ? (typeof draw === 'number' ? draw : parseFloat(draw)) : null,
+   677→    away: typeof away === 'number' ? away : parseFloat(away),
+   678→  };
+   679→}
+   680→
+   681→/**
+   682→ * Fonction principale pour récupérer toutes les données (avec cache)
+   683→ */
+   684→export async function fetchAllRealMatches(): Promise<RealMatch[]> {
+   685→  const providers = getProviders();
+   686→  const enabledProviders = providers.filter(p => p.enabled);
+   687→
+   688→  if (enabledProviders.length === 0) {
+   689→    console.log('⚠️ Aucune API configurée');
+   690→    return [];
+   691→  }
+   692→
+   693→  // Vérifier le cache
+   694→  const now = Date.now();
+   695→  if (cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_DURATION_MINUTES * 60 * 1000) {
+   696→    console.log('📦 Utilisation du cache');
+   697→    return cachedMatches.map(cm => cm.match);
+   698→  }
+   699→
+   700→  // Récupérer les données de toutes les sources en parallèle
+   701→  const [oddsApiMatches, sportApiMatches, footballDataMatches] = await Promise.all([
+   702→    fetchFromOddsApi(),
+   703→    fetchFromSportApi7(),
+   704→    fetchFromFootballData(),
+   705→  ]);
+   706→
+   707→  // Combiner les sources secondaires pour le croisement
+   708→  const secondaryMatches = [...sportApiMatches, ...footballDataMatches];
+   709→
+   710→  // Croiser et valider les données
+   711→  const validatedMatches = crossValidateMatches(oddsApiMatches, secondaryMatches);
+   712→
+   713→  // Mettre à jour le cache
+   714→  cachedMatches = validatedMatches;
+   715→  lastFetchTime = now;
+   716→
+   717→  // Statistiques
+   718→  const crossValidated = validatedMatches.filter(cm => cm.validation.isCrossValidated).length;
+   719→  const avgReliability = validatedMatches.reduce((sum, cm) => sum + cm.validation.reliabilityScore, 0) / validatedMatches.length;
+   720→
+   721→  console.log(`✅ ${validatedMatches.length} matchs validés (${crossValidated} croisés, fiabilité moyenne: ${avgReliability.toFixed(0)}%)`);
+   722→  
+   723→  return validatedMatches.map(cm => cm.match);
+   724→}
+   725→
+   726→/**
+   727→ * Récupère les matchs avec détails de validation
+   728→ */
+   729→export async function fetchMatchesWithValidation(): Promise<CrossValidatedMatch[]> {
+   730→  const providers = getProviders();
+   731→  const enabledProviders = providers.filter(p => p.enabled);
+   732→
+   733→  if (enabledProviders.length === 0) {
+   734→    return [];
+   735→  }
+   736→
+   737→  const now = Date.now();
+   738→  if (cachedMatches.length > 0 && (now - lastFetchTime) < CACHE_DURATION_MINUTES * 60 * 1000) {
+   739→    return cachedMatches;
+   740→  }
+   741→
+   742→  // Récupérer les données de toutes les sources en parallèle
+   743→  const [oddsApiMatches, sportApiMatches, footballDataMatches] = await Promise.all([
+   744→    fetchFromOddsApi(),
+   745→    fetchFromSportApi7(),
+   746→    fetchFromFootballData(),
+   747→  ]);
+   748→
+   749→  // Combiner les sources secondaires pour le croisement
+   750→  const secondaryMatches = [...sportApiMatches, ...footballDataMatches];
+   751→
+   752→  const validatedMatches = crossValidateMatches(oddsApiMatches, secondaryMatches);
+   753→
+   754→  cachedMatches = validatedMatches;
+   755→  lastFetchTime = now;
+   756→
+   757→  return validatedMatches;
+   758→}
+   759→
+   760→/**
+   761→ * Force le rafraîchissement des données
+   762→ */
+   763→export async function forceRefresh(): Promise<RealMatch[]> {
+   764→  cachedMatches = [];
+   765→  lastFetchTime = 0;
+   766→  return fetchAllRealMatches();
+   767→}
+   768→
+   769→/**
+   770→ * Vérifie si les APIs sont configurées
+   771→ */
+   772→export function getApiStatus(): { provider: string; enabled: boolean }[] {
+   773→  return getProviders().map(p => ({
+   774→    provider: p.name,
+   775→    enabled: p.enabled,
+   776→  }));
+   777→}
+   778→
+   779→/**
+   780→ * Retourne les statistiques du quota
+   781→ */
+   782→export function getQuotaInfo() {
+   783→  return {
+   784→    maxMatchesPerDay: MAX_MATCHES_PER_DAY,
+   785→    cacheDurationMinutes: CACHE_DURATION_MINUTES,
+   786→    monthlyQuota: 500,
+   787→    estimatedDailyUsage: 2, // 2 requêtes par refresh (1 par source)
+   788→    daysPossible: 250, // ~8 mois avec 2 req/jour
+   789→    sources: getProviders().filter(p => p.enabled).map(p => p.name),
+   790→  };
+   791→}
+   792→
+   793→/**
+   794→ * Génère un résumé des cotes pour l'affichage
+   795→ */
+   796→export function formatOddsForDisplay(match: RealMatch): string {
+   797→  const parts = [match.oddsHome?.toFixed(2) || '0.00'];
+   798→  if (match.oddsDraw != null && typeof match.oddsDraw === 'number') {
+   799→    parts.push(match.oddsDraw.toFixed(2));
+   800→  }
+   801→  parts.push(match.oddsAway?.toFixed(2) || '0.00');
+   802→  return parts.join(' | ');
+   803→}
+   804→
+   805→const sportsApiService = {
+   806→  fetchAllRealMatches,
+   807→  fetchMatchesWithValidation,
+   808→  forceRefresh,
+   809→  getApiStatus,
+   810→  getQuotaInfo,
+   811→  formatOddsForDisplay,
+   812→};
+   813→
+   814→export default sportsApiService;
+   815→
