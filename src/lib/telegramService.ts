@@ -65,6 +65,72 @@ function createProgressBar(percentage: number, length: number = 10): string {
   return '█'.repeat(filled) + '░'.repeat(empty);
 }
 
+// ============================================
+// PRÉDICTION DE BUTS (Football - Poisson)
+// ============================================
+
+interface GoalsPrediction {
+  total: number;
+  over25: number;
+  under25: number;
+  over15: number;
+  bothTeamsScore: number;
+  prediction: string;
+  basedOn: 'real' | 'estimated';
+}
+
+/**
+ * Calcule une prédiction de buts à partir des cotes (modèle de Poisson).
+ * Retourne null si les cotes ne sont pas assez fiables.
+ */
+function calculateGoalsPrediction(
+  oddsHome: number,
+  oddsAway: number,
+  oddsDraw?: number | null,
+  isEstimated?: boolean
+): GoalsPrediction | null {
+  if (!oddsHome || !oddsAway || oddsHome <= 1 || oddsAway <= 1) return null;
+  if (isEstimated) return null;
+
+  const probHome = 1 / oddsHome;
+  const probAway = 1 / oddsAway;
+  const probDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : 0.25;
+  const totalImplied = probHome + probAway + probDraw;
+  const normHome = probHome / totalImplied;
+  const normAway = probAway / totalImplied;
+
+  const oddsRatio = Math.max(oddsHome, oddsAway) / Math.min(oddsHome, oddsAway);
+  let expectedGoals = 2.6;
+  if (oddsRatio > 3) expectedGoals = 2.3;
+  else if (oddsRatio < 1.5) expectedGoals = 2.9;
+  if (oddsDraw && oddsDraw < 3.0) expectedGoals *= 0.9;
+
+  const p0 = Math.exp(-expectedGoals);
+  const p01 = p0 * (1 + expectedGoals);
+  const p012 = p01 + (p0 * (expectedGoals * expectedGoals) / 2);
+
+  const over15 = Math.round((1 - p01) * 100);
+  const over25 = Math.round((1 - p012) * 100);
+  const btts = Math.min(85, Math.round((normHome + normAway) * 40 + (1 - Math.abs(normHome - normAway)) * 30));
+
+  let prediction = '';
+  if (over25 >= 55) prediction = 'Over 2.5 buts';
+  else if (over25 <= 42) prediction = 'Under 2.5 buts';
+  else if (btts >= 58) prediction = 'Les deux marquent';
+  else if (over15 >= 65) prediction = 'Over 1.5 buts';
+  else prediction = 'Match serré';
+
+  return {
+    total: Math.round(expectedGoals * 10) / 10,
+    over25,
+    under25: 100 - over25,
+    over15,
+    bothTeamsScore: btts,
+    prediction,
+    basedOn: 'estimated'
+  };
+}
+
 /**
  * Formate la date et l'heure pour l'affichage
  */
@@ -329,6 +395,7 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   oddsHome?: number;
   oddsAway?: number;
   oddsDraw?: number | null;
+  isEstimated?: boolean;
 }>): Promise<boolean> {
   // Filtrer safe et modéré
   const filtered = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
@@ -345,11 +412,13 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
     });
 
     let message = '';
-    message += '╔════════════════════════╗\n';
-    message += `║  📢 <b>PRONOSTICS DU JOUR</b>  ║\n`;
-    message += '╚════════════════════════╝\n\n';
+    message += '╔═════════════════════════════╗\n';
+    message += '║\n';
+    message += '║   📢 <b>PRONOSTICS DU JOUR</b>\n';
+    message += '║\n';
+    message += '╚═════════════════════════════╝\n\n';
 
-    message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
+    message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
 
     message += `⚠️ <b>AUCUN PRONOSTIC SAFE/MODÉRÉ</b>\n\n`;
     message += `📊 <b>${predictions.length} match${predictions.length > 1 ? 's' : ''} analysé${predictions.length > 1 ? 's' : ''}</b>\n`;
@@ -359,55 +428,65 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
 
     // Afficher DIRECTEMENT les matchs Kamikaze disponibles
     if (kamikazePicks.length > 0) {
-      message += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `💣 <b>SÉLECTION KAMIKAZE</b>\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
-      message += `🔥 <b>${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''}</b>\n\n`;
+      message += '───────────────────────────\n';
+      message += `💣 <b>SÉLECTION KAMIKAZE</b> — ${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''}\n`;
+      message += '───────────────────────────\n\n';
+      message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n\n`;
 
       kamikazePicks.slice(0, 5).forEach((m, i) => {
-        const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
         const { time } = formatDateTime(m.date, m.displayDate);
+        const isFootball = m.sport?.toLowerCase().includes('foot') || m.sport?.toLowerCase() === 'soccer';
         const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
-        const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
-
-        // Option de pari
         const betOption = getBetOption(m.predictedResult, m.sport);
+        const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
 
-        message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
-        message += `${sportEmoji} ${m.sport}`;
-        if (m.league) message += ` | ${m.league}`;
-        message += `\n`;
+        message += '───────────────────────────\n';
+        message += `<b>${i + 1}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}\n`;
 
-        if (time) message += `⏰ ${time} | `;
-        message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
-
-        if (m.oddsHome && m.oddsAway) {
-          message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
-          if (m.oddsDraw) message += ` X:${m.oddsDraw.toFixed(2)}`;
-          message += ` 2:${m.oddsAway.toFixed(2)}\n`;
+        if (m.league) {
+          message += `${SPORT_EMOJIS[m.sport] || '🏟️'} ${m.league}\n`;
         }
 
-        message += `💥 Risque: <b>${m.riskPercentage}%</b>`;
-        if (maxOdds > 0) message += ` | 💰 x${maxOdds.toFixed(2)}`;
-        message += `\n`;
-        message += `🔥 Réussite: <b>${winProb}%</b>\n\n`;
+        if (m.oddsHome && m.oddsAway) {
+          let oddsLine = `📊 `;
+          oddsLine += `1: <b>${m.oddsHome.toFixed(2)}</b>`;
+          if (isFootball && m.oddsDraw) oddsLine += `  ·  X: <b>${m.oddsDraw.toFixed(2)}</b>`;
+          oddsLine += `  ·  2: <b>${m.oddsAway.toFixed(2)}</b>`;
+          message += `${oddsLine}\n`;
+        }
+
+        let pronoLine = '';
+        if (time) pronoLine += `⏰ ${time}  ·  `;
+        if (betOption && m.recommendation) {
+          pronoLine += `🎯 ${betOption} <b>${m.recommendation}</b>`;
+        }
+        if (pronoLine) message += `${pronoLine}\n`;
+
+        message += `💥 <b>${m.riskPercentage}%</b>  ·  ✅ <b>${winProb}%</b>\n`;
+
+        // Prédiction de buts (football uniquement, si cotes réelles)
+        if (isFootball && m.oddsHome && m.oddsAway) {
+          const goals = calculateGoalsPrediction(m.oddsHome, m.oddsAway, m.oddsDraw, m.isEstimated);
+          if (goals) {
+            message += `⚽ Total: <b>${goals.total}</b> buts  ·  +2.5: <b>${goals.over25}%</b>  ·  ${goals.prediction}\n`;
+          }
+        }
+
+        message += '\n';
       });
 
       if (kamikazePicks.length > 5) {
         message += `<i>... et ${kamikazePicks.length - 5} autres</i>\n\n`;
       }
 
-      message += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      message += `⚠️ <b>ATTENTION</b>\n`;
-      message += `Ces pronostics sont très risqués.\n`;
+      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      message += `⚠️ <b>ATTENTION</b> — Ces pronostics sont très risqués.\n`;
       message += `Ne pariez que ce que vous pouvez perdre.\n`;
     } else {
       // Aucun Kamikaze non plus
-      message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
       message += `ℹ️ <b>AUCUN MATCH DISPONIBLE</b>\n`;
-      message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
       message += `Aucun pronostic à publier aujourd'hui.\n`;
       message += `Revenez demain pour les prochains matchs!\n`;
     }
@@ -440,63 +519,79 @@ export async function publishDailySummaryToTelegram(predictions: Array<{
   // Construire le message
   let message = '';
   
-  // En-tête
-  message += '╔════════════════════════╗\n';
-  message += `║    📢 <b>PRONOSTICS DU JOUR</b>    ║\n`;
-  message += '╚════════════════════════╝\n\n';
+  // En-tête (style Kamikaze)
+  message += '╔═════════════════════════════╗\n';
+  message += '║\n';
+  message += '║   📢 <b>PRONOSTICS DU JOUR</b>\n';
+  message += '║\n';
+  message += '╚═════════════════════════════╝\n\n';
   
-  message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
+  message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
   
-  // Stats globales
-  message += `🎯 <b>${filtered.length} PRONOSTICS</b>\n`;
-  message += `    🟢 Safe: ${safeCount}\n`;
-  message += `    🟡 Modéré: ${moderateCount}\n`;
-  if (valueBetsCount > 0) {
-    message += `    💎 Value Bets: ${valueBetsCount}\n`;
-  }
-  message += '\n';
+  let statsLine = `📊 <b>${filtered.length}</b> pronostic${filtered.length > 1 ? 's' : ''}`;
+  statsLine += `  ·  🟢 ${safeCount}  ·  🟡 ${moderateCount}`;
+  if (valueBetsCount > 0) statsLine += `  ·  💎 ${valueBetsCount}`;
+  message += `${statsLine}\n\n`;
   
   // Détail par sport
   for (const [sport, matches] of Object.entries(bySport)) {
     const emoji = SPORT_EMOJIS[sport] || '🏟️';
-    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `${emoji} <b>${sport.toUpperCase()}</b> (${matches.length})\n`;
-    message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    message += `${emoji} <b>${sport.toUpperCase()}</b> — ${matches.length} match${matches.length > 1 ? 's' : ''}\n\n`;
     
-    // Lister les matchs
-    matches.slice(0, 8).forEach((m, i) => {
-      const { time, date: matchDate } = formatDateTime(m.date, m.displayDate);
-      const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
+    matches.slice(0, 10).forEach((m, i) => {
+      const { time } = formatDateTime(m.date, m.displayDate);
+      const isFootball = m.sport?.toLowerCase().includes('foot') || m.sport?.toLowerCase() === 'soccer';
       const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
-      const vbEmoji = m.valueBetDetected ? '💎 ' : '';
-      
-      // Option de pari (1, X, 2)
-      const betOption = getBetOption(m.predictedResult, m.sport);
-      const betDisplay = betOption ? `${betOption} ` : '';
-      
-      // Afficher la date si différente d'aujourd'hui
-      const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? `[${m.dateTag.toUpperCase()}] ` : '';
-      
-      message += `<b>${i + 1}.</b> ${vbEmoji}${dateDisplay}${m.homeTeam} vs ${m.awayTeam}\n`;
-      if (time) {
-        message += `    ⏰ ${time}`;
+      const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
+      const betLabel = getBetOption(m.predictedResult, m.sport);
+      const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
+
+      message += '───────────────────────────\n';
+      message += `<b>${i + 1}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}\n`;
+
+      if (m.league) {
+        message += `${emoji} ${m.league}\n`;
       }
-      if (m.recommendation || betOption) {
-        message += ` | 🎯 ${betDisplay}${m.recommendation || ''}`;
+
+      if (m.oddsHome && m.oddsAway) {
+        let oddsLine = `📊 `;
+        oddsLine += `1: <b>${m.oddsHome.toFixed(2)}</b>`;
+        if (isFootball && m.oddsDraw) oddsLine += `  ·  X: <b>${m.oddsDraw.toFixed(2)}</b>`;
+        oddsLine += `  ·  2: <b>${m.oddsAway.toFixed(2)}</b>`;
+        message += `${oddsLine}\n`;
       }
-      message += `\n    ${riskEmoji} ${winProb}% réussite\n\n`;
+
+      let pronoLine = '';
+      if (time) pronoLine += `⏰ ${time}  ·  `;
+      if (betLabel && m.recommendation) {
+        pronoLine += `🎯 ${betLabel} <b>${m.recommendation}</b>`;
+      }
+      if (pronoLine) message += `${pronoLine}\n`;
+
+      message += `${riskEmoji} ${m.riskPercentage}%  ·  ✅ <b>${winProb}%</b>\n`;
+
+      // Prédiction de buts (football uniquement, si cotes réelles)
+      if (isFootball && m.oddsHome && m.oddsAway) {
+        const goals = calculateGoalsPrediction(m.oddsHome, m.oddsAway, m.oddsDraw, m.isEstimated);
+        if (goals) {
+          message += `⚽ Total: <b>${goals.total}</b> buts  ·  +2.5: <b>${goals.over25}%</b>  ·  ${goals.prediction}\n`;
+        }
+      }
+
+      message += '\n';
     });
     
-    if (matches.length > 8) {
-      message += `    <i>... et ${matches.length - 8} autres</i>\n\n`;
+    if (matches.length > 10) {
+      message += `<i>... et ${matches.length - 10} autres match${matches.length - 10 > 1 ? 's' : ''} dans ce sport</i>\n\n`;
     }
   }
   
   // Pied de message
-  message += '━━━━━━━━━━━━━━━━━━━━━\n';
-  message += '🟢 Safe: Risque ≤ 30%\n';
-  message += '🟡 Modéré: Risque 31-50%\n';
-  message += '💎 Value Bet détecté\n';
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += '🟢 Safe (≤30%)  ·  🟡 Modéré (31-50%)\n';
+  message += '⚽ = Prédiction buts (modèle Poisson)\n';
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
   return sendTelegramMessage(message);
 }
