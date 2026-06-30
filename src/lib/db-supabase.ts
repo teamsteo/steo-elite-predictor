@@ -297,6 +297,63 @@ export const SupabaseStore = {
       return [];
     }
   },
+
+  /**
+   * Récupère les prédictions pour une date spécifique (filtré côté Supabase).
+   * Plus efficace que getAllPredictions + filtre JS.
+   */
+  async getPredictionsByDate(dateISO: string): Promise<DbPrediction[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    
+    try {
+      // Filtrer sur la partie date de match_date (format YYYY-MM-DD)
+      const startOfDay = `${dateISO}T00:00:00`;
+      const endOfDay = `${dateISO}T23:59:59`;
+      
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('*')
+        .gte('match_date', startOfDay)
+        .lte('match_date', endOfDay)
+        .order('match_date', { ascending: true });
+      
+      if (error) {
+        console.error('Erreur getPredictionsByDate:', error);
+        return [];
+      }
+      return (data as DbPrediction[]) || [];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Récupère les prédictions récentes complétées (pour calcul des séries/streaks).
+   * Plus efficace que getAllPredictions car filtre status + result_match non null.
+   */
+  async getRecentCompletedPredictions(limit = 500): Promise<DbPrediction[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+    
+    try {
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('*')
+        .eq('status', 'completed')
+        .not('result_match', 'is', null)
+        .order('match_date', { ascending: false })
+        .limit(limit);
+      
+      if (error) {
+        console.error('Erreur getRecentCompletedPredictions:', error);
+        return [];
+      }
+      return (data as DbPrediction[]) || [];
+    } catch {
+      return [];
+    }
+  },
   
   async completePrediction(matchId: string, result: {
     homeScore: number;

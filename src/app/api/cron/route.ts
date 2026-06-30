@@ -855,7 +855,10 @@ export async function GET(request: NextRequest) {
             const dbPredictions = predictions.map((p: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
               const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
-              const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}`;
+              // Extraire l'heure du match pour éviter les collisions (ex: même équipes, même jour, compétitions différentes)
+              const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+              const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+              const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
               return {
                 match_id: matchId,
                 home_team: p.homeTeam,
@@ -1013,7 +1016,10 @@ export async function GET(request: NextRequest) {
               .map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
                 const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
-                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}`;
+                // Extraire l'heure du match pour éviter les collisions
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
                 return {
                   match_id: matchId,
                   home_team: p.homeTeam,

@@ -993,17 +993,9 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   };
 
   try {
-    // Récupérer les prédictions du jour (pending + completed)
-    const predictions = await SupabaseStore.getAllPredictions(2000);
-    if (!predictions || predictions.length === 0) return emptySummary;
-
-    // Filtrer par date cible (match_date du jour visé)
-    const dayPredictions = predictions.filter(p => {
-      const matchDate = (p.match_date || '').split('T')[0];
-      return matchDate === targetDate;
-    });
-
-    if (dayPredictions.length === 0) return emptySummary;
+    // Récupérer les prédictions du jour directement filtrées par Supabase (optimisation #1)
+    const dayPredictions = await SupabaseStore.getPredictionsByDate(targetDate);
+    if (!dayPredictions || dayPredictions.length === 0) return emptySummary;
 
     const summary: DailyResultSummary = {
       ...emptySummary,
@@ -1092,13 +1084,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       s.profitUnits = Math.round(s.profitUnits * 100) / 100;
     }
 
-    // Calcul des séries (streaks) par sport — à partir de l'historique récent
+    // Calcul des séries (streaks) par sport — requête optimisée Supabase (status=completed + result_match non null)
     try {
-      const recentPredictions = await SupabaseStore.getAllPredictions(2000);
-      // Ne garder que les complétés, triés par date décroissante
-      const completed = recentPredictions
-        .filter((p: DbPrediction) => p.status === 'completed' && p.result_match !== null && p.result_match !== undefined)
-        .sort((a: DbPrediction, b: DbPrediction) => (a.match_date > b.match_date ? -1 : 1));
+      const completed = await SupabaseStore.getRecentCompletedPredictions(500);
+      // Déjà triés par date décroissante via la requête Supabase
 
       const sportStreaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }> = {};
       for (const p of completed) {
