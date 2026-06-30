@@ -853,7 +853,9 @@ export async function GET(request: NextRequest) {
           // 💾 Sauvegarder les prédictions dans Supabase pour le bilan quotidien
           try {
             const dbPredictions = predictions.map((p: any) => {
-              const matchId = `${p.homeTeam.replace(/\s+/g, '-').toLowerCase()}-${p.awayTeam.replace(/\s+/g, '-').toLowerCase()}-${p.date?.split('T')[0] || new Date().toISOString().split('T')[0]}`;
+              const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+              const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
+              const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}`;
               return {
                 match_id: matchId,
                 home_team: p.homeTeam,
@@ -1003,6 +1005,36 @@ export async function GET(request: NextRequest) {
           }
           
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
+          
+          // 💾 Sauvegarder aussi les pronostics kamikaze (tennis inclus) dans Supabase
+          try {
+            const dbPredictions = predictions
+              .filter(p => isKamikaze(p.riskPercentage))
+              .map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}`;
+                return {
+                  match_id: matchId,
+                  home_team: p.homeTeam,
+                  away_team: p.awayTeam,
+                  league: p.league || 'Unknown',
+                  sport: (p.sport || 'other').toLowerCase(),
+                  match_date: p.date || new Date().toISOString(),
+                  odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null,
+                  odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.predictedResult || 'home',
+                  confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage || 50,
+                  status: 'pending' as const,
+                };
+              });
+            const saved = await SupabaseStore.addPredictions(dbPredictions);
+            console.log(`💾 ${saved} pronostics kamikaze (tennis inclus) sauvegardés dans Supabase`);
+          } catch (e: any) {
+            console.log('⚠️ Erreur sauvegarde kamikaze Supabase:', e.message);
+          }
           
           const telegramResult = await publishKamikazeToTelegram(predictions);
           result = { 

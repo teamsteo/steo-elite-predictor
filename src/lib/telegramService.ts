@@ -945,7 +945,10 @@ interface DailyResultSummary {
   winRate: number;
   goalsWins: number;
   goalsLosses: number;
-  bySport: Record<string, { total: number; wins: number; losses: number; winRate: number; pending: number }>;
+  roi: number;           // ROI en % (bénéfice net / mises totales)
+  profitUnits: number;    // Bénéfice en unités (-1 par perte, cote-1 par gain)
+  streaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }>;
+  bySport: Record<string, { total: number; wins: number; losses: number; winRate: number; pending: number; roi: number; profitUnits: number }>;
   details: Array<{
     homeTeam: string;
     awayTeam: string;
@@ -982,6 +985,9 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     winRate: 0,
     goalsWins: 0,
     goalsLosses: 0,
+    roi: 0,
+    profitUnits: 0,
+    streaks: {},
     bySport: {},
     details: [],
   };
@@ -1005,10 +1011,13 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     };
 
     // Grouper par sport et calculer les stats
+    let totalStakes = 0;
+    let totalProfit = 0;
+
     for (const p of dayPredictions) {
       const sport = p.sport || 'other';
       if (!summary.bySport[sport]) {
-        summary.bySport[sport] = { total: 0, wins: 0, losses: 0, winRate: 0, pending: 0 };
+        summary.bySport[sport] = { total: 0, wins: 0, losses: 0, winRate: 0, pending: 0, roi: 0, profitUnits: 0 };
       }
       summary.bySport[sport].total++;
 
@@ -1020,13 +1029,32 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
         summary.bySport[sport].pending++;
       } else if (isVerified) {
         summary.totalVerified++;
-        if (p.result_match === true) {
-          summary.wins++;
-          summary.bySport[sport].wins++;
-        } else if (p.result_match === false) {
-          summary.losses++;
-          summary.bySport[sport].losses++;
+
+        // Calcul du bénéfice (ROI)
+        if (p.result_match !== null && p.result_match !== undefined) {
+          // Trouver la cote du pronostic
+          let betOdds = 1.0;
+          if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
+          else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
+          else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
+
+          if (p.result_match === true) {
+            // Gain : profit = cote - 1
+            const profit = betOdds - 1;
+            totalProfit += profit;
+            summary.bySport[sport].profitUnits += profit;
+            summary.wins++;
+            summary.bySport[sport].wins++;
+          } else if (p.result_match === false) {
+            // Perte : -1 unité
+            totalProfit -= 1;
+            summary.bySport[sport].profitUnits -= 1;
+            summary.losses++;
+            summary.bySport[sport].losses++;
+          }
+          totalStakes += 1;
         }
+
         if (p.goals_match === true) summary.goalsWins++;
         if (p.goals_match === false) summary.goalsLosses++;
       }
@@ -1049,7 +1077,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       });
     }
 
-    // Calcul des taux
+    // Calcul des taux + ROI
+    summary.profitUnits = Math.round(totalProfit * 100) / 100;
+    summary.roi = totalStakes > 0 ? Math.round((totalProfit / totalStakes) * 100) : 0;
+
     if (summary.totalVerified > 0) {
       summary.winRate = Math.round((summary.wins / summary.totalVerified) * 100);
     }
@@ -1057,6 +1088,35 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       const s = summary.bySport[sport];
       const verified = s.wins + s.losses;
       s.winRate = verified > 0 ? Math.round((s.wins / verified) * 100) : 0;
+      s.roi = verified > 0 ? Math.round((s.profitUnits / verified) * 100) : 0;
+      s.profitUnits = Math.round(s.profitUnits * 100) / 100;
+    }
+
+    // Calcul des séries (streaks) par sport — à partir de l'historique récent
+    try {
+      const recentPredictions = await SupabaseStore.getAllPredictions(2000);
+      // Ne garder que les complétés, triés par date décroissante
+      const completed = recentPredictions
+        .filter((p: DbPrediction) => p.status === 'completed' && p.result_match !== null && p.result_match !== undefined)
+        .sort((a: DbPrediction, b: DbPrediction) => (a.match_date > b.match_date ? -1 : 1));
+
+      const sportStreaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }> = {};
+      for (const p of completed) {
+        const sport = p.sport || 'other';
+        if (!sportStreaks[sport]) {
+          sportStreaks[sport] = { type: p.result_match ? 'win' : 'loss', count: 1 };
+        } else if (p.result_match && sportStreaks[sport].type === 'win') {
+          sportStreaks[sport].count++;
+        } else if (!p.result_match && sportStreaks[sport].type === 'loss') {
+          sportStreaks[sport].count++;
+        } else {
+          // La série est cassée, on arrête de compter pour ce sport
+          continue;
+        }
+      }
+      summary.streaks = sportStreaks;
+    } catch {
+      // Streaks sont un bonus, pas critique
     }
 
     return summary;
@@ -1128,6 +1188,14 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   message += `    ✅ ${summary.wins}/${summary.totalVerified} corrects`;
   if (summary.totalVerified > 0) message += `  ·  <b>${summary.winRate}%</b>`;
   message += '\n';
+
+  // ROI (rendement)
+  if (summary.totalVerified > 0 && summary.profitUnits !== 0) {
+    const roiSign = summary.roi >= 0 ? '+' : '';
+    const profitSign = summary.profitUnits >= 0 ? '+' : '';
+    const roiEmoji = summary.roi >= 0 ? '💰' : '📉';
+    message += `    ${roiEmoji} ROI: <b>${roiSign}${summary.roi}%</b> (${profitSign}${summary.profitUnits.toFixed(2)}u)\n`;
+  }
   if (summary.totalPending > 0) {
     message += `    ⏳ ${summary.totalPending} en attente de résultat\n`;
   }
@@ -1161,10 +1229,37 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
         sportLines.push(`${emoji} ${name}: ⏳ ${s.pending} en attente`);
       } else {
         const verified = s.wins + s.losses;
-        sportLines.push(`${emoji} <b>${name}</b>: ${s.wins}/${verified}`);
+        let line = `${emoji} <b>${name}</b>: ${s.wins}/${verified}`;
+        // ROI par sport
+        if (verified > 0 && s.profitUnits !== 0) {
+          const sign = s.roi >= 0 ? '+' : '';
+          line += ` (${sign}${s.roi}%)`;
+        }
+        sportLines.push(line);
       }
     }
     message += sportLines.join('  ·  ') + '\n';
+
+    // Séries en cours
+    if (Object.keys(summary.streaks).length > 0) {
+      message += '\n';
+      const streakLines: string[] = [];
+      for (const sport of sortedSports) {
+        const streak = summary.streaks[sport];
+        if (!streak || streak.count < 2) continue;
+        const emoji = sportEmojis[sport] || '🏟️';
+        const name = sportNames[sport] || sport;
+        if (streak.type === 'win') {
+          streakLines.push(`${emoji} ${name}: 🔥 ${streak.count}V`);
+        } else {
+          streakLines.push(`${emoji} ${name}: ❄️ ${streak.count}D`);
+        }
+      }
+      if (streakLines.length > 0) {
+        message += `<b>SÉRIES</b>\n`;
+        message += `    ${streakLines.join('  ·  ')}\n`;
+      }
+    }
     message += '\n';
   }
 

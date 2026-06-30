@@ -51,6 +51,24 @@ const CACHE_DURATION = 3600000; // 1 heure
 let lastRequestTime = 0;
 const MIN_REQUEST_INTERVAL = 350;
 
+/**
+ * Détecte automatiquement la saison de football en cours.
+ * Saison européenne : août à mai.
+ * Juillet = transition (pré-saison).
+ */
+function getCurrentFootballSeason(): string {
+  const now = new Date();
+  const month = now.getUTCMonth(); // 0=jan, 6=juil
+  const year = now.getUTCFullYear();
+  if (month >= 7) {
+    // Août-décembre : saison commence cette année
+    return `${year}-${(year + 1) % 100}`;
+  } else {
+    // Janvier-juin : saison a commencé l'année précédente
+    return `${year - 1}-${year % 100}`;
+  }
+}
+
 async function waitForRateLimit(): Promise<void> {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
@@ -107,7 +125,7 @@ export async function fetchLeagueTable(leagueId: string): Promise<TeamStats[]> {
   await waitForRateLimit();
   
   try {
-    const url = `https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l=${leagueId}&s=2025-2026`;
+    const url = `https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l=${leagueId}&s=${getCurrentFootballSeason()}`;
     
     const response = await fetch(url, {
       next: { revalidate: 3600 } // Cache Next.js: 1h
