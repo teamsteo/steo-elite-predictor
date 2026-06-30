@@ -15,7 +15,7 @@ import { PredictionStore } from '@/lib/store';
 import { ExpertAdviceStore } from '@/lib/expertAdviceStore';
 import { updateStatsHistory, forceUpdateStats } from '@/lib/statsUpdater';
 import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
-import SupabaseStore from '@/lib/db-supabase';
+import SupabaseStore, { type DbPrediction } from '@/lib/db-supabase';
 import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
 import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
 import { 
@@ -400,8 +400,191 @@ async function verifyFootballResults(): Promise<{
   return { verified, updated, won, lost, errors };
 }
 
+// ============================================
+// VÉRIFICATION TENNIS (ESPN → Supabase)
+// ============================================
+
+interface TennisMatchResult {
+  player1: string;
+  player2: string;
+  winner: 'home' | 'away';
+  setsWon1: number;
+  setsWon2: number;
+  tournament: string;
+}
+
 /**
- * Vérification complète (Football + NBA)
+ * Récupérer les résultats tennis (ATP + WTA) depuis ESPN (GRATUIT)
+ */
+async function fetchTennisResultsFromESPN(): Promise<TennisMatchResult[]> {
+  const results: TennisMatchResult[] = [];
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0].replace(/-/g, '');
+
+  console.log(`🎾 Recherche résultats tennis pour: ${yesterdayStr}`);
+
+  const tours = ['atp', 'wta'];
+
+  for (const tour of tours) {
+    try {
+      const response = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/tennis/${tour}/scoreboard?dates=${yesterdayStr}`,
+        { cache: 'no-store', headers: { 'Accept': 'application/json' } }
+      );
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const events = data.events || [];
+
+      for (const event of events) {
+        const tournament = event.name || event.shortName || tour.toUpperCase();
+        const competitions = event.competitions || [];
+
+        for (const comp of competitions) {
+          if (comp.status?.type?.completed !== true) continue;
+
+          const competitors = comp.competitors || [];
+          const home = competitors.find((c: any) => c.homeAway === 'home');
+          const away = competitors.find((c: any) => c.homeAway === 'away');
+
+          if (!home || !away) continue;
+
+          const p1Name = home.athlete?.displayName || home.athlete?.shortDisplayName || '';
+          const p2Name = away.athlete?.displayName || away.athlete?.shortDisplayName || '';
+          if (!p1Name || !p2Name) continue;
+
+          // Compter les sets gagnés
+          const sets1 = (home.linescores || []).filter((s: any) => s.winner === true).length;
+          const sets2 = (away.linescores || []).filter((s: any) => s.winner === true).length;
+
+          results.push({
+            player1: p1Name,
+            player2: p2Name,
+            winner: home.winner === true ? 'home' as const : 'away' as const,
+            setsWon1: sets1 || 0,
+            setsWon2: sets2 || 0,
+            tournament,
+          });
+        }
+      }
+
+      console.log(`🎾 ESPN ${tour.toUpperCase()}: ${results.length} résultats récupérés (total cumulé)`);
+    } catch (error) {
+      console.log(`⚠️ Erreur ESPN ${tour.toUpperCase()}:`, error);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Matcher un résultat tennis avec une prédiction Supabase (fuzzy matching noms de joueurs)
+ */
+function matchTennisPrediction(
+  prediction: DbPrediction,
+  result: TennisMatchResult
+): boolean {
+  const normalize = (s: string) =>
+    s.toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+
+  const predHome = normalize(prediction.home_team || '');
+  const predAway = normalize(prediction.away_team || '');
+  const resHome = normalize(result.player1);
+  const resAway = normalize(result.player2);
+
+  if (!predHome || !predAway || !resHome || !resAway) return false;
+
+  // Match direct
+  if (predHome === resHome && predAway === resAway) return true;
+  // Match inversé
+  if (predHome === resAway && predAway === resHome) return true;
+  // Match partiel (nom contenu dans l'autre)
+  if ((predHome.includes(resHome) || resHome.includes(predHome)) &&
+      (predAway.includes(resAway) || resAway.includes(predAway))) return true;
+
+  return false;
+}
+
+/**
+ * Vérifier les résultats tennis (directement dans Supabase, pas le store local)
+ */
+async function verifyTennisResults(): Promise<{
+  verified: number;
+  updated: number;
+  won: number;
+  lost: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let verified = 0;
+  let updated = 0;
+  let won = 0;
+  let lost = 0;
+
+  try {
+    // Récupérer les pronostics tennis pending depuis Supabase
+    const allPending = await SupabaseStore.getPendingPredictions();
+    const pending = allPending.filter(p => p.sport === 'tennis');
+
+    if (pending.length === 0) {
+      console.log('📋 Aucun pronostic Tennis en attente dans Supabase');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
+    console.log(`📋 ${pending.length} pronostics Tennis en attente à vérifier`);
+
+    // Récupérer les résultats tennis depuis ESPN
+    const tennisResults = await fetchTennisResultsFromESPN();
+
+    if (tennisResults.length === 0) {
+      console.log('🎾 Aucun résultat tennis trouvé sur ESPN');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
+    // Pour chaque prédiction, chercher le résultat correspondant
+    for (const prediction of pending) {
+      verified++;
+
+      const result = tennisResults.find(r => matchTennisPrediction(prediction, r));
+
+      if (result) {
+        const predictedResult = prediction.predicted_result;
+        const actualResult = result.winner; // 'home' or 'away'
+        const resultMatch = predictedResult === actualResult;
+
+        // Mettre à jour Supabase directement
+        const success = await SupabaseStore.completePrediction(prediction.match_id, {
+          homeScore: result.setsWon1,
+          awayScore: result.setsWon2,
+          actualResult,
+          resultMatch,
+          goalsMatch: undefined,
+        });
+
+        if (success) {
+          updated++;
+          if (resultMatch) won++; else lost++;
+          console.log(`🎾 Tennis: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.setsWon1}-${result.setsWon2} sets)`);
+        }
+      } else {
+        console.log(`⏳ Tennis: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
+      }
+    }
+  } catch (error: any) {
+    errors.push(error.message);
+    console.error('Erreur vérification Tennis:', error);
+  }
+
+  return { verified, updated, won, lost, errors };
+}
+
+/**
+ * Vérification complète (Football + NBA + Tennis)
  */
 async function verifyAllResults(): Promise<{
   verified: number;
@@ -412,17 +595,18 @@ async function verifyAllResults(): Promise<{
   statsUpdate?: { success: boolean; message: string };
   mlSync?: { synced: number; mlStats: any };
 }> {
-  const [footballResult, nbaResult] = await Promise.all([
+  const [footballResult, nbaResult, tennisResult] = await Promise.all([
     verifyFootballResults(),
-    verifyNBAResults()
+    verifyNBAResults(),
+    verifyTennisResults()
   ]);
 
   const result = {
-    verified: footballResult.verified + nbaResult.verified,
-    updated: footballResult.updated + nbaResult.updated,
-    won: footballResult.won + nbaResult.won,
-    lost: footballResult.lost + nbaResult.lost,
-    errors: [...footballResult.errors, ...nbaResult.errors],
+    verified: footballResult.verified + nbaResult.verified + tennisResult.verified,
+    updated: footballResult.updated + nbaResult.updated + tennisResult.updated,
+    won: footballResult.won + nbaResult.won + tennisResult.won,
+    lost: footballResult.lost + nbaResult.lost + tennisResult.lost,
+    errors: [...footballResult.errors, ...nbaResult.errors, ...tennisResult.errors],
     statsUpdate: undefined as { success: boolean; message: string } | undefined,
     mlSync: undefined as { synced: number; mlStats: any } | undefined
   };
