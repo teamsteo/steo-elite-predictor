@@ -1,0 +1,809 @@
+     1→     1→/**
+     2→     2→ * Unified Daily Prediction Service
+     3→     3→ * 
+     4→     4→ * ARCHITECTURE:
+     5→     5→ * ┌────────────────────────────────────────────────────────────────┐
+     6→     6→ * │  Cron 05:30 UTC                                                │
+     7→     7→ * │      │                                                         │
+     8→     8→ * │      ▼                                                         │
+     9→     9→ * │  ┌─────────────────────────────────────────────────────────┐   │
+    10→    10→ * │  │ 1. Scraping UNIQUE (ESPN, BetExplorer)                  │   │
+    11→    11→ * │  │    - Football: ESPN API (gratuit)                       │   │
+    12→    12→ * │  │    - Basketball: ESPN API (gratuit)                     │   │
+    13→    13→ * │  │    - Hockey: ESPN API (gratuit)                         │   │
+    14→    14→ * │  │    - Tennis: BetExplorer (protégé anti-ban)             │   │
+    15→    15→ * │  └─────────────────────────────────────────────────────────┘   │
+    16→    16→ * │      │                                                         │
+    17→    17→ * │      ▼                                                         │
+    18→    18→ * │  ┌─────────────────────────────────────────────────────────┐   │
+    19→    19→ * │  │ 2. Calcul ML AVANCÉ pour chaque match                   │   │
+    20→    20→ * │  │    - Football: Dixon-Coles + ML + Context (5 facteurs)  │   │
+    21→    21→ * │  │    - Basketball: ML + Context + Form                    │   │
+    22→    22→ * │  │    - Hockey: ML + Form                                  │   │
+    23→    23→ * │  │    - Tennis: 8 facteurs avancés                         │   │
+    24→    24→ * │  │    - Classification risque: safe/modéré/risqué          │   │
+    25→    25→ * │  └─────────────────────────────────────────────────────────┘   │
+    26→    26→ * │      │                                                         │
+    27→    27→ * │      ▼                                                         │
+    28→    28→ * │  ┌─────────────────────────────────────────────────────────┐   │
+    29→    29→ * │  │ 3. Stockage dans data/daily-predictions.json            │   │
+    30→    30→ * │  │    - Toutes les prédictions du jour                     │   │
+    31→    31→ * │  │    - Classées par sport + risque                        │   │
+    32→    32→ * │  └─────────────────────────────────────────────────────────┘   │
+    33→    33→ * │                                                                 │
+    34→    34→ * │  ─────────────────────────────────────────────────────────────  │
+    35→    35→ * │                                                                 │
+    36→    36→ * │  Site Web ───► API ───► Lecture fichier (0 scraping)          │
+    37→    37→ * │  Telegram  ───► API ───► Lecture fichier (0 scraping)          │
+    38→    38→ * │                                                                 │
+    39→    39→ * │  ✅ 1 SEUL SCRAPING PAR JOUR !                                 │
+    40→    40→ * │  ✅ MODÈLES ML AVANCÉS POUR TOUS LES SPORTS !                  │
+    41→    41→ * └────────────────────────────────────────────────────────────────┘
+    42→    42→ */
+    43→    43→
+    44→    44→import * as fs from 'fs';
+    45→    45→import * as path from 'path';
+    46→    46→import { getUnifiedPrediction, type UnifiedPredictionInput } from './unifiedPredictionService';
+    47→    47→
+    48→    48→// ============================================
+    49→    49→// INTERFACES
+    50→    50→// ============================================
+    51→    51→
+    52→    52→export interface DailyPrediction {
+    53→    53→  // Identification
+    54→    54→  id: string;
+    55→    55→  sport: 'football' | 'basketball' | 'hockey' | 'tennis';
+    56→    56→  league?: string;
+    57→    57→  tournament?: string;
+    58→    58→  tournamentTier?: string;
+    59→    59→  
+    60→    60→  // Match
+    61→    61→  homeTeam: string;
+    62→    62→  awayTeam: string;
+    63→    63→  player1?: string;  // Pour tennis
+    64→    64→  player2?: string;  // Pour tennis
+    65→    65→  
+    66→    66→  // Timing
+    67→    67→  date: string;
+    68→    68→  time?: string;
+    69→    69→  displayDate?: string;
+    70→    70→  
+    71→    71→  // Cotes
+    72→    72→  oddsHome?: number;
+    73→    73→  oddsAway?: number;
+    74→    74→  oddsDraw?: number;
+    75→    75→  
+    76→    76→  // Prédiction
+    77→    77→  recommendation: string;
+    78→    78→  predictedResult: 'home' | 'away' | 'draw';
+    79→    79→  winProbability: number;
+    80→    80→  confidence: 'very_high' | 'high' | 'medium' | 'low';
+    81→    81→  
+    82→    82→  // Risque (CLASSIFICATION PRINCIPALE)
+    83→    83→  riskPercentage: number;
+    84→    84→  riskLevel: 'safe' | 'moderate' | 'risky';
+    85→    85→  
+    86→    86→  // Betting
+    87→    87→  valueBet: boolean;
+    88→    88→  valueBetType?: string;
+    89→    89→  expectedValue?: number;
+    90→    90→  kellyStake?: number;
+    91→    91→  
+    92→    92→  // Analyse
+    93→    93→  reasons: string[];
+    94→    94→  warnings: string[];
+    95→    95→  
+    96→    96→  // Métadonnées
+    97→    97→  source: string;
+    98→    98→  modelVersion: string;
+    99→    99→  generatedAt: string;
+   100→   100→}
+   101→   101→
+   102→   102→export interface DailyPredictionsFile {
+   103→   103→  generatedAt: string;
+   104→   104→  validUntil: string;
+   105→   105→  summary: {
+   106→   106→    total: number;
+   107→   107→    bySport: Record<string, number>;
+   108→   108→    byRisk: {
+   109→   109→      safe: number;
+   110→   110→      moderate: number;
+   111→   111→      risky: number;
+   112→   112→    };
+   113→   113→    valueBets: number;
+   114→   114→  };
+   115→   115→  predictions: DailyPrediction[];
+   116→   116→}
+   117→   117→
+   118→   118→// ============================================
+   119→   119→// CONFIGURATION
+   120→   120→// ============================================
+   121→   121→
+   122→   122→const DATA_DIR = path.join(process.cwd(), 'data');
+   123→   123→const DAILY_FILE = path.join(DATA_DIR, 'daily-predictions.json');
+   124→   124→
+   125→   125→const RISK_THRESHOLDS = {
+   126→   126→  safe: 30,      // 0-30% risque = safe
+   127→   127→  moderate: 50,  // 31-50% risque = modéré
+   128→   128→  risky: 100,    // 51-100% risque = risqué
+   129→   129→};
+   130→   130→
+   131→   131→// ============================================
+   132→   132→// FONCTIONS PRINCIPALES
+   133→   133→// ============================================
+   134→   134→
+   135→   135→/**
+   136→   136→ * Génère toutes les prédictions du jour
+   137→   137→ * Appelé UNE SEULE FOIS par le cron du matin
+   138→   138→ */
+   139→   139→export async function generateDailyPredictions(): Promise<DailyPredictionsFile> {
+   140→   140→  console.log('🔄 Génération des prédictions quotidiennes...');
+   141→   141→  console.log('==========================================');
+   142→   142→  
+   143→   143→  const predictions: DailyPrediction[] = [];
+   144→   144→  
+   145→   145→  // 1. Football (ESPN - gratuit)
+   146→   146→  console.log('\n📡 Récupération Football...');
+   147→   147→  const footballPredictions = await fetchFootballPredictions();
+   148→   148→  predictions.push(...footballPredictions);
+   149→   149→  console.log(`✅ Football: ${footballPredictions.length} matchs`);
+   150→   150→  
+   151→   151→  // 2. Basketball (ESPN - gratuit)
+   152→   152→  console.log('\n📡 Récupération Basketball...');
+   153→   153→  const basketballPredictions = await fetchBasketballPredictions();
+   154→   154→  predictions.push(...basketballPredictions);
+   155→   155→  console.log(`✅ Basketball: ${basketballPredictions.length} matchs`);
+   156→   156→  
+   157→   157→  // 3. Hockey (ESPN - gratuit)
+   158→   158→  console.log('\n📡 Récupération Hockey...');
+   159→   159→  const hockeyPredictions = await fetchHockeyPredictions();
+   160→   160→  predictions.push(...hockeyPredictions);
+   161→   161→  console.log(`✅ Hockey: ${hockeyPredictions.length} matchs`);
+   162→   162→  
+   163→   163→  // 4. Tennis (BetExplorer avec protection anti-ban)
+   164→   164→  console.log('\n📡 Récupération Tennis...');
+   165→   165→  const tennisPredictions = await fetchTennisPredictions();
+   166→   166→  predictions.push(...tennisPredictions);
+   167→   167→  console.log(`✅ Tennis: ${tennisPredictions.length} matchs`);
+   168→   168→  
+   169→   169→  // Calculer le résumé
+   170→   170→  const summary = calculateSummary(predictions);
+   171→   171→  
+   172→   172→  // Créer le fichier
+   173→   173→  const dailyFile: DailyPredictionsFile = {
+   174→   174→    generatedAt: new Date().toISOString(),
+   175→   175→    validUntil: getEndOfDay(),
+   176→   176→    summary,
+   177→   177→    predictions,
+   178→   178→  };
+   179→   179→  
+   180→   180→  // Sauvegarder
+   181→   181→  saveDailyPredictions(dailyFile);
+   182→   182→  
+   183→   183→  console.log('\n==========================================');
+   184→   184→  console.log(`✅ TOTAL: ${predictions.length} prédictions générées`);
+   185→   185→  console.log(`   🟢 Safe: ${summary.byRisk.safe}`);
+   186→   186→  console.log(`   🟡 Modéré: ${summary.byRisk.moderate}`);
+   187→   187→  console.log(`   🔴 Risqué: ${summary.byRisk.risky}`);
+   188→   188→  console.log(`   💎 Value Bets: ${summary.valueBets}`);
+   189→   189→  
+   190→   190→  return dailyFile;
+   191→   191→}
+   192→   192→
+   193→   193→/**
+   194→   194→ * Charge les prédictions du jour
+   195→   195→ * Appelé par le site web et Telegram (PAS de scraping)
+   196→   196→ */
+   197→   197→export function loadDailyPredictions(): DailyPredictionsFile | null {
+   198→   198→  try {
+   199→   199→    if (!fs.existsSync(DAILY_FILE)) {
+   200→   200→      console.log('⚠️ Aucun fichier de prédictions');
+   201→   201→      return null;
+   202→   202→    }
+   203→   203→    
+   204→   204→    const data = JSON.parse(fs.readFileSync(DAILY_FILE, 'utf-8'));
+   205→   205→    
+   206→   206→    // Vérifier si les données sont encore valides
+   207→   207→    if (new Date(data.validUntil) < new Date()) {
+   208→   208→      console.log('⚠️ Prédictions expirées');
+   209→   209→      return null;
+   210→   210→    }
+   211→   211→    
+   212→   212→    return data;
+   213→   213→  } catch (error) {
+   214→   214→    console.error('Erreur chargement prédictions:', error);
+   215→   215→    return null;
+   216→   216→  }
+   217→   217→}
+   218→   218→
+   219→   219→/**
+   220→   220→ * Récupère les prédictions filtrées
+   221→   221→ */
+   222→   222→export function getFilteredPredictions(options?: {
+   223→   223→  sports?: string[];
+   224→   224→  riskLevels?: ('safe' | 'moderate' | 'risky')[];
+   225→   225→  valueBetsOnly?: boolean;
+   226→   226→  minProbability?: number;
+   227→   227→}): DailyPrediction[] {
+   228→   228→  const data = loadDailyPredictions();
+   229→   229→  
+   230→   230→  if (!data) return [];
+   231→   231→  
+   232→   232→  let filtered = data.predictions;
+   233→   233→  
+   234→   234→  // Filtrer par sport
+   235→   235→  if (options?.sports?.length) {
+   236→   236→    filtered = filtered.filter(p => options.sports!.includes(p.sport));
+   237→   237→  }
+   238→   238→  
+   239→   239→  // Filtrer par niveau de risque
+   240→   240→  if (options?.riskLevels?.length) {
+   241→   241→    filtered = filtered.filter(p => options.riskLevels!.includes(p.riskLevel));
+   242→   242→  }
+   243→   243→  
+   244→   244→  // Filtrer value bets uniquement
+   245→   245→  if (options?.valueBetsOnly) {
+   246→   246→    filtered = filtered.filter(p => p.valueBet);
+   247→   247→  }
+   248→   248→  
+   249→   249→  // Filtrer par probabilité minimum
+   250→   250→  if (options?.minProbability) {
+   251→   251→    filtered = filtered.filter(p => p.winProbability >= options.minProbability!);
+   252→   252→  }
+   253→   253→  
+   254→   254→  return filtered;
+   255→   255→}
+   256→   256→
+   257→   257→// ============================================
+   258→   258→// FONCTIONS DE SCRAPING (UNE SEULE FOIS PAR JOUR)
+   259→   259→// ============================================
+   260→   260→
+   261→   261→async function fetchFootballPredictions(): Promise<DailyPrediction[]> {
+   262→   262→  const predictions: DailyPrediction[] = [];
+   263→   263→  
+   264→   264→  try {
+   265→   265→    // 📅 IMPORTANT: Ajouter le filtre de date pour obtenir les matchs d'AUJOURD'HUI
+   266→   266→    const today = new Date();
+   267→   267→    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+   268→   268→    const tomorrow = new Date(today);
+   269→   269→    tomorrow.setDate(tomorrow.getDate() + 1);
+   270→   270→    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+   271→   271→    
+   272→   272→    // ESPN API - gratuit, avec filtre de date pour matchs d'aujourd'hui et demain
+   273→   273→    const response = await fetch(
+   274→   274→      `https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=${todayStr}-${tomorrowStr}`,
+   275→   275→      { 
+   276→   276→        headers: { 'Accept': 'application/json' },
+   277→   277→        cache: 'no-store' // ⚠️ Désactiver le cache pour toujours avoir les données fraîches
+   278→   278→      }
+   279→   279→    );
+   280→   280→    
+   281→   281→    if (!response.ok) return predictions;
+   282→   282→    
+   283→   283→    const data = await response.json();
+   284→   284→    const events = data.events || [];
+   285→   285→    
+   286→   286→    for (const event of events) {
+   287→   287→      if (event.status?.type?.completed) continue; // Skip matchs terminés
+   288→   288→      
+   289→   289→      const competition = event.competitions?.[0];
+   290→   290→      const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+   291→   291→      const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+   292→   292→      
+   293→   293→      if (!home || !away) continue;
+   294→   294→      
+   295→   295→      const prediction = await createFootballPrediction(event, home, away);
+   296→   296→      if (prediction) predictions.push(prediction);
+   297→   297→    }
+   298→   298→    
+   299→   299→  } catch (error) {
+   300→   300→    console.error('Erreur Football:', error);
+   301→   301→  }
+   302→   302→  
+   303→   303→  return predictions;
+   304→   304→}
+   305→   305→
+   306→   306→async function fetchBasketballPredictions(): Promise<DailyPrediction[]> {
+   307→   307→  const predictions: DailyPrediction[] = [];
+   308→   308→  
+   309→   309→  try {
+   310→   310→    // 📅 IMPORTANT: Ajouter le filtre de date pour obtenir les matchs d'AUJOURD'HUI
+   311→   311→    const today = new Date();
+   312→   312→    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+   313→   313→    const tomorrow = new Date(today);
+   314→   314→    tomorrow.setDate(tomorrow.getDate() + 1);
+   315→   315→    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+   316→   316→    
+   317→   317→    const response = await fetch(
+   318→   318→      `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${todayStr}-${tomorrowStr}`,
+   319→   319→      { 
+   320→   320→        headers: { 'Accept': 'application/json' },
+   321→   321→        cache: 'no-store' // ⚠️ Désactiver le cache
+   322→   322→      }
+   323→   323→    );
+   324→   324→    
+   325→   325→    if (!response.ok) return predictions;
+   326→   326→    
+   327→   327→    const data = await response.json();
+   328→   328→    const events = data.events || [];
+   329→   329→    
+   330→   330→    for (const event of events) {
+   331→   331→      if (event.status?.type?.completed) continue;
+   332→   332→      
+   333→   333→      const competition = event.competitions?.[0];
+   334→   334→      const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+   335→   335→      const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+   336→   336→      
+   337→   337→      if (!home || !away) continue;
+   338→   338→      
+   339→   339→      const prediction = await createBasketballPrediction(event, home, away);
+   340→   340→      if (prediction) predictions.push(prediction);
+   341→   341→    }
+   342→   342→    
+   343→   343→  } catch (error) {
+   344→   344→    console.error('Erreur Basketball:', error);
+   345→   345→  }
+   346→   346→  
+   347→   347→  return predictions;
+   348→   348→}
+   349→   349→
+   350→   350→async function fetchHockeyPredictions(): Promise<DailyPrediction[]> {
+   351→   351→  const predictions: DailyPrediction[] = [];
+   352→   352→  
+   353→   353→  try {
+   354→   354→    // 📅 IMPORTANT: Ajouter le filtre de date pour obtenir les matchs d'AUJOURD'HUI
+   355→   355→    const today = new Date();
+   356→   356→    const todayStr = today.toISOString().split('-').join('').slice(0, 8);
+   357→   357→    const tomorrow = new Date(today);
+   358→   358→    tomorrow.setDate(tomorrow.getDate() + 1);
+   359→   359→    const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
+   360→   360→    
+   361→   361→    const response = await fetch(
+   362→   362→      `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${todayStr}-${tomorrowStr}`,
+   363→   363→      { 
+   364→   364→        headers: { 'Accept': 'application/json' },
+   365→   365→        cache: 'no-store' // ⚠️ Désactiver le cache
+   366→   366→      }
+   367→   367→    );
+   368→   368→    
+   369→   369→    if (!response.ok) return predictions;
+   370→   370→    
+   371→   371→    const data = await response.json();
+   372→   372→    const events = data.events || [];
+   373→   373→    
+   374→   374→    for (const event of events) {
+   375→   375→      if (event.status?.type?.completed) continue;
+   376→   376→      
+   377→   377→      const competition = event.competitions?.[0];
+   378→   378→      const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+   379→   379→      const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+   380→   380→      
+   381→   381→      if (!home || !away) continue;
+   382→   382→      
+   383→   383→      const prediction = await createHockeyPrediction(event, home, away);
+   384→   384→      if (prediction) predictions.push(prediction);
+   385→   385→    }
+   386→   386→    
+   387→   387→  } catch (error) {
+   388→   388→    console.error('Erreur Hockey:', error);
+   389→   389→  }
+   390→   390→  
+   391→   391→  return predictions;
+   392→   392→}
+   393→   393→
+   394→   394→async function fetchTennisPredictions(): Promise<DailyPrediction[]> {
+   395→   395→  const predictions: DailyPrediction[] = [];
+   396→   396→  
+   397→   397→  try {
+   398→   398→    // Utiliser le smart-collector avec protection anti-ban
+   399→   399→    const { collectMatches } = await import('./tennis-enhanced/smart-collector');
+   400→   400→    const { predictMatch } = await import('./tennis-enhanced/enhanced-predictor');
+   401→   401→    
+   402→   402→    const matches = await collectMatches();
+   403→   403→    
+   404→   404→    for (const match of matches) {
+   405→   405→      try {
+   406→   406→        const prediction = predictMatch(match);
+   407→   407→        
+   408→   408→        predictions.push({
+   409→   409→          id: prediction.matchId,
+   410→   410→          sport: 'tennis',
+   411→   411→          tournament: prediction.tournament,
+   412→   412→          tournamentTier: prediction.tournamentTier,
+   413→   413→          homeTeam: prediction.player1,
+   414→   414→          awayTeam: prediction.player2,
+   415→   415→          player1: prediction.player1,
+   416→   416→          player2: prediction.player2,
+   417→   417→          date: prediction.generatedAt.toISOString(),
+   418→   418→          oddsHome: match.odds1,
+   419→   419→          oddsAway: match.odds2,
+   420→   420→          recommendation: prediction.predictedWinner === 'player1' ? prediction.player1 : prediction.player2,
+   421→   421→          predictedResult: prediction.predictedWinner === 'player1' ? 'home' : 'away',
+   422→   422→          winProbability: prediction.winProbability,
+   423→   423→          confidence: prediction.confidence,
+   424→   424→          riskPercentage: prediction.riskPercentage,
+   425→   425→          riskLevel: getRiskLevel(prediction.riskPercentage),
+   426→   426→          valueBet: prediction.betting.recommendedBet && prediction.betting.expectedValue > 0,
+   427→   427→          expectedValue: prediction.betting.expectedValue,
+   428→   428→          kellyStake: prediction.betting.kellyStake,
+   429→   429→          reasons: prediction.keyInsights,
+   430→   430→          warnings: prediction.warnings,
+   431→   431→          source: 'smart-collector',
+   432→   432→          modelVersion: prediction.modelVersion,
+   433→   433→          generatedAt: prediction.generatedAt.toISOString(),
+   434→   434→        });
+   435→   435→      } catch (error) {
+   436→   436→        console.error(`Erreur prédiction tennis ${match.player1} vs ${match.player2}:`, error);
+   437→   437→      }
+   438→   438→    }
+   439→   439→    
+   440→   440→  } catch (error) {
+   441→   441→    console.error('Erreur Tennis:', error);
+   442→   442→  }
+   443→   443→  
+   444→   444→  return predictions;
+   445→   445→}
+   446→   446→
+   447→   447→// ============================================
+   448→   448→// CRÉATION DE PRÉDICTIONS AVEC ML AVANCÉ
+   449→   449→// ============================================
+   450→   450→
+   451→   451→/**
+   452→   452→ * Crée une prédiction Football avec le modèle ML unifié
+   453→   453→ * Utilise: Dixon-Coles + ML Thresholds + Context (forme, blessures, xG)
+   454→   454→ */
+   455→   455→async function createFootballPrediction(event: any, home: any, away: any): Promise<DailyPrediction | null> {
+   456→   456→  const homeTeam = home.team?.displayName || 'Unknown';
+   457→   457→  const awayTeam = away.team?.displayName || 'Unknown';
+   458→   458→  
+   459→   459→  // Récupérer les cotes réelles si disponibles
+   460→   460→  const oddsHome = home.odds?.current || 1.85;
+   461→   461→  const oddsAway = away.odds?.current || 1.85;
+   462→   462→  const oddsDraw = 3.3;
+   463→   463→  
+   464→   464→  try {
+   465→   465→    // Utiliser le service ML unifié
+   466→   466→    const mlInput: UnifiedPredictionInput = {
+   467→   467→      id: `fb_${event.id}`,
+   468→   468→      homeTeam,
+   469→   469→      awayTeam,
+   470→   470→      sport: 'Foot',
+   471→   471→      league: event.league?.name || 'Football',
+   472→   472→      oddsHome,
+   473→   473→      oddsDraw,
+   474→   474→      oddsAway,
+   475→   475→    };
+   476→   476→    
+   477→   477→    const mlPrediction = await getUnifiedPrediction(mlInput);
+   478→   478→    
+   479→   479→    return {
+   480→   480→      id: mlPrediction.matchId,
+   481→   481→      sport: 'football',
+   482→   482→      league: mlPrediction.league,
+   483→   483→      homeTeam,
+   484→   484→      awayTeam,
+   485→   485→      date: event.date,
+   486→   486→      oddsHome: mlPrediction.odds.home,
+   487→   487→      oddsAway: mlPrediction.odds.away,
+   488→   488→      oddsDraw: mlPrediction.odds.draw ?? undefined,
+   489→   489→      recommendation: mlPrediction.recommendation.bet === 'home' 
+   490→   490→        ? homeTeam 
+   491→   491→        : mlPrediction.recommendation.bet === 'away' 
+   492→   492→          ? awayTeam 
+   493→   493→          : 'Match Nul',
+   494→   494→      predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
+   495→   495→      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+   496→   496→      confidence: mlPrediction.mlPrediction.confidence,
+   497→   497→      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
+   498→   498→      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+   499→   499→      valueBet: mlPrediction.mlPrediction.valueBet,
+   500→   500→      valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
+   501→   501→      expectedValue: mlPrediction.recommendation.expectedValue,
+   502→   502→      kellyStake: mlPrediction.recommendation.kellyStake,
+   503→   503→      reasons: mlPrediction.recommendation.reasoning,
+   504→   504→      warnings: mlPrediction.recommendation.riskLevel === 'high' ? ['⚠️ Risque élevé'] : [],
+   505→   505→      source: 'unified-ml',
+   506→   506→      modelVersion: 'football-dixon-coles-ml-v2.0',
+   507→   507→      generatedAt: mlPrediction.generatedAt,
+   508→   508→    };
+   509→   509→  } catch (error) {
+   510→   510→    console.error('Erreur ML Football:', error);
+   511→   511→    // Fallback sur calcul simple
+   512→   512→    return createSimpleFootballPrediction(event, home, away);
+   513→   513→  }
+   514→   514→}
+   515→   515→
+   516→   516→/**
+   517→   517→ * Crée une prédiction Basketball avec le modèle ML unifié
+   518→   518→ */
+   519→   519→async function createBasketballPrediction(event: any, home: any, away: any): Promise<DailyPrediction | null> {
+   520→   520→  const homeTeam = home.team?.displayName || 'Unknown';
+   521→   521→  const awayTeam = away.team?.displayName || 'Unknown';
+   522→   522→  
+   523→   523→  const oddsHome = home.odds?.current || 1.85;
+   524→   524→  const oddsAway = away.odds?.current || 1.85;
+   525→   525→  
+   526→   526→  try {
+   527→   527→    const mlInput: UnifiedPredictionInput = {
+   528→   528→      id: `nba_${event.id}`,
+   529→   529→      homeTeam,
+   530→   530→      awayTeam,
+   531→   531→      sport: 'NBA',
+   532→   532→      league: 'NBA',
+   533→   533→      oddsHome,
+   534→   534→      oddsDraw: null,
+   535→   535→      oddsAway,
+   536→   536→    };
+   537→   537→    
+   538→   538→    const mlPrediction = await getUnifiedPrediction(mlInput);
+   539→   539→    
+   540→   540→    return {
+   541→   541→      id: mlPrediction.matchId,
+   542→   542→      sport: 'basketball',
+   543→   543→      league: 'NBA',
+   544→   544→      homeTeam,
+   545→   545→      awayTeam,
+   546→   546→      date: event.date,
+   547→   547→      oddsHome: mlPrediction.odds.home,
+   548→   548→      oddsAway: mlPrediction.odds.away,
+   549→   549→      oddsDraw: undefined,
+   550→   550→      recommendation: mlPrediction.recommendation.bet === 'home' ? homeTeam : awayTeam,
+   551→   551→      predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
+   552→   552→      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+   553→   553→      confidence: mlPrediction.mlPrediction.confidence,
+   554→   554→      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
+   555→   555→      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+   556→   556→      valueBet: mlPrediction.mlPrediction.valueBet,
+   557→   557→      valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
+   558→   558→      expectedValue: mlPrediction.recommendation.expectedValue,
+   559→   559→      kellyStake: mlPrediction.recommendation.kellyStake,
+   560→   560→      reasons: mlPrediction.recommendation.reasoning,
+   561→   561→      warnings: [],
+   562→   562→      source: 'unified-ml',
+   563→   563→      modelVersion: 'nba-ml-v2.0',
+   564→   564→      generatedAt: mlPrediction.generatedAt,
+   565→   565→    };
+   566→   566→  } catch (error) {
+   567→   567→    console.error('Erreur ML NBA:', error);
+   568→   568→    return createSimpleBasketballPrediction(event, home, away);
+   569→   569→  }
+   570→   570→}
+   571→   571→
+   572→   572→/**
+   573→   573→ * Crée une prédiction Hockey avec le modèle ML
+   574→   574→ */
+   575→   575→async function createHockeyPrediction(event: any, home: any, away: any): Promise<DailyPrediction | null> {
+   576→   576→  const homeTeam = home.team?.displayName || 'Unknown';
+   577→   577→  const awayTeam = away.team?.displayName || 'Unknown';
+   578→   578→  
+   579→   579→  const oddsHome = home.odds?.current || 1.85;
+   580→   580→  const oddsAway = away.odds?.current || 1.85;
+   581→   581→  
+   582→   582→  try {
+   583→   583→    const mlInput: UnifiedPredictionInput = {
+   584→   584→      id: `nhl_${event.id}`,
+   585→   585→      homeTeam,
+   586→   586→      awayTeam,
+   587→   587→      sport: 'NHL',
+   588→   588→      league: 'NHL',
+   589→   589→      oddsHome,
+   590→   590→      oddsDraw: null,
+   591→   591→      oddsAway,
+   592→   592→    };
+   593→   593→    
+   594→   594→    const mlPrediction = await getUnifiedPrediction(mlInput);
+   595→   595→    
+   596→   596→    return {
+   597→   597→      id: mlPrediction.matchId,
+   598→   598→      sport: 'hockey',
+   599→   599→      league: 'NHL',
+   600→   600→      homeTeam,
+   601→   601→      awayTeam,
+   602→   602→      date: event.date,
+   603→   603→      oddsHome: mlPrediction.odds.home,
+   604→   604→      oddsAway: mlPrediction.odds.away,
+   605→   605→      oddsDraw: undefined,
+   606→   606→      recommendation: mlPrediction.recommendation.bet === 'home' ? homeTeam : awayTeam,
+   607→   607→      predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
+   608→   608→      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+   609→   609→      confidence: mlPrediction.mlPrediction.confidence,
+   610→   610→      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
+   611→   611→      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+   612→   612→      valueBet: mlPrediction.mlPrediction.valueBet,
+   613→   613→      expectedValue: mlPrediction.recommendation.expectedValue,
+   614→   614→      kellyStake: mlPrediction.recommendation.kellyStake,
+   615→   615→      reasons: mlPrediction.recommendation.reasoning,
+   616→   616→      warnings: [],
+   617→   617→      source: 'unified-ml',
+   618→   618→      modelVersion: 'nhl-ml-v2.0',
+   619→   619→      generatedAt: mlPrediction.generatedAt,
+   620→   620→    };
+   621→   621→  } catch (error) {
+   622→   622→    console.error('Erreur ML NHL:', error);
+   623→   623→    return createSimpleHockeyPrediction(event, home, away);
+   624→   624→  }
+   625→   625→}
+   626→   626→
+   627→   627→// ============================================
+   628→   628→// FALLBACK - Prédictions simples (si ML échoue)
+   629→   629→// ============================================
+   630→   630→
+   631→   631→function createSimpleFootballPrediction(event: any, home: any, away: any): DailyPrediction | null {
+   632→   632→  const homeTeam = home.team?.displayName || 'Unknown';
+   633→   633→  const awayTeam = away.team?.displayName || 'Unknown';
+   634→   634→  
+   635→   635→  const homeRecord = home.records?.find((r: any) => r.type === 'total');
+   636→   636→  const awayRecord = away.records?.find((r: any) => r.type === 'total');
+   637→   637→  const homeWins = homeRecord?.wins || 0;
+   638→   638→  const awayWins = awayRecord?.wins || 0;
+   639→   639→  
+   640→   640→  const totalWins = homeWins + awayWins;
+   641→   641→  const homeProb = totalWins > 0 ? (homeWins / totalWins) * 100 : 50;
+   642→   642→  const adjustedProb = Math.min(75, Math.max(25, homeProb + 10));
+   643→   643→  const riskPercentage = 100 - adjustedProb;
+   644→   644→  
+   645→   645→  return {
+   646→   646→    id: `fb_${event.id}`,
+   647→   647→    sport: 'football',
+   648→   648→    league: event.league?.name || 'Football',
+   649→   649→    homeTeam,
+   650→   650→    awayTeam,
+   651→   651→    date: event.date,
+   652→   652→    oddsHome: 1.85,
+   653→   653→    oddsAway: 1.85,
+   654→   654→    oddsDraw: 3.3,
+   655→   655→    recommendation: adjustedProb > 50 ? homeTeam : awayTeam,
+   656→   656→    predictedResult: adjustedProb > 50 ? 'home' : 'away',
+   657→   657→    winProbability: Math.round(adjustedProb > 50 ? adjustedProb : 100 - adjustedProb),
+   658→   658→    confidence: getConfidenceFromProb(adjustedProb > 50 ? adjustedProb : 100 - adjustedProb),
+   659→   659→    riskPercentage: Math.round(riskPercentage),
+   660→   660→    riskLevel: getRiskLevel(riskPercentage),
+   661→   661→    valueBet: false,
+   662→   662→    reasons: [`Match ${homeTeam} vs ${awayTeam}`, '⚠️ Fallback (ML non disponible)'],
+   663→   663→    warnings: ['Prédiction simplifiée'],
+   664→   664→    source: 'espn-fallback',
+   665→   665→    modelVersion: 'football-simple-v1.0',
+   666→   666→    generatedAt: new Date().toISOString(),
+   667→   667→  };
+   668→   668→}
+   669→   669→
+   670→   670→function createSimpleBasketballPrediction(event: any, home: any, away: any): DailyPrediction | null {
+   671→   671→  const homeTeam = home.team?.displayName || 'Unknown';
+   672→   672→  const awayTeam = away.team?.displayName || 'Unknown';
+   673→   673→  
+   674→   674→  const homeRecord = home.records?.find((r: any) => r.type === 'total');
+   675→   675→  const awayRecord = away.records?.find((r: any) => r.type === 'total');
+   676→   676→  const homeWins = homeRecord?.wins || 0;
+   677→   677→  const homeLosses = homeRecord?.losses || 0;
+   678→   678→  const awayWins = awayRecord?.wins || 0;
+   679→   679→  const awayLosses = awayRecord?.losses || 0;
+   680→   680→  
+   681→   681→  const homeWinRate = homeWins / (homeWins + homeLosses) || 0.5;
+   682→   682→  const awayWinRate = awayWins / (awayWins + awayLosses) || 0.5;
+   683→   683→  const homeProb = (homeWinRate * 0.6 + (1 - awayWinRate) * 0.4) * 100 + 10;
+   684→   684→  const adjustedProb = Math.min(75, Math.max(25, homeProb));
+   685→   685→  const riskPercentage = 100 - adjustedProb;
+   686→   686→  
+   687→   687→  return {
+   688→   688→    id: `nba_${event.id}`,
+   689→   689→    sport: 'basketball',
+   690→   690→    league: 'NBA',
+   691→   691→    homeTeam,
+   692→   692→    awayTeam,
+   693→   693→    date: event.date,
+   694→   694→    oddsHome: 1.85,
+   695→   695→    oddsAway: 1.85,
+   696→   696→    recommendation: adjustedProb > 50 ? homeTeam : awayTeam,
+   697→   697→    predictedResult: adjustedProb > 50 ? 'home' : 'away',
+   698→   698→    winProbability: Math.round(adjustedProb > 50 ? adjustedProb : 100 - adjustedProb),
+   699→   699→    confidence: getConfidenceFromProb(adjustedProb > 50 ? adjustedProb : 100 - adjustedProb),
+   700→   700→    riskPercentage: Math.round(riskPercentage),
+   701→   701→    riskLevel: getRiskLevel(riskPercentage),
+   702→   702→    valueBet: false,
+   703→   703→    reasons: [`${homeTeam}: ${homeWins}W-${homeLosses}L`, `${awayTeam}: ${awayWins}W-${awayLosses}L`, '⚠️ Fallback'],
+   704→   704→    warnings: ['Prédiction simplifiée'],
+   705→   705→    source: 'espn-fallback',
+   706→   706→    modelVersion: 'nba-simple-v1.0',
+   707→   707→    generatedAt: new Date().toISOString(),
+   708→   708→  };
+   709→   709→}
+   710→   710→
+   711→   711→function createSimpleHockeyPrediction(event: any, home: any, away: any): DailyPrediction | null {
+   712→   712→  const homeTeam = home.team?.displayName || 'Unknown';
+   713→   713→  const awayTeam = away.team?.displayName || 'Unknown';
+   714→   714→  
+   715→   715→  const homeRecord = home.records?.find((r: any) => r.type === 'total');
+   716→   716→  const awayRecord = away.records?.find((r: any) => r.type === 'total');
+   717→   717→  const homeWins = homeRecord?.wins || 0;
+   718→   718→  const awayWins = awayRecord?.wins || 0;
+   719→   719→  
+   720→   720→  const totalWins = homeWins + awayWins;
+   721→   721→  const homeProb = totalWins > 0 ? (homeWins / totalWins) * 100 + 5 : 50;
+   722→   722→  const adjustedProb = Math.min(75, Math.max(25, homeProb));
+   723→   723→  const riskPercentage = 100 - adjustedProb;
+   724→   724→  
+   725→   725→  return {
+   726→   726→    id: `nhl_${event.id}`,
+   727→   727→    sport: 'hockey',
+   728→   728→    league: 'NHL',
+   729→   729→    homeTeam,
+   730→   730→    awayTeam,
+   731→   731→    date: event.date,
+   732→   732→    oddsHome: 1.85,
+   733→   733→    oddsAway: 1.85,
+   734→   734→    recommendation: adjustedProb > 50 ? homeTeam : awayTeam,
+   735→   735→    predictedResult: adjustedProb > 50 ? 'home' : 'away',
+   736→   736→    winProbability: Math.round(adjustedProb > 50 ? adjustedProb : 100 - adjustedProb),
+   737→   737→    confidence: getConfidenceFromProb(adjustedProb > 50 ? adjustedProb : 100 - adjustedProb),
+   738→   738→    riskPercentage: Math.round(riskPercentage),
+   739→   739→    riskLevel: getRiskLevel(riskPercentage),
+   740→   740→    valueBet: false,
+   741→   741→    reasons: [`Match NHL: ${homeTeam} vs ${awayTeam}`, '⚠️ Fallback'],
+   742→   742→    warnings: ['Prédiction simplifiée'],
+   743→   743→    source: 'espn-fallback',
+   744→   744→    modelVersion: 'nhl-simple-v1.0',
+   745→   745→    generatedAt: new Date().toISOString(),
+   746→   746→  };
+   747→   747→}
+   748→   748→
+   749→   749→// ============================================
+   750→   750→// UTILITAIRES
+   751→   751→// ============================================
+   752→   752→
+   753→   753→function getRiskLevel(riskPercentage: number): 'safe' | 'moderate' | 'risky' {
+   754→   754→  if (riskPercentage <= RISK_THRESHOLDS.safe) return 'safe';
+   755→   755→  if (riskPercentage <= RISK_THRESHOLDS.moderate) return 'moderate';
+   756→   756→  return 'risky';
+   757→   757→}
+   758→   758→
+   759→   759→function getConfidenceFromProb(prob: number): 'very_high' | 'high' | 'medium' | 'low' {
+   760→   760→  if (prob >= 75) return 'very_high';
+   761→   761→  if (prob >= 65) return 'high';
+   762→   762→  if (prob >= 55) return 'medium';
+   763→   763→  return 'low';
+   764→   764→}
+   765→   765→
+   766→   766→function getEndOfDay(): string {
+   767→   767→  const end = new Date();
+   768→   768→  // ⚠️ Utiliser UTC pour éviter les problèmes de timezone
+   769→   769→  end.setUTCHours(23, 59, 59, 999);
+   770→   770→  return end.toISOString();
+   771→   771→}
+   772→   772→
+   773→   773→function calculateSummary(predictions: DailyPrediction[]): DailyPredictionsFile['summary'] {
+   774→   774→  const bySport: Record<string, number> = {};
+   775→   775→  const byRisk = { safe: 0, moderate: 0, risky: 0 };
+   776→   776→  let valueBets = 0;
+   777→   777→  
+   778→   778→  for (const p of predictions) {
+   779→   779→    bySport[p.sport] = (bySport[p.sport] || 0) + 1;
+   780→   780→    byRisk[p.riskLevel]++;
+   781→   781→    if (p.valueBet) valueBets++;
+   782→   782→  }
+   783→   783→  
+   784→   784→  return {
+   785→   785→    total: predictions.length,
+   786→   786→    bySport,
+   787→   787→    byRisk,
+   788→   788→    valueBets,
+   789→   789→  };
+   790→   790→}
+   791→   791→
+   792→   792→function saveDailyPredictions(data: DailyPredictionsFile): void {
+   793→   793→  if (!fs.existsSync(DATA_DIR)) {
+   794→   794→    fs.mkdirSync(DATA_DIR, { recursive: true });
+   795→   795→  }
+   796→   796→  
+   797→   797→  fs.writeFileSync(DAILY_FILE, JSON.stringify(data, null, 2));
+   798→   798→  console.log(`💾 Prédictions sauvegardées: ${DAILY_FILE}`);
+   799→   799→}
+   800→   800→
+   801→   801→// ============================================
+   802→   802→// EXPORTS
+   803→   803→// ============================================
+   804→   804→
+   805→   805→export {
+   806→   806→  RISK_THRESHOLDS,
+   807→   807→  DAILY_FILE,
+   808→   808→};
+   809→   809→

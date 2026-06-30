@@ -1,0 +1,750 @@
+     1→/**
+     2→ * Modèle Football Avancé - Intégration Multi-Sources
+     3→ * 
+     4→ * SOURCES DE DONNÉES RÉELLES:
+     5→ * 1. FBref (via ZAI SDK) - xG, Form, H2H, Stats avancées
+     6→ * 2. BetExplorer (via ZAI SDK) - Vraies cotes des bookmakers
+     7→ * 3. ESPN API - Matchs réels
+     8→ * 4. TheSportsDB - Blessures
+     9→ * 
+    10→ * MÉTHODOLOGIE:
+    11→ * - Modèle Dixon-Coles pour probabilités
+    12→ * - xG (Expected Goals) pour évaluation offensive/défensive
+    13→ * - Form Guide pour tendance récente
+    14→ * - H2H pour historique des confrontations
+    15→ * - Détection de value bets
+    16→ */
+    17→
+    18→import { 
+    19→  scrapeFormGuide, 
+    20→  scrapeH2HHistory, 
+    21→  scrapeTeamXG,
+    22→  FormGuide,
+    23→  H2HHistory,
+    24→  TeamXGStats
+    25→} from './fbrefScraper';
+    26→import { findMatchOdds, RealOdds } from './betExplorerScraper';
+    27→import { getFootballMatchInjuries, InjuryInfo } from './theSportsDBService';
+    28→
+    29→// Types
+    30→export interface AdvancedFootballPrediction {
+    31→  matchId: string;
+    32→  homeTeam: string;
+    33→  awayTeam: string;
+    34→  league: string;
+    35→  date: string;
+    36→  
+    37→  // Vraies cotes (BetExplorer)
+    38→  odds: {
+    39→    home: number;
+    40→    draw: number | null;
+    41→    away: number;
+    42→    source: string;
+    43→  };
+    44→  
+    45→  // Probabilités calculées
+    46→  probabilities: {
+    47→    homeWin: number;
+    48→    draw: number;
+    49→    awayWin: number;
+    50→    method: string;
+    51→  };
+    52→  
+    53→  // Stats FBref
+    54→  fbrefData: {
+    55→    homeForm: FormGuide | null;
+    56→    awayForm: FormGuide | null;
+    57→    homeXG: TeamXGStats | null;
+    58→    awayXG: TeamXGStats | null;
+    59→    h2h: H2HHistory | null;
+    60→  };
+    61→  
+    62→  // Blessures
+    63→  injuries: {
+    64→    home: InjuryInfo[];
+    65→    away: InjuryInfo[];
+    66→    impactScore: number;
+    67→  };
+    68→  
+    69→  // Prédictions avancées
+    70→  predictions: {
+    71→    result: 'home' | 'draw' | 'away';
+    72→    confidence: number;
+    73→    reasoning: string[];
+    74→    correctScore: { home: number; away: number; prob: number };
+    75→    over25: number;
+    76→    under25: number;
+    77→    btts: { yes: number; no: number };
+    78→  };
+    79→  
+    80→  // Value Bet
+    81→  valueBet: {
+    82→    detected: boolean;
+    83→    type: 'home' | 'draw' | 'away' | null;
+    84→    edge: number;
+    85→    explanation: string;
+    86→  };
+    87→  
+    88→  // Qualité des données
+    89→  dataQuality: {
+    90→    hasRealOdds: boolean;
+    91→    hasFBrefData: boolean;
+    92→    hasInjuryData: boolean;
+    93→    overallScore: number;
+    94→  };
+    95→  
+    96→  timestamp: string;
+    97→}
+    98→
+    99→// Cache pour éviter les requêtes répétées
+   100→const predictionCache = new Map<string, { data: AdvancedFootballPrediction; timestamp: number }>();
+   101→const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+   102→
+   103→// Stats de base des équipes (fallback si FBref non disponible)
+   104→const TEAM_BASE_STATS: Record<string, { 
+   105→  attackStrength: number; 
+   106→  defenseStrength: number; 
+   107→  avgGoalsFor: number; 
+   108→  avgGoalsAgainst: number;
+   109→}> = {
+   110→  // Premier League
+   111→  'Manchester City': { attackStrength: 1.45, defenseStrength: 0.75, avgGoalsFor: 2.4, avgGoalsAgainst: 0.9 },
+   112→  'Arsenal': { attackStrength: 1.35, defenseStrength: 0.80, avgGoalsFor: 2.2, avgGoalsAgainst: 1.0 },
+   113→  'Liverpool': { attackStrength: 1.40, defenseStrength: 0.78, avgGoalsFor: 2.3, avgGoalsAgainst: 0.95 },
+   114→  'Manchester United': { attackStrength: 1.10, defenseStrength: 0.95, avgGoalsFor: 1.6, avgGoalsAgainst: 1.3 },
+   115→  'Chelsea': { attackStrength: 1.15, defenseStrength: 0.90, avgGoalsFor: 1.7, avgGoalsAgainst: 1.2 },
+   116→  'Tottenham': { attackStrength: 1.20, defenseStrength: 0.92, avgGoalsFor: 1.8, avgGoalsAgainst: 1.25 },
+   117→  'Newcastle': { attackStrength: 1.18, defenseStrength: 0.88, avgGoalsFor: 1.75, avgGoalsAgainst: 1.15 },
+   118→  'Brighton': { attackStrength: 1.12, defenseStrength: 0.93, avgGoalsFor: 1.65, avgGoalsAgainst: 1.3 },
+   119→  'Aston Villa': { attackStrength: 1.15, defenseStrength: 0.90, avgGoalsFor: 1.7, avgGoalsAgainst: 1.2 },
+   120→  
+   121→  // La Liga
+   122→  'Real Madrid': { attackStrength: 1.50, defenseStrength: 0.72, avgGoalsFor: 2.5, avgGoalsAgainst: 0.85 },
+   123→  'Barcelona': { attackStrength: 1.42, defenseStrength: 0.78, avgGoalsFor: 2.3, avgGoalsAgainst: 0.95 },
+   124→  'Atletico Madrid': { attackStrength: 1.15, defenseStrength: 0.75, avgGoalsFor: 1.6, avgGoalsAgainst: 0.9 },
+   125→  'Sevilla': { attackStrength: 1.00, defenseStrength: 0.88, avgGoalsFor: 1.4, avgGoalsAgainst: 1.15 },
+   126→  'Real Sociedad': { attackStrength: 1.08, defenseStrength: 0.85, avgGoalsFor: 1.5, avgGoalsAgainst: 1.1 },
+   127→  
+   128→  // Bundesliga
+   129→  'Bayern Munich': { attackStrength: 1.55, defenseStrength: 0.70, avgGoalsFor: 2.6, avgGoalsAgainst: 0.8 },
+   130→  'Dortmund': { attackStrength: 1.30, defenseStrength: 0.88, avgGoalsFor: 2.1, avgGoalsAgainst: 1.15 },
+   131→  'RB Leipzig': { attackStrength: 1.22, defenseStrength: 0.82, avgGoalsFor: 1.9, avgGoalsAgainst: 1.05 },
+   132→  'Leverkusen': { attackStrength: 1.35, defenseStrength: 0.80, avgGoalsFor: 2.2, avgGoalsAgainst: 1.0 },
+   133→  
+   134→  // Serie A
+   135→  'Juventus': { attackStrength: 1.15, defenseStrength: 0.78, avgGoalsFor: 1.7, avgGoalsAgainst: 0.95 },
+   136→  'Inter Milan': { attackStrength: 1.32, defenseStrength: 0.75, avgGoalsFor: 2.1, avgGoalsAgainst: 0.9 },
+   137→  'AC Milan': { attackStrength: 1.20, defenseStrength: 0.82, avgGoalsFor: 1.8, avgGoalsAgainst: 1.05 },
+   138→  'Napoli': { attackStrength: 1.28, defenseStrength: 0.80, avgGoalsFor: 2.0, avgGoalsAgainst: 1.0 },
+   139→  'Roma': { attackStrength: 1.10, defenseStrength: 0.88, avgGoalsFor: 1.6, avgGoalsAgainst: 1.15 },
+   140→  'Lazio': { attackStrength: 1.12, defenseStrength: 0.90, avgGoalsFor: 1.65, avgGoalsAgainst: 1.2 },
+   141→  'Atalanta': { attackStrength: 1.30, defenseStrength: 0.92, avgGoalsFor: 2.0, avgGoalsAgainst: 1.25 },
+   142→  
+   143→  // Ligue 1
+   144→  'Paris Saint-Germain': { attackStrength: 1.48, defenseStrength: 0.72, avgGoalsFor: 2.45, avgGoalsAgainst: 0.85 },
+   145→  'PSG': { attackStrength: 1.48, defenseStrength: 0.72, avgGoalsFor: 2.45, avgGoalsAgainst: 0.85 },
+   146→  'Monaco': { attackStrength: 1.22, defenseStrength: 0.88, avgGoalsFor: 1.85, avgGoalsAgainst: 1.15 },
+   147→  'Marseille': { attackStrength: 1.18, defenseStrength: 0.90, avgGoalsFor: 1.75, avgGoalsAgainst: 1.2 },
+   148→  'Lyon': { attackStrength: 1.10, defenseStrength: 0.95, avgGoalsFor: 1.6, avgGoalsAgainst: 1.3 },
+   149→  'Lille': { attackStrength: 1.05, defenseStrength: 0.85, avgGoalsFor: 1.5, avgGoalsAgainst: 1.1 },
+   150→  'Nice': { attackStrength: 1.02, defenseStrength: 0.88, avgGoalsFor: 1.45, avgGoalsAgainst: 1.15 },
+   151→  'Lens': { attackStrength: 1.08, defenseStrength: 0.82, avgGoalsFor: 1.55, avgGoalsAgainst: 1.05 },
+   152→  
+   153→  // 🌍 ÉQUIPES NATIONALES - Top FIFA Ranking
+   154→  // Europe
+   155→  'France': { attackStrength: 1.45, defenseStrength: 0.75, avgGoalsFor: 2.3, avgGoalsAgainst: 0.85 },
+   156→  'England': { attackStrength: 1.40, defenseStrength: 0.78, avgGoalsFor: 2.2, avgGoalsAgainst: 0.9 },
+   157→  'Germany': { attackStrength: 1.35, defenseStrength: 0.80, avgGoalsFor: 2.1, avgGoalsAgainst: 0.95 },
+   158→  'Spain': { attackStrength: 1.38, defenseStrength: 0.78, avgGoalsFor: 2.15, avgGoalsAgainst: 0.9 },
+   159→  'Portugal': { attackStrength: 1.32, defenseStrength: 0.82, avgGoalsFor: 2.0, avgGoalsAgainst: 1.0 },
+   160→  'Netherlands': { attackStrength: 1.30, defenseStrength: 0.85, avgGoalsFor: 1.95, avgGoalsAgainst: 1.05 },
+   161→  'Italy': { attackStrength: 1.25, defenseStrength: 0.75, avgGoalsFor: 1.8, avgGoalsAgainst: 0.85 },
+   162→  'Belgium': { attackStrength: 1.35, defenseStrength: 0.85, avgGoalsFor: 2.1, avgGoalsAgainst: 1.0 },
+   163→  'Croatia': { attackStrength: 1.20, defenseStrength: 0.80, avgGoalsFor: 1.7, avgGoalsAgainst: 0.95 },
+   164→  'Switzerland': { attackStrength: 1.15, defenseStrength: 0.82, avgGoalsFor: 1.6, avgGoalsAgainst: 1.0 },
+   165→  'Denmark': { attackStrength: 1.18, defenseStrength: 0.85, avgGoalsFor: 1.65, avgGoalsAgainst: 1.05 },
+   166→  'Austria': { attackStrength: 1.12, defenseStrength: 0.88, avgGoalsFor: 1.55, avgGoalsAgainst: 1.1 },
+   167→  'Ukraine': { attackStrength: 1.08, defenseStrength: 0.90, avgGoalsFor: 1.45, avgGoalsAgainst: 1.15 },
+   168→  'Poland': { attackStrength: 1.10, defenseStrength: 0.92, avgGoalsFor: 1.5, avgGoalsAgainst: 1.2 },
+   169→  'Sweden': { attackStrength: 1.05, defenseStrength: 0.90, avgGoalsFor: 1.4, avgGoalsAgainst: 1.15 },
+   170→  'Norway': { attackStrength: 1.12, defenseStrength: 0.92, avgGoalsFor: 1.55, avgGoalsAgainst: 1.2 },
+   171→  'Czech Republic': { attackStrength: 1.08, defenseStrength: 0.88, avgGoalsFor: 1.5, avgGoalsAgainst: 1.1 },
+   172→  'Turkey': { attackStrength: 1.10, defenseStrength: 0.95, avgGoalsFor: 1.55, avgGoalsAgainst: 1.25 },
+   173→  'Hungary': { attackStrength: 1.02, defenseStrength: 0.88, avgGoalsFor: 1.4, avgGoalsAgainst: 1.1 },
+   174→  'Serbia': { attackStrength: 1.08, defenseStrength: 0.95, avgGoalsFor: 1.5, avgGoalsAgainst: 1.25 },
+   175→  'Scotland': { attackStrength: 0.98, defenseStrength: 0.90, avgGoalsFor: 1.35, avgGoalsAgainst: 1.15 },
+   176→  'Wales': { attackStrength: 0.95, defenseStrength: 0.92, avgGoalsFor: 1.3, avgGoalsAgainst: 1.2 },
+   177→  'Ireland': { attackStrength: 0.90, defenseStrength: 0.95, avgGoalsFor: 1.2, avgGoalsAgainst: 1.3 },
+   178→  'Romania': { attackStrength: 0.95, defenseStrength: 0.92, avgGoalsFor: 1.3, avgGoalsAgainst: 1.25 },
+   179→  'Greece': { attackStrength: 0.92, defenseStrength: 0.85, avgGoalsFor: 1.25, avgGoalsAgainst: 1.1 },
+   180→  
+   181→  // Amérique du Sud
+   182→  'Argentina': { attackStrength: 1.48, defenseStrength: 0.75, avgGoalsFor: 2.35, avgGoalsAgainst: 0.85 },
+   183→  'Brazil': { attackStrength: 1.45, defenseStrength: 0.78, avgGoalsFor: 2.3, avgGoalsAgainst: 0.9 },
+   184→  'Uruguay': { attackStrength: 1.28, defenseStrength: 0.82, avgGoalsFor: 1.85, avgGoalsAgainst: 1.0 },
+   185→  'Colombia': { attackStrength: 1.20, defenseStrength: 0.88, avgGoalsFor: 1.7, avgGoalsAgainst: 1.1 },
+   186→  'Chile': { attackStrength: 1.15, defenseStrength: 0.90, avgGoalsFor: 1.6, avgGoalsAgainst: 1.15 },
+   187→  'Ecuador': { attackStrength: 1.08, defenseStrength: 0.92, avgGoalsFor: 1.5, avgGoalsAgainst: 1.2 },
+   188→  'Peru': { attackStrength: 1.00, defenseStrength: 0.95, avgGoalsFor: 1.35, avgGoalsAgainst: 1.25 },
+   189→  'Venezuela': { attackStrength: 0.92, defenseStrength: 1.00, avgGoalsFor: 1.2, avgGoalsAgainst: 1.4 },
+   190→  
+   191→  // Amérique du Nord
+   192→  'USA': { attackStrength: 1.10, defenseStrength: 0.90, avgGoalsFor: 1.55, avgGoalsAgainst: 1.15 },
+   193→  'Mexico': { attackStrength: 1.08, defenseStrength: 0.92, avgGoalsFor: 1.5, avgGoalsAgainst: 1.2 },
+   194→  'Canada': { attackStrength: 1.02, defenseStrength: 0.95, avgGoalsFor: 1.4, avgGoalsAgainst: 1.25 },
+   195→  
+   196→  // Afrique
+   197→  'Morocco': { attackStrength: 1.10, defenseStrength: 0.82, avgGoalsFor: 1.5, avgGoalsAgainst: 1.0 },
+   198→  'Senegal': { attackStrength: 1.12, defenseStrength: 0.88, avgGoalsFor: 1.55, avgGoalsAgainst: 1.1 },
+   199→  'Egypt': { attackStrength: 1.05, defenseStrength: 0.90, avgGoalsFor: 1.45, avgGoalsAgainst: 1.15 },
+   200→  'Nigeria': { attackStrength: 1.08, defenseStrength: 0.95, avgGoalsFor: 1.5, avgGoalsAgainst: 1.25 },
+   201→  'Algeria': { attackStrength: 1.02, defenseStrength: 0.92, avgGoalsFor: 1.4, avgGoalsAgainst: 1.2 },
+   202→  'Tunisia': { attackStrength: 0.95, defenseStrength: 0.88, avgGoalsFor: 1.3, avgGoalsAgainst: 1.1 },
+   203→  'Cameroon': { attackStrength: 1.00, defenseStrength: 0.95, avgGoalsFor: 1.35, avgGoalsAgainst: 1.25 },
+   204→  'Ghana': { attackStrength: 0.98, defenseStrength: 0.95, avgGoalsFor: 1.35, avgGoalsAgainst: 1.3 },
+   205→  'Ivory Coast': { attackStrength: 1.05, defenseStrength: 0.92, avgGoalsFor: 1.45, avgGoalsAgainst: 1.2 },
+   206→  'South Africa': { attackStrength: 0.90, defenseStrength: 0.98, avgGoalsFor: 1.2, avgGoalsAgainst: 1.35 },
+   207→  
+   208→  // Asie
+   209→  'Japan': { attackStrength: 1.08, defenseStrength: 0.88, avgGoalsFor: 1.5, avgGoalsAgainst: 1.1 },
+   210→  'South Korea': { attackStrength: 1.05, defenseStrength: 0.90, avgGoalsFor: 1.45, avgGoalsAgainst: 1.15 },
+   211→  'Australia': { attackStrength: 1.02, defenseStrength: 0.92, avgGoalsFor: 1.4, avgGoalsAgainst: 1.2 },
+   212→  'Iran': { attackStrength: 0.98, defenseStrength: 0.90, avgGoalsFor: 1.35, avgGoalsAgainst: 1.15 },
+   213→  'Saudi Arabia': { attackStrength: 0.92, defenseStrength: 0.95, avgGoalsFor: 1.25, avgGoalsAgainst: 1.3 },
+   214→  'Qatar': { attackStrength: 0.88, defenseStrength: 0.98, avgGoalsFor: 1.15, avgGoalsAgainst: 1.4 },
+   215→  'China': { attackStrength: 0.82, defenseStrength: 1.05, avgGoalsFor: 1.0, avgGoalsAgainst: 1.5 },
+   216→  'India': { attackStrength: 0.75, defenseStrength: 1.10, avgGoalsFor: 0.9, avgGoalsAgainst: 1.6 },
+   217→  
+   218→  // 🌍 ÉQUIPES EUROPÉENNES ADDITIONNELLES (Éliminatoires Mondial)
+   219→  'North Macedonia': { attackStrength: 0.88, defenseStrength: 0.95, avgGoalsFor: 1.15, avgGoalsAgainst: 1.35 },
+   220→  'Albania': { attackStrength: 0.92, defenseStrength: 0.92, avgGoalsFor: 1.25, avgGoalsAgainst: 1.25 },
+   221→  'Slovakia': { attackStrength: 0.95, defenseStrength: 0.88, avgGoalsFor: 1.3, avgGoalsAgainst: 1.15 },
+   222→  'Kosovo': { attackStrength: 0.88, defenseStrength: 0.98, avgGoalsFor: 1.15, avgGoalsAgainst: 1.4 },
+   223→  'Bosnia and Herzegovina': { attackStrength: 0.92, defenseStrength: 0.95, avgGoalsFor: 1.25, avgGoalsAgainst: 1.3 },
+   224→  'Bosnia': { attackStrength: 0.92, defenseStrength: 0.95, avgGoalsFor: 1.25, avgGoalsAgainst: 1.3 },
+   225→  'Gibraltar': { attackStrength: 0.65, defenseStrength: 1.15, avgGoalsFor: 0.7, avgGoalsAgainst: 1.8 },
+   226→  'Latvia': { attackStrength: 0.78, defenseStrength: 1.02, avgGoalsFor: 0.95, avgGoalsAgainst: 1.5 },
+   227→  'Malta': { attackStrength: 0.72, defenseStrength: 1.05, avgGoalsFor: 0.85, avgGoalsAgainst: 1.55 },
+   228→  'Luxembourg': { attackStrength: 0.80, defenseStrength: 0.98, avgGoalsFor: 1.0, avgGoalsAgainst: 1.4 },
+   229→  'Northern Ireland': { attackStrength: 0.85, defenseStrength: 0.95, avgGoalsFor: 1.1, avgGoalsAgainst: 1.3 },
+   230→  'Czechia': { attackStrength: 1.08, defenseStrength: 0.88, avgGoalsFor: 1.5, avgGoalsAgainst: 1.1 },
+   231→  // Turkey est défini plus haut avec le nom 'Turkey' et 'Türkiye' comme alias
+   232→  'Republic of Ireland': { attackStrength: 0.88, defenseStrength: 0.92, avgGoalsFor: 1.15, avgGoalsAgainst: 1.2 },
+   233→  'Cyprus': { attackStrength: 0.75, defenseStrength: 1.05, avgGoalsFor: 0.9, avgGoalsAgainst: 1.5 },
+   234→  'Belarus': { attackStrength: 0.78, defenseStrength: 1.00, avgGoalsFor: 0.95, avgGoalsAgainst: 1.45 },
+   235→  'Moldova': { attackStrength: 0.68, defenseStrength: 1.10, avgGoalsFor: 0.75, avgGoalsAgainst: 1.7 },
+   236→  'Kazakhstan': { attackStrength: 0.75, defenseStrength: 1.02, avgGoalsFor: 0.9, avgGoalsAgainst: 1.5 },
+   237→  'Azerbaijan': { attackStrength: 0.78, defenseStrength: 1.00, avgGoalsFor: 0.95, avgGoalsAgainst: 1.45 },
+   238→  'Georgia': { attackStrength: 0.92, defenseStrength: 0.95, avgGoalsFor: 1.25, avgGoalsAgainst: 1.3 },
+   239→  'Armenia': { attackStrength: 0.80, defenseStrength: 1.02, avgGoalsFor: 1.0, avgGoalsAgainst: 1.45 },
+   240→  'Faroe Islands': { attackStrength: 0.62, defenseStrength: 1.15, avgGoalsFor: 0.65, avgGoalsAgainst: 1.85 },
+   241→  'Liechtenstein': { attackStrength: 0.50, defenseStrength: 1.25, avgGoalsFor: 0.5, avgGoalsAgainst: 2.1 },
+   242→  'Andorra': { attackStrength: 0.52, defenseStrength: 1.20, avgGoalsFor: 0.55, avgGoalsAgainst: 1.95 },
+   243→  'San Marino': { attackStrength: 0.35, defenseStrength: 1.40, avgGoalsFor: 0.3, avgGoalsAgainst: 2.5 },
+   244→};
+   245→
+   246→// 🌍 Ajustement de confiance pour matchs internationaux
+   247→const INTERNATIONAL_CONFIDENCE_PENALTY = {
+   248→  'friendly': 0.70,      // -30% de confiance pour amicaux
+   249→  'international': 0.85, // -15% pour compétitions officielles
+   250→  'european': 0.95,      // -5% pour compétitions européennes
+   251→  'domestic': 1.0        // Pas de pénalité
+   252→};
+   253→
+   254→/**
+   255→ * Récupère les vraies cotes depuis BetExplorer
+   256→ */
+   257→async function getRealOdds(homeTeam: string, awayTeam: string): Promise<RealOdds | null> {
+   258→  try {
+   259→    const odds = await findMatchOdds(homeTeam, awayTeam, 'Foot');
+   260→    return odds;
+   261→  } catch (error) {
+   262→    console.log(`⚠️ Pas de cotes réelles pour ${homeTeam} vs ${awayTeam}`);
+   263→    return null;
+   264→  }
+   265→}
+   266→
+   267→/**
+   268→ * Récupère les stats FBref pour un match
+   269→ */
+   270→async function getFBrefData(homeTeam: string, awayTeam: string): Promise<{
+   271→  homeForm: FormGuide | null;
+   272→  awayForm: FormGuide | null;
+   273→  homeXG: TeamXGStats | null;
+   274→  awayXG: TeamXGStats | null;
+   275→  h2h: H2HHistory | null;
+   276→}> {
+   277→  console.log(`📊 Récupération données FBref: ${homeTeam} vs ${awayTeam}`);
+   278→  
+   279→  try {
+   280→    // Exécuter en parallèle pour gagner du temps
+   281→    const [homeFormResult, awayFormResult, homeXGResult, awayXGResult, h2hResult] = await Promise.all([
+   282→      scrapeFormGuide(homeTeam).catch(() => ({ data: null, error: null, dataSource: 'none' as const })),
+   283→      scrapeFormGuide(awayTeam).catch(() => ({ data: null, error: null, dataSource: 'none' as const })),
+   284→      scrapeTeamXG(homeTeam).catch(() => ({ data: null, error: null, dataSource: 'none' as const })),
+   285→      scrapeTeamXG(awayTeam).catch(() => ({ data: null, error: null, dataSource: 'none' as const })),
+   286→      scrapeH2HHistory(homeTeam, awayTeam).catch(() => ({ data: null, error: null, dataSource: 'none' as const })),
+   287→    ]);
+   288→    
+   289→    // Extraire les données des résultats
+   290→    return { 
+   291→      homeForm: homeFormResult.data, 
+   292→      awayForm: awayFormResult.data, 
+   293→      homeXG: homeXGResult.data, 
+   294→      awayXG: awayXGResult.data, 
+   295→      h2h: h2hResult.data 
+   296→    };
+   297→  } catch (error) {
+   298→    console.error('Erreur FBref:', error);
+   299→    return { homeForm: null, awayForm: null, homeXG: null, awayXG: null, h2h: null };
+   300→  }
+   301→}
+   302→
+   303→/**
+   304→ * Récupère les blessures depuis TheSportsDB
+   305→ */
+   306→async function getInjuryData(homeTeam: string, awayTeam: string): Promise<{
+   307→  home: InjuryInfo[];
+   308→  away: InjuryInfo[];
+   309→  impactScore: number;
+   310→}> {
+   311→  try {
+   312→    const injuryData = await getFootballMatchInjuries(homeTeam, awayTeam);
+   313→    
+   314→    // Calculer l'impact des blessures (0-10)
+   315→    let impactScore = 0;
+   316→    const homeInjured = injuryData.homeTeam.injuries.filter(i => i.status === 'injured').length;
+   317→    const awayInjured = injuryData.awayTeam.injuries.filter(i => i.status === 'injured').length;
+   318→    
+   319→    // Impact plus fort si joueurs clés blessés
+   320→    impactScore = Math.min(10, (homeInjured + awayInjured) * 1.5);
+   321→    
+   322→    return {
+   323→      home: injuryData.homeTeam.injuries,
+   324→      away: injuryData.awayTeam.injuries,
+   325→      impactScore
+   326→    };
+   327→  } catch (error) {
+   328→    return { home: [], away: [], impactScore: 0 };
+   329→  }
+   330→}
+   331→
+   332→/**
+   333→ * Calcule les probabilités avec le modèle Dixon-Coles amélioré
+   334→ */
+   335→function calculateProbabilities(
+   336→  homeTeam: string,
+   337→  awayTeam: string,
+   338→  homeXG: TeamXGStats | null,
+   339→  awayXG: TeamXGStats | null,
+   340→  homeForm: FormGuide | null,
+   341→  awayForm: FormGuide | null,
+   342→  h2h: H2HHistory | null,
+   343→  realOdds: RealOdds | null
+   344→): {
+   345→  homeWinProb: number;
+   346→  drawProb: number;
+   347→  awayWinProb: number;
+   348→  expectedHomeGoals: number;
+   349→  expectedAwayGoals: number;
+   350→  method: string;
+   351→} {
+   352→  const methods: string[] = [];
+   353→  
+   354→  // 1. Probabilités implicites des cotes (si disponibles)
+   355→  let impliedHome = 0.45;
+   356→  let impliedDraw = 0.28;
+   357→  let impliedAway = 0.27;
+   358→  
+   359→  if (realOdds) {
+   360→    const totalImplied = (1 / realOdds.oddsHome) + (1 / realOdds.oddsAway) + (realOdds.oddsDraw ? 1 / realOdds.oddsDraw : 0);
+   361→    impliedHome = (1 / realOdds.oddsHome) / totalImplied;
+   362→    impliedAway = (1 / realOdds.oddsAway) / totalImplied;
+   363→    impliedDraw = realOdds.oddsDraw ? (1 / realOdds.oddsDraw) / totalImplied : 0.28;
+   364→    methods.push('implied_odds');
+   365→  }
+   366→  
+   367→  // 2. Stats de base des équipes
+   368→  const homeStats = TEAM_BASE_STATS[homeTeam] || { attackStrength: 1.0, defenseStrength: 1.0, avgGoalsFor: 1.4, avgGoalsAgainst: 1.4 };
+   369→  const awayStats = TEAM_BASE_STATS[awayTeam] || { attackStrength: 1.0, defenseStrength: 1.0, avgGoalsFor: 1.4, avgGoalsAgainst: 1.4 };
+   370→  
+   371→  // 3. Calculer les xG attendus
+   372→  let expectedHomeGoals = 1.35 * homeStats.attackStrength * awayStats.defenseStrength;
+   373→  let expectedAwayGoals = 1.10 * awayStats.attackStrength * homeStats.defenseStrength;
+   374→  
+   375→  // Ajuster avec les xG de FBref si disponibles
+   376→  if (homeXG && awayXG) {
+   377→    const homeXGPerGame = homeXG.matches > 0 ? homeXG.xG / homeXG.matches : expectedHomeGoals;
+   378→    const awayXGPerGame = awayXG.matches > 0 ? awayXG.xG / awayXG.matches : expectedAwayGoals;
+   379→    const homeXGAPerGame = homeXG.matches > 0 ? homeXG.xGA / homeXG.matches : expectedAwayGoals;
+   380→    const awayXGAPerGame = awayXG.matches > 0 ? awayXG.xGA / awayXG.matches : expectedHomeGoals;
+   381→    
+   382→    expectedHomeGoals = (expectedHomeGoals + homeXGPerGame + awayXGAPerGame) / 3;
+   383→    expectedAwayGoals = (expectedAwayGoals + awayXGPerGame + homeXGAPerGame) / 3;
+   384→    methods.push('xg_adjusted');
+   385→  }
+   386→  
+   387→  // 4. Ajuster avec la forme
+   388→  if (homeForm && awayForm) {
+   389→    const homeFormBoost = (homeForm.formPoints - 7.5) / 15 * 0.15; // -0.15 à +0.15
+   390→    const awayFormBoost = (awayForm.formPoints - 7.5) / 15 * 0.15;
+   391→    
+   392→    expectedHomeGoals *= (1 + homeFormBoost);
+   393→    expectedAwayGoals *= (1 + awayFormBoost);
+   394→    methods.push('form_adjusted');
+   395→  }
+   396→  
+   397→  // 5. Ajuster avec H2H
+   398→  if (h2h && h2h.totalMatches >= 3) {
+   399→    const h2hHomeWinRate = h2h.team1Wins / h2h.totalMatches;
+   400→    const h2hAwayWinRate = h2h.team2Wins / h2h.totalMatches;
+   401→    
+   402→    // Influence de 10% maximum
+   403→    impliedHome = impliedHome * 0.9 + h2hHomeWinRate * 0.1;
+   404→    impliedAway = impliedAway * 0.9 + h2hAwayWinRate * 0.1;
+   405→    methods.push('h2h_adjusted');
+   406→  }
+   407→  
+   408→  // 6. Calculer les probabilités avec Poisson
+   409→  const homeWinProb = calculatePoissonWinProb(expectedHomeGoals, expectedAwayGoals, 'home');
+   410→  const awayWinProb = calculatePoissonWinProb(expectedHomeGoals, expectedAwayGoals, 'away');
+   411→  const drawProb = calculatePoissonDrawProb(expectedHomeGoals, expectedAwayGoals);
+   412→  
+   413→  // 7. Combiner probabilités implicites et Poisson (50/50 si cotes disponibles)
+   414→  let finalHome = homeWinProb;
+   415→  let finalDraw = drawProb;
+   416→  let finalAway = awayWinProb;
+   417→  
+   418→  if (realOdds) {
+   419→    finalHome = homeWinProb * 0.5 + impliedHome * 0.5;
+   420→    finalDraw = drawProb * 0.5 + impliedDraw * 0.5;
+   421→    finalAway = awayWinProb * 0.5 + impliedAway * 0.5;
+   422→    methods.push('hybrid');
+   423→  }
+   424→  
+   425→  // Normaliser
+   426→  const total = finalHome + finalDraw + finalAway;
+   427→  
+   428→  return {
+   429→    homeWinProb: Math.round(finalHome / total * 1000) / 10,
+   430→    drawProb: Math.round(finalDraw / total * 1000) / 10,
+   431→    awayWinProb: Math.round(finalAway / total * 1000) / 10,
+   432→    expectedHomeGoals: Math.round(expectedHomeGoals * 10) / 10,
+   433→    expectedAwayGoals: Math.round(expectedAwayGoals * 10) / 10,
+   434→    method: methods.join('+') || 'base_stats'
+   435→  };
+   436→}
+   437→
+   438→/**
+   439→ * Probabilité de victoire Poisson
+   440→ */
+   441→function calculatePoissonWinProb(lambda: number, mu: number, team: 'home' | 'away'): number {
+   442→  let winProb = 0;
+   443→  
+   444→  for (let h = 0; h <= 8; h++) {
+   445→    for (let a = 0; a <= 8; a++) {
+   446→      const prob = poisson(h, lambda) * poisson(a, mu);
+   447→      if (team === 'home' && h > a) winProb += prob;
+   448→      if (team === 'away' && a > h) winProb += prob;
+   449→    }
+   450→  }
+   451→  
+   452→  return winProb;
+   453→}
+   454→
+   455→/**
+   456→ * Probabilité de nul Poisson
+   457→ */
+   458→function calculatePoissonDrawProb(lambda: number, mu: number): number {
+   459→  let drawProb = 0;
+   460→  
+   461→  for (let i = 0; i <= 8; i++) {
+   462→    drawProb += poisson(i, lambda) * poisson(i, mu);
+   463→  }
+   464→  
+   465→  return drawProb;
+   466→}
+   467→
+   468→/**
+   469→ * Distribution Poisson
+   470→ */
+   471→function poisson(k: number, lambda: number): number {
+   472→  return (Math.pow(lambda, k) * Math.exp(-lambda)) / factorial(k);
+   473→}
+   474→
+   475→/**
+   476→ * Factorielle
+   477→ */
+   478→function factorial(n: number): number {
+   479→  if (n <= 1) return 1;
+   480→  let result = 1;
+   481→  for (let i = 2; i <= n; i++) result *= i;
+   482→  return result;
+   483→}
+   484→
+   485→/**
+   486→ * Détecte un value bet
+   487→ */
+   488→function detectValueBet(
+   489→  homeWinProb: number,
+   490→  drawProb: number,
+   491→  awayWinProb: number,
+   492→  oddsHome: number,
+   493→  oddsDraw: number | null,
+   494→  oddsAway: number
+   495→): {
+   496→  detected: boolean;
+   497→  type: 'home' | 'draw' | 'away' | null;
+   498→  edge: number;
+   499→  explanation: string;
+   500→} {
+   501→  const impliedHome = 1 / oddsHome;
+   502→  const impliedAway = 1 / oddsAway;
+   503→  const impliedDraw = oddsDraw ? 1 / oddsDraw : 0.28;
+   504→  
+   505→  const homeEdge = (homeWinProb / 100) - impliedHome;
+   506→  const awayEdge = (awayWinProb / 100) - impliedAway;
+   507→  const drawEdge = (drawProb / 100) - impliedDraw;
+   508→  
+   509→  // Seuil minimum de 3% pour value bet
+   510→  if (homeEdge > 0.03) {
+   511→    return {
+   512→      detected: true,
+   513→      type: 'home',
+   514→      edge: Math.round(homeEdge * 100),
+   515→      explanation: `Value détecté: Probabilité ${homeWinProb.toFixed(1)}% vs cote implicite ${(impliedHome * 100).toFixed(1)}%`
+   516→    };
+   517→  }
+   518→  
+   519→  if (awayEdge > 0.03) {
+   520→    return {
+   521→      detected: true,
+   522→      type: 'away',
+   523→      edge: Math.round(awayEdge * 100),
+   524→      explanation: `Value détecté: Probabilité ${awayWinProb.toFixed(1)}% vs cote implicite ${(impliedAway * 100).toFixed(1)}%`
+   525→    };
+   526→  }
+   527→  
+   528→  if (drawEdge > 0.03) {
+   529→    return {
+   530→      detected: true,
+   531→      type: 'draw',
+   532→      edge: Math.round(drawEdge * 100),
+   533→      explanation: `Value détecté: Probabilité ${drawProb.toFixed(1)}% vs cote implicite ${(impliedDraw * 100).toFixed(1)}%`
+   534→    };
+   535→  }
+   536→  
+   537→  return {
+   538→    detected: false,
+   539→    type: null,
+   540→    edge: 0,
+   541→    explanation: 'Aucun value bet détecté'
+   542→  };
+   543→}
+   544→
+   545→/**
+   546→ * Génère une prédiction complète pour un match de football
+   547→ * @param competitionType - Type de compétition pour ajuster la confiance
+   548→ */
+   549→export async function generateAdvancedFootballPrediction(
+   550→  homeTeam: string,
+   551→  awayTeam: string,
+   552→  league: string,
+   553→  matchDate: string,
+   554→  providedOdds?: { home: number; draw: number | null; away: number },
+   555→  competitionType: 'domestic' | 'european' | 'international' | 'friendly' = 'domestic'
+   556→): Promise<AdvancedFootballPrediction> {
+   557→  
+   558→  const matchId = `foot_${homeTeam}_${awayTeam}_${matchDate}`;
+   559→  
+   560→  // Vérifier le cache
+   561→  const cached = predictionCache.get(matchId);
+   562→  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+   563→    return cached.data;
+   564→  }
+   565→  
+   566→  const isInternational = competitionType === 'international' || competitionType === 'friendly';
+   567→  console.log(`\n🔮 Prédiction avancée: ${homeTeam} vs ${awayTeam} (${league})${isInternational ? ' 🌍' : ''}`);
+   568→  
+   569→  // 1. Récupérer les vraies cotes
+   570→  let realOdds: RealOdds | null = null;
+   571→  if (!providedOdds) {
+   572→    realOdds = await getRealOdds(homeTeam, awayTeam);
+   573→  }
+   574→  
+   575→  const oddsHome = providedOdds?.home || realOdds?.oddsHome || 2.0;
+   576→  const oddsDraw = providedOdds?.draw || realOdds?.oddsDraw || 3.3;
+   577→  const oddsAway = providedOdds?.away || realOdds?.oddsAway || 3.5;
+   578→  
+   579→  // 2. Récupérer les données FBref (en parallèle)
+   580→  const [fbrefData, injuryData] = await Promise.all([
+   581→    getFBrefData(homeTeam, awayTeam),
+   582→    getInjuryData(homeTeam, awayTeam)
+   583→  ]);
+   584→  
+   585→  // 3. Calculer les probabilités
+   586→  const probas = calculateProbabilities(
+   587→    homeTeam,
+   588→    awayTeam,
+   589→    fbrefData.homeXG,
+   590→    fbrefData.awayXG,
+   591→    fbrefData.homeForm,
+   592→    fbrefData.awayForm,
+   593→    fbrefData.h2h,
+   594→    realOdds
+   595→  );
+   596→  
+   597→  // 4. Déterminer le résultat prédit
+   598→  let predictedResult: 'home' | 'draw' | 'away';
+   599→  if (probas.homeWinProb > probas.awayWinProb && probas.homeWinProb > probas.drawProb) {
+   600→    predictedResult = 'home';
+   601→  } else if (probas.awayWinProb > probas.homeWinProb && probas.awayWinProb > probas.drawProb) {
+   602→    predictedResult = 'away';
+   603→  } else {
+   604→    predictedResult = 'draw';
+   605→  }
+   606→  
+   607→  // 5. Calculer la confiance avec pénalité pour matchs internationaux
+   608→  const maxProb = Math.max(probas.homeWinProb, probas.drawProb, probas.awayWinProb);
+   609→  let confidence = maxProb;
+   610→  
+   611→  // 🌍 Appliquer la pénalité de confiance pour matchs internationaux
+   612→  const confidencePenalty = INTERNATIONAL_CONFIDENCE_PENALTY[competitionType];
+   613→  confidence *= confidencePenalty;
+   614→  
+   615→  // Réduire confiance si blessures importantes
+   616→  if (injuryData.impactScore > 5) {
+   617→    confidence *= 0.9;
+   618→  }
+   619→  
+   620→  // 6. Générer le raisonnement
+   621→  const reasoning: string[] = [];
+   622→  
+   623→  // Ajouter warning pour matchs internationaux
+   624→  if (competitionType === 'friendly') {
+   625→    reasoning.push('⚠️ Match amical - Confiance réduite (-30%)');
+   626→  } else if (competitionType === 'international') {
+   627→    reasoning.push('🌍 Match international - Confiance réduite (-15%)');
+   628→  }
+   629→  
+   630→  if (fbrefData.homeForm && fbrefData.awayForm) {
+   631→    reasoning.push(`Forme: ${homeTeam} ${fbrefData.homeForm.form} vs ${awayTeam} ${fbrefData.awayForm.form}`);
+   632→  }
+   633→  
+   634→  if (fbrefData.h2h && fbrefData.h2h.totalMatches > 0) {
+   635→    reasoning.push(`H2H: ${fbrefData.h2h.team1Wins}W-${fbrefData.h2h.draws}D-${fbrefData.h2h.team2Wins}L`);
+   636→  }
+   637→  
+   638→  if (fbrefData.homeXG && fbrefData.awayXG) {
+   639→    reasoning.push(`xG: ${homeTeam} ${fbrefData.homeXG.xGDPer90.toFixed(2)}/90 vs ${awayTeam} ${fbrefData.awayXG.xGDPer90.toFixed(2)}/90`);
+   640→  }
+   641→  
+   642→  if (realOdds) {
+   643→    reasoning.push(`Cotes réelles: ${oddsHome}/${oddsDraw || '-'}/${oddsAway}`);
+   644→  }
+   645→  
+   646→  if (injuryData.impactScore > 0) {
+   647→    reasoning.push(`Impact blessures: ${injuryData.impactScore}/10`);
+   648→  }
+   649→  
+   650→  // 7. Score exact le plus probable
+   651→  const correctScore = {
+   652→    home: Math.round(probas.expectedHomeGoals),
+   653→    away: Math.round(probas.expectedAwayGoals),
+   654→    prob: Math.round(poisson(Math.round(probas.expectedHomeGoals), probas.expectedHomeGoals) * 
+   655→                     poisson(Math.round(probas.expectedAwayGoals), probas.expectedAwayGoals) * 1000) / 10
+   656→  };
+   657→  
+   658→  // 8. Over/Under 2.5 et BTTS
+   659→  const totalExpected = probas.expectedHomeGoals + probas.expectedAwayGoals;
+   660→  const over25 = Math.min(80, Math.max(20, Math.round(50 + (totalExpected - 2.5) * 20)));
+   661→  const bttsYes = Math.min(75, Math.max(25, Math.round(45 + probas.expectedHomeGoals * 5 + probas.expectedAwayGoals * 5)));
+   662→  
+   663→  // 9. Value Bet
+   664→  const valueBet = detectValueBet(
+   665→    probas.homeWinProb,
+   666→    probas.drawProb,
+   667→    probas.awayWinProb,
+   668→    oddsHome,
+   669→    oddsDraw,
+   670→    oddsAway
+   671→  );
+   672→  
+   673→  // 10. Qualité des données
+   674→  const dataQuality = {
+   675→    hasRealOdds: !!realOdds,
+   676→    hasFBrefData: !!(fbrefData.homeForm || fbrefData.homeXG || fbrefData.h2h),
+   677→    hasInjuryData: injuryData.home.length > 0 || injuryData.away.length > 0,
+   678→    overallScore: 0
+   679→  };
+   680→  
+   681→  dataQuality.overallScore = 
+   682→    (dataQuality.hasRealOdds ? 40 : 0) +
+   683→    (dataQuality.hasFBrefData ? 40 : 0) +
+   684→    (dataQuality.hasInjuryData ? 20 : 0);
+   685→  
+   686→  // Réduire le score de qualité pour matchs internationaux (moins de données historiques)
+   687→  if (isInternational) {
+   688→    dataQuality.overallScore = Math.round(dataQuality.overallScore * 0.8);
+   689→  }
+   690→  
+   691→  // Construire la prédiction
+   692→  const prediction: AdvancedFootballPrediction = {
+   693→    matchId,
+   694→    homeTeam,
+   695→    awayTeam,
+   696→    league,
+   697→    date: matchDate,
+   698→    odds: {
+   699→      home: oddsHome,
+   700→      draw: oddsDraw,
+   701→      away: oddsAway,
+   702→      source: realOdds ? 'BetExplorer' : 'Estimation'
+   703→    },
+   704→    probabilities: {
+   705→      homeWin: probas.homeWinProb,
+   706→      draw: probas.drawProb,
+   707→      awayWin: probas.awayWinProb,
+   708→      method: probas.method
+   709→    },
+   710→    fbrefData,
+   711→    injuries: injuryData,
+   712→    predictions: {
+   713→      result: predictedResult,
+   714→      confidence: Math.round(confidence),
+   715→      reasoning,
+   716→      correctScore,
+   717→      over25,
+   718→      under25: 100 - over25,
+   719→      btts: { yes: bttsYes, no: 100 - bttsYes }
+   720→    },
+   721→    valueBet,
+   722→    dataQuality,
+   723→    timestamp: new Date().toISOString()
+   724→  };
+   725→  
+   726→  // Mettre en cache
+   727→  predictionCache.set(matchId, { data: prediction, timestamp: Date.now() });
+   728→  
+   729→  console.log(`✅ Prédiction: ${predictedResult.toUpperCase()} (${Math.round(confidence)}%) - ${reasoning.join(' | ')}`);
+   730→  
+   731→  return prediction;
+   732→}
+   733→
+   734→/**
+   735→ * Vide le cache
+   736→ */
+   737→export function clearFootballCache(): void {
+   738→  predictionCache.clear();
+   739→  console.log('🗑️ Cache Football vidé');
+   740→}
+   741→
+   742→// Export par défaut
+   743→const FootballAdvancedModel = {
+   744→  generateAdvancedFootballPrediction,
+   745→  clearFootballCache,
+   746→  TEAM_BASE_STATS
+   747→};
+   748→
+   749→export default FootballAdvancedModel;
+   750→

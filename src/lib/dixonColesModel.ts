@@ -332,11 +332,331 @@ export function predictMatch(
   };
 }
 
+// ============================================
+// PRÉDICTION ENRICHI AVEC DONNÉES THESPORTSDB
+// ============================================
+
+/**
+ * Interface pour les données de classement TheSportsDB
+ */
+export interface LeagueTableStats {
+  teamName: string;
+  rank: number;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  form: string; // ex: "WWLWD"
+}
+
+/**
+ * Résultat enrichi pour Over/Under 2.5
+ */
+export interface GoalsPredictionResult {
+  over25: number;       // Probabilité Over 2.5 (%)
+  under25: number;      // Probabilité Under 2.5 (%)
+  over15: number;       // Probabilité Over 1.5 (%)
+  btts: number;        // Probabilité Both Teams To Score (%)
+  expectedGoals: number;
+  expectedHome: number;
+  expectedAway: number;
+  mostLikelyScore: string;
+  confidence: 'high' | 'medium' | 'low';
+  source: 'dixon-coles' | 'poisson-odds';
+  // Recommandation
+  recommendation: 'over25' | 'under25' | 'skip';
+  recConfidence: number;
+}
+
+/**
+ * Calcule une prédiction Over/Under enrichie en combinant:
+ * 1. Dixon-Coles (si stats TheSportsDB disponibles)
+ * 2. Poisson sur cotes (fallback)
+ * 
+ * Les données TheSportsDB (classement) fournissent GF/GA et forme,
+ * permettant un calcul Dixon-Coles beaucoup plus précis.
+ */
+export function predictGoalsEnriched(
+  homeTeam: string,
+  awayTeam: string,
+  league: string,
+  oddsHome?: number,
+  oddsDraw?: number | null,
+  oddsAway?: number,
+  homeTableStats?: LeagueTableStats | null,
+  awayTableStats?: LeagueTableStats | null,
+  isEstimated?: boolean
+): GoalsPredictionResult {
+  // Priorité 1: Dixon-Coles avec stats réelles TheSportsDB
+  if (homeTableStats && awayTableStats && homeTableStats.played >= 5 && awayTableStats.played >= 5) {
+    return predictGoalsFromTableStats(homeTableStats, awayTableStats, league);
+  }
+  
+  // Priorité 2: Poisson sur cotes (si cotes réelles)
+  if (oddsHome && oddsAway && oddsHome > 1 && oddsAway > 1 && !isEstimated) {
+    return predictGoalsFromOdds(oddsHome, oddsDraw, oddsAway);
+  }
+  
+  // Fallback: aucune donnée fiable
+  return {
+    over25: 50,
+    under25: 50,
+    over15: 65,
+    btts: 50,
+    expectedGoals: 2.5,
+    expectedHome: 1.3,
+    expectedAway: 1.2,
+    mostLikelyScore: '1-1',
+    confidence: 'low',
+    source: 'poisson-odds',
+    recommendation: 'skip',
+    recConfidence: 0,
+  };
+}
+
+/**
+ * Dixon-Coles enrichi avec stats réelles du classement TheSportsDB.
+ * Utilise: GF, GA, forme (WWLWD), rang, points par match.
+ */
+function predictGoalsFromTableStats(
+  home: LeagueTableStats,
+  away: LeagueTableStats
+): GoalsPredictionResult {
+  // 1. Calculer force offensive/défensive à partir du classement réel
+  // Buts attendus par match (basé sur GF total / joués)
+  const homeGoalsPerMatch = home.goalsFor / home.played;
+  const awayGoalsPerMatch = away.goalsFor / away.played;
+  const homeConcededPerMatch = home.goalsAgainst / home.played;
+  const awayConcededPerMatch = away.goalsAgainst / away.played;
+  
+  // 2. Force relative (pondérée par le nombre de matchs)
+  // Plus de matchs = données plus fiables
+  const weightFactor = Math.min(1.0, (home.played + away.played) / 60); // Max à ~30 matchs chacun
+  
+  // 3. Bonus/penalité forme récente (5 derniers matchs)
+  const homeForm = parseFormString(home.form);
+  const awayForm = parseFormString(away.form);
+  const homeFormMultiplier = 1.0 + (homeForm.goalsScoredAvg - 1.3) * 0.15;
+  const awayFormMultiplier = 1.0 + (awayForm.goalsScoredAvg - 1.3) * 0.15;
+  const homeConcededMultiplier = 1.0 + (homeForm.goalsConcededAvg - 1.0) * 0.1;
+  const awayConcededMultiplier = 1.0 + (awayForm.goalsConcededAvg - 1.0) * 0.1;
+  
+  // 4. Bonus domicile (historiquement ~+0.3 buts)
+  const homeAdvantage = 0.25;
+  
+  // 5. Calculer les lambdas (buts attendus) pour Dixon-Coles
+  // Home expected goals = (home attack strength) * (away defensive weakness) * home advantage
+  const lambda = Math.max(0.4, 
+    homeGoalsPerMatch * awayConcededPerMatch * homeFormMultiplier * (1 + homeAdvantage) * weightFactor +
+    1.35 * (1 - weightFactor) // Fallback vers la moyenne de la ligue
+  );
+  
+  // Away expected goals = (away attack strength) * (home defensive weakness)
+  const mu = Math.max(0.3,
+    awayGoalsPerMatch * homeConcededPerMatch * awayFormMultiplier * awayConcededMultiplier * weightFactor +
+    1.10 * (1 - weightFactor) // Fallback
+  );
+  
+  // 6. Exécuter le modèle Poisson-Dixon-Coles
+  const maxGoals = 8;
+  let over25Prob = 0;
+  let over15Prob = 0;
+  let bttsProb = 0;
+  let homeWinProb = 0;
+  let drawProb = 0;
+  let awayWinProb = 0;
+  
+  const scoreProbs: { home: number; away: number; prob: number }[] = [];
+  
+  for (let h = 0; h <= maxGoals; h++) {
+    for (let a = 0; a <= maxGoals; a++) {
+      const poissonHome = poissonProb(h, lambda);
+      const poissonAway = poissonProb(a, mu);
+      const dcAdj = dixonColesAdjustment(h, a, lambda, mu, DIXON_COLES_PARAMS.rho);
+      const prob = poissonHome * poissonAway * dcAdj;
+      
+      if (h > a) homeWinProb += prob;
+      else if (h === a) drawProb += prob;
+      else awayWinProb += prob;
+      
+      if (h + a > 2.5) over25Prob += prob;
+      if (h + a > 1.5) over15Prob += prob;
+      if (h > 0 && a > 0) bttsProb += prob;
+      
+      scoreProbs.push({ home: h, away: a, prob });
+    }
+  }
+  
+  // Normaliser
+  const total = homeWinProb + drawProb + awayWinProb;
+  if (total > 0) {
+    homeWinProb /= total;
+    drawProb /= total;
+    awayWinProb /= total;
+  }
+  
+  // Score le plus probable
+  scoreProbs.sort((a, b) => b.prob - a.prob);
+  const topScore = scoreProbs[0];
+  
+  // 7. Confiance basée sur la quantité de données
+  let confidence: 'high' | 'medium' | 'low';
+  const dataPoints = home.played + away.played;
+  if (dataPoints >= 50) confidence = 'high';
+  else if (dataPoints >= 20) confidence = 'medium';
+  else confidence = 'low';
+  
+  // 8. Recommandation Over/Under
+  const over25Pct = Math.round(over25Prob * 1000) / 10;
+  let recommendation: 'over25' | 'under25' | 'skip' = 'skip';
+  let recConfidence = 0;
+  
+  // Seuil de confiance: |over% - 50%| doit être significatif
+  if (over25Pct >= 60) {
+    recommendation = 'over25';
+    recConfidence = over25Pct - 50;
+  } else if (over25Pct <= 40) {
+    recommendation = 'under25';
+    recConfidence = 50 - over25Pct;
+  }
+  
+  return {
+    over25: over25Pct,
+    under25: Math.round((1 - over25Prob) * 1000) / 10,
+    over15: Math.round(over15Prob * 1000) / 10,
+    btts: Math.round(bttsProb * 1000) / 10,
+    expectedGoals: Math.round((lambda + mu) * 10) / 10,
+    expectedHome: Math.round(lambda * 10) / 10,
+    expectedAway: Math.round(mu * 10) / 10,
+    mostLikelyScore: `${topScore.home}-${topScore.away}`,
+    confidence,
+    source: 'dixon-coles',
+    recommendation,
+    recConfidence: Math.round(recConfidence * 10) / 10,
+  };
+}
+
+/**
+ * Parse la forme ("WWLWD") en métriques de buts estimés.
+ * W = ~2 buts marqués, 0.7 encaissés
+ * D = ~1 but marqué, 1 encaissé
+ * L = ~0.6 buts marqués, 1.5 encaissés
+ */
+function parseFormString(form: string): { goalsScoredAvg: number; goalsConcededAvg: number } {
+  if (!form || form.length === 0) {
+    return { goalsScoredAvg: 1.3, goalsConcededAvg: 1.1 };
+  }
+  
+  let totalScored = 0;
+  let totalConceded = 0;
+  let count = 0;
+  
+  for (const result of form.toUpperCase()) {
+    if (result === 'W') {
+      totalScored += 2.1;
+      totalConceded += 0.7;
+    } else if (result === 'D') {
+      totalScored += 1.0;
+      totalConceded += 1.0;
+    } else if (result === 'L') {
+      totalScored += 0.6;
+      totalConceded += 1.5;
+    }
+    count++;
+  }
+  
+  return count > 0
+    ? { goalsScoredAvg: totalScored / count, goalsConcededAvg: totalConceded / count }
+    : { goalsScoredAvg: 1.3, goalsConcededAvg: 1.1 };
+}
+
+/**
+ * Fallback: Poisson sur cotes (même logique qu'avant mais enrichi)
+ */
+function predictGoalsFromOdds(
+  oddsHome: number,
+  oddsDraw: number | null | undefined,
+  oddsAway: number
+): GoalsPredictionResult {
+  const probHome = 1 / oddsHome;
+  const probAway = 1 / oddsAway;
+  const probDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : 0.25;
+  const totalImplied = probHome + probAway + probDraw;
+  const normHome = probHome / totalImplied;
+  const normAway = probAway / totalImplied;
+  
+  // Estimation des buts attendus à partir du ratio de cotes
+  const oddsRatio = Math.max(oddsHome, oddsAway) / Math.min(oddsHome, oddsAway);
+  let expectedGoals = 2.6;
+  if (oddsRatio > 3) expectedGoals = 2.3;
+  else if (oddsRatio < 1.5) expectedGoals = 2.9;
+  if (oddsDraw && oddsDraw < 3.0) expectedGoals *= 0.9;
+  
+  // Répartition domicile/extérieur
+  const homeBias = 1.15;
+  const expectedHome = expectedGoals * (normHome + 0.5) / (normHome + normAway + 1) * homeBias;
+  const expectedAway = expectedGoals - expectedHome + (expectedGoals * (homeBias - 1));
+  
+  // Poisson
+  const lambda = Math.max(0.5, expectedHome);
+  const mu = Math.max(0.3, expectedGoals - expectedHome + 0.1);
+  
+  let over25Prob = 0;
+  let over15Prob = 0;
+  let bttsProb = 0;
+  const scoreProbs: { home: number; away: number; prob: number }[] = [];
+  
+  for (let h = 0; h <= 8; h++) {
+    for (let a = 0; a <= 8; a++) {
+      const prob = poissonProb(h, lambda) * poissonProb(a, mu);
+      if (h + a > 2.5) over25Prob += prob;
+      if (h + a > 1.5) over15Prob += prob;
+      if (h > 0 && a > 0) bttsProb += prob;
+      scoreProbs.push({ home: h, away: a, prob });
+    }
+  }
+  
+  scoreProbs.sort((a, b) => b.prob - a.prob);
+  const topScore = scoreProbs[0];
+  
+  const over25Pct = Math.round(over25Prob * 1000) / 10;
+  
+  let recommendation: 'over25' | 'under25' | 'skip' = 'skip';
+  let recConfidence = 0;
+  if (over25Pct >= 58) {
+    recommendation = 'over25';
+    recConfidence = over25Pct - 50;
+  } else if (over25Pct <= 42) {
+    recommendation = 'under25';
+    recConfidence = 50 - over25Pct;
+  }
+  
+  return {
+    over25: over25Pct,
+    under25: Math.round((1 - over25Prob) * 1000) / 10,
+    over15: Math.round(over15Prob * 1000) / 10,
+    btts: Math.round(bttsProb * 1000) / 10,
+    expectedGoals: Math.round(expectedGoals * 10) / 10,
+    expectedHome: Math.round(lambda * 10) / 10,
+    expectedAway: Math.round(mu * 10) / 10,
+    mostLikelyScore: `${topScore.home}-${topScore.away}`,
+    confidence: 'medium',
+    source: 'poisson-odds',
+    recommendation,
+    recConfidence: Math.round(recConfidence * 10) / 10,
+  };
+}
+
 /**
  * Export par défaut
  */
 export default {
   predictMatch,
+  predictGoalsEnriched,
   DIXON_COLES_PARAMS,
   LEAGUE_STRENGTH,
 };

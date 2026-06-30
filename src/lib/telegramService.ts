@@ -5,6 +5,7 @@
  * - Date et heure de la rencontre
  * - Pourcentage de réussite du pronostic
  * - Niveau de risque visuel
+ * - Over/Under 2.5 buts (football, Dixon-Coles enrichi)
  */
 
 // Configuration Telegram
@@ -66,69 +67,110 @@ function createProgressBar(percentage: number, length: number = 10): string {
 }
 
 // ============================================
-// PRÉDICTION DE BUTS (Football - Poisson)
+// PRÉDICTION DE BUTS (Football - Dixon-Coles Enrichi)
 // ============================================
 
-interface GoalsPrediction {
-  total: number;
-  over25: number;
-  under25: number;
-  over15: number;
-  bothTeamsScore: number;
-  prediction: string;
-  basedOn: 'real' | 'estimated';
-}
+// Cache pour les stats d'équipe TheSportsDB (éviter les appels répétés)
+const teamStatsCache = new Map<string, any>();
+const TEAM_STATS_CACHE_TTL = 3600000; // 1 heure
 
 /**
- * Calcule une prédiction de buts à partir des cotes (modèle de Poisson).
- * Retourne null si les cotes ne sont pas assez fiables.
+ * Calcule une prédiction de buts enrichie avec Dixon-Coles.
+ * Combine: TheSportsDB (classement GF/GA/forme) + Poisson sur cotes.
  */
-function calculateGoalsPrediction(
-  oddsHome: number,
-  oddsAway: number,
+async function calculateGoalsPredictionEnriched(
+  homeTeam: string,
+  awayTeam: string,
+  league: string,
+  oddsHome?: number,
   oddsDraw?: number | null,
+  oddsAway?: number,
   isEstimated?: boolean
-): GoalsPrediction | null {
+): Promise<GoalsPredictionResult | null> {
   if (!oddsHome || !oddsAway || oddsHome <= 1 || oddsAway <= 1) return null;
   if (isEstimated) return null;
 
-  const probHome = 1 / oddsHome;
-  const probAway = 1 / oddsAway;
-  const probDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : 0.25;
-  const totalImplied = probHome + probAway + probDraw;
-  const normHome = probHome / totalImplied;
-  const normAway = probAway / totalImplied;
+  // Essayer de récupérer les stats TheSportsDB
+  let homeTableStats = null;
+  let awayTableStats = null;
 
-  const oddsRatio = Math.max(oddsHome, oddsAway) / Math.min(oddsHome, oddsAway);
-  let expectedGoals = 2.6;
-  if (oddsRatio > 3) expectedGoals = 2.3;
-  else if (oddsRatio < 1.5) expectedGoals = 2.9;
-  if (oddsDraw && oddsDraw < 3.0) expectedGoals *= 0.9;
+  try {
+    const cacheKey = `${homeTeam}|${awayTeam}`;
+    const cached = teamStatsCache.get(cacheKey);
+    
+    if (cached && (Date.now() - cached.timestamp) < TEAM_STATS_CACHE_TTL) {
+      homeTableStats = cached.home;
+      awayTableStats = cached.away;
+    } else {
+      const stats = await getMatchTeamStats(homeTeam, awayTeam);
+      if (stats.homeTeam) {
+        homeTableStats = {
+          teamName: stats.homeTeam.teamName,
+          rank: stats.homeTeam.rank,
+          played: stats.homeTeam.played,
+          won: stats.homeTeam.won,
+          drawn: stats.homeTeam.drawn,
+          lost: stats.homeTeam.lost,
+          goalsFor: stats.homeTeam.goalsFor,
+          goalsAgainst: stats.homeTeam.goalsAgainst,
+          goalDifference: stats.homeTeam.goalDifference,
+          points: stats.homeTeam.points,
+          form: stats.homeTeam.form,
+        };
+      }
+      if (stats.awayTeam) {
+        awayTableStats = {
+          teamName: stats.awayTeam.teamName,
+          rank: stats.awayTeam.rank,
+          played: stats.awayTeam.played,
+          won: stats.awayTeam.won,
+          drawn: stats.awayTeam.drawn,
+          lost: stats.awayTeam.lost,
+          goalsFor: stats.awayTeam.goalsFor,
+          goalsAgainst: stats.awayTeam.goalsAgainst,
+          goalDifference: stats.awayTeam.goalDifference,
+          points: stats.awayTeam.points,
+          form: stats.awayTeam.form,
+        };
+      }
+      // Mettre en cache
+      teamStatsCache.set(cacheKey, {
+        home: homeTableStats,
+        away: awayTableStats,
+        timestamp: Date.now(),
+      });
+    }
+  } catch (e) {
+    // Silently fail — fallback to odds-based Poisson
+  }
 
-  const p0 = Math.exp(-expectedGoals);
-  const p01 = p0 * (1 + expectedGoals);
-  const p012 = p01 + (p0 * (expectedGoals * expectedGoals) / 2);
+  // Utiliser le modèle enrichi
+  return predictGoalsEnriched(
+    homeTeam, awayTeam, league,
+    oddsHome, oddsDraw, oddsAway,
+    homeTableStats, awayTableStats,
+    isEstimated
+  );
+}
 
-  const over15 = Math.round((1 - p01) * 100);
-  const over25 = Math.round((1 - p012) * 100);
-  const btts = Math.min(85, Math.round((normHome + normAway) * 40 + (1 - Math.abs(normHome - normAway)) * 30));
-
-  let prediction = '';
-  if (over25 >= 55) prediction = 'Over 2.5 buts';
-  else if (over25 <= 42) prediction = 'Under 2.5 buts';
-  else if (btts >= 58) prediction = 'Les deux marquent';
-  else if (over15 >= 65) prediction = 'Over 1.5 buts';
-  else prediction = 'Match serré';
-
-  return {
-    total: Math.round(expectedGoals * 10) / 10,
-    over25,
-    under25: 100 - over25,
-    over15,
-    bothTeamsScore: btts,
-    prediction,
-    basedOn: 'estimated'
-  };
+/**
+ * Formatte une prédiction de buts pour Telegram
+ */
+function formatGoalsPrediction(goals: GoalsPredictionResult): string {
+  const sourceLabel = goals.source === 'dixon-coles' ? '🔬' : '📊';
+  
+  let line = `${sourceLabel} <b>${goals.expectedGoals}</b> buts attendus (${goals.mostLikelyScore})\n`;
+  
+  // Over/Under 2.5
+  if (goals.recommendation !== 'skip') {
+    const recEmoji = goals.recommendation === 'over25' ? '⬆️' : '⬇️';
+    const recLabel = goals.recommendation === 'over25' ? 'Over 2.5' : 'Under 2.5';
+    line += `   ${recEmoji} <b>${recLabel}</b>: ${goals.recommendation === 'over25' ? goals.over25 : goals.under25}%\n`;
+  } else {
+    line += `   ⚖️ +2.5: ${goals.over25}%  ·  -2.5: ${goals.under25}%\n`;
+  }
+  
+  return line;
 }
 
 /**

@@ -1,0 +1,893 @@
+     1→     1→/**
+     2→     2→ * Telegram Service - Publication automatique des pronostics
+     3→     3→ * 
+     4→     4→ * Format des messages ergonomique et clair avec:
+     5→     5→ * - Date et heure de la rencontre
+     6→     6→ * - Pourcentage de réussite du pronostic
+     7→     7→ * - Niveau de risque visuel
+     8→     8→ */
+     9→     9→
+    10→    10→// Configuration Telegram
+    11→    11→const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+    12→    12→const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+    13→    13→
+    14→    14→// Seuils de risque
+    15→    15→const MAX_RISK_PERCENTAGE = 50; // Safe + Modéré uniquement
+    16→    16→const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
+    17→    17→
+    18→    18→/**
+    19→    19→ * Vérifie si un pronostic est publiable (safe ou modéré)
+    20→    20→ */
+    21→    21→export function isSafeOrModerate(riskPercentage?: number): boolean {
+    22→    22→  if (riskPercentage === undefined) return false;
+    23→    23→  return riskPercentage <= MAX_RISK_PERCENTAGE;
+    24→    24→}
+    25→    25→
+    26→    26→/**
+    27→    27→ * Vérifie si un pronostic est Kamikaze (haut risque)
+    28→    28→ */
+    29→    29→export function isKamikaze(riskPercentage?: number): boolean {
+    30→    30→  if (riskPercentage === undefined) return false;
+    31→    31→  return riskPercentage >= KAMIKAZE_MIN_RISK;
+    32→    32→}
+    33→    33→
+    34→    34→/**
+    35→    35→ * Retourne le label du niveau de risque
+    36→    36→ */
+    37→    37→export function getRiskLabel(riskPercentage?: number): string {
+    38→    38→  if (riskPercentage === undefined) return 'Non évalué';
+    39→    39→  if (riskPercentage <= 30) return 'Safe';
+    40→    40→  if (riskPercentage <= 50) return 'Modéré';
+    41→    41→  return 'Kamikaze';
+    42→    42→}
+    43→    43→
+    44→    44→// Emojis pour les sports
+    45→    45→const SPORT_EMOJIS: Record<string, string> = {
+    46→    46→  // Football
+    47→    47→  'Foot': '⚽', 'Football': '⚽', 'football': '⚽', 'Soccer': '⚽', 'soccer': '⚽',
+    48→    48→  // Basket
+    49→    49→  'Basket': '🏀', 'basket': '🏀', 'Basketball': '🏀', 'basketball': '🏀', 
+    50→    50→  'NBA': '🏀', 'nba': '🏀', 'BASKET': '🏀',
+    51→    51→  // Hockey
+    52→    52→  'NHL': '🏒', 'Hockey': '🏒', 'hockey': '🏒',
+    53→    53→  // Tennis
+    54→    54→  'Tennis': '🎾', 'tennis': '🎾',
+    55→    55→  // Baseball
+    56→    56→  'Baseball': '⚾', 'baseball': '⚾', 'MLB': '⚾', 'mlb': '⚾',
+    57→    57→};
+    58→    58→
+    59→    59→/**
+    60→    60→ * Crée une barre de progression visuelle
+    61→    61→ */
+    62→    62→function createProgressBar(percentage: number, length: number = 10): string {
+    63→    63→  const filled = Math.round((percentage / 100) * length);
+    64→    64→  const empty = length - filled;
+    65→    65→  return '█'.repeat(filled) + '░'.repeat(empty);
+    66→    66→}
+    67→    67→
+    68→    68→// ============================================
+    69→    69→// PRÉDICTION DE BUTS (Football - Poisson)
+    70→    70→// ============================================
+    71→    71→
+    72→    72→interface GoalsPrediction {
+    73→    73→  total: number;
+    74→    74→  over25: number;
+    75→    75→  under25: number;
+    76→    76→  over15: number;
+    77→    77→  bothTeamsScore: number;
+    78→    78→  prediction: string;
+    79→    79→  basedOn: 'real' | 'estimated';
+    80→    80→}
+    81→    81→
+    82→    82→/**
+    83→    83→ * Calcule une prédiction de buts à partir des cotes (modèle de Poisson).
+    84→    84→ * Retourne null si les cotes ne sont pas assez fiables.
+    85→    85→ */
+    86→    86→function calculateGoalsPrediction(
+    87→    87→  oddsHome: number,
+    88→    88→  oddsAway: number,
+    89→    89→  oddsDraw?: number | null,
+    90→    90→  isEstimated?: boolean
+    91→    91→): GoalsPrediction | null {
+    92→    92→  if (!oddsHome || !oddsAway || oddsHome <= 1 || oddsAway <= 1) return null;
+    93→    93→  if (isEstimated) return null;
+    94→    94→
+    95→    95→  const probHome = 1 / oddsHome;
+    96→    96→  const probAway = 1 / oddsAway;
+    97→    97→  const probDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : 0.25;
+    98→    98→  const totalImplied = probHome + probAway + probDraw;
+    99→    99→  const normHome = probHome / totalImplied;
+   100→   100→  const normAway = probAway / totalImplied;
+   101→   101→
+   102→   102→  const oddsRatio = Math.max(oddsHome, oddsAway) / Math.min(oddsHome, oddsAway);
+   103→   103→  let expectedGoals = 2.6;
+   104→   104→  if (oddsRatio > 3) expectedGoals = 2.3;
+   105→   105→  else if (oddsRatio < 1.5) expectedGoals = 2.9;
+   106→   106→  if (oddsDraw && oddsDraw < 3.0) expectedGoals *= 0.9;
+   107→   107→
+   108→   108→  const p0 = Math.exp(-expectedGoals);
+   109→   109→  const p01 = p0 * (1 + expectedGoals);
+   110→   110→  const p012 = p01 + (p0 * (expectedGoals * expectedGoals) / 2);
+   111→   111→
+   112→   112→  const over15 = Math.round((1 - p01) * 100);
+   113→   113→  const over25 = Math.round((1 - p012) * 100);
+   114→   114→  const btts = Math.min(85, Math.round((normHome + normAway) * 40 + (1 - Math.abs(normHome - normAway)) * 30));
+   115→   115→
+   116→   116→  let prediction = '';
+   117→   117→  if (over25 >= 55) prediction = 'Over 2.5 buts';
+   118→   118→  else if (over25 <= 42) prediction = 'Under 2.5 buts';
+   119→   119→  else if (btts >= 58) prediction = 'Les deux marquent';
+   120→   120→  else if (over15 >= 65) prediction = 'Over 1.5 buts';
+   121→   121→  else prediction = 'Match serré';
+   122→   122→
+   123→   123→  return {
+   124→   124→    total: Math.round(expectedGoals * 10) / 10,
+   125→   125→    over25,
+   126→   126→    under25: 100 - over25,
+   127→   127→    over15,
+   128→   128→    bothTeamsScore: btts,
+   129→   129→    prediction,
+   130→   130→    basedOn: 'estimated'
+   131→   131→  };
+   132→   132→}
+   133→   133→
+   134→   134→/**
+   135→   135→ * Formate la date et l'heure pour l'affichage
+   136→   136→ */
+   137→   137→function formatDateTime(dateStr: string, displayDate?: string): { date: string; time: string } {
+   138→   138→  try {
+   139→   139→    // Si on a déjà un displayDate formaté, l'utiliser
+   140→   140→    if (displayDate) {
+   141→   141→      const parts = displayDate.split(',');
+   142→   142→      if (parts.length >= 2) {
+   143→   143→        return { date: parts[0].trim(), time: parts[1].trim() };
+   144→   144→      }
+   145→   145→      return { date: displayDate, time: '' };
+   146→   146→    }
+   147→   147→    
+   148→   148→    // Sinon parser la date
+   149→   149→    const date = new Date(dateStr);
+   150→   150→    if (isNaN(date.getTime())) {
+   151→   151→      return { date: 'Date inconnue', time: '' };
+   152→   152→    }
+   153→   153→    
+   154→   154→    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+   155→   155→    const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+   156→   156→                        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+   157→   157→    
+   158→   158→    const dayName = dayNames[date.getDay()];
+   159→   159→    const day = date.getDate();
+   160→   160→    const month = monthNames[date.getMonth()];
+   161→   161→    const hours = date.getHours().toString().padStart(2, '0');
+   162→   162→    const minutes = date.getMinutes().toString().padStart(2, '0');
+   163→   163→    
+   164→   164→    return { 
+   165→   165→      date: `${dayName} ${day} ${month}`, 
+   166→   166→      time: `${hours}h${minutes}` 
+   167→   167→    };
+   168→   168→  } catch {
+   169→   169→    return { date: 'Date inconnue', time: '' };
+   170→   170→  }
+   171→   171→}
+   172→   172→
+   173→   173→/**
+   174→   174→ * Envoie un message sur Telegram
+   175→   175→ */
+   176→   176→export async function sendTelegramMessage(text: string, options?: {
+   177→   177→  parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+   178→   178→  disable_notification?: boolean;
+   179→   179→}): Promise<boolean> {
+   180→   180→  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+   181→   181→    console.warn('⚠️ Telegram non configuré');
+   182→   182→    return false;
+   183→   183→  }
+   184→   184→
+   185→   185→  try {
+   186→   186→    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+   187→   187→    
+   188→   188→    const response = await fetch(url, {
+   189→   189→      method: 'POST',
+   190→   190→      headers: { 'Content-Type': 'application/json' },
+   191→   191→      body: JSON.stringify({
+   192→   192→        chat_id: TELEGRAM_CHAT_ID,
+   193→   193→        text,
+   194→   194→        parse_mode: options?.parse_mode || 'HTML',
+   195→   195→        disable_notification: options?.disable_notification || false,
+   196→   196→      }),
+   197→   197→    });
+   198→   198→
+   199→   199→    const data = await response.json();
+   200→   200→
+   201→   201→    if (!data.ok) {
+   202→   202→      console.error('❌ Erreur Telegram:', data.description);
+   203→   203→      return false;
+   204→   204→    }
+   205→   205→
+   206→   206→    console.log('✅ Message envoyé sur Telegram');
+   207→   207→    return true;
+   208→   208→  } catch (error) {
+   209→   209→    console.error('❌ Erreur envoi Telegram:', error);
+   210→   210→    return false;
+   211→   211→  }
+   212→   212→}
+   213→   213→
+   214→   214→/**
+   215→   215→ * Convertit le résultat prédit en option de pari (1, X, 2)
+   216→   216→ */
+   217→   217→function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string): string {
+   218→   218→  if (!predictedResult) return '';
+   219→   219→  
+   220→   220→  // Pour le football: 1, X, 2
+   221→   221→  if (sport?.toLowerCase().includes('foot') || sport?.toLowerCase() === 'soccer') {
+   222→   222→    if (predictedResult === 'home') return '1️⃣';
+   223→   223→    if (predictedResult === 'draw') return '❌';
+   224→   224→    if (predictedResult === 'away') return '2️⃣';
+   225→   225→  }
+   226→   226→  
+   227→   227→  // Pour tennis/basket/hockey: 1 ou 2 (pas de match nul)
+   228→   228→  if (predictedResult === 'home') return '1️⃣';
+   229→   229→  if (predictedResult === 'away') return '2️⃣';
+   230→   230→  
+   231→   231→  return '';
+   232→   232→}
+   233→   233→
+   234→   234→/**
+   235→   235→ * Formate un pronostic individuel (format ergonomique)
+   236→   236→ */
+   237→   237→function formatPrediction(prediction: {
+   238→   238→  homeTeam: string;
+   239→   239→  awayTeam: string;
+   240→   240→  sport: string;
+   241→   241→  league?: string;
+   242→   242→  date: string;
+   243→   243→  oddsHome?: number;
+   244→   244→  oddsDraw?: number | null;
+   245→   245→  oddsAway?: number;
+   246→   246→  recommendation?: string;
+   247→   247→  predictedResult?: 'home' | 'away' | 'draw';
+   248→   248→  confidence?: string;
+   249→   249→  riskPercentage?: number;
+   250→   250→  winProbability?: number;
+   251→   251→  valueBetDetected?: boolean;
+   252→   252→  valueBetType?: string | null;
+   253→   253→  isLive?: boolean;
+   254→   254→  isEstimated?: boolean;
+   255→   255→  dateTag?: string;
+   256→   256→  displayDate?: string;
+   257→   257→}): string {
+   258→   258→  const sportEmoji = SPORT_EMOJIS[prediction.sport] || '🏟️';
+   259→   259→  const { date, time } = formatDateTime(prediction.date, prediction.displayDate);
+   260→   260→  
+   261→   261→  // En-tête avec bordure
+   262→   262→  let message = '━━━━━━━━━━━━━━━━━━━━━\n';
+   263→   263→  
+   264→   264→  // Ligne titre avec sport et value bet
+   265→   265→  if (prediction.valueBetDetected) {
+   266→   266→    message += `🔔 <b>VALUE BET</b> ${sportEmoji}\n`;
+   267→   267→  } else {
+   268→   268→    message += `${sportEmoji} <b>${prediction.sport.toUpperCase()}</b>\n`;
+   269→   269→  }
+   270→   270→  
+   271→   271→  message += '━━━━━━━━━━━━━━━━━━━━━\n\n';
+   272→   272→  
+   273→   273→  // Match
+   274→   274→  message += `🏟️ <b>${prediction.homeTeam}</b>\n`;
+   275→   275→  message += `    <b>VS</b>\n`;
+   276→   276→  message += `🏟️ <b>${prediction.awayTeam}</b>\n\n`;
+   277→   277→  
+   278→   278→  // Date et heure
+   279→   279→  message += `📅 <b>${date}</b>\n`;
+   280→   280→  if (time) {
+   281→   281→    message += `⏰ <b>${time}</b>\n`;
+   282→   282→  }
+   283→   283→  
+   284→   284→  // Ligue
+   285→   285→  if (prediction.league) {
+   286→   286→    message += `🏆 ${prediction.league}\n`;
+   287→   287→  }
+   288→   288→  
+   289→   289→  message += '\n';
+   290→   290→  
+   291→   291→  // Cotes
+   292→   292→  if (prediction.oddsHome && prediction.oddsAway) {
+   293→   293→    message += `📊 <b>COTES</b>\n`;
+   294→   294→    if (prediction.oddsDraw) {
+   295→   295→      message += `    1️⃣ ${prediction.oddsHome.toFixed(2)}  |  ❌ ${prediction.oddsDraw.toFixed(2)}  |  2️⃣ ${prediction.oddsAway.toFixed(2)}\n`;
+   296→   296→    } else {
+   297→   297→      message += `    1️⃣ ${prediction.oddsHome.toFixed(2)}  |  2️⃣ ${prediction.oddsAway.toFixed(2)}\n`;
+   298→   298→    }
+   299→   299→    message += '\n';
+   300→   300→  }
+   301→   301→  
+   302→   302→  // Pronostic avec mise en évidence - OPTION DE PARI CLAIRE
+   303→   303→  if (prediction.recommendation || prediction.predictedResult) {
+   304→   304→    message += `🎯 <b>PRONOSTIC</b>\n`;
+   305→   305→    
+   306→   306→    // Afficher l'option de pari (1, X, 2)
+   307→   307→    const betOption = getBetOption(prediction.predictedResult, prediction.sport);
+   308→   308→    
+   309→   309→    if (betOption && prediction.recommendation) {
+   310→   310→      message += `    ${betOption} <b>${prediction.recommendation}</b>\n`;
+   311→   311→    } else if (betOption) {
+   312→   312→      // Si on a que l'option, afficher le nom de l'équipe correspondante
+   313→   313→      const teamName = prediction.predictedResult === 'home' ? prediction.homeTeam :
+   314→   314→                       prediction.predictedResult === 'away' ? prediction.awayTeam : 'Match Nul';
+   315→   315→      message += `    ${betOption} <b>${teamName}</b>\n`;
+   316→   316→    } else if (prediction.recommendation) {
+   317→   317→      message += `    ▶️ <b>${prediction.recommendation}</b>\n`;
+   318→   318→    }
+   319→   319→    message += '\n';
+   320→   320→  }
+   321→   321→  
+   322→   322→  // Pourcentage de réussite
+   323→   323→  const winProb = prediction.winProbability || (prediction.riskPercentage !== undefined ? 100 - prediction.riskPercentage : null);
+   324→   324→  if (winProb !== null && winProb !== undefined) {
+   325→   325→    const probEmoji = winProb >= 70 ? '🔥' : winProb >= 50 ? '✅' : '⚡';
+   326→   326→    message += `${probEmoji} <b>RÉUSSITE</b>\n`;
+   327→   327→    message += `    ${createProgressBar(winProb)} <b>${winProb}%</b>\n\n`;
+   328→   328→  }
+   329→   329→  
+   330→   330→  // Niveau de risque
+   331→   331→  if (prediction.riskPercentage !== undefined) {
+   332→   332→    const riskEmoji = prediction.riskPercentage <= 30 ? '🟢' : '🟡';
+   333→   333→    const riskLabel = prediction.riskPercentage <= 30 ? 'SAFE' : 'MODÉRÉ';
+   334→   334→    message += `${riskEmoji} <b>RISQUE: ${riskLabel}</b> (${prediction.riskPercentage}%)\n`;
+   335→   335→  }
+   336→   336→  
+   337→   337→  // Value bet info
+   338→   338→  if (prediction.valueBetDetected && prediction.valueBetType) {
+   339→   339→    message += `💎 <b>Value: ${prediction.valueBetType}</b>\n`;
+   340→   340→  }
+   341→   341→  
+   342→   342→  // Avertissement
+   343→   343→  if (prediction.isEstimated) {
+   344→   344→    message += `\n⚠️ <i>Cotes estimées</i>\n`;
+   345→   345→  }
+   346→   346→  
+   347→   347→  return message;
+   348→   348→}
+   349→   349→
+   350→   350→/**
+   351→   351→ * Publie un pronostic individuel sur Telegram
+   352→   352→ */
+   353→   353→export async function publishPredictionToTelegram(prediction: {
+   354→   354→  homeTeam: string;
+   355→   355→  awayTeam: string;
+   356→   356→  sport: string;
+   357→   357→  league?: string;
+   358→   358→  date: string;
+   359→   359→  oddsHome?: number;
+   360→   360→  oddsDraw?: number | null;
+   361→   361→  oddsAway?: number;
+   362→   362→  recommendation?: string;
+   363→   363→  predictedResult?: 'home' | 'away' | 'draw';
+   364→   364→  confidence?: string;
+   365→   365→  riskPercentage?: number;
+   366→   366→  winProbability?: number;
+   367→   367→  valueBetDetected?: boolean;
+   368→   368→  valueBetType?: string | null;
+   369→   369→  isLive?: boolean;
+   370→   370→  isEstimated?: boolean;
+   371→   371→  dateTag?: string;
+   372→   372→  displayDate?: string;
+   373→   373→}): Promise<boolean> {
+   374→   374→  const message = formatPrediction(prediction);
+   375→   375→  return sendTelegramMessage(message);
+   376→   376→}
+   377→   377→
+   378→   378→/**
+   379→   379→ * Publie un résumé quotidien ergonomique
+   380→   380→ */
+   381→   381→export async function publishDailySummaryToTelegram(predictions: Array<{
+   382→   382→  homeTeam: string;
+   383→   383→  awayTeam: string;
+   384→   384→  sport: string;
+   385→   385→  league?: string;
+   386→   386→  date: string;
+   387→   387→  displayDate?: string;
+   388→   388→  dateTag?: string;
+   389→   389→  recommendation?: string;
+   390→   390→  predictedResult?: 'home' | 'away' | 'draw';
+   391→   391→  confidence?: string;
+   392→   392→  riskPercentage?: number;
+   393→   393→  winProbability?: number;
+   394→   394→  valueBetDetected?: boolean;
+   395→   395→  oddsHome?: number;
+   396→   396→  oddsAway?: number;
+   397→   397→  oddsDraw?: number | null;
+   398→   398→  isEstimated?: boolean;
+   399→   399→}>): Promise<boolean> {
+   400→   400→  // Filtrer safe et modéré
+   401→   401→  const filtered = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
+   402→   402→  
+   403→   403→  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré -> Afficher directement les Kamikaze
+   404→   404→  if (filtered.length === 0 && predictions.length > 0) {
+   405→   405→    console.log('⚠️ Aucun pronostic safe/modéré - affichage Kamikaze direct');
+   406→   406→
+   407→   407→    // Filtrer les matchs Kamikaze (risque >= 51%)
+   408→   408→    const kamikazePicks = predictions.filter(p => isKamikaze(p.riskPercentage));
+   409→   409→
+   410→   410→    const today = new Date().toLocaleDateString('fr-FR', {
+   411→   411→      weekday: 'long', day: 'numeric', month: 'long'
+   412→   412→    });
+   413→   413→
+   414→   414→    let message = '';
+   415→   415→    message += '╔═════════════════════════════╗\n';
+   416→   416→    message += '║\n';
+   417→   417→    message += '║   📢 <b>PRONOSTICS DU JOUR</b>\n';
+   418→   418→    message += '║\n';
+   419→   419→    message += '╚═════════════════════════════╝\n\n';
+   420→   420→
+   421→   421→    message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
+   422→   422→
+   423→   423→    message += `⚠️ <b>AUCUN PRONOSTIC SAFE/MODÉRÉ</b>\n\n`;
+   424→   424→    message += `📊 <b>${predictions.length} match${predictions.length > 1 ? 's' : ''} analysé${predictions.length > 1 ? 's' : ''}</b>\n`;
+   425→   425→    message += `    mais aucun ne répond aux critères:\n`;
+   426→   426→    message += `    🟢 Safe (risque ≤ 30%)\n`;
+   427→   427→    message += `    🟡 Modéré (risque 31-50%)\n\n`;
+   428→   428→
+   429→   429→    // Afficher DIRECTEMENT les matchs Kamikaze disponibles
+   430→   430→    if (kamikazePicks.length > 0) {
+   431→   431→      message += '───────────────────────────\n';
+   432→   432→      message += `💣 <b>SÉLECTION KAMIKAZE</b> — ${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''}\n`;
+   433→   433→      message += '───────────────────────────\n\n';
+   434→   434→      message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n\n`;
+   435→   435→
+   436→   436→      kamikazePicks.slice(0, 5).forEach((m, i) => {
+   437→   437→        const { time } = formatDateTime(m.date, m.displayDate);
+   438→   438→        const isFootball = m.sport?.toLowerCase().includes('foot') || m.sport?.toLowerCase() === 'soccer';
+   439→   439→        const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+   440→   440→        const betOption = getBetOption(m.predictedResult, m.sport);
+   441→   441→        const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
+   442→   442→
+   443→   443→        message += '───────────────────────────\n';
+   444→   444→        message += `<b>${i + 1}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}\n`;
+   445→   445→
+   446→   446→        if (m.league) {
+   447→   447→          message += `${SPORT_EMOJIS[m.sport] || '🏟️'} ${m.league}\n`;
+   448→   448→        }
+   449→   449→
+   450→   450→        if (m.oddsHome && m.oddsAway) {
+   451→   451→          let oddsLine = `📊 `;
+   452→   452→          oddsLine += `1: <b>${m.oddsHome.toFixed(2)}</b>`;
+   453→   453→          if (isFootball && m.oddsDraw) oddsLine += `  ·  X: <b>${m.oddsDraw.toFixed(2)}</b>`;
+   454→   454→          oddsLine += `  ·  2: <b>${m.oddsAway.toFixed(2)}</b>`;
+   455→   455→          message += `${oddsLine}\n`;
+   456→   456→        }
+   457→   457→
+   458→   458→        let pronoLine = '';
+   459→   459→        if (time) pronoLine += `⏰ ${time}  ·  `;
+   460→   460→        if (betOption && m.recommendation) {
+   461→   461→          pronoLine += `🎯 ${betOption} <b>${m.recommendation}</b>`;
+   462→   462→        }
+   463→   463→        if (pronoLine) message += `${pronoLine}\n`;
+   464→   464→
+   465→   465→        message += `💥 <b>${m.riskPercentage}%</b>  ·  ✅ <b>${winProb}%</b>\n`;
+   466→   466→
+   467→   467→        // Prédiction de buts (football uniquement, si cotes réelles)
+   468→   468→        if (isFootball && m.oddsHome && m.oddsAway) {
+   469→   469→          const goals = calculateGoalsPrediction(m.oddsHome, m.oddsAway, m.oddsDraw, m.isEstimated);
+   470→   470→          if (goals) {
+   471→   471→            message += `⚽ Total: <b>${goals.total}</b> buts  ·  +2.5: <b>${goals.over25}%</b>  ·  ${goals.prediction}\n`;
+   472→   472→          }
+   473→   473→        }
+   474→   474→
+   475→   475→        message += '\n';
+   476→   476→      });
+   477→   477→
+   478→   478→      if (kamikazePicks.length > 5) {
+   479→   479→        message += `<i>... et ${kamikazePicks.length - 5} autres</i>\n\n`;
+   480→   480→      }
+   481→   481→
+   482→   482→      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+   483→   483→      message += `⚠️ <b>ATTENTION</b> — Ces pronostics sont très risqués.\n`;
+   484→   484→      message += `Ne pariez que ce que vous pouvez perdre.\n`;
+   485→   485→    } else {
+   486→   486→      // Aucun Kamikaze non plus
+   487→   487→      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+   488→   488→      message += `ℹ️ <b>AUCUN MATCH DISPONIBLE</b>\n`;
+   489→   489→      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+   490→   490→      message += `Aucun pronostic à publier aujourd'hui.\n`;
+   491→   491→      message += `Revenez demain pour les prochains matchs!\n`;
+   492→   492→    }
+   493→   493→
+   494→   494→    return sendTelegramMessage(message);
+   495→   495→  }
+   496→   496→  
+   497→   497→  if (filtered.length === 0) {
+   498→   498→    console.log('⚠️ Aucun pronostic à publier');
+   499→   499→    return false;
+   500→   500→  }
+   501→   501→
+   502→   502→  const today = new Date().toLocaleDateString('fr-FR', { 
+   503→   503→    weekday: 'long', day: 'numeric', month: 'long' 
+   504→   504→  });
+   505→   505→
+   506→   506→  // Stats
+   507→   507→  const safeCount = filtered.filter(p => (p.riskPercentage || 100) <= 30).length;
+   508→   508→  const moderateCount = filtered.length - safeCount;
+   509→   509→  const valueBetsCount = filtered.filter(p => p.valueBetDetected).length;
+   510→   510→
+   511→   511→  // Grouper par sport
+   512→   512→  const bySport: Record<string, typeof filtered> = {};
+   513→   513→  filtered.forEach(p => {
+   514→   514→    const sport = p.sport || 'Autre';
+   515→   515→    if (!bySport[sport]) bySport[sport] = [];
+   516→   516→    bySport[sport].push(p);
+   517→   517→  });
+   518→   518→
+   519→   519→  // Construire le message
+   520→   520→  let message = '';
+   521→   521→  
+   522→   522→  // En-tête (style Kamikaze)
+   523→   523→  message += '╔═════════════════════════════╗\n';
+   524→   524→  message += '║\n';
+   525→   525→  message += '║   📢 <b>PRONOSTICS DU JOUR</b>\n';
+   526→   526→  message += '║\n';
+   527→   527→  message += '╚═════════════════════════════╝\n\n';
+   528→   528→  
+   529→   529→  message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
+   530→   530→  
+   531→   531→  let statsLine = `📊 <b>${filtered.length}</b> pronostic${filtered.length > 1 ? 's' : ''}`;
+   532→   532→  statsLine += `  ·  🟢 ${safeCount}  ·  🟡 ${moderateCount}`;
+   533→   533→  if (valueBetsCount > 0) statsLine += `  ·  💎 ${valueBetsCount}`;
+   534→   534→  message += `${statsLine}\n\n`;
+   535→   535→  
+   536→   536→  // Détail par sport
+   537→   537→  for (const [sport, matches] of Object.entries(bySport)) {
+   538→   538→    const emoji = SPORT_EMOJIS[sport] || '🏟️';
+   539→   539→
+   540→   540→    message += `${emoji} <b>${sport.toUpperCase()}</b> — ${matches.length} match${matches.length > 1 ? 's' : ''}\n\n`;
+   541→   541→    
+   542→   542→    matches.slice(0, 10).forEach((m, i) => {
+   543→   543→      const { time } = formatDateTime(m.date, m.displayDate);
+   544→   544→      const isFootball = m.sport?.toLowerCase().includes('foot') || m.sport?.toLowerCase() === 'soccer';
+   545→   545→      const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+   546→   546→      const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
+   547→   547→      const betLabel = getBetOption(m.predictedResult, m.sport);
+   548→   548→      const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
+   549→   549→
+   550→   550→      message += '───────────────────────────\n';
+   551→   551→      message += `<b>${i + 1}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}\n`;
+   552→   552→
+   553→   553→      if (m.league) {
+   554→   554→        message += `${emoji} ${m.league}\n`;
+   555→   555→      }
+   556→   556→
+   557→   557→      if (m.oddsHome && m.oddsAway) {
+   558→   558→        let oddsLine = `📊 `;
+   559→   559→        oddsLine += `1: <b>${m.oddsHome.toFixed(2)}</b>`;
+   560→   560→        if (isFootball && m.oddsDraw) oddsLine += `  ·  X: <b>${m.oddsDraw.toFixed(2)}</b>`;
+   561→   561→        oddsLine += `  ·  2: <b>${m.oddsAway.toFixed(2)}</b>`;
+   562→   562→        message += `${oddsLine}\n`;
+   563→   563→      }
+   564→   564→
+   565→   565→      let pronoLine = '';
+   566→   566→      if (time) pronoLine += `⏰ ${time}  ·  `;
+   567→   567→      if (betLabel && m.recommendation) {
+   568→   568→        pronoLine += `🎯 ${betLabel} <b>${m.recommendation}</b>`;
+   569→   569→      }
+   570→   570→      if (pronoLine) message += `${pronoLine}\n`;
+   571→   571→
+   572→   572→      message += `${riskEmoji} ${m.riskPercentage}%  ·  ✅ <b>${winProb}%</b>\n`;
+   573→   573→
+   574→   574→      // Prédiction de buts (football uniquement, si cotes réelles)
+   575→   575→      if (isFootball && m.oddsHome && m.oddsAway) {
+   576→   576→        const goals = calculateGoalsPrediction(m.oddsHome, m.oddsAway, m.oddsDraw, m.isEstimated);
+   577→   577→        if (goals) {
+   578→   578→          message += `⚽ Total: <b>${goals.total}</b> buts  ·  +2.5: <b>${goals.over25}%</b>  ·  ${goals.prediction}\n`;
+   579→   579→        }
+   580→   580→      }
+   581→   581→
+   582→   582→      message += '\n';
+   583→   583→    });
+   584→   584→    
+   585→   585→    if (matches.length > 10) {
+   586→   586→      message += `<i>... et ${matches.length - 10} autres match${matches.length - 10 > 1 ? 's' : ''} dans ce sport</i>\n\n`;
+   587→   587→    }
+   588→   588→  }
+   589→   589→  
+   590→   590→  // Pied de message
+   591→   591→  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+   592→   592→  message += '🟢 Safe (≤30%)  ·  🟡 Modéré (31-50%)\n';
+   593→   593→  message += '⚽ = Prédiction buts (modèle Poisson)\n';
+   594→   594→  message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+   595→   595→
+   596→   596→  return sendTelegramMessage(message);
+   597→   597→}
+   598→   598→
+   599→   599→/**
+   600→   600→ * Publie les value bets uniquement
+   601→   601→ */
+   602→   602→export async function publishValueBetsToTelegram(predictions: Array<{
+   603→   603→  homeTeam: string;
+   604→   604→  awayTeam: string;
+   605→   605→  sport: string;
+   606→   606→  league?: string;
+   607→   607→  date: string;
+   608→   608→  displayDate?: string;
+   609→   609→  recommendation?: string;
+   610→   610→  predictedResult?: 'home' | 'away' | 'draw';
+   611→   611→  confidence?: string;
+   612→   612→  riskPercentage?: number;
+   613→   613→  winProbability?: number;
+   614→   614→  valueBetDetected?: boolean;
+   615→   615→  valueBetType?: string | null;
+   616→   616→  oddsHome?: number;
+   617→   617→  oddsAway?: number;
+   618→   618→  oddsDraw?: number | null;
+   619→   619→}>): Promise<boolean> {
+   620→   620→  // Filtrer: value bet + safe/modéré
+   621→   621→  const valueBets = predictions.filter(p => 
+   622→   622→    p.valueBetDetected && 
+   623→   623→    p.confidence !== 'low' && 
+   624→   624→    isSafeOrModerate(p.riskPercentage)
+   625→   625→  );
+   626→   626→
+   627→   627→  if (valueBets.length === 0) {
+   628→   628→    console.log('⚠️ Aucun value bet safe/modéré');
+   629→   629→    return false;
+   630→   630→  }
+   631→   631→
+   632→   632→  let message = '';
+   633→   633→  
+   634→   634→  message += '╔════════════════════════╗\n';
+   635→   635→  message += `║   💎 <b>VALUE BETS DU JOUR</b>   ║\n`;
+   636→   636→  message += '╚════════════════════════╝\n\n';
+   637→   637→  
+   638→   638→  message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
+   639→   639→
+   640→   640→  valueBets.slice(0, 5).forEach((m, i) => {
+   641→   641→    const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
+   642→   642→    const { time } = formatDateTime(m.date, m.displayDate);
+   643→   643→    const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+   644→   644→    const betOption = getBetOption(m.predictedResult, m.sport);
+   645→   645→    
+   646→   646→    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+   647→   647→    message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+   648→   648→    message += `${sportEmoji} ${m.sport}`;
+   649→   649→    if (m.league) message += ` | ${m.league}`;
+   650→   650→    message += `\n`;
+   651→   651→    
+   652→   652→    if (time) message += `⏰ ${time} | `;
+   653→   653→    message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
+   654→   654→    
+   655→   655→    if (m.oddsHome && m.oddsAway) {
+   656→   656→      message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
+   657→   657→      if (m.oddsDraw) message += ` X:${m.oddsDraw.toFixed(2)}`;
+   658→   658→      message += ` 2:${m.oddsAway.toFixed(2)}\n`;
+   659→   659→    }
+   660→   660→    
+   661→   661→    message += `🔥 Réussite: <b>${winProb}%</b>\n`;
+   662→   662→    if (m.valueBetType) {
+   663→   663→      message += `💎 Type: ${m.valueBetType}\n`;
+   664→   664→    }
+   665→   665→    message += '\n';
+   666→   666→  });
+   667→   667→
+   668→   668→  return sendTelegramMessage(message);
+   669→   669→}
+   670→   670→
+   671→   671→/**
+   672→   672→ * Publie les pronostics Kamikaze (haut risque, haute récompense)
+   673→   673→ */
+   674→   674→export async function publishKamikazeToTelegram(predictions: Array<{
+   675→   675→  homeTeam: string;
+   676→   676→  awayTeam: string;
+   677→   677→  sport: string;
+   678→   678→  league?: string;
+   679→   679→  date: string;
+   680→   680→  displayDate?: string;
+   681→   681→  recommendation?: string;
+   682→   682→  predictedResult?: 'home' | 'away' | 'draw';
+   683→   683→  confidence?: string;
+   684→   684→  riskPercentage?: number;
+   685→   685→  winProbability?: number;
+   686→   686→  valueBetDetected?: boolean;
+   687→   687→  valueBetType?: string | null;
+   688→   688→  oddsHome?: number;
+   689→   689→  oddsAway?: number;
+   690→   690→  oddsDraw?: number | null;
+   691→   691→}>): Promise<boolean> {
+   692→   692→  // Filtrer: uniquement Kamikaze (risque > 50%)
+   693→   693→  const kamikazePicks = predictions.filter(p => isKamikaze(p.riskPercentage));
+   694→   694→
+   695→   695→  if (kamikazePicks.length === 0) {
+   696→   696→    console.log('⚠️ Aucun pronostic Kamikaze à publier');
+   697→   697→    return false;
+   698→   698→  }
+   699→   699→
+   700→   700→  // Trier par cote décroissante (plus haute cote = plus gros gain potentiel)
+   701→   701→  kamikazePicks.sort((a, b) => {
+   702→   702→    const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+   703→   703→    const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+   704→   704→    return oddsB - oddsA;
+   705→   705→  });
+   706→   706→
+   707→   707→  let message = '';
+   708→   708→
+   709→   709→  message += '╔════════════════════════╗\n';
+   710→   710→  message += `║ 💣 <b>SÉLECTION KAMIKAZE</b>  ║\n`;
+   711→   711→  message += '╚════════════════════════╝\n\n';
+   712→   712→
+   713→   713→  message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
+   714→   714→  message += `🔥 <b>${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''} à gros potentiel</b>\n\n`;
+   715→   715→
+   716→   716→  kamikazePicks.slice(0, 5).forEach((m, i) => {
+   717→   717→    const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
+   718→   718→    const { time } = formatDateTime(m.date, m.displayDate);
+   719→   719→    const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
+   720→   720→    const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
+   721→   721→    const betOption = getBetOption(m.predictedResult, m.sport);
+   722→   722→
+   723→   723→    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+   724→   724→    message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+   725→   725→    message += `${sportEmoji} ${m.sport}`;
+   726→   726→    if (m.league) message += ` | ${m.league}`;
+   727→   727→    message += `\n`;
+   728→   728→
+   729→   729→    if (time) message += `⏰ ${time} | `;
+   730→   730→    message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
+   731→   731→
+   732→   732→    if (m.oddsHome && m.oddsAway) {
+   733→   733→      message += `📊 Cotes: 1:${m.oddsHome.toFixed(2)}`;
+   734→   734→      if (m.oddsDraw) message += ` X:${m.oddsDraw.toFixed(2)}`;
+   735→   735→      message += ` 2:${m.oddsAway.toFixed(2)}\n`;
+   736→   736→    }
+   737→   737→
+   738→   738→    message += `💥 Risque: <b>${m.riskPercentage}%</b>\n`;
+   739→   739→    message += `💰 Gain potentiel: <b>x${maxOdds.toFixed(2)}</b>\n`;
+   740→   740→    message += `🔥 Réussite: <b>${winProb}%</b>\n\n`;
+   741→   741→  });
+   742→   742→
+   743→   743→  message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+   744→   744→  message += `⚠️ <b>ATTENTION</b>\n`;
+   745→   745→  message += `Ces pronostics sont très risqués.\n`;
+   746→   746→  message += `Ne pariez que ce que vous pouvez perdre.\n`;
+   747→   747→
+   748→   748→  return sendTelegramMessage(message);
+   749→   749→}
+   750→   750→
+   751→   751→/**
+   752→   752→ * Publie une alerte live
+   753→   753→ */
+   754→   754→export async function publishLiveAlertToTelegram(match: {
+   755→   755→  homeTeam: string;
+   756→   756→  awayTeam: string;
+   757→   757→  sport: string;
+   758→   758→  homeScore?: number;
+   759→   759→  awayScore?: number;
+   760→   760→  clock?: string;
+   761→   761→  recommendation?: string;
+   762→   762→}): Promise<boolean> {
+   763→   763→  const sportEmoji = SPORT_EMOJIS[match.sport] || '🏟️';
+   764→   764→  
+   765→   765→  let message = '━━━━━━━━━━━━━━━━━━━━━\n';
+   766→   766→  message += `🔴 <b>MATCH EN DIRECT</b>\n`;
+   767→   767→  message += '━━━━━━━━━━━━━━━━━━━━━\n\n';
+   768→   768→  
+   769→   769→  message += `${sportEmoji} <b>${match.homeTeam} vs ${match.awayTeam}</b>\n\n`;
+   770→   770→  
+   771→   771→  if (match.homeScore !== undefined && match.awayScore !== undefined) {
+   772→   772→    message += `📊 <b>SCORE: ${match.homeScore} - ${match.awayScore}</b>\n`;
+   773→   773→  }
+   774→   774→  
+   775→   775→  if (match.clock) {
+   776→   776→    message += `⏱️ ${match.clock}\n`;
+   777→   777→  }
+   778→   778→  
+   779→   779→  if (match.recommendation) {
+   780→   780→    message += `\n💡 <b>Pronostic: ${match.recommendation}</b>\n`;
+   781→   781→  }
+   782→   782→
+   783→   783→  return sendTelegramMessage(message);
+   784→   784→}
+   785→   785→
+   786→   786→/**
+   787→   787→ * Publie les résultats
+   788→   788→ */
+   789→   789→export async function publishResultsToTelegram(results: {
+   790→   790→  total: number;
+   791→   791→  correct: number;
+   792→   792→  winRate: number;
+   793→   793→  bestPredictions: Array<{
+   794→   794→    match: string;
+   795→   795→    prediction: string;
+   796→   796→    result: 'won' | 'lost';
+   797→   797→  }>;
+   798→   798→}): Promise<boolean> {
+   799→   799→  const emoji = results.winRate >= 60 ? '🎉' : results.winRate >= 40 ? '📊' : '📉';
+   800→   800→  
+   801→   801→  let message = '';
+   802→   802→  message += '╔════════════════════════╗\n';
+   803→   803→  message += `║   ${emoji} <b>RÉSULTATS DU JOUR</b>    ║\n`;
+   804→   804→  message += '╚════════════════════════╝\n\n';
+   805→   805→  
+   806→   806→  message += `✅ <b>${results.correct}/${results.total}</b> pronostics corrects\n`;
+   807→   807→  message += `📈 Taux: <b>${results.winRate}%</b>\n`;
+   808→   808→  message += `    ${createProgressBar(results.winRate)}\n\n`;
+   809→   809→  
+   810→   810→  if (results.bestPredictions.length > 0) {
+   811→   811→    message += `━━━━━━━━━━━━━━━━━━━━━\n`;
+   812→   812→    message += `<b>DÉTAILS</b>\n`;
+   813→   813→    message += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
+   814→   814→    
+   815→   815→    results.bestPredictions.slice(0, 5).forEach(p => {
+   816→   816→      const resultEmoji = p.result === 'won' ? '✅' : '❌';
+   817→   817→      message += `${resultEmoji} <b>${p.match}</b>\n`;
+   818→   818→      message += `    🎯 ${p.prediction}\n\n`;
+   819→   819→    });
+   820→   820→  }
+   821→   821→
+   822→   822→  return sendTelegramMessage(message);
+   823→   823→}
+   824→   824→
+   825→   825→/**
+   826→   826→ * Récupère le CHAT_ID
+   827→   827→ */
+   828→   828→export async function getTelegramChatId(): Promise<string | null> {
+   829→   829→  if (!TELEGRAM_BOT_TOKEN) return null;
+   830→   830→
+   831→   831→  try {
+   832→   832→    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
+   833→   833→    const response = await fetch(url);
+   834→   834→    const data = await response.json();
+   835→   835→
+   836→   836→    if (!data.ok || !data.result?.length) return null;
+   837→   837→
+   838→   838→    const lastUpdate = data.result[data.result.length - 1];
+   839→   839→    const chatId = lastUpdate.message?.chat?.id || lastUpdate.my_chat_member?.chat?.id;
+   840→   840→
+   841→   841→    return chatId ? String(chatId) : null;
+   842→   842→  } catch {
+   843→   843→    return null;
+   844→   844→  }
+   845→   845→}
+   846→   846→
+   847→   847→/**
+   848→   848→ * Teste la connexion
+   849→   849→ */
+   850→   850→export async function testTelegramConnection(): Promise<{
+   851→   851→  success: boolean;
+   852→   852→  chatId?: string;
+   853→   853→  botName?: string;
+   854→   854→  error?: string;
+   855→   855→}> {
+   856→   856→  if (!TELEGRAM_BOT_TOKEN) {
+   857→   857→    return { success: false, error: 'TELEGRAM_BOT_TOKEN non configuré' };
+   858→   858→  }
+   859→   859→
+   860→   860→  try {
+   861→   861→    const botUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`;
+   862→   862→    const botResponse = await fetch(botUrl);
+   863→   863→    const botData = await botResponse.json();
+   864→   864→
+   865→   865→    if (!botData.ok) return { success: false, error: botData.description };
+   866→   866→
+   867→   867→    const botName = botData.result.username;
+   868→   868→
+   869→   869→    if (!TELEGRAM_CHAT_ID) {
+   870→   870→      const chatId = await getTelegramChatId();
+   871→   871→      return chatId ? { success: true, chatId, botName } : { success: false, botName, error: 'CHAT_ID non trouvé' };
+   872→   872→    }
+   873→   873→
+   874→   874→    const testSent = await sendTelegramMessage('🤖 Test de connexion réussi !');
+   875→   875→    return { success: testSent, chatId: TELEGRAM_CHAT_ID, botName };
+   876→   876→  } catch (error) {
+   877→   877→    return { success: false, error: String(error) };
+   878→   878→  }
+   879→   879→}
+   880→   880→
+   881→   881→export default {
+   882→   882→  sendTelegramMessage,
+   883→   883→  publishPredictionToTelegram,
+   884→   884→  publishDailySummaryToTelegram,
+   885→   885→  publishValueBetsToTelegram,
+   886→   886→  publishKamikazeToTelegram,
+   887→   887→  publishLiveAlertToTelegram,
+   888→   888→  publishResultsToTelegram,
+   889→   889→  getTelegramChatId,
+   890→   890→  testTelegramConnection,
+   891→   891→  isSafeOrModerate,
+   892→   892→  isKamikaze,
+   893→   893→};
