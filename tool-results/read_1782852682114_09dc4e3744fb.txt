@@ -1,0 +1,1248 @@
+     1→/**
+     2→ * Cron Job API - Automatisation quotidienne
+     3→ * Appelé par Vercel Cron:
+     4→ * - 00h UTC: Vérification résultats football soir (verify-evening)
+     5→ * - 04h UTC: Vérification résultats football matin (verify-morning)
+     6→ * - 05h UTC: Vérification résultats NBA nuit (verify-night)
+     7→ * - 05h30 UTC: Pré-calcul des pronostics (precalc)
+     8→ * - 06h00 UTC: Mise à jour données fondamentales (update-fundamentals)
+     9→ * 
+    10→ * Source principale: ESPN (gratuit, pas de clé API requise)
+    11→ */
+    12→
+    13→import { NextRequest, NextResponse } from 'next/server';
+    14→import { PredictionStore } from '@/lib/store';
+    15→import { ExpertAdviceStore } from '@/lib/expertAdviceStore';
+    16→import { updateStatsHistory, forceUpdateStats } from '@/lib/statsUpdater';
+    17→import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
+    18→import SupabaseStore from '@/lib/db-supabase';
+    19→import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
+    20→import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
+    21→import { 
+    22→  publishDailySummaryToTelegram, 
+    23→  publishValueBetsToTelegram,
+    24→  publishKamikazeToTelegram,
+    25→  isSafeOrModerate,
+    26→  isKamikaze
+    27→} from '@/lib/telegramService';
+    28→import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
+    29→
+    30→// Secret pour sécuriser le cron
+    31→const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+    32→
+    33→/**
+    34→ * Ping la base Supabase (Historique ML) pour la garder active
+    35→ * Plan gratuit = pause après 7 jours d'inactivité
+    36→ */
+    37→async function pingSupabase(): Promise<{
+    38→  success: boolean;
+    39→  message: string;
+    40→  ml?: { available: boolean; message: string; latency?: number };
+    41→}> {
+    42→  try {
+    43→    const result = await SupabaseStore.ping();
+    44→
+    45→    return {
+    46→      success: result.success,
+    47→      message: result.message,
+    48→      ml: {
+    49→        available: result.success,
+    50→        message: result.message,
+    51→        latency: result.latency
+    52→      }
+    53→    };
+    54→  } catch (e: any) {
+    55→    return {
+    56→      success: false,
+    57→      message: `❌ Erreur ping: ${e.message}`
+    58→    };
+    59→  }
+    60→}
+    61→
+    62→// Interfaces
+    63→interface MatchResult {
+    64→  matchId: string;
+    65→  homeTeam: string;
+    66→  awayTeam: string;
+    67→  homeScore: number;
+    68→  awayScore: number;
+    69→  status: 'finished';
+    70→  actualResult: 'home' | 'draw' | 'away';
+    71→  league?: string;
+    72→  sport: 'football' | 'basketball';
+    73→}
+    74→
+    75→// Ligues ESPN Football
+    76→const ESPN_FOOTBALL_LEAGUES = [
+    77→  { code: 'eng.1', name: 'Premier League' },
+    78→  { code: 'esp.1', name: 'La Liga' },
+    79→  { code: 'ger.1', name: 'Bundesliga' },
+    80→  { code: 'ita.1', name: 'Serie A' },
+    81→  { code: 'fra.1', name: 'Ligue 1' },
+    82→  { code: 'uefa.champions', name: 'Champions League' },
+    83→  { code: 'uefa.europa', name: 'Europa League' },
+    84→  { code: 'por.1', name: 'Liga Portugal' },
+    85→  { code: 'ned.1', name: 'Eredivisie' },
+    86→  { code: 'bel.1', name: 'Belgian Pro League' }
+    87→];
+    88→
+    89→/**
+    90→ * Récupérer les résultats Football depuis ESPN (GRATUIT, pas de clé API)
+    91→ */
+    92→async function fetchFootballResultsFromESPN(): Promise<MatchResult[]> {
+    93→  const results: MatchResult[] = [];
+    94→  const yesterday = new Date();
+    95→  yesterday.setDate(yesterday.getDate() - 1);
+    96→  const yesterdayStr = yesterday.toISOString().split('T')[0];
+    97→  
+    98→  console.log(`📅 Recherche résultats football pour: ${yesterdayStr}`);
+    99→
+   100→  // Récupérer les résultats de chaque ligue en parallèle
+   101→  const fetchPromises = ESPN_FOOTBALL_LEAGUES.map(async (league) => {
+   102→    try {
+   103→      const response = await fetch(
+   104→        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${yesterdayStr.replace(/-/g, '')}`,
+   105→        { 
+   106→          cache: 'no-store',
+   107→          headers: { 'Accept': 'application/json' }
+   108→        }
+   109→      );
+   110→
+   111→      if (!response.ok) {
+   112→        return [];
+   113→      }
+   114→
+   115→      const data = await response.json();
+   116→      const events = data.events || [];
+   117→
+   118→      return events
+   119→        .filter((e: any) => e.status?.type?.completed === true)
+   120→        .map((e: any) => {
+   121→          const competition = e.competitions?.[0];
+   122→          const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+   123→          const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+   124→          
+   125→          const homeScore = parseInt(home?.score || '0');
+   126→          const awayScore = parseInt(away?.score || '0');
+   127→
+   128→          return {
+   129→            matchId: `espn_${e.id}`,
+   130→            homeTeam: home?.team?.displayName || home?.team?.shortDisplayName || 'Unknown',
+   131→            awayTeam: away?.team?.displayName || away?.team?.shortDisplayName || 'Unknown',
+   132→            homeScore,
+   133→            awayScore,
+   134→            status: 'finished' as const,
+   135→            actualResult: homeScore > awayScore 
+   136→              ? 'home' as const 
+   137→              : homeScore < awayScore 
+   138→                ? 'away' as const 
+   139→                : 'draw' as const,
+   140→            league: league.name,
+   141→            sport: 'football' as const
+   142→          };
+   143→        });
+   144→    } catch (error) {
+   145→      console.log(`⚠️ Erreur ESPN ${league.name}:`, error);
+   146→      return [];
+   147→    }
+   148→  });
+   149→
+   150→  const allResults = await Promise.all(fetchPromises);
+   151→  const flatResults = allResults.flat();
+   152→  
+   153→  console.log(`✅ ESPN Football: ${flatResults.length} résultats récupérés`);
+   154→  return flatResults;
+   155→}
+   156→
+   157→/**
+   158→ * Récupérer les résultats NBA depuis ESPN
+   159→ */
+   160→async function fetchNBAResults(): Promise<MatchResult[]> {
+   161→  try {
+   162→    const response = await fetch(
+   163→      'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
+   164→      { cache: 'no-store' }
+   165→    );
+   166→
+   167→    if (!response.ok) {
+   168→      console.log(`⚠️ ESPN NBA API error: ${response.status}`);
+   169→      return [];
+   170→    }
+   171→
+   172→    const data = await response.json();
+   173→    const events = data.events || [];
+   174→
+   175→    // Filtrer les matchs terminés d'hier
+   176→    const yesterday = new Date();
+   177→    yesterday.setDate(yesterday.getDate() - 1);
+   178→    const yesterdayStr = yesterday.toISOString().split('T')[0];
+   179→
+   180→    const results = events
+   181→      .filter((e: any) => {
+   182→        const eventDate = new Date(e.date).toISOString().split('T')[0];
+   183→        return e.status?.type?.completed === true && eventDate === yesterdayStr;
+   184→      })
+   185→      .map((e: any) => {
+   186→        const competition = e.competitions?.[0];
+   187→        const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+   188→        const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+   189→        
+   190→        const homeScore = parseInt(home?.score || '0');
+   191→        const awayScore = parseInt(away?.score || '0');
+   192→
+   193→        return {
+   194→          matchId: `nba_${e.id}`,
+   195→          homeTeam: home?.team?.displayName || 'Unknown',
+   196→          awayTeam: away?.team?.displayName || 'Unknown',
+   197→          homeScore,
+   198→          awayScore,
+   199→          status: 'finished' as const,
+   200→          actualResult: homeScore > awayScore 
+   201→            ? 'home' as const 
+   202→            : homeScore < awayScore 
+   203→              ? 'away' as const 
+   204→              : 'draw' as const,
+   205→          league: 'NBA',
+   206→          sport: 'basketball' as const
+   207→        };
+   208→      });
+   209→
+   210→    console.log(`✅ ESPN NBA: ${results.length} résultats récupérés`);
+   211→    return results;
+   212→  } catch (error) {
+   213→    console.error('Erreur ESPN NBA:', error);
+   214→    return [];
+   215→  }
+   216→}
+   217→
+   218→/**
+   219→ * Matcher un résultat avec un pronostic (fuzzy matching amélioré)
+   220→ */
+   221→function matchPredictionWithResult(
+   222→  prediction: { homeTeam: string; awayTeam: string; league?: string },
+   223→  result: MatchResult
+   224→): boolean {
+   225→  const normalize = (s: string) => 
+   226→    s.toLowerCase()
+   227→     .normalize('NFD')
+   228→     .replace(/[\u0300-\u036f]/g, '')
+   229→     .replace(/[^a-z0-9]/g, '');
+   230→
+   231→  const predHome = normalize(prediction.homeTeam);
+   232→  const predAway = normalize(prediction.awayTeam);
+   233→  const resHome = normalize(result.homeTeam);
+   234→  const resAway = normalize(result.awayTeam);
+   235→
+   236→  // Match direct
+   237→  if (predHome === resHome && predAway === resAway) return true;
+   238→  
+   239→  // Match inversé (domicile/extérieur inversés)
+   240→  if (predHome === resAway && predAway === resHome) return true;
+   241→  
+   242→  // Match partiel (l'une contient l'autre)
+   243→  if ((predHome.includes(resHome) || resHome.includes(predHome)) && 
+   244→      (predAway.includes(resAway) || resAway.includes(predAway))) return true;
+   245→  
+   246→  // Match avec noms courts
+   247→  const predHomeShort = predHome.substring(0, 5);
+   248→  const predAwayShort = predAway.substring(0, 5);
+   249→  const resHomeShort = resHome.substring(0, 5);
+   250→  const resAwayShort = resAway.substring(0, 5);
+   251→  
+   252→  if (predHomeShort === resHomeShort && predAwayShort === resAwayShort) return true;
+   253→
+   254→  return false;
+   255→}
+   256→
+   257→/**
+   258→ * Vérifier les résultats NBA spécifiquement
+   259→ */
+   260→async function verifyNBAResults(): Promise<{
+   261→  verified: number;
+   262→  updated: number;
+   263→  won: number;
+   264→  lost: number;
+   265→  errors: string[];
+   266→}> {
+   267→  const errors: string[] = [];
+   268→  let verified = 0;
+   269→  let updated = 0;
+   270→  let won = 0;
+   271→  let lost = 0;
+   272→
+   273→  try {
+   274→    // Charger les données depuis GitHub
+   275→    const pending = (await PredictionStore.getPendingAsync()).filter(p => 
+   276→      p.sport === 'Basket' || p.sport === 'Basketball' || p.sport === 'NBA'
+   277→    );
+   278→    
+   279→    if (pending.length === 0) {
+   280→      console.log('📋 Aucun pronostic NBA en attente');
+   281→      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+   282→    }
+   283→
+   284→    console.log(`📋 ${pending.length} pronostics NBA en attente à vérifier`);
+   285→
+   286→    // Récupérer les résultats NBA
+   287→    const nbaResults = await fetchNBAResults();
+   288→
+   289→    // Pour chaque pronostic, chercher le résultat correspondant
+   290→    for (const prediction of pending) {
+   291→      verified++;
+   292→      
+   293→      const result = nbaResults.find(r => matchPredictionWithResult(prediction, r));
+   294→      
+   295→      if (result) {
+   296→        const predictedResult = prediction.predictedResult;
+   297→        const resultMatch = predictedResult === result.actualResult;
+   298→        
+   299→        const success = await PredictionStore.completeAsync(prediction.matchId, {
+   300→          homeScore: result.homeScore,
+   301→          awayScore: result.awayScore,
+   302→          actualResult: result.actualResult,
+   303→          resultMatch,
+   304→          goalsMatch: undefined
+   305→        });
+   306→
+   307→        if (success) {
+   308→          updated++;
+   309→          if (resultMatch) won++; else lost++;
+   310→          console.log(`✅ NBA: ${prediction.homeTeam} vs ${prediction.awayTeam}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+   311→        }
+   312→      } else {
+   313→        console.log(`⏳ NBA: ${prediction.homeTeam} vs ${prediction.awayTeam}: résultat non trouvé`);
+   314→      }
+   315→    }
+   316→
+   317→  } catch (error: any) {
+   318→    errors.push(error.message);
+   319→    console.error('Erreur vérification NBA:', error);
+   320→  }
+   321→
+   322→  return { verified, updated, won, lost, errors };
+   323→}
+   324→
+   325→/**
+   326→ * Vérifier les pronostics football
+   327→ */
+   328→async function verifyFootballResults(): Promise<{
+   329→  verified: number;
+   330→  updated: number;
+   331→  won: number;
+   332→  lost: number;
+   333→  errors: string[];
+   334→}> {
+   335→  const errors: string[] = [];
+   336→  let verified = 0;
+   337→  let updated = 0;
+   338→  let won = 0;
+   339→  let lost = 0;
+   340→
+   341→  try {
+   342→    // Charger les données depuis GitHub
+   343→    const pending = (await PredictionStore.getPendingAsync()).filter(p => 
+   344→      p.sport === 'Foot' || p.sport === 'Football' || p.sport === 'Soccer' || !p.sport
+   345→    );
+   346→    
+   347→    if (pending.length === 0) {
+   348→      console.log('📋 Aucun pronostic Football en attente');
+   349→      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+   350→    }
+   351→
+   352→    console.log(`📋 ${pending.length} pronostics Football en attente à vérifier`);
+   353→
+   354→    // Récupérer les résultats Football depuis ESPN
+   355→    const footballResults = await fetchFootballResultsFromESPN();
+   356→
+   357→    // Pour chaque pronostic, chercher le résultat correspondant
+   358→    for (const prediction of pending) {
+   359→      verified++;
+   360→      
+   361→      const result = footballResults.find(r => matchPredictionWithResult(prediction, r));
+   362→      
+   363→      if (result) {
+   364→        const predictedResult = prediction.predictedResult;
+   365→        const actualResult = result.actualResult;
+   366→        const resultMatch = predictedResult === actualResult;
+   367→        
+   368→        // Vérifier les buts (Over/Under 2.5)
+   369→        let goalsMatch: boolean | undefined;
+   370→        if (prediction.predictedGoals) {
+   371→          const totalGoals = result.homeScore + result.awayScore;
+   372→          const isOver = prediction.predictedGoals.toLowerCase().includes('over');
+   373→          goalsMatch = isOver ? totalGoals > 2.5 : totalGoals < 2.5;
+   374→        }
+   375→
+   376→        const success = await PredictionStore.completeAsync(prediction.matchId, {
+   377→          homeScore: result.homeScore,
+   378→          awayScore: result.awayScore,
+   379→          actualResult,
+   380→          resultMatch,
+   381→          goalsMatch
+   382→        });
+   383→
+   384→        if (success) {
+   385→          updated++;
+   386→          if (resultMatch) won++; else lost++;
+   387→          console.log(`✅ Football: ${prediction.homeTeam} vs ${prediction.awayTeam}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+   388→        }
+   389→      } else {
+   390→        console.log(`⏳ Football: ${prediction.homeTeam} vs ${prediction.awayTeam}: résultat non trouvé`);
+   391→      }
+   392→    }
+   393→
+   394→  } catch (error: any) {
+   395→    errors.push(error.message);
+   396→    console.error('Erreur vérification Football:', error);
+   397→  }
+   398→
+   399→  return { verified, updated, won, lost, errors };
+   400→}
+   401→
+   402→/**
+   403→ * Vérification complète (Football + NBA)
+   404→ */
+   405→async function verifyAllResults(): Promise<{
+   406→  verified: number;
+   407→  updated: number;
+   408→  won: number;
+   409→  lost: number;
+   410→  errors: string[];
+   411→  statsUpdate?: { success: boolean; message: string };
+   412→  mlSync?: { synced: number; mlStats: any };
+   413→}> {
+   414→  const [footballResult, nbaResult] = await Promise.all([
+   415→    verifyFootballResults(),
+   416→    verifyNBAResults()
+   417→  ]);
+   418→
+   419→  const result = {
+   420→    verified: footballResult.verified + nbaResult.verified,
+   421→    updated: footballResult.updated + nbaResult.updated,
+   422→    won: footballResult.won + nbaResult.won,
+   423→    lost: footballResult.lost + nbaResult.lost,
+   424→    errors: [...footballResult.errors, ...nbaResult.errors],
+   425→    statsUpdate: undefined as { success: boolean; message: string } | undefined,
+   426→    mlSync: undefined as { synced: number; mlStats: any } | undefined
+   427→  };
+   428→
+   429→  // Mettre à jour les statistiques si des résultats ont été vérifiés
+   430→  if (result.updated > 0) {
+   431→    console.log('📊 Mise à jour des statistiques...');
+   432→    try {
+   433→      const allPredictions = await PredictionStore.getAllAsync();
+   434→      const statsResult = await updateStatsHistory(allPredictions);
+   435→      result.statsUpdate = { success: statsResult.success, message: statsResult.message };
+   436→      console.log(statsResult.message);
+   437→    } catch (e: any) {
+   438→      console.error('❌ Erreur mise à jour stats:', e);
+   439→      result.statsUpdate = { success: false, message: e.message };
+   440→    }
+   441→
+   442→    // Synchroniser avec le système ML
+   443→    console.log('🧠 Synchronisation avec le système ML...');
+   444→    try {
+   445→      const mlSyncResult = await syncPredictionsToML();
+   446→      result.mlSync = mlSyncResult;
+   447→      console.log(`✅ ML sync: ${mlSyncResult.synced} prédictions synchronisées`);
+   448→    } catch (e: any) {
+   449→      console.error('❌ Erreur sync ML:', e);
+   450→    }
+   451→  }
+   452→
+   453→  return result;
+   454→}
+   455→
+   456→/**
+   457→ * Pré-calcul des pronostics du jour
+   458→ */
+   459→async function runPrecalc(): Promise<{ success: boolean; count: number; errors: string[] }> {
+   460→  const errors: string[] = [];
+   461→
+   462→  try {
+   463→    console.log('📊 Invalidation du cache Expert Advices...');
+   464→    
+   465→    ExpertAdviceStore.invalidateCache();
+   466→    const data = await ExpertAdviceStore.load();
+   467→    
+   468→    console.log(`✅ Cache invalidé - ${data.totalAdvices} conseils disponibles`);
+   469→    
+   470→    return { success: true, count: data.totalAdvices, errors };
+   471→  } catch (error: any) {
+   472→    errors.push(error.message);
+   473→    console.error('Erreur pré-calcul:', error);
+   474→    return { success: false, count: 0, errors };
+   475→  }
+   476→}
+   477→
+   478→/**
+   479→ * Entraînement du modèle ML unifié (persisté dans Supabase)
+   480→ */
+   481→async function trainMLModel(): Promise<{ 
+   482→  success: boolean; 
+   483→  accuracy: number; 
+   484→  samplesUsed: number;
+   485→  patternsSaved: number;
+   486→  patternsUpdated: number;
+   487→  improvements: string[];
+   488→  errors: string[] 
+   489→}> {
+   490→  console.log('🧠 Entraînement du modèle ML unifié...');
+   491→
+   492→  try {
+   493→    // Utiliser le nouveau service ML unifié avec persistance Supabase
+   494→    const result = await trainUnifiedML();
+   495→    
+   496→    if (result.success) {
+   497→      console.log(`✅ ML Training terminé - Accuracy: ${result.accuracy}%, Patterns: ${result.patternsSaved} nouveaux, ${result.patternsUpdated} mis à jour`);
+   498→    }
+   499→    
+   500→    return {
+   501→      success: result.success,
+   502→      accuracy: result.accuracy,
+   503→      samplesUsed: result.samplesUsed,
+   504→      patternsSaved: result.patternsSaved,
+   505→      patternsUpdated: result.patternsUpdated,
+   506→      improvements: result.improvements,
+   507→      errors: result.errors
+   508→    };
+   509→  } catch (error: any) {
+   510→    console.error('Erreur ML training:', error);
+   511→    return { 
+   512→      success: false, 
+   513→      accuracy: 0, 
+   514→      samplesUsed: 0,
+   515→      patternsSaved: 0,
+   516→      patternsUpdated: 0,
+   517→      improvements: [],
+   518→      errors: [error.message] 
+   519→    };
+   520→  }
+   521→}
+   522→
+   523→/**
+   524→ * Synchronisation complète depuis Supabase (sans GitHub)
+   525→ * Calcule les statistiques globales
+   526→ */
+   527→async function fullSyncFromStatsHistory(): Promise<{
+   528→  success: boolean;
+   529→  message: string;
+   530→  stats?: any;
+   531→  errors?: string[];
+   532→}> {
+   533→  console.log('🔧 Synchronisation complète depuis Supabase...');
+   534→
+   535→  try {
+   536→    // Récupérer toutes les prédictions depuis Supabase
+   537→    const allPredictions = await SupabaseStore.getAllPredictions();
+   538→    
+   539→    if (allPredictions.length === 0) {
+   540→      return { 
+   541→        success: true, 
+   542→        message: 'Aucune prédiction dans Supabase', 
+   543→        stats: { total: 0, completed: 0, pending: 0, wins: 0, losses: 0, winRate: 0 } 
+   544→      };
+   545→    }
+   546→
+   547→    const completed = allPredictions.filter(p => p.status === 'completed');
+   548→    const pending = allPredictions.filter(p => p.status === 'pending');
+   549→    const wins = completed.filter(p => p.result_match === true);
+   550→    const losses = completed.filter(p => p.result_match === false);
+   551→
+   552→    // Calculer les stats par sport
+   553→    const bySport: any = {
+   554→      football: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   555→      basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   556→      hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+   557→    };
+   558→
+   559→    for (const p of completed) {
+   560→      const sport = (p.sport || '').toLowerCase();
+   561→      let key: 'football' | 'basketball' | 'hockey' = 'football';
+   562→      if (sport.includes('basket') || sport.includes('nba')) key = 'basketball';
+   563→      else if (sport.includes('hockey') || sport.includes('nhl')) key = 'hockey';
+   564→
+   565→      bySport[key].total++;
+   566→      if (p.result_match === true) {
+   567→        bySport[key].wins++;
+   568→      } else {
+   569→        bySport[key].losses++;
+   570→      }
+   571→    }
+   572→
+   573→    // Calculer winRates
+   574→    for (const sport of ['football', 'basketball', 'hockey'] as const) {
+   575→      if (bySport[sport].total > 0) {
+   576→        bySport[sport].winRate = Math.round((bySport[sport].wins / bySport[sport].total) * 100);
+   577→      }
+   578→    }
+   579→
+   580→    const winRate = completed.length > 0 ? Math.round((wins.length / completed.length) * 100) : 0;
+   581→
+   582→    console.log(`📈 Stats Supabase: ${wins.length}/${completed.length} = ${winRate}%`);
+   583→
+   584→    return {
+   585→      success: true,
+   586→      message: `✅ Sync Supabase: ${completed.length} prédictions, ${wins.length} gagnées (${winRate}%)`,
+   587→      stats: {
+   588→        total: allPredictions.length,
+   589→        completed: completed.length,
+   590→        pending: pending.length,
+   591→        wins: wins.length,
+   592→        losses: losses.length,
+   593→        winRate,
+   594→        bySport: {
+   595→          football: `${bySport.football.wins}/${bySport.football.total} = ${bySport.football.winRate}%`,
+   596→          basketball: `${bySport.basketball.wins}/${bySport.basketball.total} = ${bySport.basketball.winRate}%`,
+   597→          hockey: `${bySport.hockey.wins}/${bySport.hockey.total} = ${bySport.hockey.winRate}%`
+   598→        }
+   599→      }
+   600→    };
+   601→
+   602→  } catch (error: any) {
+   603→    console.error('❌ Erreur sync Supabase:', error);
+   604→    return {
+   605→      success: false,
+   606→      message: error.message,
+   607→      errors: [error.message]
+   608→    };
+   609→  }
+   610→}
+   611→
+   612→/**
+   613→ * GET - Cron job appelé par Vercel
+   614→ */
+   615→export async function GET(request: NextRequest) {
+   616→  const authHeader = request.headers.get('authorization');
+   617→  const url = new URL(request.url);
+   618→  const urlSecret = url.searchParams.get('secret');
+   619→  const action = url.searchParams.get('action') || 'verify';
+   620→  
+   621→  const providedSecret = authHeader?.replace('Bearer ', '') || urlSecret;
+   622→  
+   623→  if (providedSecret !== CRON_SECRET) {
+   624→    return NextResponse.json(
+   625→      { error: 'Non autorisé' },
+   626→      { status: 401 }
+   627→    );
+   628→  }
+   629→
+   630→  const startTime = Date.now();
+   631→  console.log(`🔄 Début du cron job - Action: ${action}`);
+   632→
+   633→  // Ping Supabase pour éviter la mise en pause (plan gratuit)
+   634→  const pingResult = await pingSupabase();
+   635→  console.log(`📡 Ping Supabase: ${pingResult.message}`);
+   636→
+   637→  try {
+   638→    let result: any = {};
+   639→    let supabasePing = pingResult;
+   640→
+   641→    switch (action) {
+   642→      case 'precalc':
+   643→        result = await runPrecalc();
+   644→        break;
+   645→        
+   646→      case 'verify-evening':
+   647→        result = await verifyAllResults();
+   648→        break;
+   649→        
+   650→      case 'verify-morning':
+   651→        result = await verifyAllResults();
+   652→        break;
+   653→        
+   654→      case 'verify-night':
+   655→        result = await verifyNBAResults();
+   656→        break;
+   657→        
+   658→      case 'verify':
+   659→        const verifyResult = await verifyAllResults();
+   660→        const mlResult = await trainMLModel();
+   661→        
+   662→        // Mettre à jour les résultats ML
+   663→        try {
+   664→          await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/ml/update-results`);
+   665→          console.log('✅ ML results updated');
+   666→        } catch (e) {
+   667→          console.log('⚠️ ML update failed:', e);
+   668→        }
+   669→        
+   670→        result = {
+   671→          verified: verifyResult.verified,
+   672→          updated: verifyResult.updated,
+   673→          won: verifyResult.won,
+   674→          lost: verifyResult.lost,
+   675→          errors: verifyResult.errors,
+   676→          statsUpdate: verifyResult.statsUpdate,
+   677→          mlSync: verifyResult.mlSync,
+   678→          mlTraining: mlResult
+   679→        };
+   680→        break;
+   681→        
+   682→      case 'update-ml':
+   683→        // Mise à jour spécifique des résultats ML
+   684→        try {
+   685→          const mlUpdateResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/ml/update-results`);
+   686→          const mlUpdateData = await mlUpdateResponse.json();
+   687→          result = { mlUpdate: mlUpdateData };
+   688→        } catch (e: any) {
+   689→          result = { mlUpdate: { success: false, error: e.message } };
+   690→        }
+   691→        break;
+   692→        
+   693→      case 'update-stats':
+   694→        // Forcer la mise à jour des statistiques
+   695→        try {
+   696→          const statsResult = await forceUpdateStats();
+   697→          result = { statsUpdate: statsResult };
+   698→        } catch (e: any) {
+   699→          result = { statsUpdate: { success: false, error: e.message } };
+   700→        }
+   701→        break;
+   702→
+   703→      case 'sync-all':
+   704→        // Synchronisation complète depuis stats_history
+   705→        try {
+   706→          const syncResult = await fullSyncFromStatsHistory();
+   707→          result = { syncAll: syncResult };
+   708→        } catch (e: any) {
+   709→          result = { syncAll: { success: false, error: e.message } };
+   710→        }
+   711→        break;
+   712→
+   713→      case 'test-espn':
+   714→        // Test des endpoints ESPN
+   715→        const [footResults, nbaResults] = await Promise.all([
+   716→          fetchFootballResultsFromESPN(),
+   717→          fetchNBAResults()
+   718→        ]);
+   719→        result = {
+   720→          football: footResults.length,
+   721→          nba: nbaResults.length,
+   722→          sampleFootball: footResults.slice(0, 3),
+   723→          sampleNBA: nbaResults.slice(0, 3)
+   724→        };
+   725→        break;
+   726→
+   727→      case 'ping':
+   728→        // Ping explicite des bases Supabase
+   729→        result = { ping: pingResult };
+   730→        break;
+   731→
+   732→      case 'db-status':
+   733→        // Statut détaillé de la base de données
+   734→        const dbStats = await SupabaseStore.getStats();
+   735→        result = {
+   736→          database: {
+   737→            name: 'Historique ML (Base unique)',
+   738→            available: pingResult.success,
+   739→            message: pingResult.message,
+   740→            latency: pingResult.ml?.latency,
+   741→            stats: dbStats
+   742→          },
+   743→          config: {
+   744→            url: process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ Configuré' : '❌ Non configuré',
+   745→            key: process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Configuré' : '❌ Non configuré'
+   746→          }
+   747→        };
+   748→        break;
+   749→        
+   750→      case 'update-fundamentals':
+   751→        // Mise à jour des données fondamentales (forme, blessures, news)
+   752→        try {
+   753→          const fundamentalResult = await updateFundamentalsForToday();
+   754→          result = { fundamentals: fundamentalResult };
+   755→        } catch (e: any) {
+   756→          result = { fundamentals: { success: false, error: e.message } };
+   757→        }
+   758→        break;
+   759→        
+   760→      case 'train-ml':
+   761→        // Entraînement manuel du modèle ML
+   762→        try {
+   763→          const mlTrainResult = await trainMLModel();
+   764→          result = { mlTraining: mlTrainResult };
+   765→        } catch (e: any) {
+   766→          result = { mlTraining: { success: false, error: e.message } };
+   767→        }
+   768→        break;
+   769→        
+   770→      case 'ml-stats':
+   771→        // Statistiques du modèle ML
+   772→        try {
+   773→          const mlStats = await getUnifiedMLStats();
+   774→          result = { mlStats };
+   775→        } catch (e: any) {
+   776→          result = { mlStats: { success: false, error: e.message } };
+   777→        }
+   778→        break;
+   779→        
+   780→      case 'telegram-summary':
+   781→        // Publier le résumé quotidien sur Telegram
+   782→        // ⚠️ Tennis EXCLU car il a son propre cron dédié (07:30 et 09:00 GMT)
+   783→        try {
+   784→          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+   785→          console.log('📡 Récupération des matchs depuis ESPN...');
+   786→          const matches = await getMatchesWithRealOdds();
+   787→          
+   788→          let predictions: any[] = matches
+   789→            .filter((m: any) => m.sport?.toLowerCase() !== 'tennis') // 🎾 Tennis exclu
+   790→            .map((m: any) => ({
+   791→              homeTeam: m.homeTeam,
+   792→              awayTeam: m.awayTeam,
+   793→              sport: m.sport,
+   794→              league: m.league,
+   795→              date: m.date,
+   796→              displayDate: m.displayDate,
+   797→              dateTag: m.dateTag, // 📅 Tag de date (aujourd'hui/demain)
+   798→              recommendation: m.recommendations?.[0]?.label || m.recommendation,
+   799→              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+   800→              confidence: m.confidence,
+   801→              valueBetDetected: m.valueBets?.length > 0,
+   802→              valueBetType: m.valueBets?.[0]?.type,
+   803→              riskPercentage: m.riskPercentage,
+   804→              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+   805→              oddsHome: m.oddsHome,
+   806→              oddsAway: m.oddsAway,
+   807→              oddsDraw: m.oddsDraw,
+   808→            }));
+   809→          console.log(`📡 ESPN live: ${predictions.length} matchs récupérés`);
+   810→          
+   811→          // Si aucun match, essayer le fichier pré-calculé en dernier recours
+   812→          if (predictions.length === 0) {
+   813→            const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
+   814→            const dailyData = loadDailyPredictions();
+   815→            
+   816→            if (dailyData && dailyData.predictions.length > 0) {
+   817→              predictions = dailyData.predictions
+   818→                .filter(p => p.sport !== 'tennis')
+   819→                .map(p => ({
+   820→                  homeTeam: p.homeTeam,
+   821→                  awayTeam: p.awayTeam,
+   822→                  sport: p.sport,
+   823→                  league: p.league || p.tournament,
+   824→                  date: p.date,
+   825→                  recommendation: p.recommendation,
+   826→                  predictedResult: p.predictedResult,
+   827→                  confidence: p.confidence,
+   828→                  valueBetDetected: p.valueBet,
+   829→                  valueBetType: p.valueBetType,
+   830→                  riskPercentage: p.riskPercentage,
+   831→                  winProbability: p.winProbability,
+   832→                  oddsHome: p.oddsHome,
+   833→                  oddsAway: p.oddsAway,
+   834→                  oddsDraw: p.oddsDraw,
+   835→                }));
+   836→              console.log(`📦 Fallback fichier pré-calculé: ${predictions.length} matchs`);
+   837→            }
+   838→          }
+   839→          
+   840→          if (predictions.length === 0) {
+   841→            result = { 
+   842→              telegram: { 
+   843→                success: false, 
+   844→                message: 'Aucun match disponible aujourd\'hui'
+   845→              } 
+   846→            };
+   847→            break;
+   848→          }
+   849→          
+   850→          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+   851→          
+   852→          const telegramResult = await publishDailySummaryToTelegram(predictions);
+   853→          result = { 
+   854→            telegram: { 
+   855→              success: telegramResult, 
+   856→              total: predictions.length,
+   857→              published: filteredCount,
+   858→              excluded: predictions.length - filteredCount,
+   859→              source: 'espn-live',
+   860→              message: telegramResult 
+   861→                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+   862→                : 'Erreur publication Telegram'
+   863→            } 
+   864→          };
+   865→        } catch (e: any) {
+   866→          result = { telegram: { success: false, error: e.message } };
+   867→        }
+   868→        break;
+   869→        
+   870→      case 'telegram-valuebets':
+   871→        // Publier uniquement les value bets sur Telegram
+   872→        // ⚠️ Tennis EXCLU car il a son propre cron dédié
+   873→        try {
+   874→          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+   875→          console.log('📡 Récupération des matchs pour value bets depuis ESPN...');
+   876→          const matches = await getMatchesWithRealOdds();
+   877→          
+   878→          let predictions: any[] = matches
+   879→            .filter((m: any) => m.sport?.toLowerCase() !== 'tennis')
+   880→            .map((m: any) => ({
+   881→              homeTeam: m.homeTeam,
+   882→              awayTeam: m.awayTeam,
+   883→              sport: m.sport,
+   884→              league: m.league,
+   885→              date: m.date,
+   886→              displayDate: m.displayDate,
+   887→              dateTag: m.dateTag,
+   888→              recommendation: m.recommendations?.[0]?.label,
+   889→              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+   890→              confidence: m.confidence,
+   891→              valueBetDetected: m.valueBets?.length > 0,
+   892→              valueBetType: m.valueBets?.[0]?.type,
+   893→              riskPercentage: m.riskPercentage,
+   894→              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+   895→              oddsHome: m.oddsHome,
+   896→              oddsAway: m.oddsAway,
+   897→              oddsDraw: m.oddsDraw,
+   898→            }));
+   899→
+   900→          const telegramResult = await publishValueBetsToTelegram(predictions);
+   901→          const valueBetsCount = predictions.filter(p => 
+   902→            p.valueBetDetected && 
+   903→            p.confidence !== 'low' && 
+   904→            isSafeOrModerate(p.riskPercentage)
+   905→          ).length;
+   906→          
+   907→          result = { 
+   908→            telegram: { 
+   909→              success: telegramResult, 
+   910→              total: valueBetsCount,
+   911→              source: 'espn-live',
+   912→              message: telegramResult 
+   913→                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
+   914→                : 'Erreur ou aucun value bet à publier'
+   915→            } 
+   916→          };
+   917→        } catch (e: any) {
+   918→          result = { telegram: { success: false, error: e.message } };
+   919→        }
+   920→        break;
+   921→        
+   922→      case 'telegram-kamikaze':
+   923→        // Publier les pronostics Kamikaze (haut risque) sur Telegram
+   924→        // 🎾 Tennis INCLUS dans le kamikaze
+   925→        try {
+   926→          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+   927→          console.log('📡 Récupération des matchs pour kamikaze depuis ESPN...');
+   928→          const matches = await getMatchesWithRealOdds();
+   929→          
+   930→          let predictions: any[] = matches.map((m: any) => ({
+   931→            homeTeam: m.homeTeam,
+   932→            awayTeam: m.awayTeam,
+   933→            sport: m.sport,
+   934→            league: m.league,
+   935→            date: m.date,
+   936→            displayDate: m.displayDate,
+   937→            dateTag: m.dateTag,
+   938→            recommendation: m.recommendations?.[0]?.label,
+   939→            predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+   940→            confidence: m.confidence,
+   941→            valueBetDetected: m.valueBets?.length > 0,
+   942→            valueBetType: m.valueBets?.[0]?.type,
+   943→            riskPercentage: m.riskPercentage,
+   944→            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+   945→            oddsHome: m.oddsHome,
+   946→            oddsAway: m.oddsAway,
+   947→            oddsDraw: m.oddsDraw,
+   948→          }));
+   949→          
+   950→          // Ajouter les prédictions tennis pour le kamikaze
+   951→          try {
+   952→            const tennisResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/tennis`);
+   953→            if (tennisResponse.ok) {
+   954→              const tennisData = await tennisResponse.json();
+   955→              const tennisPredictions = (tennisData.predictions || []).map((p: any) => ({
+   956→                homeTeam: p.player1,
+   957→                awayTeam: p.player2,
+   958→                sport: 'Tennis',
+   959→                league: p.tournament,
+   960→                date: p.date,
+   961→                recommendation: p.prediction?.winnerName,
+   962→                predictedResult: p.prediction?.winner === 'player1' ? 'home' : 'away',
+   963→                confidence: p.prediction?.confidence,
+   964→                valueBetDetected: p.betting?.recommendedBet,
+   965→                riskPercentage: p.prediction?.riskPercentage,
+   966→                winProbability: p.prediction?.winProbability,
+   967→                oddsHome: p.odds1,
+   968→                oddsAway: p.odds2,
+   969→                oddsDraw: null,
+   970→              }));
+   971→              predictions = [...predictions, ...tennisPredictions];
+   972→              console.log(`🎾 Tennis ajouté au kamikaze: ${tennisPredictions.length} matchs`);
+   973→            }
+   974→          } catch (e) {
+   975→            console.log('⚠️ Impossible de récupérer tennis pour kamikaze:', e);
+   976→          }
+   977→          
+   978→          const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
+   979→          
+   980→          const telegramResult = await publishKamikazeToTelegram(predictions);
+   981→          result = { 
+   982→            telegram: { 
+   983→              success: telegramResult, 
+   984→              total: kamikazeCount,
+   985→              source: 'espn-live',
+   986→              message: telegramResult 
+   987→                ? `💣 ${kamikazeCount} pronostic(s) Kamikaze publié(s) sur Telegram`
+   988→                : 'Erreur ou aucun pronostic Kamikaze à publier'
+   989→            } 
+   990→          };
+   991→        } catch (e: any) {
+   992→          result = { telegram: { success: false, error: e.message } };
+   993→        }
+   994→        break;
+   995→        
+   996→      default:
+   997→        return NextResponse.json(
+   998→          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze'] },
+   999→          { status: 400 }
+  1000→        );
+  1001→    }
+  1002→
+  1003→    const duration = Date.now() - startTime;
+  1004→    console.log(`✅ Cron job terminé en ${duration}ms`);
+  1005→
+  1006→    return NextResponse.json({
+  1007→      success: true,
+  1008→      action,
+  1009→      timestamp: new Date().toISOString(),
+  1010→      duration: `${duration}ms`,
+  1011→      supabase: supabasePing,
+  1012→      ...result
+  1013→    });
+  1014→
+  1015→  } catch (error: any) {
+  1016→    console.error('❌ Erreur cron job:', error);
+  1017→    return NextResponse.json({
+  1018→      success: false,
+  1019→      action,
+  1020→      error: error.message,
+  1021→      timestamp: new Date().toISOString()
+  1022→    }, { status: 500 });
+  1023→  }
+  1024→}
+  1025→
+  1026→/**
+  1027→ * POST - Permet de déclencher manuellement (admin)
+  1028→ */
+  1029→export async function POST(request: NextRequest) {
+  1030→  const url = new URL(request.url);
+  1031→  const action = url.searchParams.get('action') || 'verify';
+  1032→  const startTime = Date.now();
+  1033→
+  1034→  // Ping Supabase pour éviter la mise en pause (plan gratuit)
+  1035→  const pingResult = await pingSupabase();
+  1036→  console.log(`📡 Ping Supabase: ${pingResult.message}`);
+  1037→
+  1038→  try {
+  1039→    let result: any = {};
+  1040→
+  1041→    switch (action) {
+  1042→      case 'precalc':
+  1043→        result = await runPrecalc();
+  1044→        break;
+  1045→        
+  1046→      case 'verify-evening':
+  1047→      case 'verify-morning':
+  1048→        result = await verifyAllResults();
+  1049→        break;
+  1050→        
+  1051→      case 'verify-night':
+  1052→        result = await verifyNBAResults();
+  1053→        break;
+  1054→        
+  1055→      case 'verify':
+  1056→        const verifyResult = await verifyAllResults();
+  1057→        const mlResult = await trainMLModel();
+  1058→        
+  1059→        result = {
+  1060→          verified: verifyResult.verified,
+  1061→          updated: verifyResult.updated,
+  1062→          won: verifyResult.won,
+  1063→          lost: verifyResult.lost,
+  1064→          errors: verifyResult.errors,
+  1065→          statsUpdate: verifyResult.statsUpdate,
+  1066→          mlSync: verifyResult.mlSync,
+  1067→          mlTraining: mlResult
+  1068→        };
+  1069→        break;
+  1070→        
+  1071→      case 'test-espn':
+  1072→        const [footResults, nbaResults] = await Promise.all([
+  1073→          fetchFootballResultsFromESPN(),
+  1074→          fetchNBAResults()
+  1075→        ]);
+  1076→        result = {
+  1077→          football: footResults.length,
+  1078→          nba: nbaResults.length,
+  1079→          sampleFootball: footResults.slice(0, 5),
+  1080→          sampleNBA: nbaResults.slice(0, 5)
+  1081→        };
+  1082→        break;
+  1083→        
+  1084→      case 'update-stats':
+  1085→        // Forcer la mise à jour des statistiques
+  1086→        try {
+  1087→          const statsResult = await forceUpdateStats();
+  1088→          result = { statsUpdate: statsResult };
+  1089→        } catch (e: any) {
+  1090→          result = { statsUpdate: { success: false, error: e.message } };
+  1091→        }
+  1092→        break;
+  1093→        
+  1094→      case 'sync-ml':
+  1095→        // Forcer la synchronisation ML
+  1096→        try {
+  1097→          const mlSyncResult = await syncPredictionsToML();
+  1098→          result = { mlSync: mlSyncResult };
+  1099→        } catch (e: any) {
+  1100→          result = { mlSync: { success: false, error: e.message } };
+  1101→        }
+  1102→        break;
+  1103→
+  1104→      case 'sync-all':
+  1105→        // Synchronisation complète depuis stats_history
+  1106→        try {
+  1107→          const syncResult = await fullSyncFromStatsHistory();
+  1108→          result = { syncAll: syncResult };
+  1109→        } catch (e: any) {
+  1110→          result = { syncAll: { success: false, error: e.message } };
+  1111→        }
+  1112→        break;
+  1113→
+  1114→      case 'ping':
+  1115→        // Ping explicite de Supabase
+  1116→        result = { ping: pingResult };
+  1117→        break;
+  1118→
+  1119→      case 'train-ml':
+  1120→        // Entraînement manuel du modèle ML
+  1121→        try {
+  1122→          const mlTrainResult = await trainMLModel();
+  1123→          result = { mlTraining: mlTrainResult };
+  1124→        } catch (e: any) {
+  1125→          result = { mlTraining: { success: false, error: e.message } };
+  1126→        }
+  1127→        break;
+  1128→        
+  1129→      case 'ml-stats':
+  1130→        // Statistiques du modèle ML
+  1131→        try {
+  1132→          const mlStats = await getUnifiedMLStats();
+  1133→          result = { mlStats };
+  1134→        } catch (e: any) {
+  1135→          result = { mlStats: { success: false, error: e.message } };
+  1136→        }
+  1137→        break;
+  1138→
+  1139→      case 'telegram-summary':
+  1140→        // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
+  1141→        try {
+  1142→          const matches = await getMatchesWithRealOdds();
+  1143→          const predictions = matches.map((m: any) => ({
+  1144→            homeTeam: m.homeTeam,
+  1145→            awayTeam: m.awayTeam,
+  1146→            sport: m.sport,
+  1147→            league: m.league,
+  1148→            date: m.date,
+  1149→            displayDate: m.displayDate,
+  1150→            recommendation: m.recommendations?.[0]?.label,
+  1151→            confidence: m.confidence,
+  1152→            valueBetDetected: m.valueBets?.length > 0,
+  1153→            riskPercentage: m.riskPercentage,
+  1154→            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+  1155→            oddsHome: m.oddsHome,
+  1156→            oddsAway: m.oddsAway,
+  1157→            oddsDraw: m.oddsDraw,
+  1158→          }));
+  1159→
+  1160→          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+  1161→
+  1162→          const telegramResult = await publishDailySummaryToTelegram(predictions);
+  1163→          result = {
+  1164→            telegram: {
+  1165→              success: telegramResult,
+  1166→              total: predictions.length,
+  1167→              published: filteredCount,
+  1168→              excluded: predictions.length - filteredCount,
+  1169→              message: telegramResult
+  1170→                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+  1171→                : 'Erreur publication Telegram'
+  1172→            }
+  1173→          };
+  1174→        } catch (e: any) {
+  1175→          result = { telegram: { success: false, error: e.message } };
+  1176→        }
+  1177→        break;
+  1178→
+  1179→      case 'telegram-valuebets':
+  1180→        // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
+  1181→        try {
+  1182→          const matches = await getMatchesWithRealOdds();
+  1183→          const predictions = matches.map((m: any) => ({
+  1184→            homeTeam: m.homeTeam,
+  1185→            awayTeam: m.awayTeam,
+  1186→            sport: m.sport,
+  1187→            league: m.league,
+  1188→            date: m.date,
+  1189→            displayDate: m.displayDate,
+  1190→            recommendation: m.recommendations?.[0]?.label,
+  1191→            confidence: m.confidence,
+  1192→            riskPercentage: m.riskPercentage,
+  1193→            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+  1194→            valueBetDetected: m.valueBets?.length > 0,
+  1195→            valueBetType: m.valueBets?.[0]?.type,
+  1196→            oddsHome: m.oddsHome,
+  1197→            oddsAway: m.oddsAway,
+  1198→            oddsDraw: m.oddsDraw,
+  1199→          }));
+  1200→
+  1201→          const telegramResult = await publishValueBetsToTelegram(predictions);
+  1202→          const valueBetsCount = predictions.filter(p =>
+  1203→            p.valueBetDetected &&
+  1204→            p.confidence !== 'low' &&
+  1205→            isSafeOrModerate(p.riskPercentage)
+  1206→          ).length;
+  1207→
+  1208→          result = {
+  1209→            telegram: {
+  1210→              success: telegramResult,
+  1211→              total: valueBetsCount,
+  1212→              message: telegramResult
+  1213→                ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
+  1214→                : 'Erreur ou aucun value bet à publier'
+  1215→            }
+  1216→          };
+  1217→        } catch (e: any) {
+  1218→          result = { telegram: { success: false, error: e.message } };
+  1219→        }
+  1220→        break;
+  1221→
+  1222→      default:
+  1223→        return NextResponse.json(
+  1224→          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets'] },
+  1225→          { status: 400 }
+  1226→        );
+  1227→    }
+  1228→
+  1229→    const duration = Date.now() - startTime;
+  1230→
+  1231→    return NextResponse.json({
+  1232→      success: true,
+  1233→      action,
+  1234→      timestamp: new Date().toISOString(),
+  1235→      duration: `${duration}ms`,
+  1236→      supabase: pingResult,
+  1237→      ...result
+  1238→    });
+  1239→
+  1240→  } catch (error: any) {
+  1241→    return NextResponse.json({
+  1242→      success: false,
+  1243→      action,
+  1244→      error: error.message
+  1245→    }, { status: 500 });
+  1246→  }
+  1247→}
+  1248→

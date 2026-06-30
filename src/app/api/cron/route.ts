@@ -22,6 +22,7 @@ import {
   publishDailySummaryToTelegram, 
   publishValueBetsToTelegram,
   publishKamikazeToTelegram,
+  publishDailyResultsToTelegram,
   isSafeOrModerate,
   isKamikaze
 } from '@/lib/telegramService';
@@ -849,6 +850,32 @@ export async function GET(request: NextRequest) {
           
           const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
           
+          // 💾 Sauvegarder les prédictions dans Supabase pour le bilan quotidien
+          try {
+            const dbPredictions = predictions.map((p: any) => {
+              const matchId = `${p.homeTeam.replace(/\s+/g, '-').toLowerCase()}-${p.awayTeam.replace(/\s+/g, '-').toLowerCase()}-${p.date?.split('T')[0] || new Date().toISOString().split('T')[0]}`;
+              return {
+                match_id: matchId,
+                home_team: p.homeTeam,
+                away_team: p.awayTeam,
+                league: p.league || 'Unknown',
+                sport: p.sport || 'football',
+                match_date: p.date || new Date().toISOString(),
+                odds_home: p.oddsHome || 1.0,
+                odds_draw: p.oddsDraw || null,
+                odds_away: p.oddsAway || 1.0,
+                predicted_result: p.predictedResult || 'home',
+                confidence: p.confidence || 'medium',
+                risk_percentage: p.riskPercentage || 50,
+                status: 'pending' as const,
+              };
+            });
+            const saved = await SupabaseStore.addPredictions(dbPredictions);
+            console.log(`💾 ${saved} prédictions sauvegardées dans Supabase`);
+          } catch (e: any) {
+            console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
+          }
+          
           const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = { 
             telegram: { 
@@ -993,9 +1020,38 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'telegram-results':
+        // Publier le bilan quotidien des pronostics (prédictions vs résultats réels)
+        try {
+          // D'abord lancer la vérification pour mettre à jour les résultats
+          console.log('🔄 Vérification des résultats avant bilan...');
+          const verifyResult = await verifyAllResults();
+          console.log(`✅ Vérification: ${verifyResult.verified} matchs, ${verifyResult.updated} mis à jour`);
+          
+          // Petite pause pour que Supabase soit à jour
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Récupérer la date cible (hier par défaut, ou date passée en param)
+          const targetDate = url.searchParams.get('date');
+          const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
+          
+          result = { 
+            telegram: { 
+              success: telegramResult,
+              verification: { verified: verifyResult.verified, updated: verifyResult.updated, won: verifyResult.won, lost: verifyResult.lost },
+              message: telegramResult 
+                ? '📊 Bilan quotidien publié sur Telegram'
+                : 'Aucun pronostic à comparer pour cette date'
+            } 
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+        
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results'] },
           { status: 400 }
         );
     }

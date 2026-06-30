@@ -3,6 +3,7 @@ import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 import {
   publishDailySummaryToTelegram,
   publishValueBetsToTelegram,
+  publishDailyResultsToTelegram,
   isSafeOrModerate
 } from '@/lib/telegramService';
 
@@ -10,7 +11,7 @@ import {
  * GET /api/telegram/publish-now
  * Publie manuellement les pronostics du jour sur Telegram
  * Paramètres:
- *   - type: "summary" (défaut) ou "valuebets"
+ *   - type: "summary" (défaut), "valuebets" ou "results"
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -95,6 +96,11 @@ export async function GET(request: Request) {
         p.confidence !== 'low' &&
         isSafeOrModerate(p.riskPercentage)
       ).length;
+    } else if (type === 'results') {
+      // Publier le bilan quotidien
+      const targetDate = searchParams.get('date');
+      telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
+      published = telegramResult ? 1 : 0;
     } else {
       // Publier le résumé complet
       telegramResult = await publishDailySummaryToTelegram(predictions);

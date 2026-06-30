@@ -1,0 +1,730 @@
+     1→import { NextResponse } from 'next/server';
+     2→import PredictionStore from '@/lib/store';
+     3→import * as fs from 'fs';
+     4→import * as path from 'path';
+     5→
+     6→// Configuration GitHub
+     7→const GITHUB_REPO = 'steohidy/my-project';
+     8→const GITHUB_BRANCH = 'master';
+     9→
+    10→/**
+    11→ * Charger les stats historiques - d'abord local, puis GitHub
+    12→ */
+    13→async function loadStatsHistory(): Promise<any> {
+    14→  // 1. Essayer de lire le fichier local (disponible sur Vercel)
+    15→  try {
+    16→    const localPath = path.join(process.cwd(), 'data/stats_history.json');
+    17→    if (fs.existsSync(localPath)) {
+    18→      const content = fs.readFileSync(localPath, 'utf-8');
+    19→      const data = JSON.parse(content);
+    20→      console.log('📊 Stats chargées depuis fichier local');
+    21→      return data;
+    22→    }
+    23→  } catch (e) {
+    24→    console.log('⚠️ Impossible de lire stats_history local:', e);
+    25→  }
+    26→  
+    27→  // 2. Fallback: charger depuis GitHub
+    28→  try {
+    29→    const res = await fetch(
+    30→      `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/data/stats_history.json`,
+    31→      { next: { revalidate: 60 } }
+    32→    );
+    33→    if (res.ok) {
+    34→      console.log('📊 Stats chargées depuis GitHub');
+    35→      return await res.json();
+    36→    }
+    37→  } catch (e) {
+    38→    console.error('Erreur chargement stats_history:', e);
+    39→  }
+    40→  return null;
+    41→}
+    42→
+    43→/**
+    44→ * Charger les prédictions - d'abord local, puis GitHub
+    45→ */
+    46→async function loadPredictions(): Promise<any> {
+    47→  // 1. Essayer de lire le fichier local
+    48→  try {
+    49→    const localPath = path.join(process.cwd(), 'data/predictions.json');
+    50→    if (fs.existsSync(localPath)) {
+    51→      const content = fs.readFileSync(localPath, 'utf-8');
+    52→      return JSON.parse(content);
+    53→    }
+    54→  } catch (e) {
+    55→    console.log('⚠️ Impossible de lire predictions local:', e);
+    56→  }
+    57→  
+    58→  // 2. Fallback: charger depuis GitHub
+    59→  try {
+    60→    const res = await fetch(
+    61→      `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/data/predictions.json`,
+    62→      { next: { revalidate: 60 } }
+    63→    );
+    64→    if (res.ok) {
+    65→      return await res.json();
+    66→    }
+    67→  } catch (e) {
+    68→    console.error('Erreur chargement predictions:', e);
+    69→  }
+    70→  return null;
+    71→}
+    72→
+    73→/**
+    74→ * Normaliser le sport
+    75→ */
+    76→function normalizeSport(sport: string): 'football' | 'basketball' | 'hockey' | 'other' {
+    77→  const s = sport.toLowerCase();
+    78→  if (s.includes('foot') || s.includes('soccer')) return 'football';
+    79→  if (s.includes('basket') || s.includes('nba')) return 'basketball';
+    80→  if (s.includes('hockey') || s.includes('nhl')) return 'hockey';
+    81→  return 'other';
+    82→}
+    83→
+    84→/**
+    85→ * Helper functions pour le filtrage temporel
+    86→ */
+    87→function isToday(dateString: string): boolean {
+    88→  const date = new Date(dateString);
+    89→  const today = new Date();
+    90→  return date.toDateString() === today.toDateString();
+    91→}
+    92→
+    93→function isThisWeek(dateString: string): boolean {
+    94→  const date = new Date(dateString);
+    95→  const today = new Date();
+    96→  const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    97→  return date >= weekAgo && date <= today;
+    98→}
+    99→
+   100→function isThisMonth(dateString: string): boolean {
+   101→  const date = new Date(dateString);
+   102→  const today = new Date();
+   103→  return date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear();
+   104→}
+   105→
+   106→/**
+   107→ * Calculer les stats depuis les prédictions
+   108→ */
+   109→function calculateStatsFromPredictions(predictions: any[], filter?: 'football' | 'basketball'): any {
+   110→  // Filtrer par sport si demandé
+   111→  const filtered = filter 
+   112→    ? predictions.filter((p: any) => normalizeSport(p.sport) === filter)
+   113→    : predictions;
+   114→  
+   115→  const today = filtered.filter((p: any) => isToday(p.matchDate));
+   116→  const week = filtered.filter((p: any) => isThisWeek(p.matchDate));
+   117→  const month = filtered.filter((p: any) => isThisMonth(p.matchDate));
+   118→  
+   119→  const calcStats = (preds: any[]) => {
+   120→    const total = preds.length;
+   121→    const completed = preds.filter((p: any) => p.status === 'completed');
+   122→    const wins = completed.filter((p: any) => p.resultMatch === true).length;
+   123→    const losses = completed.filter((p: any) => p.resultMatch === false).length;
+   124→    
+   125→    return {
+   126→      totalPredictions: total,
+   127→      completed: completed.length,
+   128→      wins,
+   129→      losses,
+   130→      winRate: completed.length > 0 ? Math.round(wins / completed.length * 100) : 0
+   131→    };
+   132→  };
+   133→  
+   134→  return {
+   135→    daily: calcStats(today),
+   136→    weekly: calcStats(week),
+   137→    monthly: calcStats(month),
+   138→    overall: calcStats(filtered)
+   139→  };
+   140→}
+   141→
+   142→/**
+   143→ * Calculer les stats depuis stats_history.json avec séparation par sport
+   144→ */
+   145→function calculateStatsFromHistory(statsHistory: any, predictions: any): any {
+   146→  if (!statsHistory || !statsHistory.dailyStats) {
+   147→    return null;
+   148→  }
+   149→  
+   150→  const dailyStats = statsHistory.dailyStats;
+   151→  const today = new Date().toISOString().split('T')[0];
+   152→  
+   153→  // Hier
+   154→  const yesterday = new Date();
+   155→  yesterday.setDate(yesterday.getDate() - 1);
+   156→  const yesterdayStr = yesterday.toISOString().split('T')[0];
+   157→  
+   158→  const yesterdayData = dailyStats.find((d: any) => d.date === yesterdayStr);
+   159→  
+   160→  // Semaine (7 derniers jours)
+   161→  const weekAgo = new Date();
+   162→  weekAgo.setDate(weekAgo.getDate() - 7);
+   163→  const weekStats = dailyStats.filter((d: any) => new Date(d.date) >= weekAgo);
+   164→  
+   165→  // Mois (30 derniers jours)
+   166→  const monthAgo = new Date();
+   167→  monthAgo.setDate(monthAgo.getDate() - 30);
+   168→  const monthStats = dailyStats.filter((d: any) => new Date(d.date) >= monthAgo);
+   169→  
+   170→  // Calculer les agrégats depuis la structure réelle du fichier
+   171→  const aggregateStats = (stats: any[]) => {
+   172→    if (stats.length === 0) return { totalPredictions: 0, wins: 0, losses: 0, winRate: 0, completed: 0 };
+   173→    const totals = stats.reduce((acc, d) => ({
+   174→      completed: acc.completed + (d.stats?.completed || 0),
+   175→      wins: acc.wins + (d.stats?.wins || 0),
+   176→      losses: acc.losses + (d.stats?.losses || 0)
+   177→    }), { completed: 0, wins: 0, losses: 0 });
+   178→    
+   179→    return {
+   180→      totalPredictions: totals.completed,
+   181→      completed: totals.completed,
+   182→      wins: totals.wins,
+   183→      losses: totals.losses,
+   184→      winRate: totals.completed > 0 ? Math.round((totals.wins / totals.completed) * 100) : 0
+   185→    };
+   186→  };
+   187→  
+   188→  // Stats par sport depuis les nouvelles données avec détails
+   189→  const aggregateBySport = (stats: any[], sport: 'football' | 'basketball' | 'hockey') => {
+   190→    if (stats.length === 0) return { total: 0, wins: 0, losses: 0, winRate: 0, details: { resultats: { total: 0, wins: 0, winRate: 0 }, buts: { total: 0, wins: 0, winRate: 0 }, btts: { total: 0, wins: 0, winRate: 0 } } };
+   191→    
+   192→    const totals = stats.reduce((acc, d) => {
+   193→      const sportStats = d.stats?.bySport?.[sport] || { total: 0, wins: 0, losses: 0 };
+   194→      const details = d.stats?.bySport?.[sport]?.details || { resultats: { total: 0, wins: 0 }, buts: { total: 0, wins: 0 }, btts: { total: 0, wins: 0 } };
+   195→      return {
+   196→        total: acc.total + (sportStats.total || 0),
+   197→        wins: acc.wins + (sportStats.wins || 0),
+   198→        losses: acc.losses + (sportStats.losses || 0),
+   199→        details: {
+   200→          resultats: {
+   201→            total: acc.details.resultats.total + (details.resultats?.total || 0),
+   202→            wins: acc.details.resultats.wins + (details.resultats?.wins || 0)
+   203→          },
+   204→          buts: {
+   205→            total: acc.details.buts.total + (details.buts?.total || 0),
+   206→            wins: acc.details.buts.wins + (details.buts?.wins || 0)
+   207→          },
+   208→          btts: {
+   209→            total: acc.details.btts.total + (details.btts?.total || 0),
+   210→            wins: acc.details.btts.wins + (details.btts?.wins || 0)
+   211→          }
+   212→        }
+   213→      };
+   214→    }, { total: 0, wins: 0, losses: 0, details: { resultats: { total: 0, wins: 0 }, buts: { total: 0, wins: 0 }, btts: { total: 0, wins: 0 } } });
+   215→    
+   216→    return {
+   217→      total: totals.total,
+   218→      wins: totals.wins,
+   219→      losses: totals.losses,
+   220→      winRate: totals.total > 0 ? Math.round((totals.wins / totals.total) * 100) : 0,
+   221→      details: {
+   222→        resultats: {
+   223→          total: totals.details.resultats.total,
+   224→          wins: totals.details.resultats.wins,
+   225→          winRate: totals.details.resultats.total > 0 ? Math.round((totals.details.resultats.wins / totals.details.resultats.total) * 100) : 0
+   226→        },
+   227→        buts: {
+   228→          total: totals.details.buts.total,
+   229→          wins: totals.details.buts.wins,
+   230→          winRate: totals.details.buts.total > 0 ? Math.round((totals.details.buts.wins / totals.details.buts.total) * 100) : 0
+   231→        },
+   232→        btts: {
+   233→          total: totals.details.btts.total,
+   234→          wins: totals.details.btts.wins,
+   235→          winRate: totals.details.btts.total > 0 ? Math.round((totals.details.btts.wins / totals.details.btts.total) * 100) : 0
+   236→        }
+   237→      }
+   238→    };
+   239→  };
+   240→  
+   241→  // Stats quotidiennes (hier)
+   242→  const dailyResult = yesterdayData ? {
+   243→    totalPredictions: yesterdayData.stats?.completed || 0,
+   244→    completed: yesterdayData.stats?.completed || 0,
+   245→    wins: yesterdayData.stats?.wins || 0,
+   246→    losses: yesterdayData.stats?.losses || 0,
+   247→    winRate: yesterdayData.stats?.winRate || 0,
+   248→    bySport: {
+   249→      football: yesterdayData.stats?.bySport?.football || { total: 0, wins: 0, losses: 0, winRate: 0 },
+   250→      basketball: yesterdayData.stats?.bySport?.basketball || { total: 0, wins: 0, losses: 0, winRate: 0 },
+   251→      hockey: yesterdayData.stats?.bySport?.hockey || { total: 0, wins: 0, losses: 0, winRate: 0 }
+   252→    },
+   253→    predictions: yesterdayData.predictions || []
+   254→  } : { totalPredictions: 0, completed: 0, wins: 0, losses: 0, winRate: 0, predictions: [], bySport: { football: { total: 0, wins: 0, losses: 0, winRate: 0 }, basketball: { total: 0, wins: 0, losses: 0, winRate: 0 }, hockey: { total: 0, wins: 0, losses: 0, winRate: 0 } } };
+   255→  
+   256→  return {
+   257→    daily: dailyResult,
+   258→    weekly: {
+   259→      ...aggregateStats(weekStats),
+   260→      bySport: {
+   261→        football: aggregateBySport(weekStats, 'football'),
+   262→        basketball: aggregateBySport(weekStats, 'basketball'),
+   263→        hockey: aggregateBySport(weekStats, 'hockey')
+   264→      }
+   265→    },
+   266→    monthly: {
+   267→      ...aggregateStats(monthStats),
+   268→      bySport: {
+   269→        football: aggregateBySport(monthStats, 'football'),
+   270→        basketball: aggregateBySport(monthStats, 'basketball'),
+   271→        hockey: aggregateBySport(monthStats, 'hockey')
+   272→      }
+   273→    },
+   274→    overall: {
+   275→      ...(statsHistory.summary || aggregateStats(dailyStats)),
+   276→      bySport: statsHistory.summary?.bySport || {
+   277→        football: aggregateBySport(dailyStats, 'football'),
+   278→        basketball: aggregateBySport(dailyStats, 'basketball'),
+   279→        hockey: aggregateBySport(dailyStats, 'hockey')
+   280→      },
+   281→      expertAdvisor: statsHistory.summary?.expertAdvisor || null
+   282→    }
+   283→  };
+   284→}
+   285→
+   286→/**
+   287→ * Normaliser le nom d'équipe pour la comparaison
+   288→ */
+   289→function normalizeTeamName(name: string): string {
+   290→  return name
+   291→    .toLowerCase()
+   292→    .normalize('NFD')
+   293→    .replace(/[\u0300-\u036f]/g, '')
+   294→    .replace(/[^a-z0-9]/g, '')
+   295→    .substring(0, 8);
+   296→}
+   297→
+   298→/**
+   299→ * Trouver le résultat correspondant dans les données Football-Data
+   300→ */
+   301→function findMatchResult(
+   302→  fdMatch: any, 
+   303→  homeTeam: string,
+   304→  awayTeam: string
+   305→): { found: boolean; homeScore: number; awayScore: number } {
+   306→  const predHomeNorm = normalizeTeamName(homeTeam);
+   307→  const predAwayNorm = normalizeTeamName(awayTeam);
+   308→  
+   309→  const fdHomeNorm = normalizeTeamName(fdMatch.homeTeam?.name || '');
+   310→  const fdAwayNorm = normalizeTeamName(fdMatch.awayTeam?.name || '');
+   311→  
+   312→  const homeMatch = predHomeNorm === fdHomeNorm || 
+   313→                    predHomeNorm.includes(fdHomeNorm) || 
+   314→                    fdHomeNorm.includes(predHomeNorm);
+   315→  const awayMatch = predAwayNorm === fdAwayNorm || 
+   316→                    predAwayNorm.includes(fdAwayNorm) || 
+   317→                    fdAwayNorm.includes(predAwayNorm);
+   318→  
+   319→  if (homeMatch && awayMatch) {
+   320→    return {
+   321→      found: true,
+   322→      homeScore: fdMatch.score?.fullTime?.home ?? fdMatch.score?.fullTime?.homeTeam ?? 0,
+   323→      awayScore: fdMatch.score?.fullTime?.away ?? fdMatch.score?.fullTime?.awayTeam ?? 0
+   324→    };
+   325→  }
+   326→  
+   327→  return { found: false, homeScore: 0, awayScore: 0 };
+   328→}
+   329→
+   330→/**
+   331→ * Récupérer les résultats réels d'hier via Football-Data API
+   332→ */
+   333→async function fetchYesterdayResults(): Promise<any[]> {
+   334→  const apiKey = process.env.FOOTBALL_DATA_API_KEY;
+   335→  
+   336→  if (!apiKey) {
+   337→    console.error('❌ FOOTBALL_DATA_API_KEY non configurée');
+   338→    return [];
+   339→  }
+   340→  
+   341→  try {
+   342→    const yesterday = new Date();
+   343→    yesterday.setDate(yesterday.getDate() - 1);
+   344→    const dateStr = yesterday.toISOString().split('T')[0];
+   345→    
+   346→    console.log(`📅 Récupération des résultats du ${dateStr}`);
+   347→    
+   348→    const response = await fetch(
+   349→      `https://api.football-data.org/v4/matches?date=${dateStr}`,
+   350→      {
+   351→        headers: { 'X-Auth-Token': apiKey },
+   352→        next: { revalidate: 0 }
+   353→      }
+   354→    );
+   355→    
+   356→    if (!response.ok) {
+   357→      console.error(`Erreur API Football-Data: ${response.status}`);
+   358→      return [];
+   359→    }
+   360→    
+   361→    const data = await response.json();
+   362→    
+   363→    const finishedMatches = (data.matches || []).filter(
+   364→      (m: any) => m.status === 'FINISHED' || m.status === 'FT'
+   365→    );
+   366→    
+   367→    console.log(`✅ ${finishedMatches.length} matchs terminés trouvés`);
+   368→    
+   369→    return finishedMatches;
+   370→    
+   371→  } catch (error) {
+   372→    console.error('Erreur récupération résultats:', error);
+   373→    return [];
+   374→  }
+   375→}
+   376→
+   377→/**
+   378→ * GET - Récupérer les statistiques et pronostics
+   379→ */
+   380→export async function GET(request: Request) {
+   381→  try {
+   382→    const { searchParams } = new URL(request.url);
+   383→    const action = searchParams.get('action') || 'stats';
+   384→    const sport = searchParams.get('sport'); // Filtre par sport
+   385→    const betType = searchParams.get('betType'); // Filtre par type de pari
+   386→    
+   387→    // Statistiques détaillées par période - DEPUIS GITHUB
+   388→    if (action === 'stats') {
+   389→      // Charger les stats depuis GitHub
+   390→      const statsHistory = await loadStatsHistory();
+   391→      
+   392→      // Type pour les stats
+   393→      type StatsType = {
+   394→        daily: { totalPredictions: number; completed: number; wins: number; losses: number; winRate: number; bySport?: any };
+   395→        weekly: { totalPredictions: number; completed: number; wins: number; losses: number; winRate: number; bySport?: any };
+   396→        monthly: { totalPredictions: number; completed: number; wins: number; losses: number; winRate: number; bySport?: any };
+   397→        overall: { totalPredictions: number; completed: number; wins: number; losses: number; winRate: number; bySport?: any; expertAdvisor?: any };
+   398→      };
+   399→      
+   400→      // Utiliser les stats pré-calculées si disponibles ET récentes (moins de 24h)
+   401→      let stats: StatsType | null = null;
+   402→      const statsUpdateTime = statsHistory?.lastUpdate ? new Date(statsHistory.lastUpdate) : null;
+   403→      const isStatsRecent = statsUpdateTime && (Date.now() - statsUpdateTime.getTime() < 24 * 60 * 60 * 1000);
+   404→      
+   405→      if (statsHistory && isStatsRecent) {
+   406→        stats = calculateStatsFromHistory(statsHistory, null);
+   407→      }
+   408→      
+   409→      // Si pas de stats récentes, calculer directement depuis PredictionStore
+   410→      if (!stats) {
+   411→        console.log('📊 Calcul des stats depuis PredictionStore (temps réel)');
+   412→        const detailedStats = await PredictionStore.getDetailedStatsAsync();
+   413→        
+   414→        // Convertir le format pour correspondre à l'attendu
+   415→        stats = {
+   416→          daily: {
+   417→            totalPredictions: detailedStats.daily.totalPredictions,
+   418→            completed: detailedStats.daily.completed,
+   419→            wins: detailedStats.daily.wins,
+   420→            losses: detailedStats.daily.losses,
+   421→            winRate: detailedStats.daily.winRate,
+   422→            bySport: detailedStats.daily.bySport || {
+   423→              football: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   424→              basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   425→              hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+   426→            }
+   427→          },
+   428→          weekly: {
+   429→            totalPredictions: detailedStats.weekly.totalPredictions,
+   430→            completed: detailedStats.weekly.completed,
+   431→            wins: detailedStats.weekly.wins,
+   432→            losses: detailedStats.weekly.losses,
+   433→            winRate: detailedStats.weekly.winRate,
+   434→            bySport: detailedStats.weekly.bySport || {
+   435→              football: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   436→              basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   437→              hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+   438→            }
+   439→          },
+   440→          monthly: {
+   441→            totalPredictions: detailedStats.monthly.totalPredictions,
+   442→            completed: detailedStats.monthly.completed,
+   443→            wins: detailedStats.monthly.wins,
+   444→            losses: detailedStats.monthly.losses,
+   445→            winRate: detailedStats.monthly.winRate,
+   446→            bySport: detailedStats.monthly.bySport || {
+   447→              football: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   448→              basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   449→              hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+   450→            }
+   451→          },
+   452→          overall: {
+   453→            totalPredictions: detailedStats.overall.totalPredictions,
+   454→            completed: detailedStats.overall.completed,
+   455→            wins: detailedStats.overall.wins,
+   456→            losses: detailedStats.overall.losses,
+   457→            winRate: detailedStats.overall.winRate,
+   458→            bySport: detailedStats.overall.bySport || {
+   459→              football: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   460→              basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   461→              hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+   462→            }
+   463→          }
+   464→        };
+   465→      }
+   466→      
+   467→      // Filtrer par sport si demandé
+   468→      if (sport) {
+   469→        const sportKey = sport === 'football' ? 'football' : sport === 'basketball' ? 'basketball' : null;
+   470→        
+   471→        if (sportKey && stats) {
+   472→          stats = {
+   473→            daily: {
+   474→              ...(stats.daily?.bySport?.[sportKey] || stats.daily),
+   475→              totalPredictions: stats.daily?.bySport?.[sportKey]?.total || stats.daily?.totalPredictions || 0
+   476→            },
+   477→            weekly: {
+   478→              ...(stats.weekly?.bySport?.[sportKey] || stats.weekly),
+   479→              totalPredictions: stats.weekly?.bySport?.[sportKey]?.total || stats.weekly?.totalPredictions || 0
+   480→            },
+   481→            monthly: {
+   482→              ...(stats.monthly?.bySport?.[sportKey] || stats.monthly),
+   483→              totalPredictions: stats.monthly?.bySport?.[sportKey]?.total || stats.monthly?.totalPredictions || 0
+   484→            },
+   485→            overall: {
+   486→              ...(stats.overall?.bySport?.[sportKey] || stats.overall),
+   487→              totalPredictions: stats.overall?.bySport?.[sportKey]?.total || stats.overall?.totalPredictions || 0
+   488→            }
+   489→          };
+   490→        }
+   491→      }
+   492→      
+   493→      const info = await PredictionStore.getInfoAsync();
+   494→      const integrity = await PredictionStore.verifyIntegrityAsync();
+   495→      
+   496→      return NextResponse.json({
+   497→        // Stats par période
+   498→        daily: stats?.daily || { totalPredictions: 0, completed: 0, wins: 0, losses: 0, winRate: 0 },
+   499→        weekly: stats?.weekly || { totalPredictions: 0, completed: 0, wins: 0, losses: 0, winRate: 0 },
+   500→        monthly: stats?.monthly || { totalPredictions: 0, completed: 0, wins: 0, losses: 0, winRate: 0 },
+   501→        overall: stats?.overall || { totalPredictions: 0, completed: 0, wins: 0, losses: 0, winRate: 0 },
+   502→        // Stats par sport (nouveau)
+   503→        bySport: stats?.overall?.bySport || {
+   504→          football: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   505→          basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
+   506→          hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+   507→        },
+   508→        // Expert Advisor ratio (nouveau)
+   509→        expertAdvisor: stats?.overall?.expertAdvisor || null,
+   510→        // Filtre actif
+   511→        filter: sport ? { sport } : null,
+   512→        // Infos générales
+   513→        ...info,
+   514→        // Intégrité
+   515→        integrity: integrity.valid,
+   516→        // Source des données
+   517→        source: statsHistory && isStatsRecent ? 'github_stats_history' : 'prediction_store_realtime',
+   518→        timestamp: new Date().toISOString()
+   519→      });
+   520→    }
+   521→    
+   522→    // Statistiques détaillées complètes
+   523→    if (action === 'detailed_stats') {
+   524→      const statsHistory = await loadStatsHistory();
+   525→      const predictions = await loadPredictions();
+   526→      const stats = calculateStatsFromHistory(statsHistory, predictions);
+   527→      
+   528→      if (stats) {
+   529→        return NextResponse.json(stats);
+   530→      }
+   531→      
+   532→      // Fallback sur store local
+   533→      const localStats = PredictionStore.getDetailedStats();
+   534→      return NextResponse.json(localStats);
+   535→    }
+   536→    
+   537→    // Historique des pronostics terminés
+   538→    if (action === 'history') {
+   539→      const predictions = await loadPredictions();
+   540→      const completed = predictions?.predictions?.filter((p: any) => p.status === 'completed') || [];
+   541→      return NextResponse.json({ predictions: completed });
+   542→    }
+   543→    
+   544→    // Pronostics en attente
+   545→    if (action === 'pending') {
+   546→      const predictions = await loadPredictions();
+   547→      const pending = predictions?.predictions?.filter((p: any) => p.status === 'pending') || [];
+   548→      return NextResponse.json({ predictions: pending });
+   549→    }
+   550→    
+   551→    // Tous les pronostics
+   552→    if (action === 'all') {
+   553→      const predictions = await loadPredictions();
+   554→      const statsHistory = await loadStatsHistory();
+   555→      const stats = calculateStatsFromHistory(statsHistory, predictions);
+   556→      return NextResponse.json({ 
+   557→        predictions: predictions?.predictions || [], 
+   558→        stats 
+   559→      });
+   560→    }
+   561→    
+   562→    // Vérifier l'intégrité
+   563→    if (action === 'verify') {
+   564→      const integrity = PredictionStore.verifyIntegrity();
+   565→      return NextResponse.json(integrity);
+   566→    }
+   567→    
+   568→    return NextResponse.json({ predictions: [] });
+   569→    
+   570→  } catch (error) {
+   571→    console.error('Erreur API results GET:', error);
+   572→    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+   573→  }
+   574→}
+   575→
+   576→/**
+   577→ * POST - Actions: sauvegarder, vérifier les résultats, nettoyer
+   578→ */
+   579→export async function POST(request: Request) {
+   580→  try {
+   581→    const body = await request.json();
+   582→    const { action, predictions } = body;
+   583→    
+   584→    // Sauvegarder les pronostics du jour
+   585→    if (action === 'save_predictions') {
+   586→      if (!predictions || !Array.isArray(predictions)) {
+   587→        return NextResponse.json({ error: 'Données invalides' }, { status: 400 });
+   588→      }
+   589→      
+   590→      const saved = PredictionStore.addMany(predictions.map(p => ({
+   591→        matchId: p.matchId,
+   592→        homeTeam: p.homeTeam,
+   593→        awayTeam: p.awayTeam,
+   594→        league: p.league || 'Unknown',
+   595→        sport: p.sport || 'Foot',
+   596→        matchDate: p.matchDate || new Date().toISOString(),
+   597→        oddsHome: p.oddsHome,
+   598→        oddsDraw: p.oddsDraw || null,
+   599→        oddsAway: p.oddsAway,
+   600→        predictedResult: p.predictedResult,
+   601→        predictedGoals: p.predictedGoals,
+   602→        predictedCards: p.predictedCards,
+   603→        confidence: p.confidence || 'medium',
+   604→        riskPercentage: p.riskPercentage || 50
+   605→      })));
+   606→      
+   607→      return NextResponse.json({
+   608→        success: true,
+   609→        message: `${saved} nouveaux pronostics enregistrés`,
+   610→        saved
+   611→      });
+   612→    }
+   613→    
+   614→    // Vérifier les résultats d'hier
+   615→    if (action === 'check_results') {
+   616→      console.log('🔍 Vérification des résultats...');
+   617→      
+   618→      const realResults = await fetchYesterdayResults();
+   619→      
+   620→      if (realResults.length === 0) {
+   621→        return NextResponse.json({
+   622→          success: true,
+   623→          message: 'Aucun résultat disponible à vérifier',
+   624→          checked: 0,
+   625→          source: 'Football-Data API'
+   626→        });
+   627→      }
+   628→      
+   629→      const pendingPredictions = PredictionStore.getPending();
+   630→      
+   631→      let checkedCount = 0;
+   632→      let resultCorrect = 0;
+   633→      let goalsCorrect = 0;
+   634→      
+   635→      for (const prediction of pendingPredictions) {
+   636→        for (const realMatch of realResults) {
+   637→          const { found, homeScore, awayScore } = findMatchResult(
+   638→            realMatch, 
+   639→            prediction.homeTeam,
+   640→            prediction.awayTeam
+   641→          );
+   642→          
+   643→          if (found) {
+   644→            const actualResult = homeScore > awayScore ? 'home' 
+   645→              : homeScore < awayScore ? 'away' 
+   646→              : 'draw';
+   647→            
+   648→            const resultMatch = prediction.predictedResult === actualResult;
+   649→            if (resultMatch) resultCorrect++;
+   650→            
+   651→            let goalsMatch: boolean | undefined;
+   652→            
+   653→            if (prediction.predictedGoals) {
+   654→              const totalGoals = homeScore + awayScore;
+   655→              if (prediction.predictedGoals === 'over2.5') {
+   656→                goalsMatch = totalGoals > 2.5;
+   657→              } else if (prediction.predictedGoals === 'under2.5') {
+   658→                goalsMatch = totalGoals < 2.5;
+   659→              } else if (prediction.predictedGoals === 'btts') {
+   660→                goalsMatch = homeScore > 0 && awayScore > 0;
+   661→              }
+   662→              if (goalsMatch) goalsCorrect++;
+   663→            }
+   664→            
+   665→            PredictionStore.complete(prediction.matchId, {
+   666→              homeScore,
+   667→              awayScore,
+   668→              actualResult,
+   669→              resultMatch,
+   670→              goalsMatch
+   671→            });
+   672→            
+   673→            checkedCount++;
+   674→            console.log(`✅ ${prediction.homeTeam} ${homeScore}-${awayScore} ${prediction.awayTeam} - Résultat: ${resultMatch ? '✓' : '✗'}`);
+   675→            break;
+   676→          }
+   677→        }
+   678→      }
+   679→      
+   680→      // Récupérer les stats mises à jour
+   681→      const updatedStats = PredictionStore.getDetailedStats();
+   682→      
+   683→      return NextResponse.json({
+   684→        success: true,
+   685→        message: `${checkedCount} pronostics vérifiés`,
+   686→        checked: checkedCount,
+   687→        resultCorrect,
+   688→        goalsCorrect,
+   689→        source: 'Football-Data API',
+   690→        stats: updatedStats.daily
+   691→      });
+   692→    }
+   693→    
+   694→    // Nettoyer les anciennes données
+   695→    if (action === 'cleanup') {
+   696→      const removed = PredictionStore.cleanup();
+   697→      return NextResponse.json({
+   698→        success: true,
+   699→        message: `${removed} anciens pronostics supprimés`,
+   700→        removed
+   701→      });
+   702→    }
+   703→    
+   704→    // Supprimer toutes les données (reset complet)
+   705→    if (action === 'clear_all') {
+   706→      // Vérification de sécurité - nécessite un token
+   707→      const adminToken = body.token;
+   708→      const expectedToken = process.env.ADMIN_TOKEN || 'steo-admin-2026';
+   709→      
+   710→      if (adminToken !== expectedToken) {
+   711→        return NextResponse.json({ 
+   712→          error: 'Token administrateur requis' 
+   713→        }, { status: 403 });
+   714→      }
+   715→      
+   716→      const cleared = PredictionStore.clearAll();
+   717→      return NextResponse.json({
+   718→        success: cleared,
+   719→        message: cleared ? 'Toutes les données ont été supprimées' : 'Erreur lors de la suppression'
+   720→      });
+   721→    }
+   722→    
+   723→    return NextResponse.json({ error: 'Action non reconnue' }, { status: 400 });
+   724→    
+   725→  } catch (error) {
+   726→    console.error('Erreur API results POST:', error);
+   727→    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+   728→  }
+   729→}
+   730→

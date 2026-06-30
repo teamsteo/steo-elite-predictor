@@ -11,6 +11,7 @@
 
 import { predictGoalsEnriched, type GoalsPredictionResult } from './dixonColesModel';
 import { getMatchTeamStats } from './teamStatsService';
+import SupabaseStore, { type DbPrediction } from './db-supabase';
 
 // Configuration Telegram
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -930,6 +931,291 @@ export async function testTelegramConnection(): Promise<{
   }
 }
 
+// ============================================
+// PUBLICATION BILAN QUOTIDIEN
+// ============================================
+
+interface DailyResultSummary {
+  date: string;
+  totalPredictions: number;
+  totalVerified: number;
+  totalPending: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  goalsWins: number;
+  goalsLosses: number;
+  bySport: Record<string, { total: number; wins: number; losses: number; winRate: number; pending: number }>;
+  details: Array<{
+    homeTeam: string;
+    awayTeam: string;
+    sport: string;
+    league: string;
+    predicted: string;
+    predictedGoals?: string;
+    actualHome: number | null;
+    actualAway: number | null;
+    actualResult: string | null;
+    resultMatch: boolean | null;
+    goalsMatch: boolean | null;
+    status: string;
+  }>;
+}
+
+/**
+ * Récupère les résultats d'une date donnée depuis Supabase
+ */
+async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyResultSummary> {
+  const targetDate = dateISO || (() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  })();
+
+  const emptySummary: DailyResultSummary = {
+    date: targetDate,
+    totalPredictions: 0,
+    totalVerified: 0,
+    totalPending: 0,
+    wins: 0,
+    losses: 0,
+    winRate: 0,
+    goalsWins: 0,
+    goalsLosses: 0,
+    bySport: {},
+    details: [],
+  };
+
+  try {
+    // Récupérer les prédictions du jour (pending + completed)
+    const predictions = await SupabaseStore.getAllPredictions(2000);
+    if (!predictions || predictions.length === 0) return emptySummary;
+
+    // Filtrer par date cible (match_date du jour visé)
+    const dayPredictions = predictions.filter(p => {
+      const matchDate = (p.match_date || '').split('T')[0];
+      return matchDate === targetDate;
+    });
+
+    if (dayPredictions.length === 0) return emptySummary;
+
+    const summary: DailyResultSummary = {
+      ...emptySummary,
+      totalPredictions: dayPredictions.length,
+    };
+
+    // Grouper par sport et calculer les stats
+    for (const p of dayPredictions) {
+      const sport = p.sport || 'other';
+      if (!summary.bySport[sport]) {
+        summary.bySport[sport] = { total: 0, wins: 0, losses: 0, winRate: 0, pending: 0 };
+      }
+      summary.bySport[sport].total++;
+
+      const isVerified = p.status === 'completed';
+      const isPending = p.status === 'pending';
+
+      if (isPending) {
+        summary.totalPending++;
+        summary.bySport[sport].pending++;
+      } else if (isVerified) {
+        summary.totalVerified++;
+        if (p.result_match === true) {
+          summary.wins++;
+          summary.bySport[sport].wins++;
+        } else if (p.result_match === false) {
+          summary.losses++;
+          summary.bySport[sport].losses++;
+        }
+        if (p.goals_match === true) summary.goalsWins++;
+        if (p.goals_match === false) summary.goalsLosses++;
+      }
+
+      // Détail du match
+      const predictedLabel = formatPredictedResult(p.predicted_result);
+      summary.details.push({
+        homeTeam: p.home_team || '',
+        awayTeam: p.away_team || '',
+        sport: sport,
+        league: p.league || '',
+        predicted: predictedLabel,
+        predictedGoals: p.predicted_goals || undefined,
+        actualHome: p.home_score ?? null,
+        actualAway: p.away_score ?? null,
+        actualResult: p.actual_result || null,
+        resultMatch: p.result_match ?? null,
+        goalsMatch: p.goals_match ?? null,
+        status: p.status || 'pending',
+      });
+    }
+
+    // Calcul des taux
+    if (summary.totalVerified > 0) {
+      summary.winRate = Math.round((summary.wins / summary.totalVerified) * 100);
+    }
+    for (const sport of Object.keys(summary.bySport)) {
+      const s = summary.bySport[sport];
+      const verified = s.wins + s.losses;
+      s.winRate = verified > 0 ? Math.round((s.wins / verified) * 100) : 0;
+    }
+
+    return summary;
+  } catch (e) {
+    console.error('Erreur fetchDailyResultsFromSupabase:', e);
+    return emptySummary;
+  }
+}
+
+function formatPredictedResult(result?: string): string {
+  if (!result) return 'N/A';
+  switch (result) {
+    case 'home': return 'Victoire Domicile (1)';
+    case 'draw': return 'Match Nul (X)';
+    case 'away': return 'Victoire Extérieur (2)';
+    case 'over': return 'Over 2.5';
+    case 'under': return 'Under 2.5';
+    case 'btts_yes': return 'BTTS Oui';
+    case 'btts_no': return 'BTTS Non';
+    case 'avoid': return 'Non joué';
+    default: return result;
+  }
+}
+
+function formatActualResult(result?: string | null, homeScore?: number | null, awayScore?: number | null): string {
+  if (homeScore !== null && homeScore !== undefined && awayScore !== null && awayScore !== undefined) {
+    return `${homeScore}-${awayScore}`;
+  }
+  if (!result) return 'En attente';
+  switch (result) {
+    case 'home': return 'Victoire Domicile';
+    case 'draw': return 'Match Nul';
+    case 'away': return 'Victoire Extérieur';
+    default: return result;
+  }
+}
+
+/**
+ * Publie le bilan quotidien des pronostics sur Telegram.
+ * Format: ⚽ Foot 2/3 · 🏀 Basket 4/4 ... avec détails par match.
+ */
+export async function publishDailyResultsToTelegram(dateISO?: string): Promise<boolean> {
+  const summary = await fetchDailyResultsFromSupabase(dateISO);
+
+  if (summary.totalPredictions === 0) {
+    console.log('⚠️ Aucun pronostic à comparer pour cette date');
+    return false;
+  }
+
+  // Formatter la date
+  const dateObj = new Date(summary.date + 'T12:00:00');
+  const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+
+  let message = '';
+
+  // En-tête
+  message += '╔═════════════════════════════╗\n';
+  message += '║\n';
+  message += '║   📊 <b>BILAN DES PRONOSTICS</b>\n';
+  message += '║\n';
+  message += '╚═════════════════════════════╝\n\n';
+  message += `📅 <b>${dateLabel}</b>\n\n`;
+
+  // Résumé global
+  const globalEmoji = summary.winRate >= 60 ? '🏆' : summary.winRate >= 40 ? '📊' : '📉';
+  message += `${globalEmoji} <b>RÉSULTAT GLOBAL</b>\n`;
+  message += `    ✅ ${summary.wins}/${summary.totalVerified} corrects`;
+  if (summary.totalVerified > 0) message += `  ·  <b>${summary.winRate}%</b>`;
+  message += '\n';
+  if (summary.totalPending > 0) {
+    message += `    ⏳ ${summary.totalPending} en attente de résultat\n`;
+  }
+  if (summary.goalsWins + summary.goalsLosses > 0) {
+    message += `    ⚽ Buts: ${summary.goalsWins}/${summary.goalsWins + summary.goalsLosses} corrects\n`;
+  }
+  message += '\n';
+
+  // Résumé par sport (ordonné: football en premier)
+  const sportEmojis: Record<string, string> = {
+    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️',
+  };
+  const sportNames: Record<string, string> = {
+    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'other': 'Autres',
+  };
+  const sportPriority: Record<string, number> = {
+    'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'other': 99,
+  };
+  const sortedSports = Object.keys(summary.bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
+
+  // Ligne de résumé sport
+  if (sortedSports.length > 0) {
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '<b>PAR SPORT</b>\n\n';
+    const sportLines: string[] = [];
+    for (const sport of sortedSports) {
+      const s = summary.bySport[sport];
+      const emoji = sportEmojis[sport] || '🏟️';
+      const name = sportNames[sport] || sport;
+      if (s.pending > 0 && s.wins + s.losses === 0) {
+        sportLines.push(`${emoji} ${name}: ⏳ ${s.pending} en attente`);
+      } else {
+        const verified = s.wins + s.losses;
+        sportLines.push(`${emoji} <b>${name}</b>: ${s.wins}/${verified}`);
+      }
+    }
+    message += sportLines.join('  ·  ') + '\n';
+    message += '\n';
+  }
+
+  // Détail par match
+  if (summary.details.length > 0) {
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '<b>DÉTAILS</b>\n\n';
+
+    // Trier les détails: football en premier, puis par statut (completed d'abord, pending après)
+    const sortedDetails = [...summary.details].sort((a, b) => {
+      const priorityA = sportPriority[a.sport] || 99;
+      const priorityB = sportPriority[b.sport] || 99;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      const statusOrder: Record<string, number> = { completed: 0, pending: 1, cancelled: 2, postponed: 3 };
+      return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+    });
+
+    for (const d of sortedDetails) {
+      const emoji = sportEmojis[d.sport] || '🏟️';
+      const isVerified = d.status === 'completed';
+      const isPending = d.status === 'pending';
+
+      message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
+
+      if (isVerified && d.resultMatch !== null) {
+        const resultEmoji = d.resultMatch ? '✅' : '❌';
+        const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
+        message += `    ${resultEmoji} Pronostic: <b>${d.predicted}</b> → Score: <b>${actual}</b>\n`;
+        // Afficher aussi la vérification des buts si applicable
+        if (d.goalsMatch !== null && d.goalsMatch !== undefined) {
+          const goalsEmoji = d.goalsMatch ? '✅' : '❌';
+          message += `    ${goalsEmoji} Buts: ${d.predictedGoals || 'N/A'} → Réel: ${d.actualHome ?? '?'}-${d.actualAway ?? '?'}\n`;
+        }
+      } else if (isPending) {
+        message += `    ⏳ En attente — Pronostic: ${d.predicted}\n`;
+      } else {
+        message += `    ⚠️ ${d.status}\n`;
+      }
+
+      message += '\n';
+    }
+  }
+
+  // Pied de message
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += '🤖 Bilan automatique après vérification\n';
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+  return sendTelegramMessageLong(message);
+}
+
 export default {
   sendTelegramMessage,
   publishPredictionToTelegram,
@@ -938,6 +1224,7 @@ export default {
   publishKamikazeToTelegram,
   publishLiveAlertToTelegram,
   publishResultsToTelegram,
+  publishDailyResultsToTelegram,
   getTelegramChatId,
   testTelegramConnection,
   isSafeOrModerate,

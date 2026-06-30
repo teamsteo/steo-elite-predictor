@@ -28,6 +28,10 @@
       "schedule": "0 0 * * *"
     },
     {
+      "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-results",
+      "schedule": "30 0 * * *"
+    },
+    {
       "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-morning",
       "schedule": "0 4 * * *"
     },
