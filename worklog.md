@@ -800,3 +800,30 @@ Stage Summary:
 - Basketball options are correctly separated from football options
 - No build needed due to resource constraints
 - Code verified correct and saved
+
+---
+Task ID: 1
+Agent: main
+Task: Améliorer Dixon-Coles + Over/Under 2.5 Telegram + Ordre Foot en premier
+
+Work Log:
+- Analysé TheSportsDB API gratuite : classements (GF/GA/forme) disponibles gratuitement
+- Ajouté `predictGoalsEnriched()` dans dixonColesModel.ts qui combine Dixon-Coles + données classement TheSportsDB
+- Créé `predictGoalsFromTableStats()` avec GF/GA par match, forme récente (WWLWD → buts estimés), bonus domicile
+- Créé `predictGoalsFromOdds()` comme fallback Poisson sur cotes
+- Réécrit telegramService.ts complet avec:
+  - Imports Dixon-Coles enrichi + TheSportsDB
+  - Ordre des sports : Football → Basket → Hockey → Tennis → Autres
+  - Fonction `formatMatchBlock()` réutilisable avec labels clairs (Risque + Fiable)
+  - Prédiction de buts enrichie async pour TOUS les types de publications (Summary, Value Bets, Kamikaze)
+  - `sendTelegramMessageLong()` pour auto-split si > 4096 chars
+- Labels clarifiés : "🟢 Risque: 22%  ·  ✅ Fiable: 78%" au lieu de "🟢 22%  ·  ✅ 78%"
+- Buts affichés seulement si confiance medium/high (pas low)
+- Build Next.js: ✓ Compiled successfully, 0 errors
+
+Stage Summary:
+- Dixon-Coles enrichi avec données TheSportsDB gratuites (GF/GA, forme, rang)
+- Over/Under 2.5 ajouté à TOUS les messages Telegram foot (Summary, ValueBets, Kamikaze)
+- Football toujours en premier dans toutes les publications
+- Pourcentages labellisés clairement (Risque + Fiable)
+- Format buts: "🔬 2.6 buts attendus (1-1)" + "⬆️ Over 2.5: 58%"

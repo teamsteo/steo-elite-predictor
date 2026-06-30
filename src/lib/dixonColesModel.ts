@@ -393,7 +393,7 @@ export function predictGoalsEnriched(
 ): GoalsPredictionResult {
   // Priorité 1: Dixon-Coles avec stats réelles TheSportsDB
   if (homeTableStats && awayTableStats && homeTableStats.played >= 5 && awayTableStats.played >= 5) {
-    return predictGoalsFromTableStats(homeTableStats, awayTableStats, league);
+    return predictGoalsFromTableStats(homeTableStats, awayTableStats);
   }
   
   // Priorité 2: Poisson sur cotes (si cotes réelles)
