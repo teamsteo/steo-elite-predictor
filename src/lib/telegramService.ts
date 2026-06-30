@@ -403,17 +403,12 @@ function formatPrediction(prediction: {
     message += '\n';
   }
   
-  const winProb = prediction.winProbability || (prediction.riskPercentage !== undefined ? 100 - prediction.riskPercentage : null);
-  if (winProb !== null && winProb !== undefined) {
-    const probEmoji = winProb >= 70 ? '🔥' : winProb >= 50 ? '✅' : '⚡';
-    message += `${probEmoji} <b>RÉUSSITE</b>\n`;
-    message += `    ${createProgressBar(winProb)} <b>${winProb}%</b>\n\n`;
-  }
-  
   if (prediction.riskPercentage !== undefined) {
+    const winProb = prediction.winProbability || (100 - prediction.riskPercentage);
     const riskEmoji = prediction.riskPercentage <= 30 ? '🟢' : '🟡';
     const riskLabel = prediction.riskPercentage <= 30 ? 'SAFE' : 'MODÉRÉ';
-    message += `${riskEmoji} <b>RISQUE: ${riskLabel}</b> (${prediction.riskPercentage}%)\n`;
+    const probEmoji = winProb >= 70 ? '🔥' : winProb >= 50 ? '✅' : '⚡';
+    message += `${probEmoji} <b>CHANCE: ${winProb}%</b>  ·  ${riskEmoji} <b>${riskLabel}</b>\n`;
   }
   
   if (prediction.valueBetDetected && prediction.valueBetType) {
@@ -504,8 +499,9 @@ async function formatMatchBlock(
   if (betLabel && m.recommendation) pronoLine += `🎯 ${betLabel} <b>${m.recommendation}</b>`;
   if (pronoLine) block += `${pronoLine}\n`;
 
-  // Risque + Fiabilité (AVEC LABELS clairs)
-  block += `${riskEmoji} Risque: <b>${m.riskPercentage}%</b>  ·  ✅ Fiable: <b>${winProb}%</b>\n`;
+  // Confiance claire : niveau de risque + chance de réussite
+  const riskLevel = (m.riskPercentage || 100) <= 30 ? 'Safe' : (m.riskPercentage || 100) <= 50 ? 'Modéré' : 'Kamikaze';
+  block += `${riskEmoji} <b>${riskLevel}</b> — Chance: <b>${winProb}%</b>\n`;
 
   // Prédiction de buts (football uniquement)
   if (isFootball && includeGoals && m.oddsHome && m.oddsAway && !m.isEstimated && m.league) {
@@ -601,9 +597,9 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
   
   // Pied de message
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-  message += '🟢 Safe (≤30%)  ·  🟡 Modéré (31-50%)\n';
-  message += '🔬 = Dixon-Coles (stats classement)\n';
-  message += '📊 = Poisson (modèle sur cotes)\n';
+  message += '🟢 Safe (faible risque)  ·  🟡 Modéré (risque moyen)\n';
+  message += 'Chance = probabilité de réussite du pronostic\n';
+  message += '🔬 = Dixon-Coles (stats classement)  ·  📊 = Poisson (cotes)\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
   return sendTelegramMessageLong(message);
@@ -716,7 +712,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
       message += ` 2:<b>${m.oddsAway.toFixed(2)}</b>\n`;
     }
     
-    message += `${riskEmoji} Risque: <b>${m.riskPercentage}%</b>  ·  ✅ Fiable: <b>${winProb}%</b>\n`;
+    message += `${riskEmoji} <b>${riskLabel}</b> — Chance: <b>${winProb}%</b>\n`;
     if (m.valueBetType) {
       message += `💎 Type: ${m.valueBetType}\n`;
     }
@@ -779,7 +775,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
       message += ` 2:<b>${m.oddsAway.toFixed(2)}</b>\n`;
     }
 
-    message += `💥 Risque: <b>${m.riskPercentage}%</b>  ·  ✅ Fiable: <b>${winProb}%</b>\n`;
+    message += `💥 <b>Kamikaze</b> — Chance: <b>${winProb}%</b>\n`;
     message += `💰 Gain potentiel: <b>x${maxOdds.toFixed(2)}</b>\n`;
     
     // Buts pour le football kamikaze aussi
