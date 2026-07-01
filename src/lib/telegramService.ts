@@ -180,8 +180,10 @@ async function calculateGoalsPredictionEnriched(
 function formatGoalsBlock(goals: GoalsPredictionResult): string {
   const sourceIcon = goals.source === 'dixon-coles' ? '🔬' : '📊';
   
-  let block = `${sourceIcon} <b>${goals.expectedGoals}</b> buts attendus (${goals.mostLikelyScore})\n`;
+  // Score le plus probable en vedette
+  let block = `${sourceIcon} Score probable: <b>${goals.mostLikelyScore}</b>\n`;
   
+  // Over/Under
   if (goals.recommendation !== 'skip') {
     const recEmoji = goals.recommendation === 'over25' ? '⬆️' : '⬇️';
     const recLabel = goals.recommendation === 'over25' ? 'Over 2.5' : 'Under 2.5';
