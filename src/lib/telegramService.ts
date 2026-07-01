@@ -180,27 +180,22 @@ async function calculateGoalsPredictionEnriched(
 function formatGoalsBlock(goals: GoalsPredictionResult): string {
   const sourceIcon = goals.source === 'dixon-coles' ? '🔬' : '📊';
   
-  // Choisir le score cohérent avec la recommandation
-  let displayScore: string;
-  if (goals.recommendation === 'over25') {
-    displayScore = goals.mostLikelyOverScore;
-  } else if (goals.recommendation === 'under25') {
-    displayScore = goals.mostLikelyUnderScore;
-  } else {
-    displayScore = goals.mostLikelyScore;
-  }
-  
-  // Score le plus probable (cohérent avec l'Over/Under)
-  let block = `${sourceIcon} Score probable: <b>${displayScore}</b>\n`;
+  let block = '';
   
   // Over/Under
   if (goals.recommendation !== 'skip') {
     const recEmoji = goals.recommendation === 'over25' ? '⬆️' : '⬇️';
     const recLabel = goals.recommendation === 'over25' ? 'Over 2.5' : 'Under 2.5';
     const pct = goals.recommendation === 'over25' ? goals.over25 : goals.under25;
-    block += `   ${recEmoji} <b>${recLabel}</b>: <b>${pct}%</b>\n`;
+    block += `${sourceIcon} ${recEmoji} <b>${recLabel}</b>: <b>${pct}%</b>\n`;
   } else {
-    block += `   ⚖️ +2.5: ${goals.over25}%  ·  -2.5: ${goals.under25}%\n`;
+    block += `${sourceIcon} ⚖️ +2.5: ${goals.over25}%  ·  -2.5: ${goals.under25}%\n`;
+  }
+  
+  // BTTS (Both Teams To Score) — info complémentaire utile
+  if (goals.btts >= 55 || goals.btts <= 40) {
+    const bttsEmoji = goals.btts >= 55 ? '✅' : '❌';
+    block += `   ${bttsEmoji} BTTS: <b>${goals.btts}%</b>\n`;
   }
   
   return block;
