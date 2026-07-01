@@ -365,6 +365,9 @@ export interface GoalsPredictionResult {
   expectedHome: number;
   expectedAway: number;
   mostLikelyScore: string;
+  // Score le plus probable cohérent avec l'Over/Under
+  mostLikelyOverScore: string;   // Score le plus probable avec 3+ buts
+  mostLikelyUnderScore: string;  // Score le plus probable avec 0-2 buts
   confidence: 'high' | 'medium' | 'low';
   source: 'dixon-coles' | 'poisson-odds';
   // Recommandation
@@ -411,6 +414,8 @@ export function predictGoalsEnriched(
     expectedHome: 1.3,
     expectedAway: 1.2,
     mostLikelyScore: '1-1',
+    mostLikelyOverScore: '2-1',
+    mostLikelyUnderScore: '1-1',
     confidence: 'low',
     source: 'poisson-odds',
     recommendation: 'skip',
@@ -499,9 +504,11 @@ function predictGoalsFromTableStats(
     awayWinProb /= total;
   }
   
-  // Score le plus probable
+  // Score le plus probable (global, over, under)
   scoreProbs.sort((a, b) => b.prob - a.prob);
   const topScore = scoreProbs[0];
+  const topOverScore = scoreProbs.find(s => s.home + s.away >= 3) || topScore;
+  const topUnderScore = scoreProbs.find(s => s.home + s.away <= 2) || topScore;
   
   // 7. Confiance basée sur la quantité de données
   let confidence: 'high' | 'medium' | 'low';
@@ -533,6 +540,8 @@ function predictGoalsFromTableStats(
     expectedHome: Math.round(lambda * 10) / 10,
     expectedAway: Math.round(mu * 10) / 10,
     mostLikelyScore: `${topScore.home}-${topScore.away}`,
+    mostLikelyOverScore: `${topOverScore.home}-${topOverScore.away}`,
+    mostLikelyUnderScore: `${topUnderScore.home}-${topUnderScore.away}`,
     confidence,
     source: 'dixon-coles',
     recommendation,
@@ -622,6 +631,8 @@ function predictGoalsFromOdds(
   
   scoreProbs.sort((a, b) => b.prob - a.prob);
   const topScore = scoreProbs[0];
+  const topOverScore = scoreProbs.find(s => s.home + s.away >= 3) || topScore;
+  const topUnderScore = scoreProbs.find(s => s.home + s.away <= 2) || topScore;
   
   const over25Pct = Math.round(over25Prob * 1000) / 10;
   
@@ -644,6 +655,8 @@ function predictGoalsFromOdds(
     expectedHome: Math.round(lambda * 10) / 10,
     expectedAway: Math.round(mu * 10) / 10,
     mostLikelyScore: `${topScore.home}-${topScore.away}`,
+    mostLikelyOverScore: `${topOverScore.home}-${topOverScore.away}`,
+    mostLikelyUnderScore: `${topUnderScore.home}-${topUnderScore.away}`,
     confidence: 'medium',
     source: 'poisson-odds',
     recommendation,

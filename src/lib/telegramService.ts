@@ -180,8 +180,18 @@ async function calculateGoalsPredictionEnriched(
 function formatGoalsBlock(goals: GoalsPredictionResult): string {
   const sourceIcon = goals.source === 'dixon-coles' ? '🔬' : '📊';
   
-  // Score le plus probable en vedette
-  let block = `${sourceIcon} Score probable: <b>${goals.mostLikelyScore}</b>\n`;
+  // Choisir le score cohérent avec la recommandation
+  let displayScore: string;
+  if (goals.recommendation === 'over25') {
+    displayScore = goals.mostLikelyOverScore;
+  } else if (goals.recommendation === 'under25') {
+    displayScore = goals.mostLikelyUnderScore;
+  } else {
+    displayScore = goals.mostLikelyScore;
+  }
+  
+  // Score le plus probable (cohérent avec l'Over/Under)
+  let block = `${sourceIcon} Score probable: <b>${displayScore}</b>\n`;
   
   // Over/Under
   if (goals.recommendation !== 'skip') {
