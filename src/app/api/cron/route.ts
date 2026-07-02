@@ -89,64 +89,68 @@ const ESPN_FOOTBALL_LEAGUES = [
 
 /**
  * Récupérer les résultats Football depuis ESPN (GRATUIT, pas de clé API)
+ * Cherche sur 3 jours (avant-hier, hier, aujourd'hui) pour rattraper les matchs manqués
  */
 async function fetchFootballResultsFromESPN(): Promise<MatchResult[]> {
   const results: MatchResult[] = [];
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
-  
-  console.log(`📅 Recherche résultats football pour: ${yesterdayStr}`);
+  const dates: string[] = [];
+  const today = new Date();
+  for (let i = 3; i >= 1; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0].replace(/-/g, ''));
+  }
+  console.log(`📅 Recherche résultats football pour: ${dates.join(', ')}`);
 
-  // Récupérer les résultats de chaque ligue en parallèle
-  const fetchPromises = ESPN_FOOTBALL_LEAGUES.map(async (league) => {
-    try {
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${yesterdayStr.replace(/-/g, '')}`,
-        { 
-          cache: 'no-store',
-          headers: { 'Accept': 'application/json' }
-        }
-      );
+  // Récupérer les résultats de chaque ligue et chaque date en parallèle
+  const fetchPromises = ESPN_FOOTBALL_LEAGUES.flatMap(league =>
+    dates.map(async (dateStr) => {
+      try {
+        const response = await fetch(
+          `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${dateStr}`,
+          { 
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+          }
+        );
 
-      if (!response.ok) {
+        if (!response.ok) return [];
+
+        const data = await response.json();
+        const events = data.events || [];
+
+        return events
+          .filter((e: any) => e.status?.type?.completed === true)
+          .map((e: any) => {
+            const competition = e.competitions?.[0];
+            const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+            const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+            
+            const homeScore = parseInt(home?.score || '0');
+            const awayScore = parseInt(away?.score || '0');
+
+            return {
+              matchId: `espn_${e.id}`,
+              homeTeam: home?.team?.displayName || home?.team?.shortDisplayName || 'Unknown',
+              awayTeam: away?.team?.displayName || away?.team?.shortDisplayName || 'Unknown',
+              homeScore,
+              awayScore,
+              status: 'finished' as const,
+              actualResult: homeScore > awayScore 
+                ? 'home' as const 
+                : homeScore < awayScore 
+                  ? 'away' as const 
+                  : 'draw' as const,
+              league: league.name,
+              sport: 'football' as const
+            };
+          });
+      } catch (error) {
+        console.log(`⚠️ Erreur ESPN ${league.name} ${dateStr}:`, error);
         return [];
       }
-
-      const data = await response.json();
-      const events = data.events || [];
-
-      return events
-        .filter((e: any) => e.status?.type?.completed === true)
-        .map((e: any) => {
-          const competition = e.competitions?.[0];
-          const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
-          const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
-          
-          const homeScore = parseInt(home?.score || '0');
-          const awayScore = parseInt(away?.score || '0');
-
-          return {
-            matchId: `espn_${e.id}`,
-            homeTeam: home?.team?.displayName || home?.team?.shortDisplayName || 'Unknown',
-            awayTeam: away?.team?.displayName || away?.team?.shortDisplayName || 'Unknown',
-            homeScore,
-            awayScore,
-            status: 'finished' as const,
-            actualResult: homeScore > awayScore 
-              ? 'home' as const 
-              : homeScore < awayScore 
-                ? 'away' as const 
-                : 'draw' as const,
-            league: league.name,
-            sport: 'football' as const
-          };
-        });
-    } catch (error) {
-      console.log(`⚠️ Erreur ESPN ${league.name}:`, error);
-      return [];
-    }
-  });
+    })
+  );
 
   const allResults = await Promise.all(fetchPromises);
   const flatResults = allResults.flat();
@@ -157,33 +161,32 @@ async function fetchFootballResultsFromESPN(): Promise<MatchResult[]> {
 
 /**
  * Récupérer les résultats NBA depuis ESPN
+ * Cherche sur 3 jours (avant-hier, hier, aujourd'hui) pour rattraper les matchs manqués
  */
 async function fetchNBAResults(): Promise<MatchResult[]> {
-  try {
-    const response = await fetch(
-      'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
-      { cache: 'no-store' }
-    );
+  const results: MatchResult[] = [];
+  const today = new Date();
+  const dates: string[] = [];
+  for (let i = 3; i >= 1; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0].replace(/-/g, ''));
+  }
 
-    if (!response.ok) {
-      console.log(`⚠️ ESPN NBA API error: ${response.status}`);
-      return [];
-    }
+  for (const dateStr of dates) {
+    try {
+      const response = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${dateStr}`,
+        { cache: 'no-store' }
+      );
 
-    const data = await response.json();
-    const events = data.events || [];
+      if (!response.ok) continue;
 
-    // Filtrer les matchs terminés d'hier
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+      const data = await response.json();
+      const events = data.events || [];
 
-    const results = events
-      .filter((e: any) => {
-        const eventDate = new Date(e.date).toISOString().split('T')[0];
-        return e.status?.type?.completed === true && eventDate === yesterdayStr;
-      })
-      .map((e: any) => {
+      for (const e of events) {
+        if (e.status?.type?.completed !== true) continue;
         const competition = e.competitions?.[0];
         const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
         const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
@@ -191,7 +194,7 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
         const homeScore = parseInt(home?.score || '0');
         const awayScore = parseInt(away?.score || '0');
 
-        return {
+        results.push({
           matchId: `nba_${e.id}`,
           homeTeam: home?.team?.displayName || 'Unknown',
           awayTeam: away?.team?.displayName || 'Unknown',
@@ -205,22 +208,23 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
               : 'draw' as const,
           league: 'NBA',
           sport: 'basketball' as const
-        };
-      });
-
-    console.log(`✅ ESPN NBA: ${results.length} résultats récupérés`);
-    return results;
-  } catch (error) {
-    console.error('Erreur ESPN NBA:', error);
-    return [];
+        });
+      }
+    } catch (error) {
+      console.log(`⚠️ Erreur ESPN NBA ${dateStr}:`, error);
+    }
   }
+
+  console.log(`✅ ESPN NBA: ${results.length} résultats récupérés`);
+  return results;
 }
 
 /**
  * Matcher un résultat avec un pronostic (fuzzy matching amélioré)
+ * Fonctionne avec DbPrediction (home_team/away_team) ou Prediction locale (homeTeam/awayTeam)
  */
 function matchPredictionWithResult(
-  prediction: { homeTeam: string; awayTeam: string; league?: string },
+  prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
   result: MatchResult
 ): boolean {
   const normalize = (s: string) => 
@@ -229,10 +233,12 @@ function matchPredictionWithResult(
      .replace(/[\u0300-\u036f]/g, '')
      .replace(/[^a-z0-9]/g, '');
 
-  const predHome = normalize(prediction.homeTeam);
-  const predAway = normalize(prediction.awayTeam);
+  const predHome = normalize(prediction.homeTeam || prediction.home_team || '');
+  const predAway = normalize(prediction.awayTeam || prediction.away_team || '');
   const resHome = normalize(result.homeTeam);
   const resAway = normalize(result.awayTeam);
+
+  if (!predHome || !predAway) return false;
 
   // Match direct
   if (predHome === resHome && predAway === resAway) return true;
@@ -256,7 +262,7 @@ function matchPredictionWithResult(
 }
 
 /**
- * Vérifier les résultats NBA spécifiquement
+ * Vérifier les résultats NBA (directement dans Supabase)
  */
 async function verifyNBAResults(): Promise<{
   verified: number;
@@ -272,13 +278,12 @@ async function verifyNBAResults(): Promise<{
   let lost = 0;
 
   try {
-    // Charger les données depuis GitHub
-    const pending = (await PredictionStore.getPendingAsync()).filter(p => 
-      p.sport === 'Basket' || p.sport === 'Basketball' || p.sport === 'NBA'
-    );
-    
+    // Récupérer les pronostics NBA pending depuis Supabase
+    const allPending = await SupabaseStore.getPendingPredictions();
+    const pending = allPending.filter(p => p.sport === 'basketball');
+
     if (pending.length === 0) {
-      console.log('📋 Aucun pronostic NBA en attente');
+      console.log('📋 Aucun pronostic NBA en attente dans Supabase');
       return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
     }
 
@@ -287,6 +292,11 @@ async function verifyNBAResults(): Promise<{
     // Récupérer les résultats NBA
     const nbaResults = await fetchNBAResults();
 
+    if (nbaResults.length === 0) {
+      console.log('🏀 Aucun résultat NBA trouvé sur ESPN');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
     // Pour chaque pronostic, chercher le résultat correspondant
     for (const prediction of pending) {
       verified++;
@@ -294,24 +304,26 @@ async function verifyNBAResults(): Promise<{
       const result = nbaResults.find(r => matchPredictionWithResult(prediction, r));
       
       if (result) {
-        const predictedResult = prediction.predictedResult;
-        const resultMatch = predictedResult === result.actualResult;
-        
-        const success = await PredictionStore.completeAsync(prediction.matchId, {
+        const predictedResult = prediction.predicted_result;
+        const actualResult = result.actualResult;
+        const resultMatch = predictedResult === actualResult;
+
+        // Mettre à jour Supabase directement
+        const success = await SupabaseStore.completePrediction(prediction.match_id, {
           homeScore: result.homeScore,
           awayScore: result.awayScore,
-          actualResult: result.actualResult,
+          actualResult,
           resultMatch,
-          goalsMatch: undefined
+          goalsMatch: undefined,
         });
 
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ NBA: ${prediction.homeTeam} vs ${prediction.awayTeam}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ NBA: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
         }
       } else {
-        console.log(`⏳ NBA: ${prediction.homeTeam} vs ${prediction.awayTeam}: résultat non trouvé`);
+        console.log(`⏳ NBA: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
       }
     }
 
@@ -324,7 +336,7 @@ async function verifyNBAResults(): Promise<{
 }
 
 /**
- * Vérifier les pronostics football
+ * Vérifier les pronostics football (directement dans Supabase)
  */
 async function verifyFootballResults(): Promise<{
   verified: number;
@@ -340,13 +352,12 @@ async function verifyFootballResults(): Promise<{
   let lost = 0;
 
   try {
-    // Charger les données depuis GitHub
-    const pending = (await PredictionStore.getPendingAsync()).filter(p => 
-      p.sport === 'Foot' || p.sport === 'Football' || p.sport === 'Soccer' || !p.sport
-    );
-    
+    // Récupérer les pronostics football pending depuis Supabase
+    const allPending = await SupabaseStore.getPendingPredictions();
+    const pending = allPending.filter(p => p.sport === 'football');
+
     if (pending.length === 0) {
-      console.log('📋 Aucun pronostic Football en attente');
+      console.log('📋 Aucun pronostic Football en attente dans Supabase');
       return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
     }
 
@@ -355,6 +366,11 @@ async function verifyFootballResults(): Promise<{
     // Récupérer les résultats Football depuis ESPN
     const footballResults = await fetchFootballResultsFromESPN();
 
+    if (footballResults.length === 0) {
+      console.log('⚽ Aucun résultat football trouvé sur ESPN');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
     // Pour chaque pronostic, chercher le résultat correspondant
     for (const prediction of pending) {
       verified++;
@@ -362,19 +378,20 @@ async function verifyFootballResults(): Promise<{
       const result = footballResults.find(r => matchPredictionWithResult(prediction, r));
       
       if (result) {
-        const predictedResult = prediction.predictedResult;
+        const predictedResult = prediction.predicted_result;
         const actualResult = result.actualResult;
         const resultMatch = predictedResult === actualResult;
-        
+
         // Vérifier les buts (Over/Under 2.5)
         let goalsMatch: boolean | undefined;
-        if (prediction.predictedGoals) {
+        if (prediction.predicted_goals) {
           const totalGoals = result.homeScore + result.awayScore;
-          const isOver = prediction.predictedGoals.toLowerCase().includes('over');
+          const isOver = prediction.predicted_goals.toLowerCase().includes('over');
           goalsMatch = isOver ? totalGoals > 2.5 : totalGoals < 2.5;
         }
 
-        const success = await PredictionStore.completeAsync(prediction.matchId, {
+        // Mettre à jour Supabase directement
+        const success = await SupabaseStore.completePrediction(prediction.match_id, {
           homeScore: result.homeScore,
           awayScore: result.awayScore,
           actualResult,
@@ -385,10 +402,10 @@ async function verifyFootballResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ Football: ${prediction.homeTeam} vs ${prediction.awayTeam}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
         }
       } else {
-        console.log(`⏳ Football: ${prediction.homeTeam} vs ${prediction.awayTeam}: résultat non trouvé`);
+        console.log(`⏳ Football: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
       }
     }
 
@@ -418,62 +435,67 @@ interface TennisMatchResult {
  */
 async function fetchTennisResultsFromESPN(): Promise<TennisMatchResult[]> {
   const results: TennisMatchResult[] = [];
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0].replace(/-/g, '');
+  const dates: string[] = [];
+  const today = new Date();
+  for (let i = 3; i >= 1; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0].replace(/-/g, ''));
+  }
 
-  console.log(`🎾 Recherche résultats tennis pour: ${yesterdayStr}`);
+  console.log(`🎾 Recherche résultats tennis pour: ${dates.join(', ')}`);
 
   const tours = ['atp', 'wta'];
 
   for (const tour of tours) {
-    try {
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/tennis/${tour}/scoreboard?dates=${yesterdayStr}`,
-        { cache: 'no-store', headers: { 'Accept': 'application/json' } }
-      );
+    for (const dateStr of dates) {
+      try {
+        const response = await fetch(
+          `https://site.api.espn.com/apis/site/v2/sports/tennis/${tour}/scoreboard?dates=${dateStr}`,
+          { cache: 'no-store', headers: { 'Accept': 'application/json' } }
+        );
 
-      if (!response.ok) continue;
+        if (!response.ok) continue;
 
-      const data = await response.json();
-      const events = data.events || [];
+        const data = await response.json();
+        const events = data.events || [];
 
-      for (const event of events) {
-        const tournament = event.name || event.shortName || tour.toUpperCase();
-        const competitions = event.competitions || [];
+        for (const event of events) {
+          const tournament = event.name || event.shortName || tour.toUpperCase();
+          const competitions = event.competitions || [];
 
-        for (const comp of competitions) {
-          if (comp.status?.type?.completed !== true) continue;
+          for (const comp of competitions) {
+            if (comp.status?.type?.completed !== true) continue;
 
-          const competitors = comp.competitors || [];
-          const home = competitors.find((c: any) => c.homeAway === 'home');
-          const away = competitors.find((c: any) => c.homeAway === 'away');
+            const competitors = comp.competitors || [];
+            const home = competitors.find((c: any) => c.homeAway === 'home');
+            const away = competitors.find((c: any) => c.homeAway === 'away');
 
-          if (!home || !away) continue;
+            if (!home || !away) continue;
 
-          const p1Name = home.athlete?.displayName || home.athlete?.shortDisplayName || '';
-          const p2Name = away.athlete?.displayName || away.athlete?.shortDisplayName || '';
-          if (!p1Name || !p2Name) continue;
+            const p1Name = home.athlete?.displayName || home.athlete?.shortDisplayName || '';
+            const p2Name = away.athlete?.displayName || away.athlete?.shortDisplayName || '';
+            if (!p1Name || !p2Name) continue;
 
-          // Compter les sets gagnés
-          const sets1 = (home.linescores || []).filter((s: any) => s.winner === true).length;
-          const sets2 = (away.linescores || []).filter((s: any) => s.winner === true).length;
+            // Compter les sets gagnés
+            const sets1 = (home.linescores || []).filter((s: any) => s.winner === true).length;
+            const sets2 = (away.linescores || []).filter((s: any) => s.winner === true).length;
 
-          results.push({
-            player1: p1Name,
-            player2: p2Name,
-            winner: home.winner === true ? 'home' as const : 'away' as const,
-            setsWon1: sets1 || 0,
-            setsWon2: sets2 || 0,
-            tournament,
-          });
+            results.push({
+              player1: p1Name,
+              player2: p2Name,
+              winner: home.winner === true ? 'home' as const : 'away' as const,
+              setsWon1: sets1 || 0,
+              setsWon2: sets2 || 0,
+              tournament,
+            });
+          }
         }
+      } catch (error) {
+        console.log(`⚠️ Erreur ESPN ${tour.toUpperCase()} ${dateStr}:`, error);
       }
-
-      console.log(`🎾 ESPN ${tour.toUpperCase()}: ${results.length} résultats récupérés (total cumulé)`);
-    } catch (error) {
-      console.log(`⚠️ Erreur ESPN ${tour.toUpperCase()}:`, error);
     }
+    console.log(`🎾 ESPN ${tour.toUpperCase()}: ${results.length} résultats (total cumulé)`);
   }
 
   return results;
