@@ -70,7 +70,7 @@ interface MatchResult {
   status: 'finished';
   actualResult: 'home' | 'draw' | 'away';
   league?: string;
-  sport: 'football' | 'basketball';
+  sport: 'football' | 'basketball' | 'baseball' | 'tennis' | 'other';
 }
 
 // Ligues ESPN Football
@@ -84,7 +84,17 @@ const ESPN_FOOTBALL_LEAGUES = [
   { code: 'uefa.europa', name: 'Europa League' },
   { code: 'por.1', name: 'Liga Portugal' },
   { code: 'ned.1', name: 'Eredivisie' },
-  { code: 'bel.1', name: 'Belgian Pro League' }
+  { code: 'bel.1', name: 'Belgian Pro League' },
+  { code: 'uefa.nations', name: 'UEFA Nations League' },
+  { code: 'fifa.world', name: 'FIFA World Cup' },
+  { code: 'fifa.world_cup_qual', name: 'World Cup Qualifiers' },
+  { code: 'concacaf.gold_cup', name: 'Gold Cup' },
+  { code: 'concacaf.ccl', name: 'Champions Cup' },
+  { code: 'conmebol.libertadores', name: 'Copa Libertadores' },
+  { code: 'conmebol.sudamericana', name: 'Copa Sudamericana' },
+  { code: 'usa.1', name: 'MLS' },
+  { code: 'bra.1', name: 'Brasileirão' },
+  { code: 'arg.1', name: 'Liga Profesional' },
 ];
 
 /**
@@ -418,6 +428,148 @@ async function verifyFootballResults(): Promise<{
 }
 
 // ============================================
+// VÉRIFICATION MLB (ESPN → Supabase)
+// ============================================
+
+/**
+ * Récupérer les résultats MLB depuis ESPN (GRATUIT)
+ * Cherche sur 3 jours pour rattraper les matchs manqués
+ */
+async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
+  const results: MatchResult[] = [];
+  const dates: string[] = [];
+  const today = new Date();
+  for (let i = 3; i >= 1; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0].replace(/-/g, ''));
+  }
+
+  console.log(`⚾ Recherche résultats MLB pour: ${dates.join(', ')}`);
+
+  for (const dateStr of dates) {
+    try {
+      const response = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`,
+        { cache: 'no-store' }
+      );
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const events = data.events || [];
+
+      for (const e of events) {
+        if (e.status?.type?.completed !== true) continue;
+        const competition = e.competitions?.[0];
+        const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+        const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+
+        if (!home || !away) continue;
+
+        const homeScore = parseInt(home?.score || '0');
+        const awayScore = parseInt(away?.score || '0');
+
+        results.push({
+          matchId: `mlb_${e.id}`,
+          homeTeam: home?.team?.displayName || home?.team?.shortDisplayName || 'Unknown',
+          awayTeam: away?.team?.displayName || away?.team?.shortDisplayName || 'Unknown',
+          homeScore,
+          awayScore,
+          status: 'finished' as const,
+          actualResult: homeScore > awayScore
+            ? 'home' as const
+            : homeScore < awayScore
+              ? 'away' as const
+              : 'draw' as const,
+          league: 'MLB',
+          sport: 'baseball' as const
+        });
+      }
+    } catch (error) {
+      console.log(`⚠️ Erreur ESPN MLB ${dateStr}:`, error);
+    }
+  }
+
+  console.log(`✅ ESPN MLB: ${results.length} résultats récupérés`);
+  return results;
+}
+
+/**
+ * Vérifier les pronostics MLB/other (directement dans Supabase)
+ * Gère le baseball et tout sport classé 'other' dans Supabase
+ */
+async function verifyMLBResults(): Promise<{
+  verified: number;
+  updated: number;
+  won: number;
+  lost: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let verified = 0;
+  let updated = 0;
+  let won = 0;
+  let lost = 0;
+
+  try {
+    // Récupérer les pronostics MLB/other pending depuis Supabase
+    const allPending = await SupabaseStore.getPendingPredictions();
+    const pending = allPending.filter(p => p.sport === 'other' || p.sport === 'hockey' || p.league?.includes('MLB') || p.league?.includes('NHL'));
+
+    if (pending.length === 0) {
+      console.log('📋 Aucun pronostic MLB/other en attente dans Supabase');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
+    console.log(`📋 ${pending.length} pronostics MLB/other en attente à vérifier`);
+
+    // Récupérer les résultats MLB depuis ESPN
+    const mlbResults = await fetchMLBResultsFromESPN();
+
+    if (mlbResults.length === 0) {
+      console.log('⚾ Aucun résultat MLB trouvé sur ESPN');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
+    // Pour chaque pronostic, chercher le résultat correspondant
+    for (const prediction of pending) {
+      verified++;
+
+      const result = mlbResults.find(r => matchPredictionWithResult(prediction, r));
+
+      if (result) {
+        const predictedResult = prediction.predicted_result;
+        const actualResult = result.actualResult;
+        const resultMatch = predictedResult === actualResult;
+
+        // Mettre à jour Supabase directement
+        const success = await SupabaseStore.completePrediction(prediction.match_id, {
+          homeScore: result.homeScore,
+          awayScore: result.awayScore,
+          actualResult,
+          resultMatch,
+          goalsMatch: undefined,
+        });
+
+        if (success) {
+          updated++;
+          if (resultMatch) won++; else lost++;
+          console.log(`⚾ MLB: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+        }
+      } else {
+        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
+      }
+    }
+  } catch (error: any) {
+    errors.push(error.message);
+    console.error('Erreur vérification MLB:', error);
+  }
+
+  return { verified, updated, won, lost, errors };
+}
+
+// ============================================
 // VÉRIFICATION TENNIS (ESPN → Supabase)
 // ============================================
 
@@ -606,7 +758,7 @@ async function verifyTennisResults(): Promise<{
 }
 
 /**
- * Vérification complète (Football + NBA + Tennis)
+ * Vérification complète (Football + NBA + MLB + Tennis)
  */
 async function verifyAllResults(): Promise<{
   verified: number;
@@ -617,18 +769,19 @@ async function verifyAllResults(): Promise<{
   statsUpdate?: { success: boolean; message: string };
   mlSync?: { synced: number; mlStats: any };
 }> {
-  const [footballResult, nbaResult, tennisResult] = await Promise.all([
+  const [footballResult, nbaResult, mlbResult, tennisResult] = await Promise.all([
     verifyFootballResults(),
     verifyNBAResults(),
+    verifyMLBResults(),
     verifyTennisResults()
   ]);
 
   const result = {
-    verified: footballResult.verified + nbaResult.verified + tennisResult.verified,
-    updated: footballResult.updated + nbaResult.updated + tennisResult.updated,
-    won: footballResult.won + nbaResult.won + tennisResult.won,
-    lost: footballResult.lost + nbaResult.lost + tennisResult.lost,
-    errors: [...footballResult.errors, ...nbaResult.errors, ...tennisResult.errors],
+    verified: footballResult.verified + nbaResult.verified + mlbResult.verified + tennisResult.verified,
+    updated: footballResult.updated + nbaResult.updated + mlbResult.updated + tennisResult.updated,
+    won: footballResult.won + nbaResult.won + mlbResult.won + tennisResult.won,
+    lost: footballResult.lost + nbaResult.lost + mlbResult.lost + tennisResult.lost,
+    errors: [...footballResult.errors, ...nbaResult.errors, ...mlbResult.errors, ...tennisResult.errors],
     statsUpdate: undefined as { success: boolean; message: string } | undefined,
     mlSync: undefined as { synced: number; mlStats: any } | undefined
   };
@@ -636,15 +789,7 @@ async function verifyAllResults(): Promise<{
   // Mettre à jour les statistiques si des résultats ont été vérifiés
   if (result.updated > 0) {
     console.log('📊 Mise à jour des statistiques...');
-    try {
-      const allPredictions = await PredictionStore.getAllAsync();
-      const statsResult = await updateStatsHistory(allPredictions);
-      result.statsUpdate = { success: statsResult.success, message: statsResult.message };
-      console.log(statsResult.message);
-    } catch (e: any) {
-      console.error('❌ Erreur mise à jour stats:', e);
-      result.statsUpdate = { success: false, message: e.message };
-    }
+    // Note: PredictionStore.getAllAsync() lit le fichier local — ignoré en prod Vercel
 
     // Synchroniser avec le système ML
     console.log('🧠 Synchronisation avec le système ML...');
