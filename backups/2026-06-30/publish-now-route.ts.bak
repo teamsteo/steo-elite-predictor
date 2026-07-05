@@ -1,0 +1,115 @@
+import { NextResponse } from 'next/server';
+import {
+  publishDailySummaryToTelegram,
+  publishValueBetsToTelegram,
+  isSafeOrModerate
+} from '@/lib/telegramService';
+import { loadPredictionsForTelegram } from '@/lib/dailyPredictionService';
+
+/**
+ * GET /api/telegram/publish-now
+ * Publie manuellement les pronostics du jour sur Telegram
+ * Utilise les prédictions pré-calculées (ML avancé) en priorité
+ * Paramètres:
+ *   - type: "summary" (défaut) ou "valuebets"
+ */
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const type = searchParams.get('type') || 'summary';
+
+  try {
+    console.log('📢 Publication manuelle Telegram...');
+
+    // 🧠 SOURCE PRIORITAIRE: prédictions pré-calculées (ML avancé)
+    const { predictions, source } = await loadPredictionsForTelegram();
+
+    if (!predictions || predictions.length === 0) {
+      return NextResponse.json({
+        success: false,
+        message: 'Aucun match disponible actuellement',
+        source,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // DEBUG: Voir les risques
+    console.log('📊 Prédictions avec risques:', predictions.map(p => ({
+      match: `${p.homeTeam} vs ${p.awayTeam}`,
+      risk: p.riskPercentage,
+      isSafe: isSafeOrModerate(p.riskPercentage)
+    })));
+
+    // Filtrer par niveau de risque
+    const safeModeratePredictions = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
+    const excludedPredictions = predictions.filter(p => !isSafeOrModerate(p.riskPercentage));
+
+    // DEBUG
+    console.log(`✅ Safe/Modéré: ${safeModeratePredictions.length}, ❌ Exclus: ${excludedPredictions.length}`);
+
+    if (safeModeratePredictions.length === 0) {
+      return NextResponse.json({
+        success: false,
+        message: 'Aucun pronostic safe/modéré disponible',
+        total: predictions.length,
+        excluded: excludedPredictions.length,
+        source,
+        debug: predictions.map(p => ({
+          match: `${p.homeTeam} vs ${p.awayTeam}`,
+          risk: p.riskPercentage,
+          isSafe: isSafeOrModerate(p.riskPercentage)
+        })),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    let telegramResult: boolean;
+    let published: number;
+
+    if (type === 'valuebets') {
+      telegramResult = await publishValueBetsToTelegram(predictions);
+      published = predictions.filter(p =>
+        p.valueBetDetected &&
+        p.confidence !== 'low' &&
+        isSafeOrModerate(p.riskPercentage)
+      ).length;
+    } else {
+      telegramResult = await publishDailySummaryToTelegram(predictions);
+      published = safeModeratePredictions.length;
+    }
+
+    // Détails des pronostics
+    const details = safeModeratePredictions.map(p => ({
+      match: `${p.homeTeam} vs ${p.awayTeam}`,
+      sport: p.sport,
+      risk: p.riskPercentage ? `${p.riskPercentage}%` : 'N/A',
+      level: p.riskPercentage !== undefined ?
+        (p.riskPercentage <= 30 ? 'Safe' : 'Modéré') : 'N/A',
+      recommendation: p.recommendation || 'N/A',
+      winProb: p.winProbability ? `${p.winProbability}%` : 'N/A'
+    }));
+
+    return NextResponse.json({
+      success: telegramResult,
+      type: type === 'valuebets' ? 'Value Bets' : 'Résumé quotidien',
+      message: telegramResult
+        ? `✅ ${published} pronostic(s) publié(s) sur Telegram`
+        : '❌ Erreur lors de la publication',
+      source,
+      stats: {
+        total: predictions.length,
+        published: published,
+        excluded: excludedPredictions.length
+      },
+      predictions: details,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error: any) {
+    console.error('❌ Erreur publication Telegram:', error);
+    return NextResponse.json({
+      success: false,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    }, { status: 500 });
+  }
+}
