@@ -335,14 +335,25 @@ function isBaseballMatch(sport?: string): boolean {
 
 /**
  * Calcule les probabilités implicites depuis les cotes (normalisées)
+ * Pour le football, si la cote de nul est absente, on estime une cote par défaut (~3.30)
  */
-function calcImpliedProbs(oddsHome: number, oddsDraw?: number | null, oddsAway?: number): {
+function calcImpliedProbs(oddsHome: number, oddsDraw?: number | null, oddsAway?: number, sport?: string): {
   home: number; draw: number | null; away: number;
   homeOrDraw: number; awayOrDraw: number;
 } {
   const rawHome = 1 / (oddsHome || 1);
   const rawAway = 1 / (oddsAway || 1);
-  const rawDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : null;
+  
+  // Pour le football, estimer la cote de nul si absente
+  // Cote de nul typique : entre 2.80 et 4.00, on utilise 3.30 comme défaut
+  let effectiveDraw: number | null = null;
+  if (oddsDraw && oddsDraw > 1) {
+    effectiveDraw = oddsDraw;
+  } else if (sport && (sport.toLowerCase().includes('foot') || sport.toLowerCase() === 'soccer')) {
+    effectiveDraw = 3.30; // Estimation par défaut pour le football
+  }
+  
+  const rawDraw = effectiveDraw ? 1 / effectiveDraw : null;
   
   let total = rawHome + rawAway;
   if (rawDraw) total += rawDraw;
@@ -409,26 +420,20 @@ function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string
   if (!predictedResult) return '';
   
   // Pour le football avec cotes : afficher "Victoire [équipe] (X%)" ou "Victoire/Nul [équipe] (X%)"
+  // Le football a TOUJOURS un nul possible, même si ESPN ne fournit pas la cote de nul
   if (isFootballMatch(sport) && oddsHome && oddsAway) {
-    const hasDraw = oddsDraw !== null && oddsDraw !== undefined && oddsDraw > 1.0;
-    if (hasDraw) {
-      const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway);
-      if (predictedResult === 'home') {
-        const label = probs.home >= 50 ? `Victoire ${homeTeam || 'Domicile'}` : `Victoire/Nul ${homeTeam || 'Domicile'}`;
-        const pct = probs.home >= 50 ? probs.home : probs.homeOrDraw;
-        return `🎯 ${label} (${pct}%)`;
-      } else if (predictedResult === 'away') {
-        const label = probs.away >= 50 ? `Victoire ${awayTeam || 'Extérieur'}` : `Victoire/Nul ${awayTeam || 'Extérieur'}`;
-        const pct = probs.away >= 50 ? probs.away : probs.awayOrDraw;
-        return `🎯 ${label} (${pct}%)`;
-      } else if (predictedResult === 'draw') {
-        return `🎯 Match Nul (${probs.draw || 0}%)`;
-      }
+    const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
+    if (predictedResult === 'home') {
+      const label = probs.home >= 50 ? `Victoire ${homeTeam || 'Domicile'}` : `Victoire/Nul ${homeTeam || 'Domicile'}`;
+      const pct = probs.home >= 50 ? probs.home : probs.homeOrDraw;
+      return `🎯 ${label} (${pct}%)`;
+    } else if (predictedResult === 'away') {
+      const label = probs.away >= 50 ? `Victoire ${awayTeam || 'Extérieur'}` : `Victoire/Nul ${awayTeam || 'Extérieur'}`;
+      const pct = probs.away >= 50 ? probs.away : probs.awayOrDraw;
+      return `🎯 ${label} (${pct}%)`;
+    } else if (predictedResult === 'draw') {
+      return `🎯 Match Nul (${probs.draw || 0}%)`;
     }
-    // Football sans cote nul (parfois le nul est retiré)
-    if (predictedResult === 'home') return '🎯 Victoire Domicile';
-    if (predictedResult === 'away') return '🎯 Victoire Extérieur';
-    if (predictedResult === 'draw') return '🎯 Match Nul';
   }
   
   if (predictedResult === 'home') return '1️⃣';
@@ -1243,13 +1248,18 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
 }
 
 /**
- * Vérifie si le sport autorise le match nul (football, hockey avec cote nul)
+ * Vérifie si le sport autorise le match nul.
+ * - Football : TOUJOURS vrai (même si ESPN ne fournit pas la cote de nul)
+ * - Hockey : vrai uniquement si une cote de nul est fournie
  */
 function hasDrawOption(sport?: string, oddsDraw?: number | null): boolean {
-  if (oddsDraw !== null && oddsDraw !== undefined && oddsDraw > 1.0) return true;
   if (!sport) return false;
   const s = sport.toLowerCase();
-  return s.includes('foot') || s === 'soccer';
+  // Le football a toujours un nul possible (sauf phases finales à élimination directe)
+  if (s.includes('foot') || s === 'soccer') return true;
+  // Autres sports : nul uniquement si une cote de nul est explicitement fournie
+  if (oddsDraw !== null && oddsDraw !== undefined && oddsDraw > 1.0) return true;
+  return false;
 }
 
 function formatPredictedResult(
@@ -1269,7 +1279,7 @@ function formatPredictedResult(
   if (withDraw && (result === 'home' || result === 'away')) {
     const team = result === 'home' ? homeTeam : awayTeam;
     if (oddsHome && oddsAway) {
-      const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway);
+      const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
       if (result === 'home') {
         // Si proba victoire pure >= 50%, afficher "Victoire" sinon "Victoire/Nul"
         if (probs.home >= 50) {
@@ -1289,7 +1299,7 @@ function formatPredictedResult(
   }
   
   if (withDraw && result === 'draw' && oddsHome && oddsAway) {
-    const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway);
+    const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
     return `Match Nul (${probs.draw || 0}%)`;
   }
   
@@ -1443,6 +1453,16 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       }
 
       message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
+
+      // Afficher les runs estimés pour les matchs MLB (si on a les cotes)
+      if ((d.sport === 'other' || d.sport === 'baseball') && d.oddsHome && d.oddsAway) {
+        const runsEst = estimateMLBRuns(d.oddsHome, d.oddsAway);
+        if (runsEst) {
+          message += `    🔢 Runs estimés: ~${runsEst.totalRuns} (${runsEst.homeRuns}-${runsEst.awayRuns})\n`;
+        } else {
+          message += `    🔢 Runs: incertains (cotes serrées)\n`;
+        }
+      }
 
       if (d.resultMatch !== null) {
         const resultEmoji = d.resultMatch ? '✅' : '❌';
