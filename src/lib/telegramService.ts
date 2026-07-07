@@ -419,19 +419,16 @@ function estimateMLBRuns(oddsHome: number, oddsAway: number): { totalRuns: numbe
 function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string, oddsHome?: number, oddsDraw?: number | null, oddsAway?: number, homeTeam?: string, awayTeam?: string): string {
   if (!predictedResult) return '';
   
-  // Pour le football avec cotes : afficher "Victoire" ou "Victoire/Nul" avec %
+  // Pour le football : afficher TOUJOURS les 2 pourcentages (Victoire pure + V/N)
+  // Format : "Victoire (72%) · V/N: 78%" — le parieur voit les 2 options
   // Le football a TOUJOURS un nul possible, même si ESPN ne fournit pas la cote de nul
-  // ⚠️ NE PAS inclure 🎯 ni le nom d'équipe ici — formatMatchBlock s'en charge
   if (isFootballMatch(sport) && oddsHome && oddsAway) {
     const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
-    if (predictedResult === 'home') {
-      const label = probs.home >= 50 ? 'Victoire' : 'Victoire/Nul';
-      const pct = probs.home >= 50 ? probs.home : probs.homeOrDraw;
-      return `${label} (${pct}%)`;
-    } else if (predictedResult === 'away') {
-      const label = probs.away >= 50 ? 'Victoire' : 'Victoire/Nul';
-      const pct = probs.away >= 50 ? probs.away : probs.awayOrDraw;
-      return `${label} (${pct}%)`;
+    if (predictedResult === 'home' || predictedResult === 'away') {
+      const isHome = predictedResult === 'home';
+      const purePct = isHome ? probs.home : probs.away;
+      const vnPct = isHome ? probs.homeOrDraw : probs.awayOrDraw;
+      return `Victoire (${purePct}%) · V/N: ${vnPct}%`;
     } else if (predictedResult === 'draw') {
       return `Match Nul (${probs.draw || 0}%)`;
     }
@@ -1284,20 +1281,10 @@ function formatPredictedResult(
     const team = result === 'home' ? homeTeam : awayTeam;
     if (oddsHome && oddsAway) {
       const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
-      if (result === 'home') {
-        // Si proba victoire pure >= 50%, afficher "Victoire" sinon "Victoire/Nul"
-        if (probs.home >= 50) {
-          return `Victoire ${team} (${probs.home}%)`;
-        } else {
-          return `Victoire/Nul ${team} (${probs.homeOrDraw}%)`;
-        }
-      } else {
-        if (probs.away >= 50) {
-          return `Victoire ${team} (${probs.away}%)`;
-        } else {
-          return `Victoire/Nul ${team} (${probs.awayOrDraw}%)`;
-        }
-      }
+      const isHome = result === 'home';
+      const purePct = isHome ? probs.home : probs.away;
+      const vnPct = isHome ? probs.homeOrDraw : probs.awayOrDraw;
+      return `Victoire ${team} (${purePct}%) · V/N: ${vnPct}%`;
     }
     return result === 'home' ? `Victoire ${homeTeam || 'Domicile'}` : `Victoire ${awayTeam || 'Extérieur'}`;
   }
