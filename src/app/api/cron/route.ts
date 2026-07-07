@@ -1684,6 +1684,33 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'reset-mlb':
+        // Réinitialiser les résultats MLB erronés et revérifier avec date-aware matching
+        try {
+          const allMLB = await SupabaseStore.getAllPredictions();
+          const mlbPreds = allMLB.filter(p => 
+            p.league?.includes('MLB') || (p.sport === 'other' && p.league === 'MLB')
+          );
+          let resetCount = 0;
+          for (const p of mlbPreds) {
+            if (p.status === 'completed') {
+              await SupabaseStore.completePrediction(p.match_id, {
+                homeScore: 0,
+                awayScore: 0,
+                actualResult: 'home',
+                resultMatch: false,
+                status: 'pending',
+              });
+              resetCount++;
+            }
+          }
+          const verifyResult = await verifyAllResults();
+          result = { resetMLB: { resetCount, ...verifyResult } };
+        } catch (e: any) {
+          result = { resetMLB: { success: false, error: e.message } };
+        }
+        break;
+
       case 'telegram-summary':
         // Publier le résumé quotidien sur Telegram (UNIQUEMENT safe et modéré)
         try {
