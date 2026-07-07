@@ -419,20 +419,21 @@ function estimateMLBRuns(oddsHome: number, oddsAway: number): { totalRuns: numbe
 function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string, oddsHome?: number, oddsDraw?: number | null, oddsAway?: number, homeTeam?: string, awayTeam?: string): string {
   if (!predictedResult) return '';
   
-  // Pour le football avec cotes : afficher "Victoire [équipe] (X%)" ou "Victoire/Nul [équipe] (X%)"
+  // Pour le football avec cotes : afficher "Victoire" ou "Victoire/Nul" avec %
   // Le football a TOUJOURS un nul possible, même si ESPN ne fournit pas la cote de nul
+  // ⚠️ NE PAS inclure 🎯 ni le nom d'équipe ici — formatMatchBlock s'en charge
   if (isFootballMatch(sport) && oddsHome && oddsAway) {
     const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
     if (predictedResult === 'home') {
-      const label = probs.home >= 50 ? `Victoire ${homeTeam || 'Domicile'}` : `Victoire/Nul ${homeTeam || 'Domicile'}`;
+      const label = probs.home >= 50 ? 'Victoire' : 'Victoire/Nul';
       const pct = probs.home >= 50 ? probs.home : probs.homeOrDraw;
-      return `🎯 ${label} (${pct}%)`;
+      return `${label} (${pct}%)`;
     } else if (predictedResult === 'away') {
-      const label = probs.away >= 50 ? `Victoire ${awayTeam || 'Extérieur'}` : `Victoire/Nul ${awayTeam || 'Extérieur'}`;
+      const label = probs.away >= 50 ? 'Victoire' : 'Victoire/Nul';
       const pct = probs.away >= 50 ? probs.away : probs.awayOrDraw;
-      return `🎯 ${label} (${pct}%)`;
+      return `${label} (${pct}%)`;
     } else if (predictedResult === 'draw') {
-      return `🎯 Match Nul (${probs.draw || 0}%)`;
+      return `Match Nul (${probs.draw || 0}%)`;
     }
   }
   
@@ -710,13 +711,16 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
 
     message += `${emoji} <b>${sport.toUpperCase()}</b> — ${matches.length} match${matches.length > 1 ? 's' : ''}\n\n`;
     
-    for (let i = 0; i < Math.min(matches.length, 10); i++) {
-      const block = await formatMatchBlock(matches[i], i + 1, true);
+    // Trier : safe en premier, puis modéré (pour ne jamais tronquer les safe)
+    const sorted = [...matches].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
+    
+    for (let i = 0; i < Math.min(sorted.length, 10); i++) {
+      const block = await formatMatchBlock(sorted[i], i + 1, true);
       message += block;
     }
     
-    if (matches.length > 10) {
-      message += `<i>... et ${matches.length - 10} autres match${matches.length - 10 > 1 ? 's' : ''}</i>\n\n`;
+    if (sorted.length > 10) {
+      message += `<i>... et ${sorted.length - 10} autres match${sorted.length - 10 > 1 ? 's' : ''}</i>\n\n`;
     }
   }
   
