@@ -71,6 +71,7 @@ interface MatchResult {
   actualResult: 'home' | 'draw' | 'away';
   league?: string;
   sport: 'football' | 'basketball' | 'baseball' | 'tennis' | 'other';
+  espnDate?: string; // YYYYMMDD pour matching par date (critique pour MLB/NBA)
 }
 
 // Ligues ESPN Football
@@ -524,7 +525,8 @@ async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
               ? 'away' as const
               : 'draw' as const,
           league: 'MLB',
-          sport: 'baseball' as const
+          sport: 'baseball' as const,
+          espnDate: dateStr, // ⬅ CRITIQUE: date ESPN pour matching précis
         });
       }
     } catch (error) {
@@ -573,17 +575,45 @@ async function verifyMLBResults(): Promise<{
       return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
     }
 
-    // Pour chaque pronostic, chercher le résultat correspondant
+    // Extraire la date US du pronostic pour matching précis
+    const getMatchDateUS = (matchDate: string): string => {
+      try {
+        // matchDate peut être '2026-07-08T02:10:00+00:00' (UTC) → convertir en date US (ET)
+        const d = new Date(matchDate);
+        // ESPN utilise la date locale US (Eastern Time)
+        const usDate = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        return usDate.toISOString().split('T')[0].replace(/-/g, '');
+      } catch {
+        return '';
+      }
+    };
+
+    // Pour chaque pronostic, chercher le résultat correspondant AVEC DATE
     for (const prediction of pending) {
       verified++;
+      const predDateUS = getMatchDateUS(prediction.match_date);
 
-      const matchEntry = mlbResults
+      // Filtrer les résultats ESPN par date correspondante
+      const dateFilteredResults = predDateUS
+        ? mlbResults.filter(r => r.espnDate === predDateUS)
+        : mlbResults;
+
+      const matchEntry = dateFilteredResults
         .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
         .find(e => e.match.matched);
 
-      if (matchEntry) {
-        const result = matchEntry.result;
-        const inverted = matchEntry.match.inverted;
+      // Fallback: si aucun résultat trouvé avec la date, chercher sur tous les jours
+      // (tolérance pour matchs se terminant après minuit US)
+      const finalMatch = matchEntry || (!predDateUS ? null :
+        mlbResults
+          .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+          .find(e => e.match.matched)
+      );
+
+      if (finalMatch) {
+        const result = finalMatch.result;
+        const inverted = finalMatch.match.inverted;
+        const usedDate = result.espnDate || '?';
         const predictedResult = prediction.predicted_result;
         const actualResult = adjustResultForInversion(result.actualResult, inverted);
         const resultMatch = predictedResult === actualResult;
@@ -600,10 +630,10 @@ async function verifyMLBResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`⚾ MLB: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${result.homeScore}-${result.awayScore})`);
+          console.log(`⚾ MLB: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} ${result.homeScore}-${result.awayScore} (ESPN ${usedDate})`);
         }
       } else {
-        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
+        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team} (${predDateUS || '?'}): non trouvé`);
       }
     }
   } catch (error: any) {
@@ -1171,6 +1201,34 @@ export async function GET(request: NextRequest) {
           result = { mlStats };
         } catch (e: any) {
           result = { mlStats: { success: false, error: e.message } };
+        }
+        break;
+        
+      case 'reset-mlb':
+        // Réinitialiser les résultats MLB erronés et revérifier avec date-aware matching
+        try {
+          const allMLB = await SupabaseStore.getAllPredictions();
+          const mlbPreds = allMLB.filter(p => 
+            p.league?.includes('MLB') || (p.sport === 'other' && p.league === 'MLB')
+          );
+          let resetCount = 0;
+          for (const p of mlbPreds) {
+            if (p.status === 'completed') {
+              await SupabaseStore.completePrediction(p.match_id, {
+                homeScore: 0,
+                awayScore: 0,
+                actualResult: 'home',
+                resultMatch: false,
+                status: 'pending',
+              });
+              resetCount++;
+            }
+          }
+          // Re-run verification avec le nouveau code date-aware
+          const verifyResult = await verifyAllResults();
+          result = { resetMLB: { resetCount, ...verifyResult } };
+        } catch (e: any) {
+          result = { resetMLB: { success: false, error: e.message } };
         }
         break;
         

@@ -361,23 +361,37 @@ export const SupabaseStore = {
     actualResult: 'home' | 'draw' | 'away';
     resultMatch: boolean;
     goalsMatch?: boolean;
+    status?: 'completed' | 'pending';
   }): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
     
     try {
+      const update: any = {
+        checked_at: new Date().toISOString()
+      };
+      if (result.status === 'pending') {
+        // Mode reset: remettre en pending
+        update.home_score = null;
+        update.away_score = null;
+        update.total_goals = null;
+        update.actual_result = null;
+        update.result_match = null;
+        update.goals_match = null;
+        update.status = 'pending';
+      } else {
+        update.home_score = result.homeScore;
+        update.away_score = result.awayScore;
+        update.total_goals = result.homeScore + result.awayScore;
+        update.actual_result = result.actualResult;
+        update.result_match = result.resultMatch;
+        update.goals_match = result.goalsMatch;
+        update.status = 'completed';
+      }
+      
       const { error } = await supabase
         .from('predictions')
-        .update({
-          home_score: result.homeScore,
-          away_score: result.awayScore,
-          total_goals: result.homeScore + result.awayScore,
-          actual_result: result.actualResult,
-          result_match: result.resultMatch,
-          goals_match: result.goalsMatch,
-          status: 'completed',
-          checked_at: new Date().toISOString()
-        })
+        .update(update)
         .eq('match_id', matchId);
       
       return !error;
