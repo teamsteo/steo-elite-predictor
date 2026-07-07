@@ -324,13 +324,111 @@ async function sendTelegramMessageLong(text: string): Promise<boolean> {
 // OPTIONS DE PARI
 // ============================================
 
-function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string): string {
+/**
+ * Vérifie si le sport est du baseball/MLB
+ */
+function isBaseballMatch(sport?: string): boolean {
+  if (!sport) return false;
+  const s = sport.toLowerCase();
+  return s.includes('base') || s.includes('mlb') || s === 'other';
+}
+
+/**
+ * Calcule les probabilités implicites depuis les cotes (normalisées)
+ */
+function calcImpliedProbs(oddsHome: number, oddsDraw?: number | null, oddsAway?: number): {
+  home: number; draw: number | null; away: number;
+  homeOrDraw: number; awayOrDraw: number;
+} {
+  const rawHome = 1 / (oddsHome || 1);
+  const rawAway = 1 / (oddsAway || 1);
+  const rawDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : null;
+  
+  let total = rawHome + rawAway;
+  if (rawDraw) total += rawDraw;
+  
+  const home = Math.round((rawHome / total) * 100);
+  const away = Math.round((rawAway / total) * 100);
+  const draw = rawDraw ? Math.round((rawDraw / total) * 100) : null;
+  
+  return {
+    home,
+    draw,
+    away,
+    homeOrDraw: draw !== null ? home + draw : home,
+    awayOrDraw: draw !== null ? away + draw : away,
+  };
+}
+
+/**
+ * Estime les runs moyens pour un match MLB à partir des cotes.
+ * Utilise un modèle basé sur les probabilités implicites et la moyenne historique MLB (~8.5 runs/match).
+ * Retourne null si les cotes sont trop serrées (incertain).
+ */
+function estimateMLBRuns(oddsHome: number, oddsAway: number): { totalRuns: number; homeRuns: number; awayRuns: number } | null {
+  try {
+    const rawHome = 1 / (oddsHome || 1);
+    const rawAway = 1 / (oddsAway || 1);
+    const total = rawHome + rawAway;
+    const probHome = rawHome / total; // probabilité normalisée home
+    const probAway = rawAway / total; // probabilité normalisée away
+
+    // La moyenne historique MLB est ~8.5 runs par match (total des 2 équipes)
+    // Plus un favori est fort (probabilité élevée), plus le score attendu est déséquilibré
+    const baseTotalRuns = 8.5;
+
+    // Ajustement du total: si les cotes sont très serrées (match incertain),
+    // les runs tendent à être plus élevés (plus de tension = plus de scored runs)
+    // Si un favori très fort, le total peut être un peu plus bas (dominance pitching)
+    const dominance = Math.abs(probHome - 0.5); // 0 = match serré, 0.5 = domination
+    const totalRuns = Math.round(baseTotalRuns - (dominance * 2));
+
+    // Répartition: le favori marque plus de runs
+    // Si probHome > probAway, home est favori et marque plus
+    const homeShare = probHome + (dominance * 0.15); // bonus favori
+    const awayShare = probAway - (dominance * 0.15);
+    const homeRuns = Math.max(1, Math.round(totalRuns * homeShare));
+    const awayRuns = Math.max(1, totalRuns - homeRuns);
+
+    // Vérifier si les cotes sont trop serrées (< 1.40 vs > 2.50)
+    // pour considérer la prédiction comme "incertaine"
+    const minOdds = Math.min(oddsHome, oddsAway);
+    const maxOdds = Math.max(oddsHome, oddsAway);
+    if (minOdds > 1.40 && maxOdds < 2.50) {
+      // Cotes très serrées — match incertain, on retourne null
+      return null;
+    }
+
+    return { totalRuns: homeRuns + awayRuns, homeRuns, awayRuns };
+  } catch {
+    return null;
+  }
+}
+
+function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string, oddsHome?: number, oddsDraw?: number | null, oddsAway?: number, homeTeam?: string, awayTeam?: string): string {
   if (!predictedResult) return '';
   
-  if (isFootballMatch(sport)) {
-    if (predictedResult === 'home') return '1️⃣';
-    if (predictedResult === 'draw') return '❌';
-    if (predictedResult === 'away') return '2️⃣';
+  // Pour le football avec cotes : afficher "Victoire [équipe] (X%)" ou "Victoire/Nul [équipe] (X%)"
+  if (isFootballMatch(sport) && oddsHome && oddsAway) {
+    const hasDraw = oddsDraw !== null && oddsDraw !== undefined && oddsDraw > 1.0;
+    if (hasDraw) {
+      const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway);
+      if (predictedResult === 'home') {
+        const label = probs.home >= 50 ? `Victoire ${homeTeam || 'Domicile'}` : `Victoire/Nul ${homeTeam || 'Domicile'}`;
+        const pct = probs.home >= 50 ? probs.home : probs.homeOrDraw;
+        return `🎯 ${label} (${pct}%)`;
+      } else if (predictedResult === 'away') {
+        const label = probs.away >= 50 ? `Victoire ${awayTeam || 'Extérieur'}` : `Victoire/Nul ${awayTeam || 'Extérieur'}`;
+        const pct = probs.away >= 50 ? probs.away : probs.awayOrDraw;
+        return `🎯 ${label} (${pct}%)`;
+      } else if (predictedResult === 'draw') {
+        return `🎯 Match Nul (${probs.draw || 0}%)`;
+      }
+    }
+    // Football sans cote nul (parfois le nul est retiré)
+    if (predictedResult === 'home') return '🎯 Victoire Domicile';
+    if (predictedResult === 'away') return '🎯 Victoire Extérieur';
+    if (predictedResult === 'draw') return '🎯 Match Nul';
   }
   
   if (predictedResult === 'home') return '1️⃣';
@@ -480,7 +578,7 @@ async function formatMatchBlock(
   const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
   const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
   const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : 'Modéré';
-  const betLabel = getBetOption(m.predictedResult, m.sport);
+  const betLabel = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
   const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
 
   let block = '';
@@ -523,6 +621,20 @@ async function formatMatchBlock(
       }
     } catch (e) {
       // Silently skip goals prediction on error
+    }
+  }
+
+  // Prédiction runs moyens pour Baseball/MLB (à fort taux de buts)
+  if (isBaseballMatch(m.sport) && m.oddsHome && m.oddsAway) {
+    try {
+      const runsPrediction = estimateMLBRuns(m.oddsHome, m.oddsAway);
+      if (runsPrediction) {
+        block += `    🔢 Runs estimés: ~${runsPrediction.totalRuns} (${runsPrediction.homeRuns}-${runsPrediction.awayRuns})\n`;
+      } else {
+        block += `    🔢 Runs: incertains (cotes trop serrées ou données insuffisantes)\n`;
+      }
+    } catch (e) {
+      block += `    🔢 Runs: incalculables\n`;
     }
   }
 
@@ -1140,33 +1252,6 @@ function hasDrawOption(sport?: string, oddsDraw?: number | null): boolean {
   return s.includes('foot') || s === 'soccer';
 }
 
-/**
- * Calcule les probabilités implicites depuis les cotes (normalisées)
- */
-function calcImpliedProbs(oddsHome: number, oddsDraw?: number | null, oddsAway?: number): {
-  home: number; draw: number | null; away: number;
-  homeOrDraw: number; awayOrDraw: number;
-} {
-  const rawHome = 1 / (oddsHome || 1);
-  const rawAway = 1 / (oddsAway || 1);
-  const rawDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : null;
-  
-  let total = rawHome + rawAway;
-  if (rawDraw) total += rawDraw;
-  
-  const home = Math.round((rawHome / total) * 100);
-  const away = Math.round((rawAway / total) * 100);
-  const draw = rawDraw ? Math.round((rawDraw / total) * 100) : null;
-  
-  return {
-    home,
-    draw,
-    away,
-    homeOrDraw: draw !== null ? home + draw : home,
-    awayOrDraw: draw !== null ? away + draw : away,
-  };
-}
-
 function formatPredictedResult(
   result?: string,
   sport?: string,
@@ -1287,12 +1372,8 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       const name = sportNames[sport] || sport;
       const verified = s.wins + s.losses;
 
-      // En-tête du sport
-      if (s.pending > 0 && verified === 0) {
-        message += `${emoji} <b>${name}</b> — ⏳ ${s.pending} en attente\n`;
-        message += '\n';
-        continue;
-      }
+      // Ne montrer que les sports qui ont au moins 1 match terminé
+      if (verified === 0) continue;
 
       // Indicateur de performance
       const sportEmoji = s.winRate >= 60 ? '🏆' : s.winRate >= 40 ? '📊' : '📉';
@@ -1307,11 +1388,6 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
         const profitSign = s.profitUnits >= 0 ? '+' : '';
         const roiEmoji = s.roi >= 0 ? '💰' : '📉';
         message += `    ${roiEmoji} ROI: <b>${roiSign}${s.roi}%</b> (${profitSign}${s.profitUnits.toFixed(2)}u)\n`;
-      }
-
-      // Pending pour ce sport
-      if (s.pending > 0) {
-        message += `    ⏳ ${s.pending} en attente\n`;
       }
 
       message += '\n';
@@ -1339,7 +1415,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   }
 
   // =============================================
-  // RÉSULTAT GLOBAL
+  // RÉSULTAT GLOBAL (uniquement les terminés)
   // =============================================
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
   const globalEmoji = summary.winRate >= 60 ? '🏆' : summary.winRate >= 40 ? '📊' : '📉';
@@ -1355,35 +1431,30 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     const roiEmoji = summary.roi >= 0 ? '💰' : '📉';
     message += `    ${roiEmoji} ROI: <b>${roiSign}${summary.roi}%</b> (${profitSign}${summary.profitUnits.toFixed(2)}u)\n`;
   }
-  if (summary.totalPending > 0) {
-    message += `    ⏳ ${summary.totalPending} en attente de résultat\n`;
-  }
+  // ❌ PLUS de "en attente" dans le bilan global
   if (summary.goalsWins + summary.goalsLosses > 0) {
     message += `    ⚽ Buts: ${summary.goalsWins}/${summary.goalsWins + summary.goalsLosses} corrects\n`;
   }
   message += '\n';
 
   // =============================================
-  // DÉTAILS PAR MATCH
+  // DÉTAILS PAR MATCH — UNIQUEMENT LES TERMINÉS
   // =============================================
-  if (summary.details.length > 0) {
+  const completedDetails = summary.details.filter(d => d.status === 'completed');
+  if (completedDetails.length > 0) {
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     message += '<b>DÉTAILS</b>\n\n';
 
-    // Trier les détails: par sport d'abord (ordre priorité), puis par statut (completed d'abord, pending après)
-    const sortedDetails = [...summary.details].sort((a, b) => {
+    // Trier: par sport d'abord (ordre priorité)
+    const sortedDetails = completedDetails.sort((a, b) => {
       const priorityA = sportPriority[a.sport] || 99;
       const priorityB = sportPriority[b.sport] || 99;
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      const statusOrder: Record<string, number> = { completed: 0, pending: 1, cancelled: 2, postponed: 3 };
-      return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
+      return priorityA - priorityB;
     });
 
     let currentSport = '';
     for (const d of sortedDetails) {
       const emoji = sportEmojis[d.sport] || '🏟️';
-      const isVerified = d.status === 'completed';
-      const isPending = d.status === 'pending';
 
       // Séparateur par sport
       if (d.sport !== currentSport) {
@@ -1393,7 +1464,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
 
-      if (isVerified && d.resultMatch !== null) {
+      if (d.resultMatch !== null) {
         const resultEmoji = d.resultMatch ? '✅' : '❌';
         const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
         message += `    ${resultEmoji} <b>${d.predicted}</b> → Score: <b>${actual}</b>\n`;
@@ -1402,10 +1473,8 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
           const goalsEmoji = d.goalsMatch ? '✅' : '❌';
           message += `    ${goalsEmoji} Buts: ${d.predictedGoals || 'N/A'} → Réel: ${d.actualHome ?? '?'}-${d.actualAway ?? '?'}\n`;
         }
-      } else if (isPending) {
-        message += `    ⏳ En attente — <b>${d.predicted}</b>\n`;
       } else {
-        message += `    ⚠️ ${d.status}\n`;
+        message += `    ⚠️ Vérifié sans résultat\n`;
       }
     }
     message += '\n';
@@ -1416,7 +1485,232 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   message += '🤖 Bilan automatique après vérification\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
-  return sendTelegramMessageLong(message);
+  // Envoyer le message
+  const sent = await sendTelegramMessageLong(message);
+
+  // Envoyer un sticker en fonction du bilan
+  if (sent) {
+    await sendResultSticker(summary.winRate, summary.wins, summary.losses);
+  }
+
+  return sent;
+}
+
+/**
+ * Envoie un sticker Telegram adapté au bilan du jour
+ * Utilise les file_ids prédéfinis de stickers populaires
+ */
+async function sendResultSticker(winRate: number, wins: number, losses: number): Promise<void> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+
+  // Stickers Telegram (file_id de stickers universels)
+  // Ces stickers sont disponibles dans de nombreux packs populaires
+  const STICKERS: Record<string, string> = {
+    // Bilan excellent (>=70% ou 100% sur peu de matchs)
+    excellent: 'CAADAgADYQADfITSBZkLNfMFf8lHFgQ',
+    // Bon bilan (50-69%)
+    good: 'CAADAgADZQADfITSBa8KVZhMFd3rFgQ',
+    // Moyen (40-49%)
+    medium: 'CAADAgADaQADfITSBaiZIV4rN7-3FgQ',
+    // Mauvais (<40%)
+    bad: 'CAADAgADbwADfITSBSqSWJGM9ji0FgQ',
+    // Parfait (100% winrate, 3+ matchs)
+    perfect: 'CAADAgADcwADfITSBVhJEDaqLgqjFgQ',
+    // Zéro match
+    zero: 'CAADAgADdAADfITSBRqlSAKNlFyPFgQ',
+  };
+
+  let stickerKey = 'medium';
+  const total = wins + losses;
+  
+  if (total === 0) {
+    stickerKey = 'zero';
+  } else if (winRate >= 100 && total >= 3) {
+    stickerKey = 'perfect';
+  } else if (winRate >= 70) {
+    stickerKey = 'excellent';
+  } else if (winRate >= 50) {
+    stickerKey = 'good';
+  } else if (winRate >= 40) {
+    stickerKey = 'medium';
+  } else {
+    stickerKey = 'bad';
+  }
+
+  const fileId = STICKERS[stickerKey];
+  if (!fileId) return;
+
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendSticker`;
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        sticker: fileId,
+      }),
+    });
+    console.log(`🎨 Sticker envoyé: ${stickerKey}`);
+  } catch (e) {
+    // Silently fail — sticker is a nice-to-have, not critical
+    console.log('⚠️ Impossible d\'envoyer le sticker:', e);
+  }
+}
+
+// ============================================
+// BILAN MENSUEL PAR SPORT
+// ============================================
+
+/**
+ * Récupère les données mensuelles depuis Supabase et publie un bilan par sport
+ */
+export async function publishMonthlyResultsToTelegram(monthISO?: string): Promise<boolean> {
+  // Calculer le mois cible
+  const targetMonth = monthISO || (() => {
+    const now = new Date();
+    // Le mois précédent (car le 1er du mois, on veut le bilan du mois qui vient de finir)
+    now.setMonth(now.getMonth() - 1);
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  })();
+
+  try {
+    // Récupérer TOUTES les prédictions terminées du mois depuis Supabase
+    const allPredictions = await SupabaseStore.getAllPredictions();
+    
+    // Filtrer: status=completed, match_date dans le mois cible
+    const monthPredictions = allPredictions.filter(p => {
+      if (p.status !== 'completed' || p.result_match === null || p.result_match === undefined) return false;
+      const matchDate = p.match_date?.split('T')[0]; // "2026-06-15"
+      return matchDate?.startsWith(targetMonth);
+    });
+
+    if (monthPredictions.length === 0) {
+      console.log(`⚠️ Aucune prédiction terminée pour le mois ${targetMonth}`);
+      return false;
+    }
+
+    // Grouper par sport
+    const bySport: Record<string, { wins: number; losses: number; total: number; profitUnits: number; leagues: Set<string> }> = {};
+    
+    for (const p of monthPredictions) {
+      const sport = p.sport || 'other';
+      if (!bySport[sport]) {
+        bySport[sport] = { wins: 0, losses: 0, total: 0, profitUnits: 0, leagues: new Set() };
+      }
+      bySport[sport].total++;
+      
+      if (p.result_match === true) {
+        bySport[sport].wins++;
+        // Profit = cote - 1
+        let betOdds = 1.0;
+        if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
+        else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
+        else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
+        bySport[sport].profitUnits += (betOdds - 1);
+      } else if (p.result_match === false) {
+        bySport[sport].losses++;
+        bySport[sport].profitUnits -= 1;
+      }
+
+      if (p.league) bySport[sport].leagues.add(p.league);
+    }
+
+    // Calculer le global
+    const totalWins = Object.values(bySport).reduce((s, v) => s + v.wins, 0);
+    const totalLosses = Object.values(bySport).reduce((s, v) => s + v.losses, 0);
+    const totalVerified = totalWins + totalLosses;
+    const globalWinRate = totalVerified > 0 ? Math.round((totalWins / totalVerified) * 100) : 0;
+    const globalProfit = Object.values(bySport).reduce((s, v) => s + v.profitUnits, 0);
+    const globalROI = totalVerified > 0 ? Math.round((globalProfit / totalVerified) * 100) : 0;
+
+    // Formatter le mois
+    const [year, month] = targetMonth.split('-');
+    const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    const monthLabel = `${monthNames[parseInt(month) - 1]} ${year}`;
+
+    // Maps sport
+    const sportEmojis: Record<string, string> = {
+      'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️',
+    };
+    const sportNames: Record<string, string> = {
+      'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'other': 'Autres',
+    };
+    const sportPriority: Record<string, number> = {
+      'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'other': 99,
+    };
+    const sortedSports = Object.keys(bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
+
+    // Construire le message
+    let message = '';
+    message += '╔═════════════════════════════╗\n';
+    message += '║\n';
+    message += '║   📊 <b>BILAN MENSUEL</b>\n';
+    message += '║\n';
+    message += '╚═════════════════════════════╝\n\n';
+    message += `📅 <b>${monthLabel}</b>\n\n`;
+
+    // Bilan par sport
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '<b>BILAN PAR SPORT</b>\n\n';
+
+    for (const sport of sortedSports) {
+      const s = bySport[sport];
+      const emoji = sportEmojis[sport] || '🏟️';
+      const name = sportNames[sport] || sport;
+      const winRate = s.total > 0 ? Math.round((s.wins / s.total) * 100) : 0;
+      const roi = s.total > 0 ? Math.round((s.profitUnits / s.total) * 100) : 0;
+      const perfEmoji = winRate >= 60 ? '🏆' : winRate >= 40 ? '📊' : '📉';
+
+      message += `${emoji} <b>${name}</b> ${perfEmoji}\n`;
+      message += `    ✅ ${s.wins}/${s.total} corrects  ·  <b>${winRate}%</b>\n`;
+
+      if (s.profitUnits !== 0) {
+        const roiSign = roi >= 0 ? '+' : '';
+        const profitSign = s.profitUnits >= 0 ? '+' : '';
+        const roiEmoji = roi >= 0 ? '💰' : '📉';
+        message += `    ${roiEmoji} ROI: <b>${roiSign}${roi}%</b> (${profitSign}${s.profitUnits.toFixed(2)}u)\n`;
+      }
+
+      // Ligues couvertes
+      if (s.leagues.size > 0) {
+        const leagueList = [...s.leagues].slice(0, 3).join(', ');
+        const more = s.leagues.size > 3 ? ` +${s.leagues.size - 3} autres` : '';
+        message += `    🏟️ ${leagueList}${more}\n`;
+      }
+
+      message += '\n';
+    }
+
+    // Global
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    const globalEmoji = globalWinRate >= 60 ? '🏆' : globalWinRate >= 40 ? '📊' : '📉';
+    message += `${globalEmoji} <b>RÉSULTAT GLOBAL ${monthLabel.toUpperCase()}</b>\n`;
+    message += `    ✅ ${totalWins}/${totalVerified} corrects  ·  <b>${globalWinRate}%</b>\n`;
+
+    if (globalProfit !== 0) {
+      const roiSign = globalROI >= 0 ? '+' : '';
+      const profitSign = globalProfit >= 0 ? '+' : '';
+      const roiEmoji = globalROI >= 0 ? '💰' : '📉';
+      message += `    ${roiEmoji} ROI: <b>${roiSign}${globalROI}%</b> (${profitSign}${globalProfit.toFixed(2)}u)\n`;
+    }
+    message += '\n';
+
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '🤖 Bilan mensuel automatique\n';
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+    const sent = await sendTelegramMessageLong(message);
+    
+    // Sticker pour le bilan mensuel
+    if (sent) {
+      await sendResultSticker(globalWinRate, totalWins, totalLosses);
+    }
+
+    return sent;
+  } catch (e) {
+    console.error('Erreur bilan mensuel:', e);
+    return false;
+  }
 }
 
 export default {
@@ -1428,6 +1722,7 @@ export default {
   publishLiveAlertToTelegram,
   publishResultsToTelegram,
   publishDailyResultsToTelegram,
+  publishMonthlyResultsToTelegram,
   getTelegramChatId,
   testTelegramConnection,
   isSafeOrModerate,
