@@ -969,6 +969,10 @@ interface DailyResultSummary {
     resultMatch: boolean | null;
     goalsMatch: boolean | null;
     status: string;
+    oddsHome?: number;
+    oddsDraw?: number | null;
+    oddsAway?: number;
+    predictedResult?: string;
   }>;
 }
 
@@ -1059,7 +1063,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       }
 
       // Détail du match
-      const predictedLabel = formatPredictedResult(p.predicted_result);
+      const predictedLabel = formatPredictedResult(p.predicted_result, sport, p.home_team, p.away_team, p.odds_home, p.odds_draw, p.odds_away);
       summary.details.push({
         homeTeam: p.home_team || '',
         awayTeam: p.away_team || '',
@@ -1073,6 +1077,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
         resultMatch: p.result_match ?? null,
         goalsMatch: p.goals_match ?? null,
         status: p.status || 'pending',
+        oddsHome: p.odds_home || undefined,
+        oddsDraw: p.odds_draw ?? undefined,
+        oddsAway: p.odds_away || undefined,
+        predictedResult: p.predicted_result,
       });
     }
 
@@ -1122,12 +1130,88 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   }
 }
 
-function formatPredictedResult(result?: string): string {
+/**
+ * Vérifie si le sport autorise le match nul (football, hockey avec cote nul)
+ */
+function hasDrawOption(sport?: string, oddsDraw?: number | null): boolean {
+  if (oddsDraw !== null && oddsDraw !== undefined && oddsDraw > 1.0) return true;
+  if (!sport) return false;
+  const s = sport.toLowerCase();
+  return s.includes('foot') || s === 'soccer';
+}
+
+/**
+ * Calcule les probabilités implicites depuis les cotes (normalisées)
+ */
+function calcImpliedProbs(oddsHome: number, oddsDraw?: number | null, oddsAway?: number): {
+  home: number; draw: number | null; away: number;
+  homeOrDraw: number; awayOrDraw: number;
+} {
+  const rawHome = 1 / (oddsHome || 1);
+  const rawAway = 1 / (oddsAway || 1);
+  const rawDraw = (oddsDraw && oddsDraw > 1) ? 1 / oddsDraw : null;
+  
+  let total = rawHome + rawAway;
+  if (rawDraw) total += rawDraw;
+  
+  const home = Math.round((rawHome / total) * 100);
+  const away = Math.round((rawAway / total) * 100);
+  const draw = rawDraw ? Math.round((rawDraw / total) * 100) : null;
+  
+  return {
+    home,
+    draw,
+    away,
+    homeOrDraw: draw !== null ? home + draw : home,
+    awayOrDraw: draw !== null ? away + draw : away,
+  };
+}
+
+function formatPredictedResult(
+  result?: string,
+  sport?: string,
+  homeTeam?: string,
+  awayTeam?: string,
+  oddsHome?: number,
+  oddsDraw?: number | null,
+  oddsAway?: number,
+): string {
   if (!result) return 'N/A';
+  
+  // Affinage pour les sports avec nul (football, hockey)
+  const withDraw = hasDrawOption(sport, oddsDraw);
+  
+  if (withDraw && (result === 'home' || result === 'away')) {
+    const team = result === 'home' ? homeTeam : awayTeam;
+    if (oddsHome && oddsAway) {
+      const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway);
+      if (result === 'home') {
+        // Si proba victoire pure >= 50%, afficher "Victoire" sinon "Victoire/Nul"
+        if (probs.home >= 50) {
+          return `Victoire ${team} (${probs.home}%)`;
+        } else {
+          return `Victoire/Nul ${team} (${probs.homeOrDraw}%)`;
+        }
+      } else {
+        if (probs.away >= 50) {
+          return `Victoire ${team} (${probs.away}%)`;
+        } else {
+          return `Victoire/Nul ${team} (${probs.awayOrDraw}%)`;
+        }
+      }
+    }
+    return result === 'home' ? `Victoire ${homeTeam || 'Domicile'}` : `Victoire ${awayTeam || 'Extérieur'}`;
+  }
+  
+  if (withDraw && result === 'draw' && oddsHome && oddsAway) {
+    const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway);
+    return `Match Nul (${probs.draw || 0}%)`;
+  }
+  
   switch (result) {
-    case 'home': return 'Victoire Domicile (1)';
-    case 'draw': return 'Match Nul (X)';
-    case 'away': return 'Victoire Extérieur (2)';
+    case 'home': return 'Victoire Domicile';
+    case 'draw': return 'Match Nul';
+    case 'away': return 'Victoire Extérieur';
     case 'over': return 'Over 2.5';
     case 'under': return 'Under 2.5';
     case 'btts_yes': return 'BTTS Oui';
@@ -1152,7 +1236,7 @@ function formatActualResult(result?: string | null, homeScore?: number | null, a
 
 /**
  * Publie le bilan quotidien des pronostics sur Telegram.
- * Format: ⚽ Foot 2/3 · 🏀 Basket 4/4 ... avec détails par match.
+ * Format: résumé par sport détaillé AVANT bilan global, puis détails par match.
  */
 export async function publishDailyResultsToTelegram(dateISO?: string): Promise<boolean> {
   const summary = await fetchDailyResultsFromSupabase(dateISO);
@@ -1168,6 +1252,18 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
 
+  // Maps sport
+  const sportEmojis: Record<string, string> = {
+    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️',
+  };
+  const sportNames: Record<string, string> = {
+    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'other': 'Autres',
+  };
+  const sportPriority: Record<string, number> = {
+    'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'other': 99,
+  };
+  const sortedSports = Object.keys(summary.bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
+
   let message = '';
 
   // En-tête
@@ -1178,14 +1274,81 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   message += '╚═════════════════════════════╝\n\n';
   message += `📅 <b>${dateLabel}</b>\n\n`;
 
-  // Résumé global
+  // =============================================
+  // RÉSUMÉ PAR SPORT (détaillé, AVANT le global)
+  // =============================================
+  if (sortedSports.length > 0) {
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '<b>BILAN PAR SPORT</b>\n\n';
+
+    for (const sport of sortedSports) {
+      const s = summary.bySport[sport];
+      const emoji = sportEmojis[sport] || '🏟️';
+      const name = sportNames[sport] || sport;
+      const verified = s.wins + s.losses;
+
+      // En-tête du sport
+      if (s.pending > 0 && verified === 0) {
+        message += `${emoji} <b>${name}</b> — ⏳ ${s.pending} en attente\n`;
+        message += '\n';
+        continue;
+      }
+
+      // Indicateur de performance
+      const sportEmoji = s.winRate >= 60 ? '🏆' : s.winRate >= 40 ? '📊' : '📉';
+      message += `${emoji} <b>${name}</b> ${sportEmoji}\n`;
+
+      // Ligne principale: X/Y corrects · Z%
+      message += `    ✅ ${s.wins}/${verified} corrects  ·  <b>${s.winRate}%</b>\n`;
+
+      // ROI par sport
+      if (verified > 0 && s.profitUnits !== 0) {
+        const roiSign = s.roi >= 0 ? '+' : '';
+        const profitSign = s.profitUnits >= 0 ? '+' : '';
+        const roiEmoji = s.roi >= 0 ? '💰' : '📉';
+        message += `    ${roiEmoji} ROI: <b>${roiSign}${s.roi}%</b> (${profitSign}${s.profitUnits.toFixed(2)}u)\n`;
+      }
+
+      // Pending pour ce sport
+      if (s.pending > 0) {
+        message += `    ⏳ ${s.pending} en attente\n`;
+      }
+
+      message += '\n';
+    }
+
+    // Séries en cours
+    if (Object.keys(summary.streaks).length > 0) {
+      const streakLines: string[] = [];
+      for (const sport of sortedSports) {
+        const streak = summary.streaks[sport];
+        if (!streak || streak.count < 2) continue;
+        const emoji = sportEmojis[sport] || '🏟️';
+        const name = sportNames[sport] || sport;
+        if (streak.type === 'win') {
+          streakLines.push(`${emoji} ${name}: 🔥 ${streak.count}V`);
+        } else {
+          streakLines.push(`${emoji} ${name}: ❄️ ${streak.count}D`);
+        }
+      }
+      if (streakLines.length > 0) {
+        message += `<b>SÉRIES EN COURS</b>\n`;
+        message += `    ${streakLines.join('  ·  ')}\n\n`;
+      }
+    }
+  }
+
+  // =============================================
+  // RÉSULTAT GLOBAL
+  // =============================================
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
   const globalEmoji = summary.winRate >= 60 ? '🏆' : summary.winRate >= 40 ? '📊' : '📉';
   message += `${globalEmoji} <b>RÉSULTAT GLOBAL</b>\n`;
   message += `    ✅ ${summary.wins}/${summary.totalVerified} corrects`;
   if (summary.totalVerified > 0) message += `  ·  <b>${summary.winRate}%</b>`;
   message += '\n';
 
-  // ROI (rendement)
+  // ROI (rendement) global
   if (summary.totalVerified > 0 && summary.profitUnits !== 0) {
     const roiSign = summary.roi >= 0 ? '+' : '';
     const profitSign = summary.profitUnits >= 0 ? '+' : '';
@@ -1200,71 +1363,14 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   }
   message += '\n';
 
-  // Résumé par sport (ordonné: football en premier)
-  const sportEmojis: Record<string, string> = {
-    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️',
-  };
-  const sportNames: Record<string, string> = {
-    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'other': 'Autres',
-  };
-  const sportPriority: Record<string, number> = {
-    'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'other': 99,
-  };
-  const sortedSports = Object.keys(summary.bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
-
-  // Ligne de résumé sport
-  if (sortedSports.length > 0) {
-    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-    message += '<b>PAR SPORT</b>\n\n';
-    const sportLines: string[] = [];
-    for (const sport of sortedSports) {
-      const s = summary.bySport[sport];
-      const emoji = sportEmojis[sport] || '🏟️';
-      const name = sportNames[sport] || sport;
-      if (s.pending > 0 && s.wins + s.losses === 0) {
-        sportLines.push(`${emoji} ${name}: ⏳ ${s.pending} en attente`);
-      } else {
-        const verified = s.wins + s.losses;
-        let line = `${emoji} <b>${name}</b>: ${s.wins}/${verified}`;
-        // ROI par sport
-        if (verified > 0 && s.profitUnits !== 0) {
-          const sign = s.roi >= 0 ? '+' : '';
-          line += ` (${sign}${s.roi}%)`;
-        }
-        sportLines.push(line);
-      }
-    }
-    message += sportLines.join('  ·  ') + '\n';
-
-    // Séries en cours
-    if (Object.keys(summary.streaks).length > 0) {
-      message += '\n';
-      const streakLines: string[] = [];
-      for (const sport of sortedSports) {
-        const streak = summary.streaks[sport];
-        if (!streak || streak.count < 2) continue;
-        const emoji = sportEmojis[sport] || '🏟️';
-        const name = sportNames[sport] || sport;
-        if (streak.type === 'win') {
-          streakLines.push(`${emoji} ${name}: 🔥 ${streak.count}V`);
-        } else {
-          streakLines.push(`${emoji} ${name}: ❄️ ${streak.count}D`);
-        }
-      }
-      if (streakLines.length > 0) {
-        message += `<b>SÉRIES</b>\n`;
-        message += `    ${streakLines.join('  ·  ')}\n`;
-      }
-    }
-    message += '\n';
-  }
-
-  // Détail par match
+  // =============================================
+  // DÉTAILS PAR MATCH
+  // =============================================
   if (summary.details.length > 0) {
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     message += '<b>DÉTAILS</b>\n\n';
 
-    // Trier les détails: football en premier, puis par statut (completed d'abord, pending après)
+    // Trier les détails: par sport d'abord (ordre priorité), puis par statut (completed d'abord, pending après)
     const sortedDetails = [...summary.details].sort((a, b) => {
       const priorityA = sportPriority[a.sport] || 99;
       const priorityB = sportPriority[b.sport] || 99;
@@ -1273,30 +1379,36 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       return (statusOrder[a.status] ?? 5) - (statusOrder[b.status] ?? 5);
     });
 
+    let currentSport = '';
     for (const d of sortedDetails) {
       const emoji = sportEmojis[d.sport] || '🏟️';
       const isVerified = d.status === 'completed';
       const isPending = d.status === 'pending';
+
+      // Séparateur par sport
+      if (d.sport !== currentSport) {
+        if (currentSport) message += '\n';
+        currentSport = d.sport;
+      }
 
       message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
 
       if (isVerified && d.resultMatch !== null) {
         const resultEmoji = d.resultMatch ? '✅' : '❌';
         const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
-        message += `    ${resultEmoji} Pronostic: <b>${d.predicted}</b> → Score: <b>${actual}</b>\n`;
+        message += `    ${resultEmoji} <b>${d.predicted}</b> → Score: <b>${actual}</b>\n`;
         // Afficher aussi la vérification des buts si applicable
         if (d.goalsMatch !== null && d.goalsMatch !== undefined) {
           const goalsEmoji = d.goalsMatch ? '✅' : '❌';
           message += `    ${goalsEmoji} Buts: ${d.predictedGoals || 'N/A'} → Réel: ${d.actualHome ?? '?'}-${d.actualAway ?? '?'}\n`;
         }
       } else if (isPending) {
-        message += `    ⏳ En attente — Pronostic: ${d.predicted}\n`;
+        message += `    ⏳ En attente — <b>${d.predicted}</b>\n`;
       } else {
         message += `    ⚠️ ${d.status}\n`;
       }
-
-      message += '\n';
     }
+    message += '\n';
   }
 
   // Pied de message
