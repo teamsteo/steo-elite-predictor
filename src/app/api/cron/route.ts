@@ -235,8 +235,19 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
  */
 function matchPredictionWithResult(
   prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
-  result: MatchResult
-): boolean {
+  result: MatchResult,
+  returnInverted: true
+): { matched: boolean; inverted: boolean };
+function matchPredictionWithResult(
+  prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
+  result: MatchResult,
+  returnInverted?: false
+): boolean;
+function matchPredictionWithResult(
+  prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
+  result: MatchResult,
+  returnInverted?: boolean
+): boolean | { matched: boolean; inverted: boolean } {
   const normalize = (s: string) => 
     s.toLowerCase()
      .normalize('NFD')
@@ -248,17 +259,24 @@ function matchPredictionWithResult(
   const resHome = normalize(result.homeTeam);
   const resAway = normalize(result.awayTeam);
 
-  if (!predHome || !predAway) return false;
+  if (!predHome || !predAway) return returnInverted ? { matched: false, inverted: false } : false;
 
   // Match direct
-  if (predHome === resHome && predAway === resAway) return true;
+  if (predHome === resHome && predAway === resAway) {
+    return returnInverted ? { matched: true, inverted: false } : true;
+  }
   
   // Match inversé (domicile/extérieur inversés)
-  if (predHome === resAway && predAway === resHome) return true;
+  if (predHome === resAway && predAway === resHome) {
+    return returnInverted ? { matched: true, inverted: true } : true;
+  }
   
   // Match partiel (l'une contient l'autre)
   if ((predHome.includes(resHome) || resHome.includes(predHome)) && 
-      (predAway.includes(resAway) || resAway.includes(predAway))) return true;
+      (predAway.includes(resAway) || resAway.includes(predAway))) {
+    const inverted = predHome.includes(resAway) && predAway.includes(resHome);
+    return returnInverted ? { matched: true, inverted } : true;
+  }
   
   // Match avec noms courts
   const predHomeShort = predHome.substring(0, 5);
@@ -266,9 +284,24 @@ function matchPredictionWithResult(
   const resHomeShort = resHome.substring(0, 5);
   const resAwayShort = resAway.substring(0, 5);
   
-  if (predHomeShort === resHomeShort && predAwayShort === resAwayShort) return true;
+  if (predHomeShort === resHomeShort && predAwayShort === resAwayShort) {
+    return returnInverted ? { matched: true, inverted: false } : true;
+  }
 
-  return false;
+  return returnInverted ? { matched: false, inverted: false } : false;
+}
+
+/**
+ * Ajuste l'actualResult ESPN quand home/away sont inversés par rapport à la prédiction
+ */
+function adjustResultForInversion(
+  espnResult: 'home' | 'draw' | 'away',
+  inverted: boolean
+): 'home' | 'draw' | 'away' {
+  if (!inverted) return espnResult;
+  if (espnResult === 'home') return 'away';
+  if (espnResult === 'away') return 'home';
+  return 'draw';
 }
 
 /**
@@ -311,17 +344,21 @@ async function verifyNBAResults(): Promise<{
     for (const prediction of pending) {
       verified++;
       
-      const result = nbaResults.find(r => matchPredictionWithResult(prediction, r));
+      const matchEntry = nbaResults
+        .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+        .find(e => e.match.matched);
       
-      if (result) {
+      if (matchEntry) {
+        const result = matchEntry.result;
+        const inverted = matchEntry.match.inverted;
         const predictedResult = prediction.predicted_result;
-        const actualResult = result.actualResult;
+        const actualResult = adjustResultForInversion(result.actualResult, inverted);
         const resultMatch = predictedResult === actualResult;
 
         // Mettre à jour Supabase directement
         const success = await SupabaseStore.completePrediction(prediction.match_id, {
-          homeScore: result.homeScore,
-          awayScore: result.awayScore,
+          homeScore: inverted ? result.awayScore : result.homeScore,
+          awayScore: inverted ? result.homeScore : result.awayScore,
           actualResult,
           resultMatch,
           goalsMatch: undefined,
@@ -330,7 +367,7 @@ async function verifyNBAResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ NBA: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ NBA: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
         console.log(`⏳ NBA: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
@@ -385,11 +422,15 @@ async function verifyFootballResults(): Promise<{
     for (const prediction of pending) {
       verified++;
       
-      const result = footballResults.find(r => matchPredictionWithResult(prediction, r));
+      const matchEntry = footballResults
+        .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+        .find(e => e.match.matched);
       
-      if (result) {
+      if (matchEntry) {
+        const result = matchEntry.result;
+        const inverted = matchEntry.match.inverted;
         const predictedResult = prediction.predicted_result;
-        const actualResult = result.actualResult;
+        const actualResult = adjustResultForInversion(result.actualResult, inverted);
         const resultMatch = predictedResult === actualResult;
 
         // Vérifier les buts (Over/Under 2.5)
@@ -402,8 +443,8 @@ async function verifyFootballResults(): Promise<{
 
         // Mettre à jour Supabase directement
         const success = await SupabaseStore.completePrediction(prediction.match_id, {
-          homeScore: result.homeScore,
-          awayScore: result.awayScore,
+          homeScore: inverted ? result.awayScore : result.homeScore,
+          awayScore: inverted ? result.homeScore : result.awayScore,
           actualResult,
           resultMatch,
           goalsMatch
@@ -412,7 +453,7 @@ async function verifyFootballResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
         console.log(`⏳ Football: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
@@ -536,17 +577,21 @@ async function verifyMLBResults(): Promise<{
     for (const prediction of pending) {
       verified++;
 
-      const result = mlbResults.find(r => matchPredictionWithResult(prediction, r));
+      const matchEntry = mlbResults
+        .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+        .find(e => e.match.matched);
 
-      if (result) {
+      if (matchEntry) {
+        const result = matchEntry.result;
+        const inverted = matchEntry.match.inverted;
         const predictedResult = prediction.predicted_result;
-        const actualResult = result.actualResult;
+        const actualResult = adjustResultForInversion(result.actualResult, inverted);
         const resultMatch = predictedResult === actualResult;
 
         // Mettre à jour Supabase directement
         const success = await SupabaseStore.completePrediction(prediction.match_id, {
-          homeScore: result.homeScore,
-          awayScore: result.awayScore,
+          homeScore: inverted ? result.awayScore : result.homeScore,
+          awayScore: inverted ? result.homeScore : result.awayScore,
           actualResult,
           resultMatch,
           goalsMatch: undefined,
@@ -555,7 +600,7 @@ async function verifyMLBResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`⚾ MLB: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.homeScore}-${result.awayScore})`);
+          console.log(`⚾ MLB: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
         console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);

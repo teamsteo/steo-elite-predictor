@@ -21,15 +21,15 @@
   "crons": [
     {
       "path": "/api/admin/cleanup?secret=steo-elite-cron-2026&dryRun=false",
-      "schedule": "0 3 * * *"
+      "schedule": "0 10 * * *"
     },
     {
       "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-evening",
-      "schedule": "0 0 * * *"
+      "schedule": "30 2 * * *"
     },
     {
       "path": "/api/cron?secret=steo-elite-cron-2026&action=telegram-results",
-      "schedule": "30 0 * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron?secret=steo-elite-cron-2026&action=verify-morning",
