@@ -484,28 +484,34 @@ async function verifyFootballResults(): Promise<{
 // ============================================
 
 /**
+ * Génère une date US ET au format YYYYMMDD
+ */
+function toUSDateStr(d: Date): string {
+  const usDate = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const yyyy = usDate.getFullYear();
+  const mm = String(usDate.getMonth() + 1).padStart(2, '0');
+  const dd = String(usDate.getDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}`;
+}
+
+/**
  * Récupérer les résultats MLB depuis ESPN (GRATUIT)
- * Cherche sur 3 jours pour rattraper les matchs manqués
+ * Cherche sur J-1 à J-4 (JAMAIS aujourd'hui — les matchs du jour ne sont pas encore terminés)
  */
 async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
   const results: MatchResult[] = [];
-  const today = new Date();
-
-  // Générer les dates en heure US Eastern (ET) car ESPN utilise la date locale US
-  // Couvrir aujourd'hui ET jusqu'à 3 jours en arrière SEULEMENT
-  // (pas besoin de 7 jours — si le match n'est pas terminé en 3j, il est probablement reporté)
   const dates: string[] = [];
-  for (let i = 0; i <= 3; i++) {
-    const d = new Date(today.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+
+  // ⚠️ On ne cherche QUE les jours passés (J-1 à J-4)
+  // Les matchs du jour (J-0) sont généralement EN COURS ou NON COMMENCÉS
+  for (let i = 1; i <= 4; i++) {
+    const d = new Date();
     d.setDate(d.getDate() - i);
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    dates.push(`${yyyy}${mm}${dd}`);
+    dates.push(toUSDateStr(d));
   }
 
   const uniqueDates = [...new Set(dates)];
-  console.log(`⚾ Recherche résultats MLB pour (dates US ET): ${uniqueDates.join(', ')}`);
+  console.log(`⚾ Recherche résultats MLB pour (dates US ET passées): ${uniqueDates.join(', ')}`);
 
   for (const dateStr of uniqueDates) {
     try {
@@ -521,11 +527,8 @@ async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
 
       for (const e of events) {
         // ⚠️ NE matcher QUE les matchs terminés (completed = true)
-        // Les matchs en cours (in_progress), suspendus, ou non commencés sont ignorés
-        if (e.status?.type?.completed !== true) {
-          console.log(`⏳ MLB: ${e.name || '?'} — statut: ${e.status?.type?.name || 'inconnu'}, ignoré (pas terminé)`);
-          continue;
-        }
+        if (e.status?.type?.completed !== true) continue;
+
         const competition = e.competitions?.[0];
         const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
         const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
@@ -535,16 +538,13 @@ async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
         const homeScore = parseInt(home?.score || '0');
         const awayScore = parseInt(away?.score || '0');
 
-        // Vérification de cohérence basique: si les deux scores sont 0, c'est suspect
-        if (homeScore === 0 && awayScore === 0) {
-          console.log(`⚠️ MLB: scores 0-0 pour ${e.name}, probablement pas joué, ignoré`);
-          continue;
-        }
+        // Si les deux scores sont 0, c'est suspect
+        if (homeScore === 0 && awayScore === 0) continue;
 
-        const espnHomeTeam = home?.team?.displayName || home?.team?.shortDisplayName || 'Unknown';
-        const espnAwayTeam = away?.team?.displayName || away?.team?.shortDisplayName || 'Unknown';
+        const espnHomeTeam = home?.team?.displayName || home?.team?.shortDisplayName || '';
+        const espnAwayTeam = away?.team?.displayName || away?.team?.shortDisplayName || '';
 
-        console.log(`✅ MLB ESPN: ${espnHomeTeam}(H) ${homeScore} - ${awayScore} ${espnAwayTeam}(A) [date=${dateStr}]`);
+        if (!espnHomeTeam || !espnAwayTeam) continue;
 
         results.push({
           matchId: `mlb_${e.id}`,
@@ -562,6 +562,8 @@ async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
           sport: 'baseball' as const,
           espnDate: dateStr,
         });
+
+        console.log(`✅ MLB ESPN: ${espnHomeTeam}(H) ${homeScore}-${awayScore} ${espnAwayTeam}(A) [${dateStr}]`);
       }
     } catch (error) {
       console.log(`⚠️ Erreur ESPN MLB ${dateStr}:`, error);
@@ -573,8 +575,48 @@ async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
 }
 
 /**
+ * Normalise un nom d'équipe pour comparaison (NFD + lowercase + alpha-only)
+ */
+function normalizeTeamName(s: string): string {
+  return s.toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Vérifie si deux noms d'équipe correspondent (exact ou inversé)
+ * Pour MLB: on utilise la correspondance stricte (pas de partial/fuzzy)
+ * car les noms d'équipes MLB sont courts et uniques.
+ */
+function mlbTeamsMatch(predHome: string, predAway: string, espnHome: string, espnAway: string): { matched: boolean; inverted: boolean } {
+  const pH = normalizeTeamName(predHome);
+  const pA = normalizeTeamName(predAway);
+  const eH = normalizeTeamName(espnHome);
+  const eA = normalizeTeamName(espnAway);
+
+  if (!pH || !pA || !eH || !eA) return { matched: false, inverted: false };
+
+  // Match direct: notre home = ESPN home, notre away = ESPN away
+  if (pH === eH && pA === eA) return { matched: true, inverted: false };
+
+  // Match inversé: notre home = ESPN away, notre away = ESPN home
+  if (pH === eA && pA === eH) return { matched: true, inverted: true };
+
+  // ⚠️ PAS de fuzzy/partial matching pour MLB — trop risqué (invention de scores)
+  return { matched: false, inverted: false };
+}
+
+/**
  * Vérifier les pronostics MLB/other (directement dans Supabase)
- * Gère le baseball et tout sport classé 'other' dans Supabase
+ * ⚠️ RÉÉCRITURE COMPLÈTE — corrige l'inversion de scores et les matchs inventés
+ *
+ * Règles strictes:
+ * 1. Ne vérifie QUE les pronostics dont le match_date est antérieur à aujourd'hui (min 6h)
+ * 2. Cherche sur prédiction_date ± 1 jour (tolérance timezone)
+ * 3. Matching strict par nom d'équipe (pas de fuzzy)
+ * 4. Ne JAMAIS inverser les scores — seulement ajuster le résultat (home/away)
+ * 5. Vérification de cohérence finale avant mise à jour
  */
 async function verifyMLBResults(): Promise<{
   verified: number;
@@ -592,7 +634,10 @@ async function verifyMLBResults(): Promise<{
   try {
     // Récupérer les pronostics MLB/other pending depuis Supabase
     const allPending = await SupabaseStore.getPendingPredictions();
-    const pending = allPending.filter(p => p.sport === 'other' || p.sport === 'hockey' || p.league?.includes('MLB') || p.league?.includes('NHL'));
+    const pending = allPending.filter(p =>
+      p.sport === 'other' || p.sport === 'hockey' ||
+      p.league?.includes('MLB') || p.league?.includes('NHL')
+    );
 
     if (pending.length === 0) {
       console.log('📋 Aucun pronostic MLB/other en attente dans Supabase');
@@ -601,7 +646,7 @@ async function verifyMLBResults(): Promise<{
 
     console.log(`📋 ${pending.length} pronostics MLB/other en attente à vérifier`);
 
-    // Récupérer les résultats MLB depuis ESPN
+    // Récupérer les résultats MLB depuis ESPN (J-1 à J-4 uniquement)
     const mlbResults = await fetchMLBResultsFromESPN();
 
     if (mlbResults.length === 0) {
@@ -609,87 +654,91 @@ async function verifyMLBResults(): Promise<{
       return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
     }
 
-    // Extraire la date US du pronostic pour matching précis
-    const getMatchDateUS = (matchDate: string): string => {
-      try {
-        const d = new Date(matchDate);
-        const usDate = new Date(d.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-        return usDate.toISOString().split('T')[0].replace(/-/g, '');
-      } catch {
-        return '';
-      }
-    };
+    const now = new Date();
+    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 
-    // Pour chaque pronostic, chercher le résultat correspondant
-    // ⚠️ LOGIQUE CORRIGÉE: plus d'inversion de scores, matching strict par date
     for (const prediction of pending) {
       verified++;
-      const predDateUS = getMatchDateUS(prediction.match_date);
 
-      if (!predDateUS) {
-        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: date US incalculable, ignoré`);
+      // ⚠️ RÈGLE 1: Ne vérifier QUE les matchs passés (au moins 6h)
+      const matchTime = new Date(prediction.match_date).getTime();
+      if (matchTime > now.getTime() - SIX_HOURS_MS) {
+        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: match trop récent (< 6h), ignoré pour éviter les faux positifs`);
         continue;
       }
 
-      // Filtrer les résultats ESPN par date EXACTE uniquement (tolérance 0)
-      // Si le match n'est pas sur la même date ESPN, on ne matche PAS
-      // Cela évite d'inventer des scores en matchant le mauvais match
-      const exactDateResults = mlbResults.filter(r => r.espnDate === predDateUS);
+      // ⚠️ RÈGLE 2: Chercher sur prédiction_date ± 1 jour pour gérer les écarts de timezone
+      const predDate = new Date(prediction.match_date);
+      const searchDates: string[] = [];
+      for (let offset = -1; offset <= 1; offset++) {
+        const d = new Date(predDate);
+        d.setDate(d.getDate() + offset);
+        searchDates.push(toUSDateStr(d));
+      }
 
-      if (exactDateResults.length === 0) {
-        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team} (pred_date=${predDateUS}): aucun résultat ESPN pour cette date, ignoré`);
+      // Filtrer les résultats ESPN dans la fenêtre de dates
+      const candidateResults = mlbResults.filter(r => r.espnDate && searchDates.includes(r.espnDate));
+
+      if (candidateResults.length === 0) {
+        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team} (dates: ${searchDates.join('/')}): aucun résultat ESPN trouvé`);
         continue;
       }
 
-      // Chercher le match correspondant par nom d'équipe (avec inversion possible)
-      const matchEntry = exactDateResults
-        .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+      // ⚠️ RÈGLE 3: Matching STRICT par nom d'équipe
+      const matchEntry = candidateResults
+        .map(r => ({
+          result: r,
+          match: mlbTeamsMatch(prediction.home_team, prediction.away_team, r.homeTeam, r.awayTeam)
+        }))
         .find(e => e.match.matched);
 
-      if (matchEntry) {
-        const result = matchEntry.result;
-        const inverted = matchEntry.match.inverted;
-        const predictedResult = prediction.predicted_result;
+      if (!matchEntry) {
+        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: non trouvé sur ESPN (teams ne correspondent pas)`);
+        continue;
+      }
 
-        // ⚠️ CORRECTION CRITIQUE: ne JAMAIS inverser les scores
-        // ESPN dit: homeTeam=X points, awayTeam=Y points
-        // Notre prédiction stocke: home_team vs away_team
-        // Si inverted=true, ça veut juste dire que les noms sont inversés dans ESPN par rapport à notre stockage
-        // Le résultat réel du point de vue de NOTRE stockage est l'inverse de ce qu'ESPN dit
-        const actualResult = adjustResultForInversion(result.actualResult, inverted);
-        const resultMatch = predictedResult === actualResult;
+      const espnResult = matchEntry.result;
+      const inverted = matchEntry.match.inverted;
 
-        // Les scores stockés doivent refléter NOTRE perspective (prediction.home_team vs prediction.away_team)
-        // Si inverted: ESPN's home = notre away et vice-versa
-        const finalHomeScore = inverted ? result.awayScore : result.homeScore;
-        const finalAwayScore = inverted ? result.homeScore : result.awayScore;
+      // ⚠️ RÈGLE 4: Calculer le résultat réel sans inventer de scores
+      // ESPN: homeTeam a homeScore points, awayTeam a awayScore points
+      // Si inverted: ESPN's "home" = notre "away" dans Supabase
+      // Donc les scores depuis NOTRE perspective:
+      const ourHomeScore = inverted ? espnResult.awayScore : espnResult.homeScore;
+      const ourAwayScore = inverted ? espnResult.homeScore : espnResult.awayScore;
 
-        // Vérification de cohérence: le gagnant des scores doit correspondre à actualResult
-        const scoreWinner = finalHomeScore > finalAwayScore ? 'home' : finalHomeScore < finalAwayScore ? 'away' : 'draw';
-        if (scoreWinner !== actualResult) {
-          console.log(`🚨 MLB INCOHÉRENCE: ${prediction.home_team} vs ${prediction.away_team} — scores(${finalHomeScore}-${finalAwayScore}) indiquent ${scoreWinner} mais actualResult=${actualResult}. Ignoré pour sécurité.`);
-          continue;
-        }
+      // Le résultat depuis NOTRE perspective
+      let actualResult: 'home' | 'draw' | 'away';
+      if (ourHomeScore > ourAwayScore) actualResult = 'home';
+      else if (ourHomeScore < ourAwayScore) actualResult = 'away';
+      else actualResult = 'draw';
 
-        if (inverted) {
-          console.log(`⚠️ MLB HOME/AWAY inversé pour ${prediction.home_team} vs ${prediction.away_team}: ESPN a ${result.homeTeam}(H) ${result.homeScore}-${result.awayScore} ${result.awayTeam}(A)`);
-        }
+      // ⚠️ RÈGLE 5: Vérification de cohérence
+      const resultMatch = prediction.predicted_result === actualResult;
 
-        const success = await SupabaseStore.completePrediction(prediction.match_id, {
-          homeScore: finalHomeScore,
-          awayScore: finalAwayScore,
-          actualResult,
-          resultMatch,
-          goalsMatch: undefined,
-        });
+      // Double-check: les scores ESPN originaux doivent avoir un gagnant clair
+      if (espnResult.homeScore === espnResult.awayScore) {
+        console.log(`⚠️ MLB: ${prediction.home_team} vs ${prediction.away_team}: scores ESPN à égalité (${espnResult.homeScore}-${espnResult.awayScore}), ignoré`);
+        continue;
+      }
 
-        if (success) {
-          updated++;
-          if (resultMatch) won++; else lost++;
-          console.log(`⚾ MLB: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} ${finalHomeScore}-${finalAwayScore} (ESPN ${result.espnDate})`);
-        }
-      } else {
-        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team} (pred_date=${predDateUS}): non trouvé sur ESPN pour cette date`);
+      if (inverted) {
+        console.log(`🔄 MLB HOME/AWAY inversé: prediction(${prediction.home_team} vs ${prediction.away_team}) = ESPN(${espnResult.awayTeam} vs ${espnResult.homeTeam})`);
+      }
+
+      console.log(`🏏 MLB: ${prediction.home_team}(${ourHomeScore}) vs ${prediction.away_team}(${ourAwayScore}) → ${actualResult} | prédiction: ${prediction.predicted_result} → ${resultMatch ? 'GAGNÉ ✅' : 'PERDU ❌'}`);
+
+      const success = await SupabaseStore.completePrediction(prediction.match_id, {
+        homeScore: ourHomeScore,
+        awayScore: ourAwayScore,
+        actualResult,
+        resultMatch,
+        goalsMatch: undefined,
+      });
+
+      if (success) {
+        updated++;
+        if (resultMatch) won++; else lost++;
       }
     }
   } catch (error: any) {

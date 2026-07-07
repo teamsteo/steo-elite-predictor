@@ -496,7 +496,7 @@ function formatPrediction(prediction: {
   
   if (prediction.recommendation || prediction.predictedResult) {
     message += `🎯 <b>PRONOSTIC</b>\n`;
-    const betOption = getBetOption(prediction.predictedResult, prediction.sport);
+    const betOption = getBetOption(prediction.predictedResult, prediction.sport, prediction.oddsHome, prediction.oddsDraw, prediction.oddsAway, prediction.homeTeam, prediction.awayTeam);
     if (betOption && prediction.recommendation) {
       message += `    ${betOption} <b>${prediction.recommendation}</b>\n`;
     } else if (betOption) {
@@ -813,7 +813,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
     const { time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
-    const betOption = getBetOption(m.predictedResult, m.sport);
+    const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
     const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
     const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : 'Modéré';
     
@@ -877,7 +877,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     const { time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
     const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
-    const betOption = getBetOption(m.predictedResult, m.sport);
+    const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
     const isFootball = isFootballMatch(m.sport);
 
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
@@ -1392,26 +1392,6 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       message += '\n';
     }
-
-    // Séries en cours
-    if (Object.keys(summary.streaks).length > 0) {
-      const streakLines: string[] = [];
-      for (const sport of sortedSports) {
-        const streak = summary.streaks[sport];
-        if (!streak || streak.count < 2) continue;
-        const emoji = sportEmojis[sport] || '🏟️';
-        const name = sportNames[sport] || sport;
-        if (streak.type === 'win') {
-          streakLines.push(`${emoji} ${name}: 🔥 ${streak.count}V`);
-        } else {
-          streakLines.push(`${emoji} ${name}: ❄️ ${streak.count}D`);
-        }
-      }
-      if (streakLines.length > 0) {
-        message += `<b>SÉRIES EN COURS</b>\n`;
-        message += `    ${streakLines.join('  ·  ')}\n\n`;
-      }
-    }
   }
 
   // =============================================
@@ -1497,63 +1477,46 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 }
 
 /**
- * Envoie un sticker Telegram adapté au bilan du jour
- * Utilise les file_ids prédéfinis de stickers populaires
+ * Envoie un message émotif en fonction du bilan du jour
+ * Utilise des emojis car les file_ids de stickers ne sont pas fiables entre bots
  */
 async function sendResultSticker(winRate: number, wins: number, losses: number): Promise<void> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
 
-  // Stickers Telegram (file_id de stickers universels)
-  // Ces stickers sont disponibles dans de nombreux packs populaires
-  const STICKERS: Record<string, string> = {
-    // Bilan excellent (>=70% ou 100% sur peu de matchs)
-    excellent: 'CAADAgADYQADfITSBZkLNfMFf8lHFgQ',
-    // Bon bilan (50-69%)
-    good: 'CAADAgADZQADfITSBa8KVZhMFd3rFgQ',
-    // Moyen (40-49%)
-    medium: 'CAADAgADaQADfITSBaiZIV4rN7-3FgQ',
-    // Mauvais (<40%)
-    bad: 'CAADAgADbwADfITSBSqSWJGM9ji0FgQ',
-    // Parfait (100% winrate, 3+ matchs)
-    perfect: 'CAADAgADcwADfITSBVhJEDaqLgqjFgQ',
-    // Zéro match
-    zero: 'CAADAgADdAADfITSBRqlSAKNlFyPFgQ',
-  };
-
-  let stickerKey = 'medium';
   const total = wins + losses;
-  
+  let emojiMessage = '';
+
   if (total === 0) {
-    stickerKey = 'zero';
+    emojiMessage = '💤 Aucun match vérifié aujourd\'hui...';
   } else if (winRate >= 100 && total >= 3) {
-    stickerKey = 'perfect';
+    emojiMessage = '🏆🔥 PARFAIT ! ' + total + '/' + total + ' — Le bot est en feu !';
   } else if (winRate >= 70) {
-    stickerKey = 'excellent';
+    emojiMessage = '🎉💪 Excellent bilan ! On continue sur cette lancée !';
   } else if (winRate >= 50) {
-    stickerKey = 'good';
+    emojiMessage = '👍 Bon bilan, dans le positif !';
   } else if (winRate >= 40) {
-    stickerKey = 'medium';
+    emojiMessage = '⚖️ Jour mitigé... La chance va tourner !';
+  } else if (wins > 0) {
+    emojiMessage = '😬 Jour difficile... Ca va mieux demain !';
   } else {
-    stickerKey = 'bad';
+    emojiMessage = '💀 Jour noir... Mais le rebond est proche !';
   }
 
-  const fileId = STICKERS[stickerKey];
-  if (!fileId) return;
+  if (!emojiMessage) return;
 
   try {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendSticker`;
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: TELEGRAM_CHAT_ID,
-        sticker: fileId,
+        text: emojiMessage,
       }),
     });
-    console.log(`🎨 Sticker envoyé: ${stickerKey}`);
+    console.log(`🎨 Message émotif envoyé: ${winRate}% (${wins}/${total})`);
   } catch (e) {
-    // Silently fail — sticker is a nice-to-have, not critical
-    console.log('⚠️ Impossible d\'envoyer le sticker:', e);
+    console.log('⚠️ Impossible d\'envoyer le message émotif:', e);
   }
 }
 
