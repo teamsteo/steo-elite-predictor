@@ -382,49 +382,62 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
       }
     }
     
-    // Filtrer pour garder UNIQUEMENT les matchs à venir d'aujourd'hui et demain
+    // Filtrer pour garder UNIQUEMENT les matchs à venir d'aujourd'hui
     // ⚠️ Les matchs terminés ne doivent PAS être publiés comme pronostics
+    // ⚠️ Les matchs de DEMAIN sont exclus des publications quotidiennes
     // 📅 Utiliser UTC pour la comparaison de dates
     const currentTime = new Date();
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
     // 🕐 Heure limite pour les matchs d'hier (24h maximum)
-    // Les matchs joués il y a plus de 24h sont toujours exclus
     const yesterdayLimit = new Date(currentTime);
     yesterdayLimit.setUTCHours(yesterdayLimit.getUTCHours() - 24);
+
+    // Bornes de demain (pour EXCLURE)
+    const tomorrowExclude = new Date();
+    tomorrowExclude.setUTCDate(tomorrowExclude.getUTCDate() + 1);
+    tomorrowExclude.setUTCHours(0, 0, 0, 0);
 
     const filteredMatches = allMatches.filter(match => {
       const matchDate = new Date(match.date);
 
-      // 🚫 EXCLURE les matchs terminés - ce sont des résultats, pas des pronostics
+      // 🚫 EXCLURE les matchs terminés
       if (match.isFinished) {
         console.log(`🚫 Match terminé exclu: ${match.homeTeam} vs ${match.awayTeam}`);
         return false;
       }
 
-      // 🚫 EXCLURE les matchs de plus de 24h (même s'ils ne sont pas marqués terminés)
+      // 🚫 EXCLURE les matchs de plus de 24h
       if (matchDate < yesterdayLimit) {
-        console.log(`🚫 Match trop vieux exclu: ${match.homeTeam} vs ${match.awayTeam} (${matchDate.toISOString()})`);
+        console.log(`🚫 Match trop vieux exclu: ${match.homeTeam} vs ${match.awayTeam}`);
         return false;
       }
 
-      // Garder les matchs en cours (live) - peu importe la date
+      // 🚫 EXCLURE les matchs de DEMAIN — ils auront leur propre publication
+      if (matchDate >= tomorrowExclude) {
+        return false;
+      }
+
+      // Garder les matchs en cours (live)
       if (match.isLive) return true;
 
-      // Garder les matchs à venir d'aujourd'hui
-      if (matchDate >= todayStart && matchDate > currentTime) return true;
-
-      // Garder les matchs à venir demain
-      const tomorrowStart = new Date();
-      tomorrowStart.setUTCDate(tomorrowStart.getUTCDate() + 1);
-      tomorrowStart.setUTCHours(0, 0, 0, 0);
-      const tomorrowEnd = new Date(tomorrowStart);
-      tomorrowEnd.setUTCHours(23, 59, 59, 999);
-
-      if (matchDate >= tomorrowStart && matchDate <= tomorrowEnd) return true;
+      // Garder les matchs à venir d'aujourd'hui ou d'hier (nuit US)
+      if (matchDate >= yesterdayLimit && matchDate > currentTime) return true;
+      // Garder aussi les matchs pas encore commencés d'aujourd'hui
+      if (matchDate >= todayStart && matchDate <= currentTime) return true;
 
       return false;
+    });
+
+    // ⚠️ DÉDOUBLONNER par noms d'équipes (les double-headers MLB peuvent créer des doublons)
+    // Garder le premier match trouvé (généralement le premier jeu du double-header)
+    const seenTeams = new Set<string>();
+    const dedupedMatches = filteredMatches.filter(match => {
+      const key = [match.homeTeam, match.awayTeam].sort().join('|');
+      if (seenTeams.has(key)) return false;
+      seenTeams.add(key);
+      return true;
     });
 
     // Ajouter un tag de date (hier, aujourd'hui, demain) pour l'affichage
@@ -469,7 +482,7 @@ export async function getMatchesWithRealOdds(): Promise<any[]> {
     };
 
     // Enrichir chaque match avec le tag de date
-    const finalMatches = filteredMatches.map(match => {
+    const finalMatches = dedupedMatches.map(match => {
       const matchDate = new Date(match.date);
       const dateInfo = getDateTag(matchDate, match.isLive, match.isFinished);
       return {
