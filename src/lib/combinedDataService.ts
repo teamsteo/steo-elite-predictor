@@ -165,14 +165,31 @@ function findOddsApiMatch(
 }
 
 /**
- * Récupère les matchs depuis ESPN (GRATUIT) avec fallback The Odds API
+ * Force l'invalidation du cache ESPN (utile quand les cotes arrivent en retard)
  */
-export async function getMatchesWithRealOdds(): Promise<any[]> {
+export function invalidateEspnCache(): void {
+  console.log('🔄 Invalidation forcée du cache ESPN');
+  espnCache = [];
+  espnCacheTime = 0;
+  espnCacheDate = '';
+  oddsApiCache = null;
+}
+
+/**
+ * Récupère les matchs depuis ESPN (GRATUIT) avec fallback The Odds API
+ * @param forceRefresh Si true, force la réutilisation depuis ESPN (ignore le cache)
+ */
+export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Promise<any[]> {
   console.log('🔄 Récupération matchs (ESPN → Odds API → Estimations)...');
-  
+
   const now = Date.now();
   const todayUTC = getUTCDateString();
-  
+
+  // 🔄 Forcer l'invalidation si demandé
+  if (forceRefresh) {
+    invalidateEspnCache();
+  }
+
   // 📅 TOUJOURS invalider le cache si le jour a changé
   // IMPORTANT: Comparer en UTC pour éviter les problèmes de timezone
   if (espnCacheDate && espnCacheDate !== todayUTC) {

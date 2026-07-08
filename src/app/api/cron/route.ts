@@ -28,7 +28,7 @@ import {
   isSafeOrModerate,
   isKamikaze
 } from '@/lib/telegramService';
-import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
+import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
@@ -1711,8 +1711,9 @@ export async function GET(request: NextRequest) {
         // 🎾 Tennis INCLUS dans le kamikaze
         try {
           // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
-          console.log('📡 Récupération des matchs pour kamikaze depuis ESPN...');
-          const matches = await getMatchesWithRealOdds();
+          // ⚠️ Force le refresh pour éviter le cache avec des cotes estimées (pas de kamikaze)
+          console.log('📡 Récupération des matchs pour kamikaze depuis ESPN (force refresh)...');
+          const matches = await getMatchesWithRealOdds(true);
           
           let predictions: any[] = matches.map((m: any) => ({
             homeTeam: m.homeTeam,
