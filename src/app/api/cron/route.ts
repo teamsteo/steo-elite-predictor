@@ -1537,9 +1537,28 @@ export async function GET(request: NextRequest) {
           
           const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
           
-          // 💾 Sauvegarder les prédictions dans Supabase pour le bilan quotidien
+          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES sur Telegram (même filtre que publishDailySummaryToTelegram)
+          // ⚠️ Même logique : safe/modéré + max 10 par sport + trié par risque croissant
           try {
-            const dbPredictions = predictions.map((p: any) => {
+            // 1) Filtrer safe/modéré (identique à publishDailySummaryToTelegram)
+            const safeModerate = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
+            
+            // 2) Grouper par sport
+            const bySport: Record<string, any[]> = {};
+            for (const p of safeModerate) {
+              const sport = p.sport || 'Autre';
+              if (!bySport[sport]) bySport[sport] = [];
+              bySport[sport].push(p);
+            }
+            
+            // 3) Pour chaque sport : trier par risque croissant + limiter à 10
+            const publishedPredictions: any[] = [];
+            for (const sport of Object.keys(bySport)) {
+              const sorted = [...bySport[sport]].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
+              publishedPredictions.push(...sorted.slice(0, 10));
+            }
+            
+            const dbPredictions = publishedPredictions.map((p: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
               const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
               // Extraire l'heure du match pour éviter les collisions (ex: même équipes, même jour, compétitions différentes)
@@ -1563,7 +1582,7 @@ export async function GET(request: NextRequest) {
               };
             });
             const saved = await SupabaseStore.addPredictions(dbPredictions);
-            console.log(`💾 ${saved} prédictions sauvegardées dans Supabase`);
+            console.log(`💾 ${saved} prédictions PUBLIÉES sauvegardées dans Supabase (sur ${predictions.length} totales)`);
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
           }
@@ -1696,11 +1715,19 @@ export async function GET(request: NextRequest) {
           
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           
-          // 💾 Sauvegarder aussi les pronostics kamikaze (tennis inclus) dans Supabase
+          // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS sur Telegram
+          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par cote desc + max 5
           try {
-            const dbPredictions = predictions
+            const kamikazeFiltered = predictions
               .filter(p => isKamikaze(p.riskPercentage))
-              .map((p: any) => {
+              .sort((a: any, b: any) => {
+                const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+                const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+                return oddsB - oddsA; // tri par cote décroissante (identique à publishKamikazeToTelegram)
+              })
+              .slice(0, 5); // max 5 (identique à publishKamikazeToTelegram)
+            
+            const dbPredictions = kamikazeFiltered.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
                 const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
                 // Extraire l'heure du match pour éviter les collisions
@@ -1724,7 +1751,7 @@ export async function GET(request: NextRequest) {
                 };
               });
             const saved = await SupabaseStore.addPredictions(dbPredictions);
-            console.log(`💾 ${saved} pronostics kamikaze (tennis inclus) sauvegardés dans Supabase`);
+            console.log(`💾 ${saved} pronostics kamikaze PUBLIÉS sauvegardés dans Supabase (sur ${kamikazeCount} kamikazes totaux)`);
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde kamikaze Supabase:', e.message);
           }
