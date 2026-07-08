@@ -307,7 +307,6 @@ export const SupabaseStore = {
     if (!supabase) return [];
     
     try {
-      // Filtrer sur la partie date de match_date (format YYYY-MM-DD)
       const startOfDay = `${dateISO}T00:00:00`;
       const endOfDay = `${dateISO}T23:59:59`;
       

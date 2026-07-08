@@ -1096,6 +1096,8 @@ interface DailyResultSummary {
 
 /**
  * Récupère les résultats d'une date donnée depuis Supabase
+ * Cherche sur la date visée + le lendemain pour inclure les matchs MLB de nuit US
+ * (un match à 22h ET = 02h UTC le lendemain → match_date le lendemain)
  */
 async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyResultSummary> {
   const targetDate = dateISO || (() => {
@@ -1103,6 +1105,28 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     yesterday.setDate(yesterday.getDate() - 1);
     return yesterday.toISOString().split('T')[0];
   })();
+
+  // Chercher sur 2 jours : la date visée + le lendemain (matchs de nuit UTC)
+  const nextDay = (() => {
+    const d = new Date(targetDate + 'T12:00:00Z');
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  const [dayPreds, nextDayPreds] = await Promise.all([
+    SupabaseStore.getPredictionsByDate(targetDate),
+    SupabaseStore.getPredictionsByDate(nextDay),
+  ]);
+
+  // Fusionner en dédupliquant par match_id (priorité au jour principal)
+  const seen = new Set<string>();
+  const allDayPredictions: any[] = [];
+  for (const p of [...dayPreds, ...nextDayPreds]) {
+    if (!seen.has(p.match_id)) {
+      seen.add(p.match_id);
+      allDayPredictions.push(p);
+    }
+  }
 
   const emptySummary: DailyResultSummary = {
     date: targetDate,
@@ -1122,13 +1146,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   };
 
   try {
-    // Récupérer les prédictions du jour directement filtrées par Supabase
-    const allDayPredictions = await SupabaseStore.getPredictionsByDate(targetDate);
-    if (!allDayPredictions || allDayPredictions.length === 0) return emptySummary;
-
     // ⚠️ FILTRER : uniquement Safe + Modéré (risk_percentage <= 50)
     // Le bilan journalier ne concerne PAS les kamikazes
     const dayPredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) <= 50);
+    if (dayPredictions.length === 0) return emptySummary;
 
     const summary: DailyResultSummary = {
       ...emptySummary,
@@ -1482,8 +1503,25 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
   })();
 
   try {
-    const allDayPredictions = await SupabaseStore.getPredictionsByDate(targetDate);
-    if (!allDayPredictions || allDayPredictions.length === 0) return false;
+    // Chercher aussi sur le lendemain pour les matchs de nuit US
+    const nextDay = (() => {
+      const d = new Date(targetDate + 'T12:00:00Z');
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().split('T')[0];
+    })();
+    const [dayPreds, nextDayPreds] = await Promise.all([
+      SupabaseStore.getPredictionsByDate(targetDate),
+      SupabaseStore.getPredictionsByDate(nextDay),
+    ]);
+    const seen = new Set<string>();
+    const allDayPredictions: any[] = [];
+    for (const p of [...dayPreds, ...nextDayPreds]) {
+      if (!seen.has(p.match_id)) {
+        seen.add(p.match_id);
+        allDayPredictions.push(p);
+      }
+    }
+    if (allDayPredictions.length === 0) return false;
 
     // ⚠️ UNIQUEMENT les kamikazes (risk_percentage > 50)
     const kamikazePredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) > 50);
