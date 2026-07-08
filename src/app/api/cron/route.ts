@@ -32,7 +32,7 @@ import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataS
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v7'; // Bump to force Vercel redeployment
+const CRON_VERSION = 'v8'; // Bump to force Vercel redeployment
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
