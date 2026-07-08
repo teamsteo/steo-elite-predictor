@@ -1322,12 +1322,18 @@ export async function GET(request: NextRequest) {
           const datePreds = allPreds.filter(p =>
             p.match_date && (p.match_date as string).startsWith(resetDate)
           );
-          const debugInfo = datePreds.slice(0, 5).map(p => ({
+          const debugInfo = datePreds.map(p => ({
             match_id: p.match_id,
             status: p.status,
             result_match: p.result_match,
             result_type: typeof p.result_match,
             home_score: p.home_score,
+            away_score: p.away_score,
+            sport: p.sport,
+            league: p.league,
+            home_team: p.home_team,
+            away_team: p.away_team,
+            predicted_result: p.predicted_result,
             match_date: p.match_date,
           }));
           // Trouver les matchs zombies: completed + result_match n'est pas true/false clair
