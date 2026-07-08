@@ -1826,7 +1826,7 @@ export async function GET(request: NextRequest) {
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished'] },
           { status: 400 }
         );
     }
@@ -2014,6 +2014,65 @@ export async function POST(request: NextRequest) {
           result = { resetMLB: { resetCount, ...verifyResult } };
         } catch (e: any) {
           result = { resetMLB: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'cleanup-unpublished':
+        // Supprimer les prédictions PENDING qui n'ont jamais été publiées sur Telegram
+        // ⚠️ Ne touche PAS aux prédictions completed (déjà vérifiées)
+        try {
+          const allPending = await SupabaseStore.getPendingPredictions();
+          const today = new Date().toISOString().split('T')[0];
+          
+          // Grouper par date et sport pour simuler ce qui aurait été publié
+          const byDateSport: Record<string, any[]> = {};
+          for (const p of allPending) {
+            const dateKey = (p.match_date || '').split('T')[0];
+            const key = `${dateKey}__${p.sport || 'other'}`;
+            if (!byDateSport[key]) byDateSport[key] = [];
+            byDateSport[key].push(p);
+          }
+          
+          // Simuler la logique de publication pour chaque groupe
+          const toKeep = new Set<string>();
+          for (const [key, preds] of Object.entries(byDateSport)) {
+            const isKamikazeGroup = key.includes('__other') || preds.every(p => (p.risk_percentage ?? 100) > 50);
+            
+            if (isKamikazeGroup) {
+              // Kamikaze: tri par cote desc, max 5
+              const sorted = [...preds].sort((a, b) => {
+                const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
+                const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
+                return oddsB - oddsA;
+              });
+              sorted.slice(0, 5).forEach(p => toKeep.add(p.match_id));
+            } else {
+              // Safe/modéré: tri par risque croissant, max 10
+              const sorted = [...preds].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
+              sorted.slice(0, 10).forEach(p => toKeep.add(p.match_id));
+            }
+          }
+          
+          // Supprimer les prédictions qui n'auraient PAS été publiées
+          const toDelete = allPending.filter(p => !toKeep.has(p.match_id));
+          let deleted = 0;
+          for (const p of toDelete) {
+            if (p.id) {
+              const success = await SupabaseStore.deletePrediction(p.id);
+              if (success) deleted++;
+            }
+          }
+          
+          result = { 
+            cleanup: { 
+              totalPending: allPending.length,
+              kept: toKeep.size,
+              deleted,
+              message: `Nettoyé ${deleted} prédictions non publiées (${toKeep.size} conservées)`
+            } 
+          };
+        } catch (e: any) {
+          result = { cleanup: { success: false, error: e.message } };
         }
         break;
 
