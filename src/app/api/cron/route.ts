@@ -23,6 +23,7 @@ import {
   publishValueBetsToTelegram,
   publishKamikazeToTelegram,
   publishDailyResultsToTelegram,
+  publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
   isSafeOrModerate,
   isKamikaze
@@ -1632,13 +1633,18 @@ export async function GET(request: NextRequest) {
           const targetDate = url.searchParams.get('date');
           const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
           
+          // Publier aussi le bilan kamikaze séparément
+          const kamikazeBilanDate = targetDate || undefined;
+          const kamikazeResult = await publishKamikazeBilanToTelegram(kamikazeBilanDate);
+          
           result = { 
             telegram: { 
-              success: telegramResult,
+              success: telegramResult || kamikazeResult,
               verification: { verified: verifyResult.verified, updated: verifyResult.updated, won: verifyResult.won, lost: verifyResult.lost },
+              kamikazeBilan: kamikazeResult,
               message: telegramResult 
-                ? '📊 Bilan quotidien publié sur Telegram'
-                : 'Aucun pronostic à comparer pour cette date'
+                ? '📊 Bilan journalier publié sur Telegram'
+                : 'Aucun pronostic safe/modéré à comparer pour cette date'
             } 
           };
         } catch (e: any) {
@@ -1666,7 +1672,7 @@ export async function GET(request: NextRequest) {
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-monthly', 'reset-mlb'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb'] },
           { status: 400 }
         );
     }
@@ -1919,7 +1925,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'reset-mlb'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb'] },
           { status: 400 }
         );
     }

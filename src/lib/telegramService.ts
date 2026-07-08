@@ -1122,9 +1122,13 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   };
 
   try {
-    // Récupérer les prédictions du jour directement filtrées par Supabase (optimisation #1)
-    const dayPredictions = await SupabaseStore.getPredictionsByDate(targetDate);
-    if (!dayPredictions || dayPredictions.length === 0) return emptySummary;
+    // Récupérer les prédictions du jour directement filtrées par Supabase
+    const allDayPredictions = await SupabaseStore.getPredictionsByDate(targetDate);
+    if (!allDayPredictions || allDayPredictions.length === 0) return emptySummary;
+
+    // ⚠️ FILTRER : uniquement Safe + Modéré (risk_percentage <= 50)
+    // Le bilan journalier ne concerne PAS les kamikazes
+    const dayPredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) <= 50);
 
     const summary: DailyResultSummary = {
       ...emptySummary,
@@ -1176,8 +1180,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
           totalStakes += 1;
         }
 
-        if (p.goals_match === true) summary.goalsWins++;
-        if (p.goals_match === false) summary.goalsLosses++;
+        // ❌ Plus de suivi des buts dans le bilan — uniquement le résultat de la prédiction
       }
 
       // Détail du match
@@ -1355,7 +1358,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   // En-tête
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += '║   📊 <b>BILAN DES PRONOSTICS</b>\n';
+  message += '║   📊 <b>BILAN JOURNALIER</b>\n';
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
   message += `📅 <b>${dateLabel}</b>\n\n`;
@@ -1412,10 +1415,6 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     const roiEmoji = summary.roi >= 0 ? '💰' : '📉';
     message += `    ${roiEmoji} ROI: <b>${roiSign}${summary.roi}%</b> (${profitSign}${summary.profitUnits.toFixed(2)}u)\n`;
   }
-  // ❌ PLUS de "en attente" dans le bilan global
-  if (summary.goalsWins + summary.goalsLosses > 0) {
-    message += `    ⚽ Buts: ${summary.goalsWins}/${summary.goalsWins + summary.goalsLosses} corrects\n`;
-  }
   message += '\n';
 
   // =============================================
@@ -1445,27 +1444,12 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
 
-      // Afficher les runs estimés pour les matchs MLB (si on a les cotes)
-      if ((d.sport === 'other' || d.sport === 'baseball') && d.oddsHome && d.oddsAway) {
-        const runsEst = estimateMLBRuns(d.oddsHome, d.oddsAway);
-        if (runsEst) {
-          message += `    🔢 Runs estimés: ~${runsEst.totalRuns} (${runsEst.homeRuns}-${runsEst.awayRuns})\n`;
-        } else {
-          message += `    🔢 Runs: incertains (cotes serrées)\n`;
-        }
-      }
-
       if (d.resultMatch !== null) {
         const resultEmoji = d.resultMatch ? '✅' : '❌';
         const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
-        message += `    ${resultEmoji} <b>${d.predicted}</b> → Score: <b>${actual}</b>\n`;
-        // Afficher aussi la vérification des buts si applicable
-        if (d.goalsMatch !== null && d.goalsMatch !== undefined) {
-          const goalsEmoji = d.goalsMatch ? '✅' : '❌';
-          message += `    ${goalsEmoji} Buts: ${d.predictedGoals || 'N/A'} → Réel: ${d.actualHome ?? '?'}-${d.actualAway ?? '?'}\n`;
-        }
+        message += `    ${resultEmoji} <b>${d.predicted}</b> → <b>${actual}</b>\n`;
       } else {
-        message += `    ⚠️ Vérifié sans résultat\n`;
+        message += `    ⚠️ En attente de résultat\n`;
       }
     }
     message += '\n';
@@ -1473,7 +1457,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
   // Pied de message
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-  message += '🤖 Bilan automatique après vérification\n';
+  message += '🤖 Bilan journalier · Safe & Modéré uniquement\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
   // Envoyer le message
@@ -1485,6 +1469,127 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   }
 
   return sent;
+}
+
+/**
+ * Publie le bilan KAMIKAZE séparé (uniquement les pronostics risk_percentage > 50)
+ */
+export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<boolean> {
+  const targetDate = dateISO || (() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  })();
+
+  try {
+    const allDayPredictions = await SupabaseStore.getPredictionsByDate(targetDate);
+    if (!allDayPredictions || allDayPredictions.length === 0) return false;
+
+    // ⚠️ UNIQUEMENT les kamikazes (risk_percentage > 50)
+    const kamikazePredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) > 50);
+    if (kamikazePredictions.length === 0) return false;
+
+    // Calculer les stats
+    let wins = 0;
+    let losses = 0;
+    let totalProfit = 0;
+
+    const bySport: Record<string, { wins: number; losses: number; details: any[] }> = {};
+
+    for (const p of kamikazePredictions) {
+      const sport = p.sport || 'other';
+      if (!bySport[sport]) bySport[sport] = { wins: 0, losses: 0, details: [] };
+
+      if (p.status === 'completed' && p.result_match !== null && p.result_match !== undefined) {
+        let betOdds = 1.0;
+        if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
+        else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
+        else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
+
+        if (p.result_match === true) {
+          wins++;
+          totalProfit += (betOdds - 1);
+          bySport[sport].wins++;
+        } else {
+          losses++;
+          totalProfit -= 1;
+          bySport[sport].losses++;
+        }
+      }
+
+      const predictedLabel = formatPredictedResult(p.predicted_result, sport, p.home_team, p.away_team, p.odds_home, p.odds_draw, p.odds_away);
+      bySport[sport].details.push({
+        homeTeam: p.home_team,
+        awayTeam: p.away_team,
+        predicted: predictedLabel,
+        actualHome: p.home_score ?? null,
+        actualAway: p.away_score ?? null,
+        actualResult: p.actual_result || null,
+        resultMatch: p.result_match ?? null,
+        status: p.status || 'pending',
+      });
+    }
+
+    const total = wins + losses;
+    if (total === 0) return false;
+
+    const winRate = Math.round((wins / total) * 100);
+    const roi = Math.round(totalProfit * 100 / total);
+    const profitSign = totalProfit >= 0 ? '+' : '';
+    const roiSign = roi >= 0 ? '+' : '';
+
+    // Formatter la date
+    const dateObj = new Date(targetDate + 'T12:00:00');
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+
+    const sportEmojis: Record<string, string> = { 'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️' };
+
+    let message = '';
+    message += '╔═════════════════════════════╗\n';
+    message += '║\n';
+    message += '║   💣 <b>BILAN KAMIKAZE</b>\n';
+    message += '║\n';
+    message += '╚═════════════════════════════╝\n\n';
+    message += `📅 <b>${dateLabel}</b>\n\n`;
+
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    const kEmoji = winRate >= 60 ? '🔥' : winRate >= 40 ? '💀' : '☠️';
+    message += `${kEmoji} ✅ ${wins}/${total} corrects  ·  <b>${winRate}%</b>\n`;
+    if (totalProfit !== 0) {
+      const pEmoji = roi >= 0 ? '💰' : '📉';
+      message += `${pEmoji} ROI: <b>${roiSign}${roi}%</b> (${profitSign}${totalProfit.toFixed(2)}u)\n`;
+    }
+    message += '\n';
+
+    // Détails
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '<b>DÉTAILS</b>\n\n';
+
+    for (const [sport, data] of Object.entries(bySport)) {
+      const emoji = sportEmojis[sport] || '🏟️';
+      const completed = data.details.filter(d => d.status === 'completed' && d.resultMatch !== null);
+      if (completed.length === 0) continue;
+
+      for (const d of completed) {
+        const rEmoji = d.resultMatch ? '✅' : '❌';
+        const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
+        message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
+        message += `    ${rEmoji} <b>${d.predicted}</b> → <b>${actual}</b>\n`;
+      }
+      message += '\n';
+    }
+
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '💣 Bilan kamikaze · Haut risque uniquement\n';
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+    return await sendTelegramMessageLong(message);
+  } catch (e) {
+    console.error('Erreur bilan kamikaze:', e);
+    return false;
+  }
 }
 
 /**
@@ -1696,6 +1801,7 @@ export default {
   publishLiveAlertToTelegram,
   publishResultsToTelegram,
   publishDailyResultsToTelegram,
+  publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
   getTelegramChatId,
   testTelegramConnection,
