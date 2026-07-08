@@ -656,15 +656,15 @@ async function verifyMLBResults(): Promise<{
     }
 
     const now = new Date();
-    const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+    const MIN_AGE_MS = 2 * 60 * 60 * 1000; // 2h minimum (MLB dure ~3h, ESPN est fiable sur le statut completed)
 
     for (const prediction of pending) {
       verified++;
 
-      // ⚠️ RÈGLE 1: Ne vérifier QUE les matchs passés (au moins 6h)
+      // ⚠️ RÈGLE 1: Ne vérifier QUE les matchs passés (au moins 2h)
       const matchTime = new Date(prediction.match_date).getTime();
-      if (matchTime > now.getTime() - SIX_HOURS_MS) {
-        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: match trop récent (< 6h), ignoré pour éviter les faux positifs`);
+      if (matchTime > now.getTime() - MIN_AGE_MS) {
+        console.log(`⏳ MLB: ${prediction.home_team} vs ${prediction.away_team}: match trop récent (< 2h), ignoré`);
         continue;
       }
 
