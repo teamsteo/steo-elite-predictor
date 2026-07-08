@@ -32,6 +32,7 @@ import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_VERSION = 'v7'; // Bump to force Vercel redeployment
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -1810,6 +1811,7 @@ export async function GET(request: NextRequest) {
       success: true,
       action,
       timestamp: new Date().toISOString(),
+      version: CRON_VERSION,
       duration: `${duration}ms`,
       supabase: supabasePing,
       ...result
