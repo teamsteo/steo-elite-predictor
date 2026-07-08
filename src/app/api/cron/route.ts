@@ -1826,7 +1826,7 @@ export async function GET(request: NextRequest) {
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan'] },
           { status: 400 }
         );
     }
@@ -2073,6 +2073,91 @@ export async function POST(request: NextRequest) {
           };
         } catch (e: any) {
           result = { cleanup: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'rebuild-bilan':
+        // Reconstruire le bilan pour une date :
+        // 1) Identifier les prédictions qui auraient été publiées (même logique que le cron)
+        // 2) Supprimer toutes les autres (même si completed)
+        // 3) Re-vérifier + publier le bilan
+        try {
+          const rebuildDate = url.searchParams.get('date');
+          if (!rebuildDate) {
+            result = { rebuild: { error: 'Paramètre date requis (format YYYY-MM-DD)' } };
+            break;
+          }
+
+          // Chercher sur la date + lendemain (matchs de nuit)
+          const nextDay = (() => {
+            const d = new Date(rebuildDate + 'T12:00:00Z');
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().split('T')[0];
+          })();
+
+          const [dayPreds, nextDayPreds] = await Promise.all([
+            SupabaseStore.getPredictionsByDate(rebuildDate),
+            SupabaseStore.getPredictionsByDate(nextDay),
+          ]);
+
+          // Dédupliquer par match_id
+          const seen = new Set<string>();
+          const allDatePreds: any[] = [];
+          for (const p of [...dayPreds, ...nextDayPreds]) {
+            if (!seen.has(p.match_id)) {
+              seen.add(p.match_id);
+              allDatePreds.push(p);
+            }
+          }
+
+          // Séparer safe/modéré et kamikaze
+          const safeModerate = allDatePreds.filter(p => (p.risk_percentage ?? 100) <= 50);
+          const kamikaze = allDatePreds.filter(p => (p.risk_percentage ?? 100) > 50);
+
+          // Simuler la logique de publication pour safe/modéré
+          const publishedIds = new Set<string>();
+          
+          // Safe/modéré: grouper par sport, trier par risque, max 10
+          const bySport: Record<string, any[]> = {};
+          for (const p of safeModerate) {
+            const sport = p.sport || 'other';
+            if (!bySport[sport]) bySport[sport] = [];
+            bySport[sport].push(p);
+          }
+          for (const sport of Object.keys(bySport)) {
+            const sorted = [...bySport[sport]].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
+            sorted.slice(0, 10).forEach(p => publishedIds.add(p.match_id));
+          }
+
+          // Kamikaze: trier par cote desc, max 5
+          const kamikazeSorted = [...kamikaze].sort((a, b) => {
+            const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
+            const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
+            return oddsB - oddsA;
+          });
+          kamikazeSorted.slice(0, 5).forEach(p => publishedIds.add(p.match_id));
+
+          // Supprimer les prédictions qui n'auraient PAS été publiées
+          const toDelete = allDatePreds.filter(p => !publishedIds.has(p.match_id));
+          let deletedCount = 0;
+          for (const p of toDelete) {
+            if (p.id) {
+              const success = await SupabaseStore.deletePrediction(p.id);
+              if (success) deletedCount++;
+            }
+          }
+
+          result = { 
+            rebuild: { 
+              date: rebuildDate,
+              totalFound: allDatePreds.length,
+              published: publishedIds.size,
+              deleted: deletedCount,
+              message: `${deletedCount} prédictions non publiées supprimées, ${publishedIds.size} conservées pour ${rebuildDate}`
+            } 
+          };
+        } catch (e: any) {
+          result = { rebuild: { success: false, error: e.message } };
         }
         break;
 
