@@ -1310,6 +1310,38 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'reset-date':
+        // Réinitialiser les matchs zombies (completed sans scores) pour une date donnée
+        try {
+          const resetDate = url.searchParams.get('date');
+          if (!resetDate) {
+            return NextResponse.json({ error: 'Paramètre date requis (format YYYY-MM-DD)' }, { status: 400 });
+          }
+          const allPreds = await SupabaseStore.getAllPredictions(2000);
+          // Trouver les matchs zombies: completed + pas de scores + match_date contient la date
+          const zombiePreds = allPreds.filter(p =>
+            p.status === 'completed' &&
+            (p.home_score === null || p.home_score === undefined) &&
+            (p.result_match === null || p.result_match === undefined) &&
+            p.match_date && p.match_date.startsWith(resetDate)
+          );
+          let resetCount = 0;
+          for (const p of zombiePreds) {
+            await SupabaseStore.completePrediction(p.match_id, {
+              homeScore: 0,
+              awayScore: 0,
+              actualResult: 'home',
+              resultMatch: false,
+              status: 'pending',
+            });
+            resetCount++;
+          }
+          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length } };
+        } catch (e: any) {
+          result = { resetDate: { success: false, error: e.message } };
+        }
+        break;
+
       case 'reset-mlb':
         // Réinitialiser les résultats MLB erronés et revérifier avec date-aware matching
         try {
@@ -1672,7 +1704,7 @@ export async function GET(request: NextRequest) {
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date'] },
           { status: 400 }
         );
     }
@@ -1813,8 +1845,34 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'reset-date':
+        try {
+          const resetDate = url.searchParams.get('date');
+          if (!resetDate) {
+            return NextResponse.json({ error: 'Paramètre date requis (format YYYY-MM-DD)' }, { status: 400 });
+          }
+          const allPreds = await SupabaseStore.getAllPredictions(2000);
+          const zombiePreds = allPreds.filter(p =>
+            p.status === 'completed' &&
+            (p.home_score === null || p.home_score === undefined) &&
+            (p.result_match === null || p.result_match === undefined) &&
+            p.match_date && p.match_date.startsWith(resetDate)
+          );
+          let resetCount = 0;
+          for (const p of zombiePreds) {
+            await SupabaseStore.completePrediction(p.match_id, {
+              homeScore: 0, awayScore: 0, actualResult: 'home',
+              resultMatch: false, status: 'pending',
+            });
+            resetCount++;
+          }
+          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length } };
+        } catch (e: any) {
+          result = { resetDate: { success: false, error: e.message } };
+        }
+        break;
+
       case 'reset-mlb':
-        // Réinitialiser les résultats MLB erronés et revérifier avec date-aware matching
         try {
           const allMLB = await SupabaseStore.getAllPredictions();
           const mlbPreds = allMLB.filter(p => 
@@ -1824,11 +1882,8 @@ export async function POST(request: NextRequest) {
           for (const p of mlbPreds) {
             if (p.status === 'completed') {
               await SupabaseStore.completePrediction(p.match_id, {
-                homeScore: 0,
-                awayScore: 0,
-                actualResult: 'home',
-                resultMatch: false,
-                status: 'pending',
+                homeScore: 0, awayScore: 0, actualResult: 'home',
+                resultMatch: false, status: 'pending',
               });
               resetCount++;
             }
@@ -1837,6 +1892,27 @@ export async function POST(request: NextRequest) {
           result = { resetMLB: { resetCount, ...verifyResult } };
         } catch (e: any) {
           result = { resetMLB: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'telegram-results':
+        try {
+          const verifyResult = await verifyAllResults();
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          const targetDate = url.searchParams.get('date');
+          const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
+          const kamikazeBilanDate = targetDate || undefined;
+          const kamikazeResult = await publishKamikazeBilanToTelegram(kamikazeBilanDate);
+          result = { 
+            telegram: { 
+              success: telegramResult || kamikazeResult,
+              verification: { verified: verifyResult.verified, updated: verifyResult.updated, won: verifyResult.won, lost: verifyResult.lost },
+              kamikazeBilan: kamikazeResult,
+              message: telegramResult ? 'Bilan journalier publié sur Telegram' : 'Aucun pronostic safe/modéré à comparer'
+            } 
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
         }
         break;
 
@@ -1925,7 +2001,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date'] },
           { status: 400 }
         );
     }
