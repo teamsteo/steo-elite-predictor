@@ -1311,48 +1311,126 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'reset-date':
-        // Réinitialiser les matchs zombies (completed sans scores/résultat) pour une date donnée
+        // Réinitialiser les matchs zombies et/ou forcer la vérification MLB
         try {
           const resetDate = url.searchParams.get('date');
           if (!resetDate) {
             return NextResponse.json({ error: 'Paramètre date requis (format YYYY-MM-DD)' }, { status: 400 });
           }
+          const subMode = url.searchParams.get('mode') || 'debug'; // debug | verify
+          
           const allPreds = await SupabaseStore.getAllPredictions(2000);
-          // Debug: montrer tous les matchs de cette date
           const datePreds = allPreds.filter(p =>
             p.match_date && (p.match_date as string).startsWith(resetDate)
           );
-          const debugInfo = datePreds.map(p => ({
-            match_id: p.match_id,
-            status: p.status,
-            result_match: p.result_match,
-            result_type: typeof p.result_match,
-            home_score: p.home_score,
-            away_score: p.away_score,
-            sport: p.sport,
-            league: p.league,
-            home_team: p.home_team,
-            away_team: p.away_team,
-            predicted_result: p.predicted_result,
-            match_date: p.match_date,
-          }));
-          // Trouver les matchs zombies: completed + result_match n'est pas true/false clair
-          const zombiePreds = datePreds.filter(p =>
-            p.status === 'completed' &&
-            p.result_match !== true && p.result_match !== false
-          );
-          let resetCount = 0;
-          for (const p of zombiePreds) {
-            const success = await SupabaseStore.completePrediction(p.match_id, {
-              homeScore: 0,
-              awayScore: 0,
-              actualResult: 'home',
-              resultMatch: false,
-              status: 'pending',
-            });
-            if (success) resetCount++;
+          
+          if (subMode === 'verify') {
+            // MODE VERIFY: forcer la vérification MLB depuis ESPN pour les pending de cette date
+            const pending = datePreds.filter(p => 
+              p.status === 'pending' || 
+              (p.status === 'completed' && p.result_match !== true && p.result_match !== false)
+            );
+            
+            // Fetch ESPN MLB results
+            const targetD = new Date(resetDate + 'T12:00:00Z');
+            const espnDates: string[] = [];
+            for (let offset = -1; offset <= 1; offset++) {
+              const dd = new Date(targetD);
+              dd.setDate(dd.getDate() + offset);
+              espnDates.push(toUSDateStr(dd));
+            }
+            const uniqueDates = [...new Set(espnDates)];
+            
+            const espnResults: any[] = [];
+            for (const dateStr of uniqueDates) {
+              try {
+                const resp = await fetch(
+                  `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`,
+                  { cache: 'no-store' }
+                );
+                if (resp.ok) {
+                  const data = await resp.json();
+                  for (const e of (data.events || [])) {
+                    const comp = e.competitions?.[0];
+                    if (comp?.status?.type?.name !== 'STATUS_FINAL') continue;
+                    const home = comp?.competitors?.find((c: any) => c.homeAway === 'home');
+                    const away = comp?.competitors?.find((c: any) => c.homeAway === 'away');
+                    espnResults.push({
+                      homeTeam: home?.team?.displayName || '',
+                      awayTeam: away?.team?.displayName || '',
+                      homeScore: parseInt(home?.score) || 0,
+                      awayScore: parseInt(away?.score) || 0,
+                      espnDate: dateStr,
+                    });
+                  }
+                }
+              } catch (err) { /* skip */ }
+            }
+            
+            let updated = 0, won = 0, lost = 0;
+            const details: any[] = [];
+            
+            for (const pred of pending) {
+              if (!pred.league?.includes('MLB') && pred.sport !== 'other') continue;
+              
+              const pH = (pred.home_team || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+              const pA = (pred.away_team || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+              
+              let found = false;
+              for (const espn of espnResults) {
+                const eH = espn.homeTeam.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+                const eA = espn.awayTeam.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+                
+                let inverted = false;
+                if (pH === eH && pA === eA) { found = true; }
+                else if (pH === eA && pA === eH) { found = true; inverted = true; }
+                
+                if (found) {
+                  const ourHome = inverted ? espn.awayScore : espn.homeScore;
+                  const ourAway = inverted ? espn.homeScore : espn.awayScore;
+                  const actualResult: 'home' | 'away' = ourHome > ourAway ? 'home' : 'away';
+                  const resultMatch = pred.predicted_result === actualResult;
+                  
+                  const ok = await SupabaseStore.completePrediction(pred.match_id, {
+                    homeScore: ourHome,
+                    awayScore: ourAway,
+                    actualResult,
+                    resultMatch,
+                  });
+                  if (ok) { updated++; if (resultMatch) won++; else lost++; }
+                  details.push({ match: `${pred.home_team} vs ${pred.away_team}`, result: resultMatch ? 'WIN' : 'LOSS', score: `${ourHome}-${ourAway}`, inverted });
+                  break;
+                }
+              }
+              if (!found) {
+                details.push({ match: `${pred.home_team} vs ${pred.away_team}`, result: 'NOT_FOUND', normHome: pH, normAway: pA });
+              }
+            }
+            
+            result = { resetDate: { mode: 'verify', date: resetDate, pendingFound: pending.length, espnResults: espnResults.length, updated, won, lost, details } };
+          } else {
+            // MODE DEBUG: montrer tous les matchs de cette date
+            const debugInfo = datePreds.map(p => ({
+              match_id: p.match_id, status: p.status, result_match: p.result_match,
+              home_score: p.home_score, away_score: p.away_score,
+              sport: p.sport, league: p.league,
+              home_team: p.home_team, away_team: p.away_team,
+              predicted_result: p.predicted_result, risk_percentage: p.risk_percentage,
+              match_date: p.match_date,
+            }));
+            const zombiePreds = datePreds.filter(p =>
+              p.status === 'completed' && p.result_match !== true && p.result_match !== false
+            );
+            let resetCount = 0;
+            for (const p of zombiePreds) {
+              const ok = await SupabaseStore.completePrediction(p.match_id, {
+                homeScore: 0, awayScore: 0, actualResult: 'home',
+                resultMatch: false, status: 'pending',
+              });
+              if (ok) resetCount++;
+            }
+            result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, datePreds: datePreds.length, zombieFound: zombiePreds.length, debug: debugInfo } };
           }
-          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, datePreds: datePreds.length, zombieFound: zombiePreds.length, debug: debugInfo } };
         } catch (e: any) {
           result = { resetDate: { success: false, error: e.message } };
         }
