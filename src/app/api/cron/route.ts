@@ -1311,32 +1311,31 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'reset-date':
-        // Réinitialiser les matchs zombies (completed sans scores) pour une date donnée
+        // Réinitialiser les matchs zombies (completed sans scores/résultat) pour une date donnée
         try {
           const resetDate = url.searchParams.get('date');
           if (!resetDate) {
             return NextResponse.json({ error: 'Paramètre date requis (format YYYY-MM-DD)' }, { status: 400 });
           }
           const allPreds = await SupabaseStore.getAllPredictions(2000);
-          // Trouver les matchs zombies: completed + pas de scores + match_date contient la date
+          // Trouver les matchs zombies: completed + result_match n'est pas true/false clair
           const zombiePreds = allPreds.filter(p =>
             p.status === 'completed' &&
-            (p.home_score === null || p.home_score === undefined) &&
-            (p.result_match === null || p.result_match === undefined) &&
-            p.match_date && p.match_date.startsWith(resetDate)
+            p.match_date && p.match_date.startsWith(resetDate) &&
+            p.result_match !== true && p.result_match !== false
           );
           let resetCount = 0;
           for (const p of zombiePreds) {
-            await SupabaseStore.completePrediction(p.match_id, {
+            const success = await SupabaseStore.completePrediction(p.match_id, {
               homeScore: 0,
               awayScore: 0,
               actualResult: 'home',
               resultMatch: false,
               status: 'pending',
             });
-            resetCount++;
+            if (success) resetCount++;
           }
-          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length } };
+          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, zombieFound: zombiePreds.length } };
         } catch (e: any) {
           result = { resetDate: { success: false, error: e.message } };
         }
@@ -1854,19 +1853,18 @@ export async function POST(request: NextRequest) {
           const allPreds = await SupabaseStore.getAllPredictions(2000);
           const zombiePreds = allPreds.filter(p =>
             p.status === 'completed' &&
-            (p.home_score === null || p.home_score === undefined) &&
-            (p.result_match === null || p.result_match === undefined) &&
-            p.match_date && p.match_date.startsWith(resetDate)
+            p.match_date && p.match_date.startsWith(resetDate) &&
+            p.result_match !== true && p.result_match !== false
           );
           let resetCount = 0;
           for (const p of zombiePreds) {
-            await SupabaseStore.completePrediction(p.match_id, {
+            const success = await SupabaseStore.completePrediction(p.match_id, {
               homeScore: 0, awayScore: 0, actualResult: 'home',
               resultMatch: false, status: 'pending',
             });
-            resetCount++;
+            if (success) resetCount++;
           }
-          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length } };
+          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, zombieFound: zombiePreds.length } };
         } catch (e: any) {
           result = { resetDate: { success: false, error: e.message } };
         }
