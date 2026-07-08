@@ -1318,10 +1318,21 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Paramètre date requis (format YYYY-MM-DD)' }, { status: 400 });
           }
           const allPreds = await SupabaseStore.getAllPredictions(2000);
+          // Debug: montrer tous les matchs de cette date
+          const datePreds = allPreds.filter(p =>
+            p.match_date && (p.match_date as string).startsWith(resetDate)
+          );
+          const debugInfo = datePreds.slice(0, 5).map(p => ({
+            match_id: p.match_id,
+            status: p.status,
+            result_match: p.result_match,
+            result_type: typeof p.result_match,
+            home_score: p.home_score,
+            match_date: p.match_date,
+          }));
           // Trouver les matchs zombies: completed + result_match n'est pas true/false clair
-          const zombiePreds = allPreds.filter(p =>
+          const zombiePreds = datePreds.filter(p =>
             p.status === 'completed' &&
-            p.match_date && p.match_date.startsWith(resetDate) &&
             p.result_match !== true && p.result_match !== false
           );
           let resetCount = 0;
@@ -1335,7 +1346,7 @@ export async function GET(request: NextRequest) {
             });
             if (success) resetCount++;
           }
-          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, zombieFound: zombiePreds.length } };
+          result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, datePreds: datePreds.length, zombieFound: zombiePreds.length, debug: debugInfo } };
         } catch (e: any) {
           result = { resetDate: { success: false, error: e.message } };
         }
