@@ -32,7 +32,7 @@ import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataS
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v9'; // Bump to force Vercel redeployment
+const CRON_VERSION = 'v10'; // Suppression limite 10, séparation sports améliorée
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -1465,6 +1465,101 @@ export async function GET(request: NextRequest) {
         break;
 
       case 'rebuild-bilan':
+
+      case 'fix-sport':
+        // Corrige sport='other' → bon sport basé sur la league, et supprime les doublons
+        try {
+          const fixDate = url.searchParams.get('date') || (() => {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            return yesterday.toISOString().split('T')[0];
+          })();
+          const nextDayFix = (() => {
+            const d = new Date(fixDate + 'T12:00:00Z');
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().split('T')[0];
+          })();
+          const [dayPredsFix, nextDayPredsFix] = await Promise.all([
+            SupabaseStore.getPredictionsByDate(fixDate),
+            SupabaseStore.getPredictionsByDate(nextDayFix),
+          ]);
+          const seenFix = new Set<string>();
+          const allFixPreds: any[] = [];
+          for (const p of [...dayPredsFix, ...nextDayPredsFix]) {
+            if (!seenFix.has(p.match_id)) { seenFix.add(p.match_id); allFixPreds.push(p); }
+          }
+          
+          let fixedCount = 0;
+          let deletedDupes = 0;
+          const matchIdCount: Record<string, number> = {};
+          
+          for (const p of allFixPreds) {
+            // Compter les occurrences de match_id pour détecter les doublons
+            const baseId = p.match_id.replace(/-\d{6}$/, ''); // enlever le suffixe heure
+            matchIdCount[baseId] = (matchIdCount[baseId] || 0) + 1;
+            
+            // Corriger sport='other' → baseball si la league contient MLB
+            if (p.sport === 'other' && p.league) {
+              const league = p.league.toLowerCase();
+              let correctSport: string | null = null;
+              if (league.includes('mlb') || league.includes('baseball')) correctSport = 'baseball';
+              else if (league.includes('nba') || league.includes('basketball')) correctSport = 'basketball';
+              else if (league.includes('nhl') || league.includes('hockey')) correctSport = 'hockey';
+              else if (league.includes('atp') || league.includes('wta') || league.includes('tennis')) correctSport = 'tennis';
+              
+              if (correctSport && p.id) {
+                await SupabaseStore.completePrediction(p.match_id, {
+                  homeScore: p.home_score ?? undefined,
+                  awayScore: p.away_score ?? undefined,
+                  actualResult: p.actual_result || undefined,
+                  resultMatch: p.result_match ?? undefined,
+                  status: p.status || 'pending',
+                });
+                // Mettre à jour directement le sport via Supabase REST
+                const { createClient } = await import('@supabase/supabase-js');
+                const supabase = createClient(
+                  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+                  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+                );
+                const { error } = await supabase
+                  .from('predictions')
+                  .update({ sport: correctSport })
+                  .eq('id', p.id);
+                if (!error) {
+                  fixedCount++;
+                  console.log(`✅ Fix sport: ${p.home_team} vs ${p.away_team} → ${correctSport}`);
+                }
+              }
+            }
+          }
+          
+          // Supprimer les doublons (même baseId, garder le premier)
+          const seenIds = new Set<string>();
+          for (const p of allFixPreds) {
+            const baseId = p.match_id.replace(/-\d{6}$/, '');
+            if (matchIdCount[baseId] > 1) {
+              if (seenIds.has(baseId)) {
+                // C'est un doublon, le supprimer
+                if (p.id) {
+                  const success = await SupabaseStore.deletePrediction(p.id);
+                  if (success) {
+                    deletedDupes++;
+                    console.log(`🗑️ Doublon supprimé: ${p.home_team} vs ${p.away_team}`);
+                  }
+                }
+              } else {
+                seenIds.add(baseId);
+              }
+            }
+          }
+          
+          result = { fixSport: { date: fixDate, total: allFixPreds.length, fixed: fixedCount, deletedDupes } };
+        } catch (e: any) {
+          result = { fixSport: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'rebuild-bilan':
         try {
           const rebuildDate = url.searchParams.get('date');
           if (!rebuildDate) {
@@ -1494,10 +1589,12 @@ export async function GET(request: NextRequest) {
             if (!bySport[sport]) bySport[sport] = [];
             bySport[sport].push(p);
           }
+          // 💡 PLUS DE LIMITE : tout conserver (rebuild ne supprime rien de safe/modéré)
           for (const sport of Object.keys(bySport)) {
             const sorted = [...bySport[sport]].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
-            sorted.slice(0, 10).forEach(p => publishedIds.add(p.match_id));
+            sorted.forEach(p => publishedIds.add(p.match_id));
           }
+          // Kamikaze: garder max 5 (inchangé)
           const kamikazeSorted = [...kamikaze].sort((a, b) => {
             const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
             const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
@@ -1599,11 +1696,11 @@ export async function GET(request: NextRequest) {
               bySport[sport].push(p);
             }
             
-            // 3) Pour chaque sport : trier par risque croissant + limiter à 10
+            // 3) Pour chaque sport : trier par risque croissant, PUBLIER TOUT (plus de limite)
             const publishedPredictions: any[] = [];
             for (const sport of Object.keys(bySport)) {
               const sorted = [...bySport[sport]].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
-              publishedPredictions.push(...sorted.slice(0, 10));
+              publishedPredictions.push(...sorted);
             }
             
             const dbPredictions = publishedPredictions.map((p: any) => {
@@ -2261,9 +2358,9 @@ export async function POST(request: NextRequest) {
               });
               sorted.slice(0, 5).forEach(p => toKeep.add(p.match_id));
             } else {
-              // Safe/modéré: tri par risque croissant, max 10
+              // Safe/modéré: tri par risque croissant, TOUT conserver (plus de limite)
               const sorted = [...preds].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
-              sorted.slice(0, 10).forEach(p => toKeep.add(p.match_id));
+              sorted.forEach(p => toKeep.add(p.match_id));
             }
           }
           
@@ -2331,7 +2428,7 @@ export async function POST(request: NextRequest) {
           // Simuler la logique de publication pour safe/modéré
           const publishedIds = new Set<string>();
           
-          // Safe/modéré: grouper par sport, trier par risque, max 10
+          // Safe/modéré: grouper par sport, trier par risque, TOUT publier
           const bySport: Record<string, any[]> = {};
           for (const p of safeModerate) {
             const sport = p.sport || 'other';
@@ -2340,7 +2437,7 @@ export async function POST(request: NextRequest) {
           }
           for (const sport of Object.keys(bySport)) {
             const sorted = [...bySport[sport]].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
-            sorted.slice(0, 10).forEach(p => publishedIds.add(p.match_id));
+            sorted.forEach(p => publishedIds.add(p.match_id));
           }
 
           // Kamikaze: trier par cote desc, max 5

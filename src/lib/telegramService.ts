@@ -702,22 +702,26 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
   message += `${statsLine}\n\n`;
   
   // Détail par sport (ordonné : Foot en premier)
-  for (const sport of sortedSports) {
+  for (let si = 0; si < sortedSports.length; si++) {
+    const sport = sortedSports[si];
     const matches = bySport[sport];
     const emoji = SPORT_EMOJIS[sport] || '🏟️';
 
-    message += `${emoji} <b>${sport.toUpperCase()}</b> — ${matches.length} match${matches.length > 1 ? 's' : ''}\n\n`;
+    // Séparateur visuel entre les sections de sports
+    if (si > 0) {
+      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    }
+    message += `───────────────────────────\n`;
+    message += `${emoji} <b>${sport.toUpperCase()}</b> — ${matches.length} match${matches.length > 1 ? 's' : ''}\n`;
+    message += `───────────────────────────\n\n`;
     
     // Trier : safe en premier, puis modéré (pour ne jamais tronquer les safe)
     const sorted = [...matches].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
     
-    for (let i = 0; i < Math.min(sorted.length, 10); i++) {
+    // 💡 PLUS DE LIMITE : on publie TOUS les pronostics (cohérence bilan)
+    for (let i = 0; i < sorted.length; i++) {
       const block = await formatMatchBlock(sorted[i], i + 1, true);
       message += block;
-    }
-    
-    if (sorted.length > 10) {
-      message += `<i>... et ${sorted.length - 10} autres match${sorted.length - 10 > 1 ? 's' : ''}</i>\n\n`;
     }
   }
   
@@ -1399,7 +1403,8 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     message += '<b>BILAN PAR SPORT</b>\n\n';
 
-    for (const sport of sortedSports) {
+    for (let si = 0; si < sortedSports.length; si++) {
+      const sport = sortedSports[si];
       const s = summary.bySport[sport];
       const emoji = sportEmojis[sport] || '🏟️';
       const name = sportNames[sport] || sport;
@@ -1407,6 +1412,11 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       // Ne montrer que les sports qui ont au moins 1 match terminé
       if (verified === 0) continue;
+
+      // Séparateur visuel entre les sports
+      if (si > 0) {
+        message += '───────────────────────────\n';
+      }
 
       // Indicateur de performance
       const sportEmoji = s.winRate >= 60 ? '🏆' : s.winRate >= 40 ? '📊' : '📉';
@@ -1465,9 +1475,15 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     for (const d of sortedDetails) {
       const emoji = sportEmojis[d.sport] || '🏟️';
 
-      // Séparateur par sport
+      // Séparateur visuel par sport
       if (d.sport !== currentSport) {
-        if (currentSport) message += '\n';
+        if (currentSport) {
+          message += '───────────────────────────\n';
+          message += '\n';
+        }
+        const sportName = sportNames[d.sport] || d.sport;
+        message += `${emoji} <b>${sportName.toUpperCase()}</b>\n`;
+        message += '───────────────────────────\n';
         currentSport = d.sport;
       }
 
@@ -1590,7 +1606,7 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
 
-    const sportEmojis: Record<string, string> = { 'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️' };
+    const sportEmojis: Record<string, string> = { 'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'baseball': '⚾', 'other': '🏟️' };
 
     let message = '';
     message += '╔═════════════════════════════╗\n';
