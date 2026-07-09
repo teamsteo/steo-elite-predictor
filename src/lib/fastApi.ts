@@ -15,7 +15,7 @@ const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
 // The Odds API Key
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY;
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Timeout très court pour Vercel

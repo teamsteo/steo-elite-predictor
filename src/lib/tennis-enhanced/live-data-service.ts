@@ -7,7 +7,7 @@
  *    - Historique des matchs avec statistiques
  *    - Infos joueurs (taille, main, pays)
  * 
- * 2. The Odds API (500 req/mois GRATUIT)
+ * 2. Central Odds Manager (gestionnaire de quota unique)
  *    - Matchs à venir avec cotes
  *    - Couvre ATP, WTA, Challenger
  */

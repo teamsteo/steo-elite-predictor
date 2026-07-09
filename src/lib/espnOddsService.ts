@@ -56,7 +56,7 @@ declare global {
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Configuration The Odds API (fallback)
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY;
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Équipes favorites pour estimation des cotes
