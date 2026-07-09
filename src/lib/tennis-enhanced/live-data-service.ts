@@ -348,12 +348,12 @@ function normalizeSurface(surface: string): 'hard' | 'clay' | 'grass' | 'indoor'
 // ============================================
 
 /**
- * Récupère les matchs à venir via le gestionnaire de quota centralisé
- * IMPORTANT: Cache de 2 heures pour économiser les crédits API
- * Les cotes ne changent pas significativement en 2h pour les matchs du lendemain
+ * Récupère les matchs à venir
+ * 🎾 V2: Appel DIRECT à l'API + cache mémoire court (pas de quota manager)
+ * Le quota manager ne fonctionne pas sur Vercel (serverless = pas de persistence)
  */
 export async function fetchUpcomingMatches(): Promise<UpcomingMatch[]> {
-  // Vérifier le cache local d'abord - AUGMENTÉ à 2h
+  // Vérifier le cache local d'abord - 2h
   if (upcomingMatchesCache && Date.now() - upcomingMatchesCache.timestamp < MATCHES_CACHE_DURATION) {
     console.log('[TennisLiveData] 📦 Cache local HIT (2h)');
     return upcomingMatchesCache.matches;
@@ -363,28 +363,89 @@ export async function fetchUpcomingMatches(): Promise<UpcomingMatch[]> {
   
   if (!apiKey) {
     console.log('[TennisLiveData] ⚠️ THE_ODDS_API_KEY non configurée');
-    console.log('[TennisLiveData] ℹ️ Obtenez une clé gratuite: https://the-odds-api.com/');
     return [];
   }
   
-  console.log('[TennisLiveData] 🎾 Récupération matchs via Quota Manager...');
+  console.log('[TennisLiveData] 🎾 Récupération matchs via API DIRECTE (pas de quota manager)...');
   
   try {
-    // Utiliser le gestionnaire de quota centralisé
-    const { getTennisOdds } = await import('../oddsQuotaManager');
-    const oddsData = await getTennisOdds();
+    const allMatches: any[] = [];
     
+    // 🎾 Trouver les matchs en appelant les sport_keys les plus probables
+    // Stratégie: on appelle d'abord les grands tournois spécifiques, puis le générique
+    // On ne fait que 2-3 appels max pour économiser le quota mensuel
+    const today = new Date();
+    const month = today.getMonth(); // 0-11
+    
+    // Déterminer quels sport_keys appeler selon la période de l'année
+    const sportKeysToTry: string[] = [];
+    
+    // Grand Chelems - vérifier les dates approximatives
+    // Australian Open: janvier
+    if (month === 0) {
+      sportKeysToTry.push('tennis_atp_australian_open', 'tennis_wta_australian_open');
+    }
+    // Roland-Garros: fin mai - début juin
+    if (month === 4 || month === 5) {
+      sportKeysToTry.push('tennis_atp_french_open', 'tennis_wta_french_open');
+    }
+    // Wimbledon: fin juin - mi juillet
+    if (month === 6) {
+      sportKeysToTry.push('tennis_atp_wimbledon', 'tennis_wta_wimbledon');
+    }
+    // US Open: fin août - mi septembre
+    if (month === 8) {
+      sportKeysToTry.push('tennis_atp_us_open', 'tennis_wta_us_open');
+    }
+    
+    // Toujours ajouter le générique en fallback
+    sportKeysToTry.push('tennis_atp', 'tennis_wta');
+    
+    // Limiter à 3 appels max pour économiser le quota
+    const keysToFetch = sportKeysToTry.slice(0, 3);
+    
+    for (const sportKey of keysToFetch) {
+      try {
+        const response = await fetch(
+          `https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`
+        );
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data) && data.length > 0) {
+            console.log(`[TennisLiveData] ✅ ${sportKey}: ${data.length} matchs`);
+            for (const event of data) {
+              allMatches.push({ ...event, _sport_key: sportKey });
+            }
+          }
+        } else {
+          console.log(`[TennisLiveData] ⚠️ ${sportKey}: HTTP ${response.status}`);
+        }
+      } catch (e) {
+        console.log(`[TennisLiveData] ⚠️ Erreur ${sportKey}: ${e}`);
+      }
+    }
+    
+    // Convertir au format UpcomingMatch
     const matches: UpcomingMatch[] = [];
+    const seen = new Set<string>();
     
-    for (const event of oddsData) {
-      const match = parseOddsAPIEvent(event, event.sport_key?.includes('wta') ? 'wta' : 'atp');
+    for (const event of allMatches) {
+      // Dédupliquer par noms de joueurs
+      const key = `${event.home_team}_${event.away_team}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      
+      const sportKey = event._sport_key || event.sport_key || '';
+      const category = sportKey.includes('wta') ? 'wta' : 'atp';
+      const match = parseOddsAPIEvent(event, category);
       if (match) matches.push(match);
     }
     
     // Mettre en cache local
     upcomingMatchesCache = { matches, timestamp: Date.now() };
     
-    console.log(`[TennisLiveData] ✅ ${matches.length} matchs récupérés`);
+    console.log(`[TennisLiveData] ✅ ${matches.length} matchs uniques récupérés`);
     
     return matches;
     
