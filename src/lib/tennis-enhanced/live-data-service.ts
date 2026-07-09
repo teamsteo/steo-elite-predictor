@@ -10,7 +10,11 @@
  * 2. Central Odds Manager (gestionnaire de quota unique)
  *    - Matchs à venir avec cotes
  *    - Couvre ATP, WTA, Challenger
+ * 
+ * 🛡️ Tous les fetch Jeff Sackmann passent par jeffSackmannCache.ts (cache 24h)
  */
+
+import { getATPRankingsCSV, getWTARankingsCSV, getATPPlayersCSV, getWTAPlayersCSV, getMatchesCSV } from './jeffSackmannCache';
 
 // ============================================
 // TYPES & INTERFACES
@@ -108,11 +112,9 @@ export async function fetchATPRankings(): Promise<LiveRanking[]> {
     
     console.log('[TennisLiveData] 📊 Récupération classements ATP...');
     
-    // Récupérer les classements
-    const rankingsResponse = await fetch(`${JEFF_SACKMANN_BASE}/atp_rankings_current.csv`);
-    if (!rankingsResponse.ok) throw new Error('Erreur récupération classements');
-    
-    const rankingsText = await rankingsResponse.text();
+    // Récupérer les classements via le cache centralisé
+    const rankingsText = await getATPRankingsCSV();
+    if (!rankingsText) throw new Error('Erreur récupération classements');
     const rankingsLines = rankingsText.trim().split('\n');
     
     // Récupérer les joueurs pour avoir les noms
@@ -163,10 +165,9 @@ export async function fetchWTARankings(): Promise<LiveRanking[]> {
     
     console.log('[TennisLiveData] 📊 Récupération classements WTA...');
     
-    const rankingsResponse = await fetch(`${JEFF_SACKMANN_WTA_BASE}/wta_rankings_current.csv`);
-    if (!rankingsResponse.ok) throw new Error('Erreur récupération classements WTA');
-    
-    const rankingsText = await rankingsResponse.text();
+    // Récupérer les classements via le cache centralisé
+    const rankingsText = await getWTARankingsCSV();
+    if (!rankingsText) throw new Error('Erreur récupération classements WTA');
     const rankingsLines = rankingsText.trim().split('\n');
     
     const playersMap = await fetchPlayersMap('wta');
@@ -211,12 +212,10 @@ async function fetchPlayersMap(category: 'atp' | 'wta'): Promise<Map<string, str
   const playersMap = new Map<string, string>();
   
   try {
-    const baseUrl = category === 'atp' ? JEFF_SACKMANN_BASE : JEFF_SACKMANN_WTA_BASE;
-    const response = await fetch(`${baseUrl}/${category}_players.csv`);
+    // Récupérer via le cache centralisé (24h)
+    const text = category === 'atp' ? await getATPPlayersCSV() : await getWTAPlayersCSV();
     
-    if (!response.ok) return playersMap;
-    
-    const text = await response.text();
+    if (!text) return playersMap;
     const lines = text.trim().split('\n');
     
     for (let i = 1; i < lines.length; i++) {
@@ -253,21 +252,14 @@ export async function calculateRecentForm(
   category: 'atp' | 'wta' = 'atp'
 ): Promise<{ matches: RecentMatch[]; winRate: number; surfaceStats: Record<string, number> }> {
   try {
-    const baseUrl = category === 'atp' ? JEFF_SACKMANN_BASE : JEFF_SACKMANN_WTA_BASE;
     const currentYear = new Date().getFullYear();
     
-    // Récupérer les matchs de l'année en cours
-    const matchesResponse = await fetch(`${baseUrl}/${category}_matches_${currentYear}.csv`);
+    // Récupérer les matchs via le cache centralisé (24h, avec fallback année précédente)
+    const { text } = await getMatchesCSV(category, currentYear);
     
-    if (!matchesResponse.ok) {
-      // Essayer l'année précédente si pas de données
-      const prevYearResponse = await fetch(`${baseUrl}/${category}_matches_${currentYear - 1}.csv`);
-      if (!prevYearResponse.ok) {
-        return { matches: [], winRate: 0.5, surfaceStats: { hard: 0.5, clay: 0.5, grass: 0.5, indoor: 0.5 } };
-      }
+    if (!text || text.trim().length < 50) {
+      return { matches: [], winRate: 0.5, surfaceStats: { hard: 0.5, clay: 0.5, grass: 0.5, indoor: 0.5 } };
     }
-    
-    const text = await matchesResponse.text();
     const lines = text.trim().split('\n');
     
     const recentMatches: RecentMatch[] = [];

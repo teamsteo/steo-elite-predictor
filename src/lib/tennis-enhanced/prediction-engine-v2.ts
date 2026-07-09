@@ -16,6 +16,7 @@ import {
   Category,
   getTournamentImportanceFactor,
 } from './smart-collector';
+import { getATPRankingsCSV, getWTARankingsCSV, getATPPlayersCSV, getWTAPlayersCSV, getMatchesCSV } from './jeffSackmannCache';
 
 // ============================================
 // INTERFACES
@@ -227,18 +228,13 @@ export async function fetchATPRankings2026(): Promise<RankingEntry[]> {
   console.log('[TennisV2] 📊 Récupération classements ATP 2026...');
   
   try {
-    const baseUrl = 'https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master';
-    
-    // Récupérer les classements actuels
-    const rankingsRes = await fetch(`${baseUrl}/atp_rankings_current.csv`);
-    if (!rankingsRes.ok) throw new Error('Erreur classements ATP');
-    
-    const rankingsText = await rankingsRes.text();
+    // Récupérer les classements via le cache centralisé
+    const rankingsText = await getATPRankingsCSV();
+    if (!rankingsText) throw new Error('Erreur classements ATP');
     const rankingsLines = rankingsText.trim().split('\n');
     
-    // Récupérer les infos joueurs
-    const playersRes = await fetch(`${baseUrl}/atp_players.csv`);
-    const playersText = await playersRes.text();
+    // Récupérer les infos joueurs via le cache centralisé
+    const playersText = await getATPPlayersCSV();
     const playersLines = playersText.trim().split('\n');
     
     // Construire la map des joueurs
@@ -298,16 +294,13 @@ export async function fetchWTARankings2026(): Promise<RankingEntry[]> {
   console.log('[TennisV2] 📊 Récupération classements WTA 2026...');
   
   try {
-    const baseUrl = 'https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master';
-    
-    const rankingsRes = await fetch(`${baseUrl}/wta_rankings_current.csv`);
-    if (!rankingsRes.ok) throw new Error('Erreur classements WTA');
-    
-    const rankingsText = await rankingsRes.text();
+    // Récupérer les classements via le cache centralisé
+    const rankingsText = await getWTARankingsCSV();
+    if (!rankingsText) throw new Error('Erreur classements WTA');
     const rankingsLines = rankingsText.trim().split('\n');
     
-    const playersRes = await fetch(`${baseUrl}/wta_players.csv`);
-    const playersText = await playersRes.text();
+    // Récupérer les infos joueurs via le cache centralisé
+    const playersText = await getWTAPlayersCSV();
     const playersLines = playersText.trim().split('\n');
     
     const playersMap = new Map<string, { name: string; country: string }>();
@@ -364,28 +357,18 @@ export async function calculateForm2026(
   category: 'atp' | 'wta'
 ): Promise<PlayerData2026['recentForm']> {
   try {
-    const baseUrl = category === 'atp' 
-      ? 'https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master'
-      : 'https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master';
+    const currentYear = new Date().getFullYear();
     
-    const currentYear = new Date().getFullYear(); // 2026
+    // Récupérer les matchs via le cache centralisé (24h, avec fallback)
+    const { text } = await getMatchesCSV(category, currentYear);
     
-    // Essayer les matchs de l'année courante
-    let matchesRes = await fetch(`${baseUrl}/${category}_matches_${currentYear}.csv`);
-    
-    if (!matchesRes.ok) {
-      // Fallback sur l'année précédente
-      matchesRes = await fetch(`${baseUrl}/${category}_matches_${currentYear - 1}.csv`);
-      if (!matchesRes.ok) {
-        return {
-          last10: [],
-          winRate: 0.5,
-          trend: 'stable',
-        };
-      }
+    if (!text || text.trim().length < 50) {
+      return {
+        last10: [],
+        winRate: 0.5,
+        trend: 'stable',
+      };
     }
-    
-    const text = await matchesRes.text();
     const lines = text.trim().split('\n');
     const headers = lines[0].split(',');
     

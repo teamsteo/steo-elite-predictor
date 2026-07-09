@@ -14,6 +14,8 @@
  * - Calibration (prédit 80% = réalise 80%)
  */
 
+import { getMatchesCSV } from './jeffSackmannCache';
+
 // ============================================
 // INTERFACES
 // ============================================
@@ -360,19 +362,15 @@ export async function loadHistoricalMatches(
 ): Promise<HistoricalMatch[]> {
   console.log(`[Backtest] 📂 Chargement matchs ${category.toUpperCase()} ${year}...`);
   
-  const baseUrl = category === 'atp' 
-    ? 'https://raw.githubusercontent.com/JeffSackmann/tennis_atp/master'
-    : 'https://raw.githubusercontent.com/JeffSackmann/tennis_wta/master';
-  
   try {
-    const response = await fetch(`${baseUrl}/${category}_matches_${year}.csv`);
+    // Récupérer via le cache centralisé (24h)
+    const { text } = await getMatchesCSV(category, year);
     
-    if (!response.ok) {
-      console.error(`[Backtest] Erreur chargement: ${response.status}`);
+    if (!text || text.trim().length < 50) {
+      console.error(`[Backtest] Pas de données pour ${category} ${year}`);
       return [];
     }
     
-    const text = await response.text();
     const lines = text.trim().split('\n');
     const headers = lines[0].split(',');
     
