@@ -1933,10 +1933,39 @@ export async function GET(request: NextRequest) {
           result = { fixData: { sportFixed: fixResult.updated, dupesDeleted, message: `${fixResult.updated} sports corrigés, ${dupesDeleted} doublons supprimés` } };
         } catch (e: any) { result = { fixData: { error: e.message } }; }
         break;
+
+      case 'rebuild-date':
+        // Reconstruire complètement les prédictions pour une date donnée
+        // 1) Supprimer toutes les prédictions de cette date
+        // 2) Fix le sport field globalement
+        // 3) Reset + re-vérifier + publier le bilan
+        try {
+          const rebuildTargetDate = url.searchParams.get('date');
+          if (!rebuildTargetDate) {
+            result = { rebuildDate: { error: 'Paramètre date requis (format YYYY-MM-DD)' } };
+            break;
+          }
+          
+          // Étape 1: Supprimer toutes les prédictions de cette date
+          const deletedCount = await SupabaseStore.deleteByDate(rebuildTargetDate);
+          
+          // Étape 2: Fix le sport field pour tout le reste
+          const fixResult = await SupabaseStore.fixSportField();
+          
+          result = { 
+            rebuildDate: { 
+              date: rebuildTargetDate, 
+              deleted: deletedCount, 
+              sportFixed: fixResult.updated,
+              message: `${deletedCount} prédictions supprimées pour ${rebuildTargetDate}, ${fixResult.updated} sports corrigés globalement` 
+            } 
+          };
+        } catch (e: any) { result = { rebuildDate: { error: e.message } }; }
+        break;
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'fix-data'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'fix-data', 'rebuild-date'] },
           { status: 400 }
         );
     }

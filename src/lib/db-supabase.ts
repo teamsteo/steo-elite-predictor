@@ -449,6 +449,23 @@ export const SupabaseStore = {
     }
   },
 
+  async deleteByDate(dateISO: string): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 0;
+    try {
+      // Supprimer les prédictions dont match_date commence par la date donnée
+      const { data, error } = await supabase
+        .from('predictions')
+        .delete()
+        .ilike('match_date', `${dateISO}%`)
+        .select('id');
+      if (error) { console.error('deleteByDate error:', error); return 0; }
+      return data?.length || 0;
+    } catch {
+      return 0;
+    }
+  },
+
   async deleteOldPendingPredictions(daysOld: number = 7): Promise<{ deleted: number; errors: string[] }> {
     const supabase = getSupabase();
     if (!supabase) return { deleted: 0, errors: ['Supabase non configuré'] };
