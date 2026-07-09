@@ -1998,6 +1998,7 @@ export async function GET(request: NextRequest) {
           };
 
           let inserted = 0;
+          const records: Record<string, any>[] = [];
           for (const p of predictions) {
             const timeSuffix = p.time ? `-${p.time.replace(':', '')}` : '';
             const matchId = `${cleanTeam(p.home)}-${cleanTeam(p.away)}-mlb-2026-07-08${timeSuffix}`;
@@ -2008,22 +2009,30 @@ export async function GET(request: NextRequest) {
               home_team: p.home,
               away_team: p.away,
               league: 'MLB',
-              sport: 'baseball' as const,
+              sport: 'baseball',
               match_date: `2026-07-08T${p.time}:00Z`,
               odds_home: p.oddsH,
               odds_draw: null,
               odds_away: p.oddsA,
-              predicted_result: p.pred as 'home' | 'away',
-              confidence: 'medium' as const,
+              predicted_result: p.pred,
+              confidence: 'medium',
               risk_percentage: p.risk,
-              status: 'completed' as const,
-              home_score: r?.hs ?? undefined,
-              away_score: r?.as ?? undefined,
-              actual_result: (r?.winner || undefined) as 'home' | 'away' | undefined,
-              result_match: r ? isWin : undefined,
+              status: 'completed',
+              home_score: r?.hs ?? null,
+              away_score: r?.as ?? null,
+              actual_result: r?.winner || null,
+              result_match: r ? isWin : null,
             };
-            const success = await SupabaseStore.addPredictions([dbPred]);
-            if (success > 0) inserted++;
+            records.push(dbPred);
+          }
+          // Insert en masse via insertRaw (bypass normalizeSport)
+          if (records.length > 0) {
+            const insertResult = await SupabaseStore.insertRaw(records);
+            inserted = insertResult.count || 0;
+            if (!insertResult.success) {
+              result = { insertJuly8: { error: insertResult.error, records: records.length } };
+              break;
+            }
           }
           result = { insertJuly8: { inserted, total: predictions.length, message: `${inserted}/${predictions.length} pronostics insérés avec résultats vérifiés` } };
         } catch (e: any) { result = { insertJuly8: { error: e.message } }; }

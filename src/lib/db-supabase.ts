@@ -449,6 +449,21 @@ export const SupabaseStore = {
     }
   },
 
+  async insertRaw(records: Record<string, any>[]): Promise<{ success: boolean; error?: string; count?: number }> {
+    const supabase = getSupabase();
+    if (!supabase) return { success: false, error: 'Supabase non configuré' };
+    try {
+      const { data, error } = await supabase
+        .from('predictions')
+        .upsert(records, { onConflict: 'match_id' })
+        .select();
+      if (error) return { success: false, error: error.message };
+      return { success: true, count: data?.length || 0 };
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
   async deleteByDate(dateISO: string): Promise<number> {
     const supabase = getSupabase();
     if (!supabase) return 0;
