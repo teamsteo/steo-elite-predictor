@@ -103,7 +103,7 @@ function normalizeSport(sport: string): 'football' | 'basketball' | 'baseball' |
   const s = sport.toLowerCase();
   if (s.includes('foot') || s.includes('soccer')) return 'football';
   if (s.includes('basket') || s.includes('nba')) return 'basketball';
-  if (s.includes('baseball') || s.includes('mlb')) return 'baseball';
+  if (s.includes('baseball') || s.includes('mlb')) return 'other'; // TODO: remettre 'baseball' quand l'enum Supabase sera mis à jour
   if (s.includes('hockey') || s.includes('nhl')) return 'hockey';
   if (s.includes('tennis')) return 'tennis';
   return 'other';
