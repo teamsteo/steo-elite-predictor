@@ -32,7 +32,7 @@ import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataS
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v10'; // Suppression limite 10, séparation sports améliorée
+const CRON_VERSION = 'v11'; // Anti-piège modérés + kamikaze bilan dédié + sport fix
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -1673,6 +1673,48 @@ export async function GET(request: NextRequest) {
           
           const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
           
+          // 🛡️ FILTRE ANTI-PIÈGE : retirer les modérés des sports en anomalie
+          // Un sport est en anomalie si son taux de réussite récent (< 20 derniers terminés) est < 35%
+          // Les "faux vrais" (modérés qui perdent systématiquement) sont retirés, seuls les safe sont gardés
+          let trapFilteredCount = 0;
+          try {
+            const recentCompleted = await SupabaseStore.getRecentCompletedPredictions(100);
+            const sportStats: Record<string, { wins: number; total: number }> = {};
+            for (const p of recentCompleted) {
+              if (p.result_match === null || p.result_match === undefined) continue;
+              const sport = (p.sport || 'other').toLowerCase();
+              if (!sportStats[sport]) sportStats[sport] = { wins: 0, total: 0 };
+              sportStats[sport].total++;
+              if (p.result_match === true) sportStats[sport].wins++;
+            }
+            // Détecter les sports en anomalie (taux < 35% sur au moins 5 matchs)
+            const anomalySports = new Set<string>();
+            for (const [sport, stats] of Object.entries(sportStats)) {
+              if (stats.total >= 5) {
+                const rate = stats.wins / stats.total;
+                if (rate < 0.35) {
+                  anomalySports.add(sport);
+                  console.log(`🚨 ANOMALIE DÉTECTÉE: ${sport} — ${stats.wins}/${stats.total} (${Math.round(rate * 100)}%) → retrait des modérés`);
+                }
+              }
+            }
+            // Retirer les modérés (31-50%) des sports en anomalie, garder les safe (≤30%)
+            if (anomalySports.size > 0) {
+              const beforeCount = predictions.length;
+              predictions = predictions.filter((p: any) => {
+                const sport = (p.sport || '').toLowerCase();
+                if (anomalySports.has(sport) && p.riskPercentage > 30 && p.riskPercentage <= 50) {
+                  trapFilteredCount++;
+                  return false; // Retirer ce modéré
+                }
+                return true;
+              });
+              console.log(`🛡️ Anti-piège: ${trapFilteredCount} modéré(s) retiré(s) sur ${anomalySports.size} sport(s) en anomalie`);
+            }
+          } catch (e: any) {
+            console.log('⚠️ Erreur filtre anti-piège (non bloquant):', e.message);
+          }
+          
           // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES sur Telegram (même filtre que publishDailySummaryToTelegram)
           // ⚠️ Même logique : safe/modéré + max 10 par sport + trié par risque croissant
           try {
@@ -1724,15 +1766,17 @@ export async function GET(request: NextRequest) {
           }
           
           const telegramResult = await publishDailySummaryToTelegram(predictions);
+          const postFilterCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
           result = { 
             telegram: { 
               success: telegramResult, 
               total: predictions.length,
-              published: filteredCount,
-              excluded: predictions.length - filteredCount,
+              published: postFilterCount,
+              excluded: predictions.length - postFilterCount,
+              trapFiltered: trapFilteredCount,
               source: 'espn-live',
               message: telegramResult 
-                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+                ? `Résumé publié: ${postFilterCount} pronostics${trapFilteredCount > 0 ? ` (${trapFilteredCount} modéré(s) piège retiré(s))` : ''} sur Telegram`
                 : 'Erreur publication Telegram'
             } 
           };
@@ -1876,7 +1920,7 @@ export async function GET(request: NextRequest) {
                   home_team: p.homeTeam,
                   away_team: p.awayTeam,
                   league: p.league || 'Unknown',
-                  sport: (p.sport || 'other').toLowerCase(),
+                  sport: (p.sport || 'football').toLowerCase(),
                   match_date: p.date || new Date().toISOString(),
                   odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null,
