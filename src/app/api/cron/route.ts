@@ -1962,6 +1962,72 @@ export async function GET(request: NextRequest) {
           };
         } catch (e: any) { result = { rebuildDate: { error: e.message } }; }
         break;
+
+      case 'insert-july8':
+        // Insertion manuelle des 12 pronostics publiés le 8 juillet avec résultats ESPN vérifiés
+        try {
+          const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+          const predictions = [
+            { home: "New York Mets", away: "Kansas City Royals", pred: "home", oddsH: 1.55, oddsA: 2.49, risk: 35, time: "23:35" },
+            { home: "St. Louis Cardinals", away: "Milwaukee Brewers", pred: "away", oddsH: 2.28, oddsA: 1.65, risk: 39, time: "23:40" },
+            { home: "Cincinnati Reds", away: "Philadelphia Phillies", pred: "home", oddsH: 1.69, oddsA: 2.19, risk: 41, time: "23:40" },
+            { home: "Detroit Tigers", away: "Athletics", pred: "home", oddsH: 1.73, oddsA: 2.14, risk: 42, time: "22:40" },
+            { home: "Baltimore Orioles", away: "Chicago Cubs", pred: "home", oddsH: 1.76, oddsA: 2.08, risk: 43, time: "22:35" },
+            { home: "Miami Marlins", away: "Seattle Mariners", pred: "away", oddsH: 2.08, oddsA: 1.76, risk: 43, time: "22:40" },
+            { home: "Washington Nationals", away: "Houston Astros", pred: "home", oddsH: 1.74, oddsA: 2.13, risk: 43, time: "22:40" },
+            { home: "San Francisco Giants", away: "Toronto Blue Jays", pred: "away", oddsH: 2.04, oddsA: 1.80, risk: 44, time: "19:45" },
+            { home: "Pittsburgh Pirates", away: "Atlanta Braves", pred: "home", oddsH: 1.83, oddsA: 1.99, risk: 46, time: "22:40" },
+            { home: "Minnesota Twins", away: "Cleveland Guardians", pred: "home", oddsH: 1.83, oddsA: 1.99, risk: 46, time: "22:40" },
+            { home: "Chicago White Sox", away: "Boston Red Sox", pred: "home", oddsH: 1.89, oddsA: 1.93, risk: 47, time: "23:10" },
+            { home: "Tampa Bay Rays", away: "New York Yankees", pred: "home", oddsH: 1.85, oddsA: 1.98, risk: 46, time: "22:40" },
+          ];
+          // Résultats ESPN vérifiés
+          const results: Record<string, {hs: number; as: number; winner: string}> = {
+            "new-york-mets-kansas-city-royals": { hs: 6, as: 2, winner: "home" },
+            "st-louis-cardinals-milwaukee-brewers": { hs: 5, as: 1, winner: "home" },
+            "cincinnati-reds-philadelphia-phillies": { hs: 11, as: 5, winner: "home" },
+            "detroit-tigers-athletics": { hs: 6, as: 1, winner: "home" },
+            "baltimore-orioles-chicago-cubs": { hs: 7, as: 9, winner: "away" },
+            "miami-marlins-seattle-mariners": { hs: 2, as: 0, winner: "home" },
+            "washington-nationals-houston-astros": { hs: 8, as: 2, winner: "home" },
+            "san-francisco-giants-toronto-blue-jays": { hs: 0, as: 10, winner: "away" },
+            "pittsburgh-pirates-atlanta-braves": { hs: 0, as: 3, winner: "away" },
+            "minnesota-twins-cleveland-guardians": { hs: 6, as: 5, winner: "home" },
+            "chicago-white-sox-boston-red-sox": { hs: 0, as: 5, winner: "away" },
+            "tampa-bay-rays-new-york-yankees": { hs: 3, as: 0, winner: "home" },
+          };
+
+          let inserted = 0;
+          for (const p of predictions) {
+            const timeSuffix = p.time ? `-${p.time.replace(':', '')}` : '';
+            const matchId = `${cleanTeam(p.home)}-${cleanTeam(p.away)}-mlb-2026-07-08${timeSuffix}`;
+            const r = results[matchId] || results[`${cleanTeam(p.home)}-${cleanTeam(p.away)}`];
+            const isWin = r && p.pred === r.winner;
+            const dbPred = {
+              match_id: matchId,
+              home_team: p.home,
+              away_team: p.away,
+              league: 'MLB',
+              sport: 'baseball' as const,
+              match_date: `2026-07-08T${p.time}:00Z`,
+              odds_home: p.oddsH,
+              odds_draw: null,
+              odds_away: p.oddsA,
+              predicted_result: p.pred as 'home' | 'away',
+              confidence: 'medium' as const,
+              risk_percentage: p.risk,
+              status: 'completed' as const,
+              home_score: r?.hs ?? undefined,
+              away_score: r?.as ?? undefined,
+              actual_result: (r?.winner || undefined) as 'home' | 'away' | undefined,
+              result_match: r ? isWin : undefined,
+            };
+            const success = await SupabaseStore.addPredictions([dbPred]);
+            if (success > 0) inserted++;
+          }
+          result = { insertJuly8: { inserted, total: predictions.length, message: `${inserted}/${predictions.length} pronostics insérés avec résultats vérifiés` } };
+        } catch (e: any) { result = { insertJuly8: { error: e.message } }; }
+        break;
         
       default:
         return NextResponse.json(
