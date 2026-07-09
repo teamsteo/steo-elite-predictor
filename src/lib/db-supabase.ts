@@ -415,7 +415,40 @@ export const SupabaseStore = {
       return false;
     }
   },
-  
+
+  async deleteByMatchId(matchId: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('predictions')
+        .delete()
+        .eq('match_id', matchId);
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  async fixSportField(): Promise<{ updated: number }> {
+    const supabase = getSupabase();
+    if (!supabase) return { updated: 0 };
+    try {
+      // Fix: mettre à jour 'other' → 'baseball' pour les matchs MLB
+      const { data, error } = await supabase
+        .from('predictions')
+        .update({ sport: 'baseball' })
+        .eq('sport', 'other')
+        .ilike('league', '%MLB%')
+        .select('id');
+      if (error) console.error('fixSportField error:', error);
+      return { updated: data?.length || 0 };
+    } catch (e: any) {
+      console.error('fixSportField:', e);
+      return { updated: 0 };
+    }
+  },
+
   async deleteOldPendingPredictions(daysOld: number = 7): Promise<{ deleted: number; errors: string[] }> {
     const supabase = getSupabase();
     if (!supabase) return { deleted: 0, errors: ['Supabase non configuré'] };

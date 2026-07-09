@@ -1907,10 +1907,36 @@ export async function GET(request: NextRequest) {
           result = { reset: { date: resetDate, total: allPreds.length, reset: resetCount, alreadyPending, message: `${resetCount} réinitialisées, ${alreadyPending} déjà en attente` } };
         } catch (e: any) { result = { reset: { error: e.message } }; }
         break;
+
+      case 'fix-data':
+        // 1) Corriger le sport 'other' → 'baseball' pour les matchs MLB
+        // 2) Supprimer les doublons (même home/away/sport/date)
+        try {
+          const fixResult = await SupabaseStore.fixSportField();
+          
+          // Supprimer les doublons : garder le premier, supprimer les autres
+          const allPreds = await SupabaseStore.getAllPredictions();
+          const seen = new Set<string>();
+          let dupesDeleted = 0;
+          for (const p of allPreds) {
+            // Clé de dédup basée sur home_team + away_team + date (sans l'heure)
+            const dateStr = (p.match_date || '').split('T')[0];
+            const key = `${(p.home_team || '').toLowerCase()}-${(p.away_team || '').toLowerCase()}-${dateStr}`;
+            if (seen.has(key)) {
+              const success = await SupabaseStore.deleteByMatchId(p.match_id);
+              if (success) dupesDeleted++;
+            } else {
+              seen.add(key);
+            }
+          }
+          
+          result = { fixData: { sportFixed: fixResult.updated, dupesDeleted, message: `${fixResult.updated} sports corrigés, ${dupesDeleted} doublons supprimés` } };
+        } catch (e: any) { result = { fixData: { error: e.message } }; }
+        break;
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'fix-data'] },
           { status: 400 }
         );
     }
