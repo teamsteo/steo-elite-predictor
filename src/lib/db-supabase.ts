@@ -45,7 +45,7 @@ export interface DbPrediction {
   home_team: string;
   away_team: string;
   league: string;
-  sport: 'football' | 'basketball' | 'hockey' | 'tennis' | 'other';
+  sport: 'football' | 'basketball' | 'baseball' | 'hockey' | 'tennis' | 'other';
   match_date: string;
   season?: string;
   
@@ -99,10 +99,11 @@ export interface DbDailyStats {
 // UTILITAIRES
 // ============================================
 
-function normalizeSport(sport: string): 'football' | 'basketball' | 'hockey' | 'tennis' | 'other' {
+function normalizeSport(sport: string): 'football' | 'basketball' | 'baseball' | 'hockey' | 'tennis' | 'other' {
   const s = sport.toLowerCase();
   if (s.includes('foot') || s.includes('soccer')) return 'football';
   if (s.includes('basket') || s.includes('nba')) return 'basketball';
+  if (s.includes('baseball') || s.includes('mlb')) return 'baseball';
   if (s.includes('hockey') || s.includes('nhl')) return 'hockey';
   if (s.includes('tennis')) return 'tennis';
   return 'other';
