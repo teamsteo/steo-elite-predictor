@@ -1593,10 +1593,11 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     }
 
     const total = wins + losses;
-    if (total === 0) return false;
+    // 💡 Publier même si aucun terminé (montrer "en attente")
+    const hasPending = kamikazePredictions.filter(p => p.status === 'pending').length > 0;
 
-    const winRate = Math.round((wins / total) * 100);
-    const roi = Math.round(totalProfit * 100 / total);
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+    const roi = total > 0 ? Math.round(totalProfit * 100 / total) : 0;
     const profitSign = totalProfit >= 0 ? '+' : '';
     const roiSign = roi >= 0 ? '+' : '';
 
@@ -1617,28 +1618,39 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     message += `📅 <b>${dateLabel}</b>\n\n`;
 
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-    const kEmoji = winRate >= 60 ? '🔥' : winRate >= 40 ? '💀' : '☠️';
-    message += `${kEmoji} ✅ ${wins}/${total} corrects  ·  <b>${winRate}%</b>\n`;
-    if (totalProfit !== 0) {
-      const pEmoji = roi >= 0 ? '💰' : '📉';
-      message += `${pEmoji} ROI: <b>${roiSign}${roi}%</b> (${profitSign}${totalProfit.toFixed(2)}u)\n`;
+    if (total > 0) {
+      const kEmoji = winRate >= 60 ? '🔥' : winRate >= 40 ? '💀' : '☠️';
+      message += `${kEmoji} ✅ ${wins}/${total} corrects  ·  <b>${winRate}%</b>\n`;
+      if (totalProfit !== 0) {
+        const pEmoji = roi >= 0 ? '💰' : '📉';
+        message += `${pEmoji} ROI: <b>${roiSign}${roi}%</b> (${profitSign}${totalProfit.toFixed(2)}u)\n`;
+      }
+    } else if (hasPending) {
+      message += `⏳ <b>${kamikazePredictions.length} pronostic${kamikazePredictions.length > 1 ? 's' : ''} en attente de résultat</b>\n`;
     }
     message += '\n';
 
-    // Détails
+    // Détails — afficher TOUS les kamikazes (terminés ET en attente)
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     message += '<b>DÉTAILS</b>\n\n';
 
     for (const [sport, data] of Object.entries(bySport)) {
       const emoji = sportEmojis[sport] || '🏟️';
-      const completed = data.details.filter(d => d.status === 'completed' && d.resultMatch !== null);
-      if (completed.length === 0) continue;
+      // Séparateur par sport
+      message += `${emoji} <b>${sport.toUpperCase()}</b>\n`;
+      message += '───────────────────────────\n';
 
-      for (const d of completed) {
-        const rEmoji = d.resultMatch ? '✅' : '❌';
-        const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
-        message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
-        message += `    ${rEmoji} <b>${d.predicted}</b> → <b>${actual}</b>\n`;
+      for (const d of data.details) {
+        if (d.status === 'completed' && d.resultMatch !== null) {
+          const rEmoji = d.resultMatch ? '✅' : '❌';
+          const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
+          message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
+          message += `    ${rEmoji} <b>${d.predicted}</b> → <b>${actual}</b>\n`;
+        } else {
+          // En attente
+          message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
+          message += `    ⏳ <b>${d.predicted}</b> — En attente\n`;
+        }
       }
       message += '\n';
     }

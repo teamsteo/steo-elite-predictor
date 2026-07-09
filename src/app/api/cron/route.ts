@@ -1943,6 +1943,24 @@ export async function GET(request: NextRequest) {
         }
         break;
 
+      case 'telegram-kamikaze-bilan':
+        // Publier UNIQUEMENT le bilan kamikaze (sans relancer verify)
+        try {
+          const kDate = url.searchParams.get('date');
+          const kamikazeOnlyResult = await publishKamikazeBilanToTelegram(kDate || undefined);
+          result = {
+            telegram: {
+              success: kamikazeOnlyResult,
+              message: kamikazeOnlyResult
+                ? '💣 Bilan kamikaze publié sur Telegram'
+                : 'Aucun pronostic kamikaze pour cette date'
+            }
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
       case 'telegram-monthly':
         // Publier le bilan mensuel par sport sur Telegram
         try {
