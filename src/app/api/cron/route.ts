@@ -1464,11 +1464,15 @@ export async function GET(request: NextRequest) {
         }
         break;
 
-      case 'rebuild-bilan':
-
       case 'fix-sport':
         // Corrige sport='other' → bon sport basé sur la league, et supprime les doublons
         try {
+          const { createClient } = await import('@supabase/supabase-js');
+          const supabaseDirect = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+            process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+          );
+
           const fixDate = url.searchParams.get('date') || (() => {
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
@@ -1493,12 +1497,11 @@ export async function GET(request: NextRequest) {
           let deletedDupes = 0;
           const matchIdCount: Record<string, number> = {};
           
+          // 1) Corriger sport='other' → bon sport
           for (const p of allFixPreds) {
-            // Compter les occurrences de match_id pour détecter les doublons
-            const baseId = p.match_id.replace(/-\d{6}$/, ''); // enlever le suffixe heure
+            const baseId = p.match_id.replace(/-\d{6}$/, '');
             matchIdCount[baseId] = (matchIdCount[baseId] || 0) + 1;
             
-            // Corriger sport='other' → baseball si la league contient MLB
             if (p.sport === 'other' && p.league) {
               const league = p.league.toLowerCase();
               let correctSport: string | null = null;
@@ -1508,47 +1511,35 @@ export async function GET(request: NextRequest) {
               else if (league.includes('atp') || league.includes('wta') || league.includes('tennis')) correctSport = 'tennis';
               
               if (correctSport && p.id) {
-                await SupabaseStore.completePrediction(p.match_id, {
-                  homeScore: p.home_score ?? undefined,
-                  awayScore: p.away_score ?? undefined,
-                  actualResult: p.actual_result || undefined,
-                  resultMatch: p.result_match ?? undefined,
-                  status: p.status || 'pending',
-                });
-                // Mettre à jour directement le sport via Supabase REST
-                const { createClient } = await import('@supabase/supabase-js');
-                const supabase = createClient(
-                  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-                  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-                );
-                const { error } = await supabase
+                const { error } = await supabaseDirect
                   .from('predictions')
                   .update({ sport: correctSport })
                   .eq('id', p.id);
                 if (!error) {
                   fixedCount++;
                   console.log(`✅ Fix sport: ${p.home_team} vs ${p.away_team} → ${correctSport}`);
+                } else {
+                  console.error(`❌ Erreur fix sport:`, error.message);
                 }
               }
             }
           }
           
-          // Supprimer les doublons (même baseId, garder le premier)
-          const seenIds = new Set<string>();
+          // 2) Supprimer les doublons (même baseId sans suffixe heure, garder le premier)
+          const seenBaseIds = new Set<string>();
           for (const p of allFixPreds) {
             const baseId = p.match_id.replace(/-\d{6}$/, '');
             if (matchIdCount[baseId] > 1) {
-              if (seenIds.has(baseId)) {
-                // C'est un doublon, le supprimer
+              if (seenBaseIds.has(baseId)) {
                 if (p.id) {
                   const success = await SupabaseStore.deletePrediction(p.id);
                   if (success) {
                     deletedDupes++;
-                    console.log(`🗑️ Doublon supprimé: ${p.home_team} vs ${p.away_team}`);
+                    console.log(`🗑️ Doublon supprimé: ${p.home_team} vs ${p.away_team} (${p.match_id})`);
                   }
                 }
               } else {
-                seenIds.add(baseId);
+                seenBaseIds.add(baseId);
               }
             }
           }
