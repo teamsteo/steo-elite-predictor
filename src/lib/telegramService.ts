@@ -1364,13 +1364,13 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
   // Maps sport
   const sportEmojis: Record<string, string> = {
-    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️',
+    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'baseball': '⚾', 'other': '🏟️',
   };
   const sportNames: Record<string, string> = {
-    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'other': 'Autres',
+    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'baseball': 'Baseball', 'other': 'Autres',
   };
   const sportPriority: Record<string, number> = {
-    'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'other': 99,
+    'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'baseball': 5, 'other': 99,
   };
   const sortedSports = Object.keys(summary.bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
 

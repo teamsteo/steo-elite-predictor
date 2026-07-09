@@ -32,7 +32,7 @@ import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataS
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v8'; // Bump to force Vercel redeployment
+const CRON_VERSION = 'v9'; // Bump to force Vercel redeployment
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -504,9 +504,8 @@ async function fetchMLBResultsFromESPN(): Promise<MatchResult[]> {
   const results: MatchResult[] = [];
   const dates: string[] = [];
 
-  // ⚠️ On ne cherche QUE les jours passés (J-1 à J-4)
-  // Les matchs du jour (J-0) sont généralement EN COURS ou NON COMMENCÉS
-  for (let i = 1; i <= 4; i++) {
+  // ⚠️ Cherche J-0 à J-4 (aujourd'hui inclus car les matchs du jour peuvent être terminés)
+  for (let i = 0; i <= 4; i++) {
     const d = new Date();
     d.setDate(d.getDate() - i);
     dates.push(toUSDateStr(d));
@@ -637,7 +636,7 @@ async function verifyMLBResults(): Promise<{
     // Récupérer les pronostics MLB/other pending depuis Supabase
     const allPending = await SupabaseStore.getPendingPredictions();
     const pending = allPending.filter(p =>
-      p.sport === 'other' || p.sport === 'hockey' ||
+      p.sport === 'other' || p.sport === 'hockey' || p.sport === 'baseball' ||
       p.league?.includes('MLB') || p.league?.includes('NHL')
     );
 
@@ -1619,7 +1618,7 @@ export async function GET(request: NextRequest) {
                 home_team: p.homeTeam,
                 away_team: p.awayTeam,
                 league: p.league || 'Unknown',
-                sport: p.sport || 'football',
+                sport: (p.sport || 'football').toLowerCase(),
                 match_date: p.date || new Date().toISOString(),
                 odds_home: p.oddsHome || 1.0,
                 odds_draw: p.oddsDraw || null,
@@ -1873,10 +1872,45 @@ export async function GET(request: NextRequest) {
           result = { telegram: { success: false, error: e.message } };
         }
         break;
+
+      case 'reset-results':
+        // Remettre toutes les prédictions d'une date en 'pending' (pour revérification)
+        try {
+          const resetDate = url.searchParams.get('date');
+          if (!resetDate) {
+            result = { reset: { error: 'Paramètre date requis (format YYYY-MM-DD)' } };
+            break;
+          }
+          const nextDay = (() => {
+            const d = new Date(resetDate + 'T12:00:00Z');
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().split('T')[0];
+          })();
+          const [dayPreds, nextDayPreds] = await Promise.all([
+            SupabaseStore.getPredictionsByDate(resetDate),
+            SupabaseStore.getPredictionsByDate(nextDay),
+          ]);
+          const seen = new Set<string>();
+          const allPreds: any[] = [];
+          for (const p of [...dayPreds, ...nextDayPreds]) {
+            if (!seen.has(p.match_id)) { seen.add(p.match_id); allPreds.push(p); }
+          }
+          let resetCount = 0;
+          let alreadyPending = 0;
+          for (const p of allPreds) {
+            if (p.status === 'pending') { alreadyPending++; continue; }
+            const success = await SupabaseStore.completePrediction(p.match_id, {
+              homeScore: 0, awayScore: 0, actualResult: 'home', resultMatch: false, status: 'pending'
+            });
+            if (success) resetCount++;
+          }
+          result = { reset: { date: resetDate, total: allPreds.length, reset: resetCount, alreadyPending, message: `${resetCount} réinitialisées, ${alreadyPending} déjà en attente` } };
+        } catch (e: any) { result = { reset: { error: e.message } }; }
+        break;
         
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results'] },
           { status: 400 }
         );
     }
@@ -2317,7 +2351,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results'] },
           { status: 400 }
         );
     }
