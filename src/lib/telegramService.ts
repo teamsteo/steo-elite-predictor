@@ -1161,7 +1161,15 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     let totalProfit = 0;
 
     for (const p of dayPredictions) {
-      const sport = p.sport || 'other';
+      // ⚠️ Inférer le vrai sport à partir du league si sport='other'
+      let sport = p.sport || 'other';
+      if (sport === 'other' && p.league) {
+        const league = p.league.toLowerCase();
+        if (league.includes('mlb') || league.includes('baseball')) sport = 'baseball';
+        else if (league.includes('nba') || league.includes('basketball')) sport = 'basketball';
+        else if (league.includes('nhl') || league.includes('hockey')) sport = 'hockey';
+        else if (league.includes('atp') || league.includes('wta') || league.includes('tennis')) sport = 'tennis';
+      }
       if (!summary.bySport[sport]) {
         summary.bySport[sport] = { total: 0, wins: 0, losses: 0, winRate: 0, pending: 0, roi: 0, profitUnits: 0 };
       }

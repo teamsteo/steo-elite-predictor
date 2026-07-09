@@ -2009,7 +2009,7 @@ export async function GET(request: NextRequest) {
               home_team: p.home,
               away_team: p.away,
               league: 'MLB',
-              sport: 'baseball',
+              sport: 'other', // TODO: changer en 'baseball' quand l'enum Supabase sera mis à jour
               match_date: `2026-07-08T${p.time}:00Z`,
               odds_home: p.oddsH,
               odds_draw: null,
