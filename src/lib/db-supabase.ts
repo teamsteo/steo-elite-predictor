@@ -453,14 +453,25 @@ export const SupabaseStore = {
     const supabase = getSupabase();
     if (!supabase) return 0;
     try {
-      // Supprimer les prédictions dont match_date commence par la date donnée
-      const { data, error } = await supabase
-        .from('predictions')
-        .delete()
-        .ilike('match_date', `${dateISO}%`)
-        .select('id');
-      if (error) { console.error('deleteByDate error:', error); return 0; }
-      return data?.length || 0;
+      // Supprimer sur la date + le lendemain (matchs de nuit US en UTC)
+      const dates = [dateISO];
+      const nextDay = new Date(dateISO + 'T12:00:00Z');
+      nextDay.setDate(nextDay.getDate() + 1);
+      dates.push(nextDay.toISOString().split('T')[0]);
+      
+      let totalDeleted = 0;
+      for (const d of dates) {
+        const startOfDay = `${d}T00:00:00`;
+        const endOfDay = `${d}T23:59:59`;
+        const { data, error } = await supabase
+          .from('predictions')
+          .delete()
+          .gte('match_date', startOfDay)
+          .lte('match_date', endOfDay)
+          .select('id');
+        if (!error && data) totalDeleted += data.length;
+      }
+      return totalDeleted;
     } catch {
       return 0;
     }
