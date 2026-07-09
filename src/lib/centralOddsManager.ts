@@ -90,7 +90,7 @@ async function loadMonthlyQuota(): Promise<number> {
     
     const { count, error } = await supabaseClient
       .from('predictions')
-      .select('id', 'match_date')
+      .select('id, match_date', { count: 'exact', head: true })
       .gte('match_date', `${currentMonth}-01`)
       .lt('match_date', `${currentMonth}-32`);
     
@@ -232,7 +232,7 @@ export async function fetchMultipleOdds(sportKeys: string[], maxCalls: number = 
 /**
  * Statut du quota
  */
-export function getQuotaStatus(): {
+export function getQuotaStatus() {
   checkDailyReset();
   return {
     dailyUsed: state.dayCalls,
