@@ -119,19 +119,40 @@ function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | nul
 async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw: number | null; away: number }>> {
   const oddsMap = new Map<string, { home: number; draw: number | null; away: number }>();
   
+  // 🔑 Clé API directe (bypass centralOddsManager qui peut bloquer à tort)
+  // Le quota manager estime les appels via les prédictions en base (×1.5), ce qui
+  // peut bloquer alors qu'on ne fait qu'1 appel/jour pour Summer League.
+  const apiKey = ODDS_API_KEY || process.env.ODDS_API_KEY;
+  if (!apiKey) {
+    console.log('📡 Odds API: pas de clé API configurée');
+    return oddsMap;
+  }
+  
   try {
-    // 🏀 Cibler spécifiquement la NBA Summer League (ESPN n'a pas de cotes pour cette ligue)
-    // + NBA régulière en spare (1 seul appel = 1/15 du budget quotidien)
-    const { fetchOdds } = await import('./centralOddsManager');
+    // 🏀 Cibler spécifiquement la NBA Summer League (ESPN n'a pas de cotes)
+    const url = `${ODDS_API_BASE}/sports/basketball_nba_summer_league/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`;
+    console.log('📡 Odds API: appel direct Summer League (bypass quota manager)...');
     
-    // Récupérer Summer League d'abord (priorité en juillet)
-    const summerData = await fetchOdds('basketball_nba_summer_league');
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      console.log(`📡 Odds API: erreur HTTP ${response.status}`);
+      return oddsMap;
+    }
+    
+    const summerData = await response.json();
+    if (!Array.isArray(summerData)) return oddsMap;
+    
     for (const event of summerData) {
       const home = event.home_team || '';
       const away = event.away_team || '';
-      const markets = event.bookmakers?.[0]?.markets || [];
-      const h2h = markets.find((m: any) => m.key === 'h2h');
+      // Prendre le premier bookmaker avec des cotes h2h
+      const bookmaker = event.bookmakers?.find((b: any) => 
+        b.markets?.some((m: any) => m.key === 'h2h' && m.outcomes?.length >= 2)
+      );
+      if (!bookmaker) continue;
+      const h2h = bookmaker.markets.find((m: any) => m.key === 'h2h');
       if (h2h) {
+        // Matcher par nom d'équipe (les outcomes ne sont pas ordonnés home/away)
         const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
         const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
         if (homeOdds?.price && awayOdds?.price) {
@@ -144,32 +165,39 @@ async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw:
       }
     }
     
-    if (summerData.length > 0) {
-      console.log(`📡 Odds API: ${summerData.length} cotes Summer League récupérées (Marathonbet)`);
+    if (oddsMap.size > 0) {
+      console.log(`📡 Odds API: ${oddsMap.size} cotes Summer League récupérées (${summerData.length} events)`);
     }
     
-    // ⚠️ Ne récupérer la NBA régulière que si la Summer League est vide (saison régulière)
-    if (summerData.length === 0) {
-      const nbaData = await fetchOdds('basketball_nba');
-      for (const event of nbaData) {
-        const home = event.home_team || '';
-        const away = event.away_team || '';
-        const markets = event.bookmakers?.[0]?.markets || [];
-        const h2h = markets.find((m: any) => m.key === 'h2h');
-        if (h2h) {
-          const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
-          const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
-          if (homeOdds?.price && awayOdds?.price) {
-            oddsMap.set(`${home.toLowerCase()}_${away.toLowerCase()}`, {
-              home: homeOdds.price,
-              draw: null,
-              away: awayOdds.price,
-            });
+    // ⚠️ Ne récupérer la NBA régulière que si la Summer League est vide
+    if (oddsMap.size === 0) {
+      const nbaUrl = `${ODDS_API_BASE}/sports/basketball_nba/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`;
+      const nbaResp = await fetch(nbaUrl, { signal: AbortSignal.timeout(10000) });
+      if (nbaResp.ok) {
+        const nbaData = await nbaResp.json();
+        if (Array.isArray(nbaData)) {
+          for (const event of nbaData) {
+            const home = event.home_team || '';
+            const away = event.away_team || '';
+            const bookmaker = event.bookmakers?.find((b: any) => 
+              b.markets?.some((m: any) => m.key === 'h2h' && m.outcomes?.length >= 2)
+            );
+            if (!bookmaker) continue;
+            const h2h = bookmaker.markets.find((m: any) => m.key === 'h2h');
+            if (h2h) {
+              const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
+              const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
+              if (homeOdds?.price && awayOdds?.price) {
+                oddsMap.set(`${home.toLowerCase()}_${away.toLowerCase()}`, {
+                  home: homeOdds.price,
+                  draw: null,
+                  away: awayOdds.price,
+                });
+              }
+            }
           }
+          console.log(`📡 Odds API: ${oddsMap.size} cotes NBA régulière récupérées`);
         }
-      }
-      if (nbaData.length > 0) {
-        console.log(`📡 Odds API: ${nbaData.length} cotes NBA régulière récupérées`);
       }
     }
   } catch (e: any) {
