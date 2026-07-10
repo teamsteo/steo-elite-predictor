@@ -1165,8 +1165,15 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     let totalProfit = 0;
 
     for (const p of dayPredictions) {
+      // ⚠️ Normaliser le sport (anciennes données pouvant avoir 'foot', 'basket', 'nhl')
+      let sport = (p.sport || 'other').toLowerCase();
+      // Normalisation des variantes
+      if (sport === 'foot' || sport === 'soccer') sport = 'football';
+      else if (sport === 'basket' || sport === 'nba') sport = 'basketball';
+      else if (sport === 'nhl') sport = 'hockey';
+      else if (sport === 'mlb') sport = 'baseball';
+
       // ⚠️ Inférer le vrai sport à partir du league si sport='other'
-      let sport = p.sport || 'other';
       if (sport === 'other' && p.league) {
         const league = p.league.toLowerCase();
         if (league.includes('mlb') || league.includes('baseball')) sport = 'baseball';
@@ -1559,7 +1566,13 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     const bySport: Record<string, { wins: number; losses: number; details: any[] }> = {};
 
     for (const p of kamikazePredictions) {
-      const sport = p.sport || 'other';
+      // ⚠️ Normaliser le sport
+      let sport = (p.sport || 'other').toLowerCase();
+      if (sport === 'foot' || sport === 'soccer') sport = 'football';
+      else if (sport === 'basket' || sport === 'nba') sport = 'basketball';
+      else if (sport === 'nhl') sport = 'hockey';
+      else if (sport === 'mlb') sport = 'baseball';
+
       if (!bySport[sport]) bySport[sport] = { wins: 0, losses: 0, details: [] };
 
       if (p.status === 'completed' && p.result_match !== null && p.result_match !== undefined) {
@@ -1746,7 +1759,13 @@ export async function publishMonthlyResultsToTelegram(monthISO?: string): Promis
     const bySport: Record<string, { wins: number; losses: number; total: number; profitUnits: number; leagues: Set<string> }> = {};
     
     for (const p of monthPredictions) {
-      const sport = p.sport || 'other';
+      // ⚠️ Normaliser le sport
+      let sport = (p.sport || 'other').toLowerCase();
+      if (sport === 'foot' || sport === 'soccer') sport = 'football';
+      else if (sport === 'basket' || sport === 'nba') sport = 'basketball';
+      else if (sport === 'nhl') sport = 'hockey';
+      else if (sport === 'mlb') sport = 'baseball';
+
       if (!bySport[sport]) {
         bySport[sport] = { wins: 0, losses: 0, total: 0, profitUnits: 0, leagues: new Set() };
       }

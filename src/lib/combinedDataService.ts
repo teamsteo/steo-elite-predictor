@@ -223,36 +223,37 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
     // Sports à récupérer - ESPN couvre tout gratuitement
     const sports = [
       // Sports US
-      { key: 'basketball/nba', name: 'NBA', sport: 'Basket' },
-      { key: 'hockey/nhl', name: 'NHL', sport: 'NHL' },
+      { key: 'basketball/nba', name: 'NBA', sport: 'Basketball' },
+      { key: 'basketball/nba-summer', name: 'NBA Summer League', sport: 'Basketball' }, // 🏀 Summer League (juillet)
+      { key: 'hockey/nhl', name: 'NHL', sport: 'Hockey' },
       { key: 'baseball/mlb', name: 'MLB', sport: 'Baseball' }, // ⚾ MLB actif en juin
       // Ligues nationales européennes
-      { key: 'soccer/eng.1', name: 'Premier League', sport: 'Foot' },
-      { key: 'soccer/esp.1', name: 'La Liga', sport: 'Foot' },
-      { key: 'soccer/ita.1', name: 'Serie A', sport: 'Foot' },
-      { key: 'soccer/ger.1', name: 'Bundesliga', sport: 'Foot' },
-      { key: 'soccer/fra.1', name: 'Ligue 1', sport: 'Foot' },
+      { key: 'soccer/eng.1', name: 'Premier League', sport: 'Football' },
+      { key: 'soccer/esp.1', name: 'La Liga', sport: 'Football' },
+      { key: 'soccer/ita.1', name: 'Serie A', sport: 'Football' },
+      { key: 'soccer/ger.1', name: 'Bundesliga', sport: 'Football' },
+      { key: 'soccer/fra.1', name: 'Ligue 1', sport: 'Football' },
       // Compétitions européennes
-      { key: 'soccer/uefa.champions', name: 'Champions League', sport: 'Foot' },
-      { key: 'soccer/uefa.europa', name: 'Europa League', sport: 'Foot' },
-      { key: 'soccer/uefa.europa.conf', name: 'Conference League', sport: 'Foot' },
+      { key: 'soccer/uefa.champions', name: 'Champions League', sport: 'Football' },
+      { key: 'soccer/uefa.europa', name: 'Europa League', sport: 'Football' },
+      { key: 'soccer/uefa.europa.conf', name: 'Conference League', sport: 'Football' },
       // Autres ligues
-      { key: 'soccer/ned.1', name: 'Eredivisie', sport: 'Foot' },
-      { key: 'soccer/por.1', name: 'Liga Portugal', sport: 'Foot' },
-      { key: 'soccer/bel.1', name: 'Jupiler Pro League', sport: 'Foot' },
-      { key: 'soccer/tur.1', name: 'Süper Lig', sport: 'Foot' },
+      { key: 'soccer/ned.1', name: 'Eredivisie', sport: 'Football' },
+      { key: 'soccer/por.1', name: 'Liga Portugal', sport: 'Football' },
+      { key: 'soccer/bel.1', name: 'Jupiler Pro League', sport: 'Football' },
+      { key: 'soccer/tur.1', name: 'Süper Lig', sport: 'Football' },
       // 🌍 COMPÉTITIONS INTERNATIONALES - Qualifications Coupe du Monde
-      { key: 'soccer/fifa.worldq.uefa', name: 'Éliminatoires Mondial Europe', sport: 'Foot', isInternational: true },
-      { key: 'soccer/fifa.worldq.conmebol', name: 'Éliminatoires Mondial Amérique Sud', sport: 'Foot', isInternational: true },
-      { key: 'soccer/fifa.worldq.concacaf', name: 'Éliminatoires Mondial Amérique Nord', sport: 'Foot', isInternational: true },
-      { key: 'soccer/fifa.worldq.afc', name: 'Éliminatoires Mondial Asie', sport: 'Foot', isInternational: true },
-      { key: 'soccer/fifa.worldq.caf', name: 'Éliminatoires Mondial Afrique', sport: 'Foot', isInternational: true },
+      { key: 'soccer/fifa.worldq.uefa', name: 'Éliminatoires Mondial Europe', sport: 'Football', isInternational: true },
+      { key: 'soccer/fifa.worldq.conmebol', name: 'Éliminatoires Mondial Amérique Sud', sport: 'Football', isInternational: true },
+      { key: 'soccer/fifa.worldq.concacaf', name: 'Éliminatoires Mondial Amérique Nord', sport: 'Football', isInternational: true },
+      { key: 'soccer/fifa.worldq.afc', name: 'Éliminatoires Mondial Asie', sport: 'Football', isInternational: true },
+      { key: 'soccer/fifa.worldq.caf', name: 'Éliminatoires Mondial Afrique', sport: 'Football', isInternational: true },
       // 🌍 Autres compétitions internationales
-      { key: 'soccer/uefa.nations', name: 'Nations League', sport: 'Foot', isInternational: true },
-      { key: 'soccer/uefa.euro', name: 'Euro', sport: 'Foot', isInternational: true },
-      { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Foot', isInternational: true },
+      { key: 'soccer/uefa.nations', name: 'Nations League', sport: 'Football', isInternational: true },
+      { key: 'soccer/uefa.euro', name: 'Euro', sport: 'Football', isInternational: true },
+      { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Football', isInternational: true },
       // 🇺🇸 MLS (actif en été)
-      { key: 'soccer/usa.1', name: 'MLS', sport: 'Foot' },
+      { key: 'soccer/usa.1', name: 'MLS', sport: 'Football' },
     ];
     
     // 🎯 ÉTAPE 2: Récupérer ESPN pour hier, aujourd'hui ET demain

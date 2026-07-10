@@ -32,7 +32,7 @@ import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataS
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v11'; // Anti-piège modérés + kamikaze bilan dédié + sport fix
+const CRON_VERSION = 'v12'; // NBA Summer League + cron bilan kamikaze dédié + sport normalisé + timing bilan
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -175,7 +175,8 @@ async function fetchFootballResultsFromESPN(): Promise<MatchResult[]> {
 
 /**
  * Récupérer les résultats NBA depuis ESPN
- * Cherche sur 3 jours (avant-hier, hier, aujourd'hui) pour rattraper les matchs manqués
+ * Cherche sur basketball/nba ET basketball/nba-summer (Summer League en juillet)
+ * Couvre 7 jours en arrière pour rattraper les matchs manqués
  */
 async function fetchNBAResults(): Promise<MatchResult[]> {
   const results: MatchResult[] = [];
@@ -183,7 +184,6 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
   const dates: string[] = [];
 
   // Générer les dates en heure US Eastern (ET) car ESPN utilise la date locale US
-  // Couvrir aujourd'hui ET jusqu'à 7 jours en arrière
   for (let i = 0; i <= 7; i++) {
     const d = new Date(today.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     d.setDate(d.getDate() - i);
@@ -196,50 +196,62 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
   const uniqueDates = [...new Set(dates)];
   console.log(`🏀 Recherche résultats NBA pour (dates US ET): ${uniqueDates.join(', ')}`);
 
-  for (const dateStr of uniqueDates) {
-    try {
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${dateStr}`,
-        { cache: 'no-store' }
-      );
+  // 🏀 Deux sources ESPN : NBA régulière + Summer League
+  const nbaEndpoints = [
+    { url: (d: string) => `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${d}`, league: 'NBA' },
+    { url: (d: string) => `https://site.api.espn.com/apis/site/v2/sports/basketball/nba-summer/scoreboard?dates=${d}`, league: 'NBA Summer League' },
+  ];
 
-      if (!response.ok) continue;
+  for (const endpoint of nbaEndpoints) {
+    for (const dateStr of uniqueDates) {
+      try {
+        const response = await fetch(endpoint.url(dateStr), { cache: 'no-store' });
+        if (!response.ok) continue;
 
-      const data = await response.json();
-      const events = data.events || [];
+        const data = await response.json();
+        const events = data.events || [];
 
-      for (const e of events) {
-        if (e.status?.type?.completed !== true) continue;
-        const competition = e.competitions?.[0];
-        const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
-        const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
-        
-        const homeScore = parseInt(home?.score || '0');
-        const awayScore = parseInt(away?.score || '0');
+        for (const e of events) {
+          if (e.status?.type?.completed !== true) continue;
+          const competition = e.competitions?.[0];
+          const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+          const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
 
-        results.push({
-          matchId: `nba_${e.id}`,
-          homeTeam: home?.team?.displayName || 'Unknown',
-          awayTeam: away?.team?.displayName || 'Unknown',
-          homeScore,
-          awayScore,
-          status: 'finished' as const,
-          actualResult: homeScore > awayScore 
-            ? 'home' as const 
-            : homeScore < awayScore 
-              ? 'away' as const 
-              : 'draw' as const,
-          league: 'NBA',
-          sport: 'basketball' as const
-        });
+          const homeScore = parseInt(home?.score || '0');
+          const awayScore = parseInt(away?.score || '0');
+
+          results.push({
+            matchId: `nba_${e.id}`,
+            homeTeam: home?.team?.displayName || 'Unknown',
+            awayTeam: away?.team?.displayName || 'Unknown',
+            homeScore,
+            awayScore,
+            status: 'finished' as const,
+            actualResult: homeScore > awayScore
+              ? 'home' as const
+              : homeScore < awayScore
+                ? 'away' as const
+                : 'draw' as const,
+            league: endpoint.league,
+            sport: 'basketball' as const
+          });
+        }
+      } catch (error) {
+        console.log(`⚠️ Erreur ESPN ${endpoint.league} ${dateStr}:`, error);
       }
-    } catch (error) {
-      console.log(`⚠️ Erreur ESPN NBA ${dateStr}:`, error);
     }
   }
 
-  console.log(`✅ ESPN NBA: ${results.length} résultats récupérés`);
-  return results;
+  // Dédoublonner par matchId
+  const seen = new Set<string>();
+  const deduped = results.filter(r => {
+    if (seen.has(r.matchId)) return false;
+    seen.add(r.matchId);
+    return true;
+  });
+
+  console.log(`✅ ESPN NBA (+Summer): ${deduped.length} résultats récupérés`);
+  return deduped;
 }
 
 /**
