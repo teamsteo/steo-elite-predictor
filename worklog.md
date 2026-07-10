@@ -827,3 +827,21 @@ Stage Summary:
 - Football toujours en premier dans toutes les publications
 - Pourcentages labellisés clairement (Risque + Fiable)
 - Format buts: "🔬 2.6 buts attendus (1-1)" + "⬆️ Over 2.5: 58%"
+
+---
+Task ID: 1
+Agent: main
+Task: Vérifier et corriger la publication kamikaze, bilan tennis, NBA Summer League, et bilan tous sports
+
+Work Log:
+- Analysé le cron route (2658 lignes) et telegramService (1885 lignes)
+- Testé l'API ESPN: basketball/nba = 0 événements en juillet, basketball/nba-summer = 8 matchs
+- Découvert 5 bugs corrigés dans v12
+
+Stage Summary:
+- **Bug NBA Summer League**: ESPN utilise `basketball/nba-summer` (pas `basketball/nba`). Ajouté dans combinedDataService.ts et fetchNBAResults()
+- **Bug cron manquant**: `telegram-kamikaze-bilan` n'avait aucun cron dédié dans vercel.json → ajouté à 06:00 UTC
+- **Bug sport normalisé**: 'Foot'→'football', 'Basket'→'basketball' dans combinedDataService.ts. Fallback de normalisation ajouté dans les 3 fonctions bilan (journalier, kamikaze, mensuel) pour les anciennes données
+- **Bug timing bilan**: telegram-results était à 03:00 UTC (avant verify-night à 05:00 UTC) → déplacé à 05:30 UTC pour capter les résultats NBA de nuit
+- **Tennis bilan**: Fonctionne correctement — tennis est inclus dans verifyAllResults() et dans le bilan journalier via Supabase
+- Commit: 6ad0f70, pushé sur main, déploiement Vercel en cours
