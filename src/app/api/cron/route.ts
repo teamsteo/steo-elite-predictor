@@ -2199,7 +2199,16 @@ export async function GET(request: NextRequest) {
           result = { insertJuly8: { inserted, total: predictions.length, message: `${inserted}/${predictions.length} pronostics insérés avec résultats vérifiés` } };
         } catch (e: any) { result = { insertJuly8: { error: e.message } }; }
         break;
-        
+
+      case 'announce':
+        // Envoyer un message d'annonce sur Telegram
+        try {
+          const msg = url.searchParams.get('msg') || 'Mise à jour déployée';
+          const sent = await (await import('@/lib/telegramService')).sendTelegramMessage(msg);
+          result = { announce: { success: sent, message: sent ? 'Annonce publiée' : 'Erreur envoi' } };
+        } catch (e: any) { result = { announce: { error: e.message } }; }
+        break;
+
       default:
         return NextResponse.json(
           { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'rebuild-date'] },
