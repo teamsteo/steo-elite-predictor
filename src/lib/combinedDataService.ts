@@ -3,8 +3,8 @@
  * 
  * CASCADE DE COTES (automatique):
  * 1. ESPN (DraftKings) - GRATUIT ILLIMITÉ
- * 2. The Odds API - Fallback si ESPN sans cotes
- * 3. Estimations - Dernier recours (avec tag ⚠️)
+ * 2. The Odds API (Marathonbet) - 1 appel/jour pour NBA Summer League (sans cotes ESPN)
+ * 3. Estimation basée sur la notoriété des équipes (dernier recours, tag ⚠️)
  */
 
 // Configuration The Odds API (fallback)
@@ -111,18 +111,70 @@ function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | nul
 }
 
 /**
- * FALLBACK: Récupère les cotes depuis The Odds API
- * ⚠️ DÉSACTIVÉ - Utilise trop de quota
- * ESPN est gratuit et couvre la plupart des sports
- * Le tennis utilise le quota manager via live-data-service
+ * Fallback The Odds API pour les ligues SANS cotes ESPN
+ * - NBA Summer League (juillet) : ESPN n'a pas de cotes → Marathonbet via Odds API
+ * - NBA régulière (oct-juin) : ESPN a les cotes DraftKings → cet appel est sauté
+ * Coût : 1 appel/jour max via centralOddsManager (budget 15/jour)
  */
 async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw: number | null; away: number }>> {
   const oddsMap = new Map<string, { home: number; draw: number | null; away: number }>();
   
-  // ⚠️ NE PLUS UTILISER - Trop coûteux en quota
-  // ESPN fournit les cotes gratuitement pour les sports principaux
-  console.log('📡 Odds API fallback désactivé (économie quota)');
-  console.log('📡 Utilisation des cotes ESPN (gratuit) ou estimations');
+  try {
+    // 🏀 Cibler spécifiquement la NBA Summer League (ESPN n'a pas de cotes pour cette ligue)
+    // + NBA régulière en spare (1 seul appel = 1/15 du budget quotidien)
+    const { fetchOdds } = await import('./centralOddsManager');
+    
+    // Récupérer Summer League d'abord (priorité en juillet)
+    const summerData = await fetchOdds('basketball_nba_summer_league');
+    for (const event of summerData) {
+      const home = event.home_team || '';
+      const away = event.away_team || '';
+      const markets = event.bookmakers?.[0]?.markets || [];
+      const h2h = markets.find((m: any) => m.key === 'h2h');
+      if (h2h) {
+        const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
+        const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
+        if (homeOdds?.price && awayOdds?.price) {
+          oddsMap.set(`${home.toLowerCase()}_${away.toLowerCase()}`, {
+            home: homeOdds.price,
+            draw: null,
+            away: awayOdds.price,
+          });
+        }
+      }
+    }
+    
+    if (summerData.length > 0) {
+      console.log(`📡 Odds API: ${summerData.length} cotes Summer League récupérées (Marathonbet)`);
+    }
+    
+    // ⚠️ Ne récupérer la NBA régulière que si la Summer League est vide (saison régulière)
+    if (summerData.length === 0) {
+      const nbaData = await fetchOdds('basketball_nba');
+      for (const event of nbaData) {
+        const home = event.home_team || '';
+        const away = event.away_team || '';
+        const markets = event.bookmakers?.[0]?.markets || [];
+        const h2h = markets.find((m: any) => m.key === 'h2h');
+        if (h2h) {
+          const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
+          const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
+          if (homeOdds?.price && awayOdds?.price) {
+            oddsMap.set(`${home.toLowerCase()}_${away.toLowerCase()}`, {
+              home: homeOdds.price,
+              draw: null,
+              away: awayOdds.price,
+            });
+          }
+        }
+      }
+      if (nbaData.length > 0) {
+        console.log(`📡 Odds API: ${nbaData.length} cotes NBA régulière récupérées`);
+      }
+    }
+  } catch (e: any) {
+    console.log(`📡 Odds API fallback erreur (non bloquant): ${e.message}`);
+  }
   
   return oddsMap;
 }
