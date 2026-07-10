@@ -358,7 +358,17 @@ export async function fetchUpcomingMatches(): Promise<UpcomingMatch[]> {
     return [];
   }
   
-  console.log('[TennisLiveData] 🎾 Récupération matchs via API DIRECTE (pas de quota manager)...');
+  console.log('[TennisLiveData] 🎾 Récupération matchs via API DIRECTE...');
+  
+  // 🛡️ Vérifier le quota restant AVANT de consommer (appel léger sur /sports/)
+  try {
+    const quotaCheck = await fetch('https://api.the-odds-api.com/v4/sports/?apiKey=' + apiKey);
+    const remaining = quotaCheck.headers.get('x-requests-remaining');
+    if (remaining !== null && parseInt(remaining, 10) < 25) {
+      console.log(`[TennisLiveData] ⏳ Quota faible (${remaining} restants), skip Odds API tennis`);
+      return upcomingMatchesCache?.matches || [];
+    }
+  } catch { /* non bloquant */ }
   
   try {
     const allMatches: any[] = [];
