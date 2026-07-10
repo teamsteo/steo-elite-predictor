@@ -494,9 +494,11 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
     yesterdayLimit.setUTCHours(yesterdayLimit.getUTCHours() - 24);
 
     // Bornes de demain (pour EXCLURE)
+    // ⚠️ Étendu à 05:00 UTC pour inclure les matchs de nuit US (NBA/MLB à 00:00-04:00 UTC)
+    // Ces matchs sont "ce soir" pour la plupart des utilisateurs
     const tomorrowExclude = new Date();
     tomorrowExclude.setUTCDate(tomorrowExclude.getUTCDate() + 1);
-    tomorrowExclude.setUTCHours(0, 0, 0, 0);
+    tomorrowExclude.setUTCHours(5, 0, 0, 0);
 
     const filteredMatches = allMatches.filter(match => {
       const matchDate = new Date(match.date);
@@ -549,11 +551,24 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
     tomorrowEnd.setUTCHours(23, 59, 59, 999);
 
     // Fonction pour déterminer le tag de date
+    // ⚠️ Les matchs entre 00:00-05:00 UTC "du lendemain" sont taggés "aujourd'hui"
+    // car ce sont des matchs de nuit US du jour en cours
+    const nightEnd = new Date(tomorrowStart);
+    nightEnd.setUTCHours(5, 0, 0, 0);
+    
     const getDateTag = (matchDate: Date, isLive: boolean, isFinished: boolean): {
       dateTag: 'hier' | 'aujourd\'hui' | 'demain';
       dateLabel: string;
       displayDate: string;
     } => {
+      // Matchs de nuit US (00:00-05:00 UTC) = considérés "aujourd'hui"
+      if (matchDate >= tomorrowStart && matchDate < nightEnd) {
+        if (isLive) {
+          return { dateTag: 'aujourd\'hui', dateLabel: '🔴 En cours', displayDate: 'Aujourd\'hui' };
+        }
+        return { dateTag: 'aujourd\'hui', dateLabel: '⏳ À venir', displayDate: 'Aujourd\'hui' };
+      }
+      
       if (matchDate >= todayStart && matchDate < tomorrowStart) {
         // Aujourd'hui
         if (isLive) {
