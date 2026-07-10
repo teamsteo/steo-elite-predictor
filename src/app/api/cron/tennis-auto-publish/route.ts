@@ -14,6 +14,7 @@
 
 import { NextResponse } from 'next/server';
 import { sendTelegramMessage, isSafeOrModerate, isKamikaze } from '@/lib/telegramService';
+import SupabaseStore from '@/lib/db-supabase';
 
 // Import des services tennis
 import { predictMatchV2, fetchATPRankings2026, fetchWTARankings2026 } from '@/lib/tennis-enhanced/prediction-engine-v2';
@@ -158,6 +159,31 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
     // Filtrer les Kamikaze (risque >= 51%)
     const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage));
 
+    // 💾 Sauvegarder les kamikaze dans Supabase (même voie de secours)
+    if (kamikazePicks.length > 0) {
+      try {
+        const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+        const dbKam = kamikazePicks.map(p => {
+          const dateStr = new Date().toISOString().split('T')[0];
+          return {
+            match_id: `tennis-kam-${cleanTeam(p.player1)}-${cleanTeam(p.player2)}-${dateStr}`,
+            home_team: p.player1, away_team: p.player2,
+            league: p.tournament || 'ATP', sport: 'tennis' as const,
+            match_date: new Date().toISOString(),
+            odds_home: p.odds1 || 1.0, odds_draw: null, odds_away: p.odds2 || 1.0,
+            predicted_result: (p.prediction?.winner === 'player1' ? 'home' : 'away') as 'home' | 'away',
+            confidence: p.prediction?.confidence || 'medium',
+            risk_percentage: p.prediction?.riskPercentage || 50,
+            status: 'pending' as const,
+          };
+        });
+        await SupabaseStore.addPredictions(dbKam);
+        console.log(`[TennisAutoPublish] 💾 ${dbKam.length} kamikaze (fallback) sauvegardés dans Supabase`);
+      } catch (e: any) {
+        console.log(`[TennisAutoPublish] ⚠️ Erreur sauvegarde kamikaze fallback: ${e.message}`);
+      }
+    }
+
     const infoMessage = buildNoMatchMessage(atpRankings, wtaRankings, true, kamikazePicks);
 
     if (!test) {
@@ -184,6 +210,34 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
   // Construire le message
   const message = buildSummaryMessage(publishable, atpRankings, wtaRankings);
   
+  // 💾 Sauvegarder les prédictions tennis dans Supabase (pour le bilan)
+  let savedCount = 0;
+  try {
+    const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const dbPredictions = publishable.map(p => {
+      const dateStr = new Date().toISOString().split('T')[0];
+      return {
+        match_id: `tennis-${cleanTeam(p.player1)}-${cleanTeam(p.player2)}-${dateStr}`,
+        home_team: p.player1,
+        away_team: p.player2,
+        league: p.tournament || 'ATP',
+        sport: 'tennis' as const,
+        match_date: new Date().toISOString(),
+        odds_home: p.odds1 || 1.0,
+        odds_draw: null,
+        odds_away: p.odds2 || 1.0,
+        predicted_result: (p.prediction?.winner === 'player1' ? 'home' : 'away') as 'home' | 'away',
+        confidence: p.prediction?.confidence || 'medium',
+        risk_percentage: p.prediction?.riskPercentage || 50,
+        status: 'pending' as const,
+      };
+    });
+    savedCount = await SupabaseStore.addPredictions(dbPredictions);
+    console.log(`[TennisAutoPublish] 💾 ${savedCount} prédictions tennis sauvegardées dans Supabase`);
+  } catch (e: any) {
+    console.log(`[TennisAutoPublish] ⚠️ Erreur sauvegarde Supabase: ${e.message}`);
+  }
+
   // Envoyer si pas en test
   if (!test && publishable.length > 0) {
     const sent = await sendTelegramMessage(message);
@@ -304,6 +358,33 @@ async function publishValueBets(test: boolean): Promise<PublishResult> {
     };
   }
   
+  // 💾 Sauvegarder les value bets tennis dans Supabase
+  try {
+    const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const dbPredictions = valueBets.map(p => {
+      const dateStr = new Date().toISOString().split('T')[0];
+      return {
+        match_id: `tennis-vb-${cleanTeam(p.player1)}-${cleanTeam(p.player2)}-${dateStr}`,
+        home_team: p.player1,
+        away_team: p.player2,
+        league: p.tournament || 'ATP',
+        sport: 'tennis' as const,
+        match_date: new Date().toISOString(),
+        odds_home: p.odds1 || 1.0,
+        odds_draw: null,
+        odds_away: p.odds2 || 1.0,
+        predicted_result: (p.prediction?.winner === 'player1' ? 'home' : 'away') as 'home' | 'away',
+        confidence: p.prediction?.confidence || 'medium',
+        risk_percentage: p.prediction?.riskPercentage || 50,
+        status: 'pending' as const,
+      };
+    });
+    await SupabaseStore.addPredictions(dbPredictions);
+    console.log(`[TennisAutoPublish] 💾 ${dbPredictions.length} value bets tennis sauvegardés dans Supabase`);
+  } catch (e: any) {
+    console.log(`[TennisAutoPublish] ⚠️ Erreur sauvegarde VB Supabase: ${e.message}`);
+  }
+
   // Construire et envoyer le message
   const message = buildValueBetsMessage(valueBets);
   
@@ -370,6 +451,33 @@ async function publishKamikaze(test: boolean): Promise<PublishResult> {
     return oddsB - oddsA;
   });
   
+  // 💾 Sauvegarder les kamikaze tennis dans Supabase (pour le bilan kamikaze)
+  try {
+    const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const dbPredictions = kamikazePicks.map(p => {
+      const dateStr = new Date().toISOString().split('T')[0];
+      return {
+        match_id: `tennis-kam-${cleanTeam(p.player1)}-${cleanTeam(p.player2)}-${dateStr}`,
+        home_team: p.player1,
+        away_team: p.player2,
+        league: p.tournament || 'ATP',
+        sport: 'tennis' as const,
+        match_date: new Date().toISOString(),
+        odds_home: p.odds1 || 1.0,
+        odds_draw: null,
+        odds_away: p.odds2 || 1.0,
+        predicted_result: (p.prediction?.winner === 'player1' ? 'home' : 'away') as 'home' | 'away',
+        confidence: p.prediction?.confidence || 'medium',
+        risk_percentage: p.prediction?.riskPercentage || 50,
+        status: 'pending' as const,
+      };
+    });
+    await SupabaseStore.addPredictions(dbPredictions);
+    console.log(`[TennisAutoPublish] 💾 ${dbPredictions.length} kamikaze tennis sauvegardés dans Supabase`);
+  } catch (e: any) {
+    console.log(`[TennisAutoPublish] ⚠️ Erreur sauvegarde kamikaze Supabase: ${e.message}`);
+  }
+
   // Construire et envoyer le message
   const message = buildKamikazeMessage(kamikazePicks);
   
