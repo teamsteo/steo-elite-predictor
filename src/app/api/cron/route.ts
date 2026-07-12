@@ -1729,7 +1729,12 @@ export async function GET(request: NextRequest) {
           
           // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES (top 10, cotes réelles)
           // ⚠️ Le bilan journalier se base sur Supabase → ne sauvegarder que ce qui est publié
+          // 🧹 SUPPRIMER d'abord les anciennes prédictions du jour (pour que le bilan ne compte que les publiées)
           try {
+            const todayISO = new Date().toISOString().split('T')[0];
+            const deleted = await SupabaseStore.deleteByDate(todayISO);
+            if (deleted > 0) console.log(`🧹 ${deleted} anciennes prédictions du jour supprimées (bilan propre)`);
+            
             const { selected: publishedPredictions, totalEligible, excludedEstimated } = selectTopDailyPredictions(predictions);
             
             const dbPredictions = publishedPredictions.map((p: any) => {

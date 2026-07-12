@@ -18,9 +18,12 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 // Seuils de risque
-const MAX_RISK_PERCENTAGE = 50; // Safe + Modéré uniquement
+const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
+// 🎯 CRITÈRES RESSERRÉS (juillet 2026) — risque max 40%, confiance medium+ requise
+const TIGHT_MAX_RISK = 40; // Au lieu de 50 — exclut les modérés trop risqués
+const MIN_WIN_PROBABILITY = 58; // Probabilité min du favori (au lieu de 55)
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
@@ -665,15 +668,26 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
  excludedRisk: number;
  excludedByLimit: number;
 } {
-  // 1) Filtrer: safe/modéré + cotes réelles uniquement
-  const safeModerate = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
-  const withRealOdds = safeModerate.filter(p => !p.isEstimated);
-  const excludedEstimated = safeModerate.length - withRealOdds.length;
-  const excludedRisk = predictions.length - safeModerate.length;
+  // 1) Filtrer: cotes réelles uniquement
+  const withRealOdds = predictions.filter(p => !p.isEstimated);
+  const excludedEstimated = predictions.length - withRealOdds.length;
   
-  // 2) Trier par fiabilité: risque croissant (plus fiable en premier)
+  // 2) CRITÈRES RESSERRÉS: risque ≤ 40% (au lieu de 50%)
+  const underRisk = withRealOdds.filter(p => (p.riskPercentage ?? 100) <= TIGHT_MAX_RISK);
+  const excludedRisk = withRealOdds.length - underRisk.length;
+  
+  // 3) Confiance minimum: proba ≥ 58% (exclut les trop serrés)
+  const withConfidence = underRisk.filter(p => {
+    const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
+    return wp >= MIN_WIN_PROBABILITY;
+  });
+  
+  // 4) Exclure les matchs internationaux (fiabilité réduite)
+  const domesticOnly = withConfidence.filter(p => !(p as any).isInternational);
+  
+  // 5) Trier par fiabilité: risque croissant (plus fiable en premier)
   // En cas d'égalité: probabilité de réussite décroissante
-  const sorted = [...withRealOdds].sort((a, b) => {
+  const sorted = [...domesticOnly].sort((a, b) => {
     const riskA = a.riskPercentage ?? 100;
     const riskB = b.riskPercentage ?? 100;
     if (riskA !== riskB) return riskA - riskB;
@@ -683,7 +697,7 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
     return probB - probA;
   });
   
-  // 3) Limiter à MAX_DAILY_PREDICTIONS
+  // 6) Limiter à MAX_DAILY_PREDICTIONS
   const selected = sorted.slice(0, MAX_DAILY_PREDICTIONS);
   const excludedByLimit = sorted.length - selected.length;
   

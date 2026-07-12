@@ -18,6 +18,8 @@ let espnCacheTime = 0;
 let espnCacheDate = '';
 let oddsApiCache: Map<string, { home: number; draw: number | null; away: number }> | null = null;
 let oddsApiCacheTime = 0;
+// 🎾 Stocke les événements tennis bruts de l'Odds API (pour créer des matchs standalone)
+let tennisApiEvents: Array<{ home_team: string; away_team: string; commence_time: string; home_odds: number; away_odds: number; league: string }> = [];
 const ESPN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const ODDS_API_CACHE_TTL = 60 * 60 * 1000; // 1 heure (économise le quota)
 
@@ -120,6 +122,9 @@ function extractEspnOdds(event: any): { oddsHome: number; oddsDraw: number | nul
  * Coût : 1 appel/jour max via centralOddsManager (budget 15/jour)
  */
 async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw: number | null; away: number }>> {
+  // 🎾 Reset des événements tennis à chaque appel
+  tennisApiEvents = [];
+  
   // 📦 Utiliser le cache si valide (1h TTL pour économiser le quota)
   if (oddsApiCache && oddsApiCache.size > 0 && (Date.now() - oddsApiCacheTime) < ODDS_API_CACHE_TTL) {
     console.log(`📦 Cache Odds API valide (${oddsApiCache.size} cotes, TTL: ${Math.round((ODDS_API_CACHE_TTL - (Date.now() - oddsApiCacheTime)) / 60000)}min restantes)`);
@@ -588,6 +593,67 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
 
       return false;
     });
+
+    // 🎾 TENNIS STANDALONE: Ajouter les matchs tennis de l'Odds API non trouvés par ESPN
+    // ESPN n'a souvent pas de cotes tennis → les matchs tombent en estimation → exclus
+    // Solution: créer directement les matchs depuis les données de l'Odds API
+    const espnTennisKeys = new Set(
+      filteredMatches
+        .filter((m: any) => m.sport === 'Tennis' && m.oddsSource === 'the-odds-api')
+        .map((m: any) => [m.homeTeam.toLowerCase().replace(/[^a-z]/g, ''), m.awayTeam.toLowerCase().replace(/[^a-z]/g, '')].join('_'))
+    );
+    let tennisStandaloneCount = 0;
+    for (const te of tennisApiEvents) {
+      const teKey = [te.home_team.toLowerCase().replace(/[^a-z]/g, ''), te.away_team.toLowerCase().replace(/[^a-z]/g, '')].join('_');
+      // Skip if already matched by ESPN
+      if (espnTennisKeys.has(teKey)) continue;
+      
+      const matchDate = te.commence_time ? new Date(te.commence_time) : new Date();
+      const isFinished = false;
+      const isLive = false;
+      
+      // 🚫 Exclure si hors fenêtre temporelle
+      if (matchDate >= tomorrowExclude) continue;
+      if (matchDate < yesterdayLimit) continue;
+      
+      const homeProb = te.home_odds > 0 ? Math.round((1 / te.home_odds) * 100) : 50;
+      const awayProb = te.away_odds > 0 ? Math.round((1 / te.away_odds) * 100) : 50;
+      const favoriteProb = Math.max(homeProb, awayProb);
+      const riskPercentage = 100 - favoriteProb;
+      const predictedResult = homeProb > awayProb ? 'home' : 'away';
+      const winProbability = favoriteProb;
+      const confidence = favoriteProb >= 70 ? 'high' : favoriteProb >= 55 ? 'medium' : 'low';
+      
+      filteredMatches.push({
+        id: `oddsapi_tennis_${teKey}`,
+        homeTeam: te.home_team,
+        awayTeam: te.away_team,
+        sport: 'Tennis',
+        league: te.league,
+        date: te.commence_time || matchDate.toISOString(),
+        status: 'upcoming',
+        isLive,
+        isFinished,
+        oddsHome: te.home_odds,
+        oddsDraw: null,
+        oddsAway: te.away_odds,
+        bookmaker: 'The Odds API',
+        hasRealOdds: true,
+        oddsSource: 'the-odds-api' as const,
+        isEstimated: false,
+        isInternational: false,
+        competitionType: 'domestic' as const,
+        riskPercentage,
+        winProbability,
+        predictedResult,
+        confidence,
+        recommendation: homeProb > awayProb ? te.home_team : te.away_team,
+      });
+      tennisStandaloneCount++;
+    }
+    if (tennisStandaloneCount > 0) {
+      console.log(`🎾 +${tennisStandaloneCount} matchs tennis standalone (Odds API direct)`);
+    }
 
     // ⚠️ DÉDOUBLONNER par noms d'équipes (les double-headers MLB peuvent créer des doublons)
     // Garder le premier match trouvé (généralement le premier jeu du double-header)
