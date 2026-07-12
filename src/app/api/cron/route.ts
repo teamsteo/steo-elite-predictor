@@ -1619,6 +1619,8 @@ export async function GET(request: NextRequest) {
         // ⚠️ Tennis INCLUS (plus d'exclusion séparée)
         try {
           // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
+          // 🧹 Forcer l'invalidation du cache pour avoir les données les plus fraîches
+          invalidateEspnCache();
           console.log('📡 Récupération des matchs depuis ESPN...');
           const matches = await getMatchesWithRealOdds();
           
