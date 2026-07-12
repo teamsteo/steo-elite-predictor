@@ -210,49 +210,77 @@ async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw:
     } else {
       console.log(`📡 Odds API: erreur HTTP ${response.status} (passe au tennis)`);
     }
-    // 🎾 Tennis ATP + WTA (ESPN n'a pas toujours des cotes tennis)
+    // 🎾 Tennis: découverte DYNAMIQUE des sports tennis actifs
+    // Les endpoints génériques (tennis_atp_singles) n'existent qu'hors Grands Chelems
+    // Pendant Wimbledon/RG/USO/AO → endpoints spécifiques (ex: tennis_atp_wimbledon)
+    // L'endpoint /sports est GRATUIT et ne compte pas dans le quota
     try {
-      const tennisEndpoints = [
-        `${ODDS_API_BASE}/sports/tennis_atp_singles/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`,
-        `${ODDS_API_BASE}/sports/tennis_wta_singles/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`,
-      ];
-      for (const tennisUrl of tennisEndpoints) {
-        try {
-          const tResp = await fetch(tennisUrl, { signal: AbortSignal.timeout(10000) });
-          if (!tResp.ok) continue;
-          const tData = await tResp.json();
-          if (!Array.isArray(tData)) continue;
-          const isWTA = tennisUrl.includes('wta');
-          for (const event of tData) {
-            const home = event.home_team || '';
-            const away = event.away_team || '';
-            const bookmaker = event.bookmakers?.find((b: any) => 
-              b.markets?.some((m: any) => m.key === 'h2h' && m.outcomes?.length >= 2)
-            );
-            if (!bookmaker) continue;
-            const h2h = bookmaker.markets.find((m: any) => m.key === 'h2h');
-            if (h2h) {
-              const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
-              const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
-              if (homeOdds?.price && awayOdds?.price) {
-                oddsMap.set(`${home.toLowerCase()}_${away.toLowerCase()}`, {
-                  home: homeOdds.price,
-                  draw: null,
-                  away: awayOdds.price,
-                });
+      const sportsResp = await fetch(`${ODDS_API_BASE}/sports/?apiKey=${apiKey}`, { signal: AbortSignal.timeout(8000) });
+      if (sportsResp.ok) {
+        const sportsData = await sportsResp.json();
+        if (Array.isArray(sportsData)) {
+          const activeTennisSports = (sportsData as any[])
+            .filter((s: any) => s.key.startsWith('tennis_') && s.active === true)
+            .map((s: any) => s.key);
+          console.log(`🎾 Sports tennis actifs: ${activeTennisSports.join(', ') || 'aucun'}`);
+          
+          for (const tennisSportKey of activeTennisSports) {
+            try {
+              const tUrl = `${ODDS_API_BASE}/sports/${tennisSportKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`;
+              const tResp = await fetch(tUrl, { signal: AbortSignal.timeout(10000) });
+              if (!tResp.ok) continue;
+              const tData = await tResp.json();
+              if (!Array.isArray(tData)) continue;
+              
+              // Extraire le nom du tournoi depuis la clé
+              const leagueName = tennisSportKey
+                .replace('tennis_', '')
+                .replace(/_/g, ' ')
+                .replace(/\b\w/g, (c: string) => c.toUpperCase());
+              
+              for (const event of tData) {
+                const home = event.home_team || '';
+                const away = event.away_team || '';
+                const bookmaker = event.bookmakers?.find((b: any) => 
+                  b.markets?.some((m: any) => m.key === 'h2h' && m.outcomes?.length >= 2)
+                );
+                if (!bookmaker) continue;
+                const h2h = bookmaker.markets.find((m: any) => m.key === 'h2h');
+                if (h2h) {
+                  const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
+                  const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
+                  if (homeOdds?.price && awayOdds?.price) {
+                    const key = `${home.toLowerCase()}_${away.toLowerCase()}`;
+                    oddsMap.set(key, {
+                      home: homeOdds.price,
+                      draw: null,
+                      away: awayOdds.price,
+                    });
+                    // 🎾 Stocker l'événement tennis complet pour création standalone
+                    tennisApiEvents.push({
+                      home_team: home,
+                      away_team: away,
+                      commence_time: event.commence_time || new Date().toISOString(),
+                      home_odds: homeOdds.price,
+                      away_odds: awayOdds.price,
+                      league: leagueName,
+                    });
+                  }
+                }
               }
+            } catch (tErr: any) {
+              console.log(`🎾 Odds API ${tennisSportKey} erreur (non bloquant): ${tErr.message}`);
             }
           }
-          if (oddsMap.size > 0) {
-            console.log(`🎾 Odds API: cotes tennis ${isWTA ? 'WTA' : 'ATP'} récupérées`);
+          if (tennisApiEvents.length > 0) {
+            console.log(`🎾 Odds API: ${tennisApiEvents.length} matchs tennis récupérés`);
           }
-        } catch (tErr: any) {
-          console.log(`🎾 Odds API tennis erreur (non bloquant): ${tErr.message}`);
         }
       }
     } catch (e: any) {
-      // Non bloquant
+      console.log(`🎾 Odds API tennis erreur (non bloquant): ${e.message}`);
     }
+
   } catch (e: any) {
     console.log(`📡 Odds API fallback erreur (non bloquant): ${e.message}`);
   }

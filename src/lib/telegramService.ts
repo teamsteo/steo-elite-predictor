@@ -23,7 +23,7 @@ const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
 // 🎯 CRITÈRES RESSERRÉS (juillet 2026) — risque max 40%, confiance medium+ requise
 const TIGHT_MAX_RISK = 40; // Au lieu de 50 — exclut les modérés trop risqués
-const MIN_WIN_PROBABILITY = 58; // Probabilité min du favori (au lieu de 55)
+const MIN_WIN_PROBABILITY = 56; // Probabilité min du favori (au lieu de 55)
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
