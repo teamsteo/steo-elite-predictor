@@ -20,6 +20,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 // Seuils de risque
 const MAX_RISK_PERCENTAGE = 50; // Safe + Modéré uniquement
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
+const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
@@ -649,9 +650,49 @@ async function formatMatchBlock(
 // PUBLICATION RÉSUMÉ QUOTIDIEN
 // ============================================
 
+/**
+ * Sélectionne les meilleurs pronostics pour la publication quotidienne.
+ * Critères stricts pour maintenir un ratio élevé:
+ * 1. Safe ou modéré uniquement (risk ≤ 50%)
+ * 2. Cotes réelles uniquement (pas d'estimations ⚠️)
+ * 3. Tri par fiabilité (risque croissant = plus fiable en premier)
+ * 4. Maximum 10 pronostics par jour
+ */
+export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
+  selected: TelegramMatch[];
+ totalEligible: number;
+ excludedEstimated: number;
+ excludedRisk: number;
+ excludedByLimit: number;
+} {
+  // 1) Filtrer: safe/modéré + cotes réelles uniquement
+  const safeModerate = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
+  const withRealOdds = safeModerate.filter(p => !p.isEstimated);
+  const excludedEstimated = safeModerate.length - withRealOdds.length;
+  const excludedRisk = predictions.length - safeModerate.length;
+  
+  // 2) Trier par fiabilité: risque croissant (plus fiable en premier)
+  // En cas d'égalité: probabilité de réussite décroissante
+  const sorted = [...withRealOdds].sort((a, b) => {
+    const riskA = a.riskPercentage ?? 100;
+    const riskB = b.riskPercentage ?? 100;
+    if (riskA !== riskB) return riskA - riskB;
+    
+    const probA = a.winProbability ?? (100 - riskA);
+    const probB = b.winProbability ?? (100 - riskB);
+    return probB - probA;
+  });
+  
+  // 3) Limiter à MAX_DAILY_PREDICTIONS
+  const selected = sorted.slice(0, MAX_DAILY_PREDICTIONS);
+  const excludedByLimit = sorted.length - selected.length;
+  
+  return { selected, totalEligible: sorted.length, excludedEstimated, excludedRisk, excludedByLimit };
+}
+
 export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
-  // Filtrer safe et modéré
-  const filtered = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
+  // Sélectionner les meilleurs pronostics (max 10, cotes réelles, par fiabilité)
+  const { selected: filtered, totalEligible, excludedEstimated, excludedRisk, excludedByLimit } = selectTopDailyPredictions(predictions);
   
   // CAS: Des matchs existent mais aucun safe/modéré → Afficher Kamikaze direct
   if (filtered.length === 0 && predictions.length > 0) {
@@ -663,6 +704,8 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
     console.log('⚠️ Aucun pronostic à publier');
     return false;
   }
+
+  console.log(`📊 Sélection: ${filtered.length}/${totalEligible} éligibles (max ${MAX_DAILY_PREDICTIONS}) — ${excludedEstimated} estimés exclus, ${excludedRisk} trop risqués, ${excludedByLimit} écartés par limite`);
 
   const today = new Date().toLocaleDateString('fr-FR', { 
     weekday: 'long', day: 'numeric', month: 'long' 
@@ -696,7 +739,7 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
   
   message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
   
-  let statsLine = `📊 <b>${filtered.length}</b> pronostic${filtered.length > 1 ? 's' : ''}`;
+  let statsLine = `📊 <b>${filtered.length}</b> pronostic${filtered.length > 1 ? 's' : ''} (top ${totalEligible})`;
   statsLine += `  ·  🟢 ${safeCount}  ·  🟡 ${moderateCount}`;
   if (valueBetsCount > 0) statsLine += `  ·  💎 ${valueBetsCount}`;
   message += `${statsLine}\n\n`;
@@ -718,10 +761,14 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
     // Trier : safe en premier, puis modéré (pour ne jamais tronquer les safe)
     const sorted = [...matches].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
     
-    // 💡 PLUS DE LIMITE : on publie TOUS les pronostics (cohérence bilan)
-    for (let i = 0; i < sorted.length; i++) {
+    // 🎯 Limiter par sport aussi (max 4 par sport pour équilibrer)
+    const sportMax = Math.min(sorted.length, 4);
+    for (let i = 0; i < sportMax; i++) {
       const block = await formatMatchBlock(sorted[i], i + 1, true);
       message += block;
+    }
+    if (sorted.length > sportMax) {
+      message += `    <i>... et ${sorted.length - sportMax} autre${sorted.length - sportMax > 1 ? 's' : ''}</i>\n\n`;
     }
   }
   
@@ -1900,4 +1947,5 @@ export default {
   testTelegramConnection,
   isSafeOrModerate,
   isKamikaze,
+  selectTopDailyPredictions,
 };

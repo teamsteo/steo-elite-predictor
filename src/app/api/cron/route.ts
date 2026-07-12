@@ -26,13 +26,14 @@ import {
   publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
   isSafeOrModerate,
-  isKamikaze
+  isKamikaze,
+  selectTopDailyPredictions
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v12'; // NBA Summer League + cron bilan kamikaze dédié + sport normalisé + timing bilan
+const CRON_VERSION = 'v13'; // Max 10 pronostics + cotes réelles uniquement + tennis intégré + bilan cohérent
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -1615,14 +1616,13 @@ export async function GET(request: NextRequest) {
         
       case 'telegram-summary':
         // Publier le résumé quotidien sur Telegram
-        // ⚠️ Tennis EXCLU car il a son propre cron dédié (07:30 et 09:00 GMT)
+        // ⚠️ Tennis INCLUS (plus d'exclusion séparée)
         try {
           // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
           console.log('📡 Récupération des matchs depuis ESPN...');
           const matches = await getMatchesWithRealOdds();
           
           let predictions: any[] = matches
-            .filter((m: any) => m.sport?.toLowerCase() !== 'tennis') // 🎾 Tennis exclu
             .map((m: any) => ({
               homeTeam: m.homeTeam,
               awayTeam: m.awayTeam,
@@ -1630,7 +1630,7 @@ export async function GET(request: NextRequest) {
               league: m.league,
               date: m.date,
               displayDate: m.displayDate,
-              dateTag: m.dateTag, // 📅 Tag de date (aujourd'hui/demain)
+              dateTag: m.dateTag,
               recommendation: m.recommendations?.[0]?.label || m.recommendation,
               predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
               confidence: m.confidence,
@@ -1641,6 +1641,7 @@ export async function GET(request: NextRequest) {
               oddsHome: m.oddsHome,
               oddsAway: m.oddsAway,
               oddsDraw: m.oddsDraw,
+              isEstimated: m.isEstimated || false,
             }));
           console.log(`📡 ESPN live: ${predictions.length} matchs récupérés`);
           
@@ -1651,7 +1652,6 @@ export async function GET(request: NextRequest) {
             
             if (dailyData && dailyData.predictions.length > 0) {
               predictions = dailyData.predictions
-                .filter(p => p.sport !== 'tennis')
                 .map(p => ({
                   homeTeam: p.homeTeam,
                   awayTeam: p.awayTeam,
@@ -1727,31 +1727,14 @@ export async function GET(request: NextRequest) {
             console.log('⚠️ Erreur filtre anti-piège (non bloquant):', e.message);
           }
           
-          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES sur Telegram (même filtre que publishDailySummaryToTelegram)
-          // ⚠️ Même logique : safe/modéré + max 10 par sport + trié par risque croissant
+          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES (top 10, cotes réelles)
+          // ⚠️ Le bilan journalier se base sur Supabase → ne sauvegarder que ce qui est publié
           try {
-            // 1) Filtrer safe/modéré (identique à publishDailySummaryToTelegram)
-            const safeModerate = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
-            
-            // 2) Grouper par sport
-            const bySport: Record<string, any[]> = {};
-            for (const p of safeModerate) {
-              const sport = p.sport || 'Autre';
-              if (!bySport[sport]) bySport[sport] = [];
-              bySport[sport].push(p);
-            }
-            
-            // 3) Pour chaque sport : trier par risque croissant, PUBLIER TOUT (plus de limite)
-            const publishedPredictions: any[] = [];
-            for (const sport of Object.keys(bySport)) {
-              const sorted = [...bySport[sport]].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
-              publishedPredictions.push(...sorted);
-            }
+            const { selected: publishedPredictions, totalEligible, excludedEstimated } = selectTopDailyPredictions(predictions);
             
             const dbPredictions = publishedPredictions.map((p: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
               const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
-              // Extraire l'heure du match pour éviter les collisions (ex: même équipes, même jour, compétitions différentes)
               const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
               const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
               const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
@@ -1772,23 +1755,25 @@ export async function GET(request: NextRequest) {
               };
             });
             const saved = await SupabaseStore.addPredictions(dbPredictions);
-            console.log(`💾 ${saved} prédictions PUBLIÉES sauvegardées dans Supabase (sur ${predictions.length} totales)`);
+            console.log(`💾 ${saved} prédictions PUBLIÉES sauvegardées dans Supabase (top ${totalEligible} éligibles, ${excludedEstimated} estimés exclus, sur ${predictions.length} totales)`);
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
           }
           
           const telegramResult = await publishDailySummaryToTelegram(predictions);
-          const postFilterCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+          const { selected: publishedList, totalEligible } = selectTopDailyPredictions(predictions);
           result = { 
             telegram: { 
               success: telegramResult, 
               total: predictions.length,
-              published: postFilterCount,
-              excluded: predictions.length - postFilterCount,
+              published: publishedList.length,
+              totalEligible,
+              excluded: predictions.length - publishedList.length,
               trapFiltered: trapFilteredCount,
               source: 'espn-live',
+              version: CRON_VERSION,
               message: telegramResult 
-                ? `Résumé publié: ${postFilterCount} pronostics${trapFilteredCount > 0 ? ` (${trapFilteredCount} modéré(s) piège retiré(s))` : ''} sur Telegram`
+                ? `Résumé publié: ${publishedList.length}/10 pronostics sur Telegram${trapFilteredCount > 0 ? ` (${trapFilteredCount} modéré(s) piège retiré(s))` : ''}`
                 : 'Erreur publication Telegram'
             } 
           };
@@ -1799,14 +1784,11 @@ export async function GET(request: NextRequest) {
         
       case 'telegram-valuebets':
         // Publier uniquement les value bets sur Telegram
-        // ⚠️ Tennis EXCLU car il a son propre cron dédié
         try {
-          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
           console.log('📡 Récupération des matchs pour value bets depuis ESPN...');
           const matches = await getMatchesWithRealOdds();
           
           let predictions: any[] = matches
-            .filter((m: any) => m.sport?.toLowerCase() !== 'tennis')
             .map((m: any) => ({
               homeTeam: m.homeTeam,
               awayTeam: m.awayTeam,

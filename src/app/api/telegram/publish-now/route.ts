@@ -4,7 +4,8 @@ import {
   publishDailySummaryToTelegram,
   publishValueBetsToTelegram,
   publishDailyResultsToTelegram,
-  isSafeOrModerate
+  isSafeOrModerate,
+  selectTopDailyPredictions
 } from '@/lib/telegramService';
 
 /**
@@ -31,17 +32,15 @@ export async function GET(request: Request) {
       });
     }
 
-    // Mapper les données - EXCLURE le tennis (a son propre endpoint)
-    const predictions = matches
-      .filter((m: any) => m.sport?.toLowerCase() !== 'tennis')
-      .map((m: any) => ({
+    // Mapper les données (tennis inclus — plus d'exclusion)
+    const predictions = matches.map((m: any) => ({
         homeTeam: m.homeTeam,
         awayTeam: m.awayTeam,
         sport: m.sport,
         league: m.league,
         date: m.date,
         displayDate: m.displayDate,
-        dateTag: m.dateTag, // 📅 Tag de date (aujourd'hui/demain)
+        dateTag: m.dateTag,
         recommendation: m.recommendations?.[0]?.label || m.recommendation,
         predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
         confidence: m.confidence,
@@ -52,6 +51,7 @@ export async function GET(request: Request) {
         oddsHome: m.oddsHome,
         oddsAway: m.oddsAway,
         oddsDraw: m.oddsDraw,
+        isEstimated: m.isEstimated || false,
       }));
 
     // DEBUG: Voir les risques
@@ -62,25 +62,20 @@ export async function GET(request: Request) {
       isSafe: isSafeOrModerate(p.riskPercentage)
     })));
 
-    // Filtrer par niveau de risque
-    const safeModeratePredictions = predictions.filter(p => isSafeOrModerate(p.riskPercentage));
-    const excludedPredictions = predictions.filter(p => !isSafeOrModerate(p.riskPercentage));
+    // Sélectionner les meilleurs pronostics (max 10, cotes réelles, par fiabilité)
+    const { selected: safeModeratePredictions, totalEligible, excludedEstimated, excludedRisk, excludedByLimit } = selectTopDailyPredictions(predictions);
+    const excludedPredictions = predictions.length - safeModeratePredictions.length;
 
-    // DEBUG
-    console.log(`✅ Safe/Modéré: ${safeModeratePredictions.length}, ❌ Exclus: ${excludedPredictions.length}`);
+    console.log(`✅ Sélectionné: ${safeModeratePredictions.length}/${totalEligible} éligibles — estimés exclus: ${excludedEstimated}, risque exclus: ${excludedRisk}, limite: ${excludedByLimit}`);
 
     if (safeModeratePredictions.length === 0) {
       return NextResponse.json({
         success: false,
-        message: 'Aucun pronostic safe/modéré disponible',
+        message: 'Aucun pronostic éligible (cotes réelles + safe/modéré)',
         total: predictions.length,
-        excluded: excludedPredictions.length,
-        excludedReason: 'Tous les pronostics ont un risque > 50%',
-        debug: predictions.map(p => ({
-          match: `${p.homeTeam} vs ${p.awayTeam}`,
-          risk: p.riskPercentage,
-          isSafe: isSafeOrModerate(p.riskPercentage)
-        })),
+        totalEligible,
+        excludedEstimated,
+        excludedRisk,
         timestamp: new Date().toISOString()
       });
     }
@@ -127,7 +122,10 @@ export async function GET(request: Request) {
       stats: {
         total: predictions.length,
         published: published,
-        excluded: excludedPredictions.length
+        totalEligible,
+        excludedEstimated,
+        excludedByLimit,
+        excluded: excludedPredictions
       },
       predictions: details,
       timestamp: new Date().toISOString()
