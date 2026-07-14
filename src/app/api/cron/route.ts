@@ -30,6 +30,7 @@ import {
   selectTopDailyPredictions
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
+import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
@@ -1615,17 +1616,108 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'telegram-summary':
-        // Publier le résumé quotidien sur Telegram
-        // ⚠️ Tennis INCLUS (plus d'exclusion séparée)
+        // ══════════════════════════════════════════════════════
+        // 🧠 PIPELINE UNIFIÉ — Même méthode que le site web
+        // Au lieu de proba implicite brute des cotes, on utilise:
+        // - Foot: 35% cotes + 35% Dixon-Coles + 15% contexte + 15% ML
+        // - Basket: 50% cotes + 30% contexte (ORTG/DRTG/forme) + 20% ML
+        // - Filtres stricts: LOW confidence = rejet auto (0% win rate)
+        // - Edge minimum requis, Kelly criterion, value bet detection
+        // ══════════════════════════════════════════════════════
         try {
-          // 🔄 TOUJOURS utiliser ESPN en direct (le fichier pré-calculé ne persiste pas sur Vercel)
-          // 🧹 Forcer l'invalidation du cache pour avoir les données les plus fraîches
           invalidateEspnCache();
-          console.log('📡 Récupération des matchs depuis ESPN...');
+          console.log('🧠 Pipeline unifié: récupération matchs + analyse ML...');
           const matches = await getMatchesWithRealOdds();
           
-          let predictions: any[] = matches
-            .map((m: any) => ({
+          if (matches.length === 0) {
+            result = { telegram: { success: false, message: 'Aucun match disponible' } };
+            break;
+          }
+          
+          // Filtrer: matchs à venir uniquement, cotes réelles
+          const upcomingWithOdds = matches.filter((m: any) => 
+            !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
+          );
+          console.log(`📡 ${upcomingWithOdds.length} matchs éligibles pour analyse ML (sur ${matches.length} total)`);
+          
+          // Mapper vers le format UnifiedPredictionInput
+          const mlInputs: UnifiedPredictionInput[] = upcomingWithOdds.map((m: any) => ({
+            id: m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport === 'Basketball' ? 'NBA' as const : 
+                   m.sport === 'Hockey' ? 'NHL' as const : 'Foot' as const,
+            league: m.league || 'Unknown',
+            oddsHome: m.oddsHome,
+            oddsDraw: m.oddsDraw || null,
+            oddsAway: m.oddsAway,
+          }));
+          
+          // 🧠 Exécuter le pipeline ML unifié
+          let unifiedPreds: any[] = [];
+          try {
+            unifiedPreds = await getBatchPredictions(mlInputs);
+            console.log(`🧠 ${unifiedPreds.length} prédictions ML calculées`);
+          } catch (mlErr: any) {
+            console.log(`⚠️ Pipeline ML échoué (${mlErr.message}), fallback sur cotes brutes`);
+          }
+          
+          // Convertir les prédictions unifiées en format Telegram
+          // Filtres stricts du site: pas de LOW confidence, pas de 'avoid'
+          let predictions: any[] = [];
+          
+          if (unifiedPreds.length > 0) {
+            predictions = unifiedPreds
+              .filter((p: any) => 
+                p.recommendation.bet !== 'avoid' && 
+                p.mlPrediction.confidence !== 'low' &&
+                p.odds.hasRealOdds
+              )
+              .map((p: any) => {
+                const bet = p.recommendation.bet; // 'home' | 'draw' | 'away'
+                const isHome = bet === 'home';
+                const isAway = bet === 'away';
+                const winProb = isHome ? p.mlPrediction.homeProb : 
+                                 isAway ? p.mlPrediction.awayProb : p.mlPrediction.drawProb;
+                const riskPct = Math.round(100 - winProb);
+                const selectedOdds = isHome ? p.odds.home : isAway ? p.odds.away : p.odds.draw || 3.3;
+                
+                return {
+                  homeTeam: p.homeTeam,
+                  awayTeam: p.awayTeam,
+                  sport: p.sport === 'NBA' ? 'Basketball' : p.sport === 'NHL' ? 'Hockey' : 'Football',
+                  league: p.league,
+                  date: undefined, // Pas de date dans unified, on utilise l'original
+                  displayDate: '',
+                  dateTag: "aujourd'hui",
+                  recommendation: isHome ? p.homeTeam : isAway ? p.awayTeam : 'Match Nul',
+                  predictedResult: bet,
+                  confidence: p.mlPrediction.confidence,
+                  valueBetDetected: p.mlPrediction.valueBet,
+                  valueBetType: p.mlPrediction.valueBetType,
+                  riskPercentage: riskPct,
+                  winProbability: winProb,
+                  oddsHome: p.odds.home,
+                  oddsAway: p.odds.away,
+                  oddsDraw: p.odds.draw,
+                  isEstimated: false,
+                  // 🧠 Métadonnées ML pour le formatage Telegram
+                  _mlEdge: p.mlPrediction.edge,
+                  _mlReasoning: p.recommendation.reasoning,
+                  _dataQuality: p.dataQuality?.score || 0,
+                  _kellyStake: p.recommendation.kellyStake,
+                  _dixonColes: p.dixonColes,
+                  _sources: p.dataQuality?.sources || [],
+                };
+              });
+            
+            console.log(`🧠 Pipeline ML: ${predictions.length} pronostics valides (HIGH/MEDIUM, non-avoid)`);
+          }
+          
+          // Fallback: si le pipeline ML n'a rien produit, utiliser les cotes brutes
+          if (predictions.length === 0) {
+            console.log('⚠️ Fallback: aucun pronostic ML, utilisation cotes brutes filtrées');
+            predictions = upcomingWithOdds.map((m: any) => ({
               homeTeam: m.homeTeam,
               awayTeam: m.awayTeam,
               sport: m.sport,
@@ -1645,103 +1737,35 @@ export async function GET(request: NextRequest) {
               oddsDraw: m.oddsDraw,
               isEstimated: m.isEstimated || false,
             }));
-          console.log(`📡 ESPN live: ${predictions.length} matchs récupérés`);
-          
-          // Si aucun match, essayer le fichier pré-calculé en dernier recours
-          if (predictions.length === 0) {
-            const { loadDailyPredictions } = await import('@/lib/dailyPredictionService');
-            const dailyData = loadDailyPredictions();
-            
-            if (dailyData && dailyData.predictions.length > 0) {
-              predictions = dailyData.predictions
-                .map(p => ({
-                  homeTeam: p.homeTeam,
-                  awayTeam: p.awayTeam,
-                  sport: p.sport,
-                  league: p.league || p.tournament,
-                  date: p.date,
-                  recommendation: p.recommendation,
-                  predictedResult: p.predictedResult,
-                  confidence: p.confidence,
-                  valueBetDetected: p.valueBet,
-                  valueBetType: p.valueBetType,
-                  riskPercentage: p.riskPercentage,
-                  winProbability: p.winProbability,
-                  oddsHome: p.oddsHome,
-                  oddsAway: p.oddsAway,
-                  oddsDraw: p.oddsDraw,
-                }));
-              console.log(`📦 Fallback fichier pré-calculé: ${predictions.length} matchs`);
+          } else {
+            // Compléter les dates depuis les matchs originaux
+            const matchMap = new Map(upcomingWithOdds.map((m: any) => [m.homeTeam, m]));
+            for (const pred of predictions) {
+              const orig = matchMap.get(pred.homeTeam);
+              if (orig) {
+                pred.date = orig.date;
+                pred.displayDate = orig.displayDate || '';
+                pred.dateTag = orig.dateTag || "aujourd'hui";
+              }
             }
           }
           
           if (predictions.length === 0) {
-            result = { 
-              telegram: { 
-                success: false, 
-                message: 'Aucun match disponible aujourd\'hui'
-              } 
-            };
+            result = { telegram: { success: false, message: 'Aucun pronostic valide (ML: tous rejetés)' } };
             break;
           }
           
-          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
-          
-          // 🛡️ FILTRE ANTI-PIÈGE : retirer les modérés des sports en anomalie
-          // Un sport est en anomalie si son taux de réussite récent (< 20 derniers terminés) est < 35%
-          // Les "faux vrais" (modérés qui perdent systématiquement) sont retirés, seuls les safe sont gardés
-          let trapFilteredCount = 0;
-          try {
-            const recentCompleted = await SupabaseStore.getRecentCompletedPredictions(100);
-            const sportStats: Record<string, { wins: number; total: number }> = {};
-            for (const p of recentCompleted) {
-              if (p.result_match === null || p.result_match === undefined) continue;
-              const sport = (p.sport || 'other').toLowerCase();
-              if (!sportStats[sport]) sportStats[sport] = { wins: 0, total: 0 };
-              sportStats[sport].total++;
-              if (p.result_match === true) sportStats[sport].wins++;
-            }
-            // Détecter les sports en anomalie (taux < 35% sur au moins 5 matchs)
-            const anomalySports = new Set<string>();
-            for (const [sport, stats] of Object.entries(sportStats)) {
-              if (stats.total >= 5) {
-                const rate = stats.wins / stats.total;
-                if (rate < 0.35) {
-                  anomalySports.add(sport);
-                  console.log(`🚨 ANOMALIE DÉTECTÉE: ${sport} — ${stats.wins}/${stats.total} (${Math.round(rate * 100)}%) → retrait des modérés`);
-                }
-              }
-            }
-            // Retirer les modérés (31-50%) des sports en anomalie, garder les safe (≤30%)
-            if (anomalySports.size > 0) {
-              const beforeCount = predictions.length;
-              predictions = predictions.filter((p: any) => {
-                const sport = (p.sport || '').toLowerCase();
-                if (anomalySports.has(sport) && p.riskPercentage > 30 && p.riskPercentage <= 50) {
-                  trapFilteredCount++;
-                  return false; // Retirer ce modéré
-                }
-                return true;
-              });
-              console.log(`🛡️ Anti-piège: ${trapFilteredCount} modéré(s) retiré(s) sur ${anomalySports.size} sport(s) en anomalie`);
-            }
-          } catch (e: any) {
-            console.log('⚠️ Erreur filtre anti-piège (non bloquant):', e.message);
-          }
-          
-          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES (top 10, cotes réelles)
-          // ⚠️ Le bilan journalier se base sur Supabase → ne sauvegarder que ce qui est publié
-          // 🧹 SUPPRIMER d'abord les anciennes prédictions du jour (pour que le bilan ne compte que les publiées)
+          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES dans Supabase
           try {
             const todayISO = new Date().toISOString().split('T')[0];
             const deleted = await SupabaseStore.deleteByDate(todayISO);
-            if (deleted > 0) console.log(`🧹 ${deleted} anciennes prédictions du jour supprimées (bilan propre)`);
+            if (deleted > 0) console.log(`🧹 ${deleted} anciennes prédictions du jour supprimées`);
             
             const { selected: publishedPredictions, totalEligible, excludedEstimated } = selectTopDailyPredictions(predictions);
             
             const dbPredictions = publishedPredictions.map((p: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-              const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
+              const dateStr = (p.date || '').split('T')[0] || todayISO;
               const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
               const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
               const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
@@ -1762,7 +1786,7 @@ export async function GET(request: NextRequest) {
               };
             });
             const saved = await SupabaseStore.addPredictions(dbPredictions);
-            console.log(`💾 ${saved} prédictions PUBLIÉES sauvegardées dans Supabase (top ${totalEligible} éligibles, ${excludedEstimated} estimés exclus, sur ${predictions.length} totales)`);
+            console.log(`💾 ${saved} prédictions PUBLIÉES sauvegardées (ML unifié, ${totalEligible} éligibles)`);
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
           }
@@ -1772,15 +1796,15 @@ export async function GET(request: NextRequest) {
           result = { 
             telegram: { 
               success: telegramResult, 
-              total: predictions.length,
+              total: matches.length,
+              mlAnalyzed: upcomingWithOdds.length,
               published: publishedList.length,
               totalEligible,
               excluded: predictions.length - publishedList.length,
-              trapFiltered: trapFilteredCount,
-              source: 'espn-live',
+              source: 'unified-ml',
               version: CRON_VERSION,
               message: telegramResult 
-                ? `Résumé publié: ${publishedList.length}/10 pronostics sur Telegram${trapFilteredCount > 0 ? ` (${trapFilteredCount} modéré(s) piège retiré(s))` : ''}`
+                ? `Résumé ML publié: ${publishedList.length}/10 pronostics`
                 : 'Erreur publication Telegram'
             } 
           };
