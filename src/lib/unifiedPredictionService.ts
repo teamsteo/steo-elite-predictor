@@ -94,6 +94,19 @@ export interface UnifiedPrediction {
       temperature: number;
       impact: string;
     };
+    matchImportance?: {
+      stakeLevel: string;
+      stakeScore: number;
+      stakeLabel: string;
+      seasonPhase: string;
+      seasonPhaseLabel: string;
+      competitionTypeLabel: string;
+      formReliable: boolean;
+      formReliability: string;
+      formReliabilityReason: string;
+      warnings: string[];
+      insights: string[];
+    };
   };
   
   // Final recommendation
@@ -376,6 +389,17 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     if (context.weather && context.weather.impact.overall !== 'ideal') {
       reasoning.push(`🌤️ Météo: ${context.weather.current.condition}, impact ${context.weather.impact.overall}`);
     }
+    
+    // Enjeu du match
+    if (context.matchImportance) {
+      const imp = context.matchImportance;
+      if (imp.stakeLevel === 'high' || imp.stakeLevel === 'critical') {
+        reasoning.push(`🏆 ENJEU ${imp.stakeLevel === 'critical' ? 'CRITIQUE' : 'ÉLEVÉ'}: ${imp.stakeLabel}`);
+      }
+      if (!imp.formReliable) {
+        reasoning.push(`⚠️ Forme ${imp.formReliability === 'unreliable' ? 'NON fiable' : 'incertaine'}: ${imp.formReliabilityReason}`);
+      }
+    }
   }
   
   // Risk level
@@ -414,6 +438,19 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       condition: context.weather.current.condition,
       temperature: context.weather.current.temperature,
       impact: context.weather.impact.overall,
+    } : undefined,
+    matchImportance: context?.matchImportance ? {
+      stakeLevel: context.matchImportance.stakeLevel,
+      stakeScore: context.matchImportance.stakeScore,
+      stakeLabel: context.matchImportance.stakeLabel,
+      seasonPhase: context.matchImportance.seasonPhase,
+      seasonPhaseLabel: context.matchImportance.seasonPhaseLabel,
+      competitionTypeLabel: context.matchImportance.competitionTypeLabel,
+      formReliable: context.matchImportance.formReliable,
+      formReliability: context.matchImportance.formReliability,
+      formReliabilityReason: context.matchImportance.formReliabilityReason,
+      warnings: context.matchImportance.warnings,
+      insights: context.matchImportance.insights,
     } : undefined,
   };
   

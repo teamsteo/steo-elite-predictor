@@ -563,6 +563,33 @@ interface TelegramMatch {
   oddsAway?: number;
   oddsDraw?: number | null;
   isEstimated?: boolean;
+  // Métadonnées ML enrichies (ajoutées par le pipeline unifié)
+  _mlEdge?: number;
+  _mlReasoning?: string[];
+  _dataQuality?: number;
+  _kellyStake?: number;
+  _dixonColes?: any;
+  _sources?: string[];
+  // Enjeu du match
+  _matchImportance?: {
+    stakeLevel: string;
+    stakeScore: number;
+    stakeLabel: string;
+    seasonPhase: string;
+    seasonPhaseLabel: string;
+    competitionTypeLabel: string;
+    formReliable: boolean;
+    formReliability: string;
+    formReliabilityReason: string;
+    warnings: string[];
+    insights: string[];
+  };
+  // Contexte enrichi
+  _enrichedContext?: {
+    injuries?: { home: any[]; away: any[]; homeImpact: number; awayImpact: number; summary: string; keyAbsentees?: { home: string[]; away: string[] } };
+    form?: string;
+    newsAlerts?: string[];
+  };
 }
 
 // ============================================
@@ -584,7 +611,7 @@ async function formatMatchBlock(
   const isFootball = isFootballMatch(m.sport);
   const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
   const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
-  const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : 'Modéré';
+  const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : (m.riskPercentage || 100) <= 40 ? 'Modéré' : 'Risqué';
   const betLabel = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
   const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
 
@@ -642,6 +669,79 @@ async function formatMatchBlock(
       }
     } catch (e) {
       block += `    🔢 Runs: incalculables\n`;
+    }
+  }
+
+  // ══════════════════════════════════════════
+  // SECTION CONTEXTE ENRICHI (enjeu, forme, blessures, news)
+  // ══════════════════════════════════════════
+  const contextLines: string[] = [];
+  
+  // Enjeu du match
+  if (m._matchImportance) {
+    const imp = m._matchImportance;
+    const stakeEmoji: Record<string, string> = {
+      'none': '⚪', 'very_low': '🟤', 'low': '🟡', 'medium': '🔵', 'high': '🟠', 'critical': '🔴',
+    };
+    
+    // Seulement afficher si l'enjeu n'est pas "medium" (standard) ou si non fiable
+    if (imp.stakeLevel !== 'medium' || !imp.formReliable || imp.insights.length > 0) {
+      contextLines.push(`${stakeEmoji[imp.stakeLevel] || '🔵'} ENJEU: ${imp.stakeLabel}`);
+      contextLines.push(`📋 ${imp.seasonPhaseLabel} · ${imp.competitionTypeLabel}`);
+      
+      if (!imp.formReliable) {
+        contextLines.push(`⚠️ ${imp.formReliabilityReason}`);
+      }
+      
+      // Insights (ex: "MATCH À 6 POINTS", "Course au titre")
+      for (const insight of imp.insights.slice(0, 1)) {
+        contextLines.push(insight);
+      }
+    }
+  }
+  
+  // Forme (depuis les reasoning ML si disponibles)
+  if (m._mlReasoning && m._mlReasoning.length > 0) {
+    for (const r of m._mlReasoning) {
+      // Forme
+      if (r.includes('📈 Forme')) {
+        contextLines.push(r);
+      }
+      // Blessures
+      if (r.includes('🏥 Impact blessures')) {
+        contextLines.push(r);
+      }
+    }
+  }
+  
+  // Contexte enrichi depuis les métadonnées
+  if (m._enrichedContext) {
+    const ctx = m._enrichedContext;
+    // Alertes news
+    if (ctx.newsAlerts && ctx.newsAlerts.length > 0) {
+      for (const alert of ctx.newsAlerts.slice(0, 1)) {
+        contextLines.push(`📰 ${alert}`);
+      }
+    }
+  }
+  
+  // Kelly stake (indicateur de confiance ML)
+  if (m._kellyStake && m._kellyStake > 0) {
+    const kellyEmoji = m._kellyStake >= 3 ? '💎' : m._kellyStake >= 2 ? '✨' : '📊';
+    contextLines.push(`${kellyEmoji} Kelly: ${m._kellyStake.toFixed(1)}%`);
+  }
+  
+  // Sources ML
+  if (m._sources && m._sources.length > 2) {
+    const sourceCount = m._sources.length;
+    contextLines.push(`🔬 ${sourceCount} sources (ML unifié)`);
+  }
+  
+  // Ajouter la section contexte si on a des lignes
+  if (contextLines.length > 0) {
+    block += `    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n`;
+    for (const line of contextLines.slice(0, 5)) { // Max 5 lignes de contexte
+      block += `    ${line}\n`;
     }
   }
 

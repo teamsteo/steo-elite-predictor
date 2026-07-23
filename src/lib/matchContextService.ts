@@ -63,6 +63,10 @@ import {
   adjustProbabilitiesWithFactors,
   MatchFactors,
 } from './matchFactorsService';
+import {
+  analyzeMatchImportance,
+  MatchImportance,
+} from './matchImportanceService';
 
 // ============================================
 // TYPES
@@ -122,6 +126,9 @@ export interface UnifiedMatchContext {
   
   // Facteurs de match - Home Advantage, Referee, Rest Days, Crowd, Derby (NOUVEAU)
   matchFactors?: MatchFactors;
+  
+  // Enjeu du match - Phase de saison, type compétition, importance (NOUVEAU)
+  matchImportance?: MatchImportance;
   
   // Données de blessures
   injuries: {
@@ -409,7 +416,17 @@ export async function getUnifiedMatchContext(params: {
     }
   }
   
-  // 6. Générer l'analyse unifiée
+  // 6. Calculer l'enjeu du match (phase saison, type compétition, importance)
+  const matchImportanceData = analyzeMatchImportance(
+    params.league,
+    params.sport === 'football' ? 'football' : params.sport === 'basketball' ? 'basketball' : 'tennis',
+    new Date()
+  );
+  if (matchImportanceData.insights.length > 0) {
+    sourcesUsed.push('MatchImportance');
+  }
+  
+  // 7. Générer l'analyse unifiée
   const unifiedAnalysis = generateUnifiedAnalysis(
     fbrefData,
     nbaData,
@@ -436,6 +453,7 @@ export async function getUnifiedMatchContext(params: {
     weather: weatherData || undefined,
     teamNews: teamNewsData || undefined,
     matchFactors: matchFactorsData,
+    matchImportance: matchImportanceData,
     injuries: injuryData,
     news: newsData,
     unifiedAnalysis,
@@ -1008,7 +1026,32 @@ export function calculateContextAdjustment(
     }
   }
   
-  // 8. Appliquer les ajustements ML
+  // 8. Ajustement basé sur l'enjeu du match (phase saison, type compétition, importance)
+  if (context.matchImportance) {
+    const importance = context.matchImportance;
+    
+    // Ajuster la confiance selon l'enjeu
+    confidence *= importance.confidenceMultiplier;
+    
+    // Enjeu critique: léger boost de l'avantage du favori (les favoris performent mieux sous pression)
+    if (importance.stakeLevel === 'critical' || importance.stakeLevel === 'high') {
+      // Les équipes favorites tendent à confirmer dans les matches à enjeu
+      if (unifiedAnalysis.overallAdvantage === 'home') {
+        homeAdjustment += 0.01;
+      } else if (unifiedAnalysis.overallAdvantage === 'away') {
+        awayAdjustment += 0.01;
+      }
+    }
+    
+    // Enjeu faible/pré-saison: réduire l'avantage du favori (surprises fréquentes)
+    if (importance.stakeLevel === 'none' || importance.stakeLevel === 'very_low') {
+      // Réduire l'écart entre les équipes en pré-saison
+      if (homeAdjustment > 0) homeAdjustment *= 0.7;
+      if (awayAdjustment > 0) awayAdjustment *= 0.7;
+    }
+  }
+  
+  // 9. Appliquer les ajustements ML
   if (mlThresholds) {
     // Ajuster la confiance basée sur la qualité des données
     if (unifiedAnalysis.dataQuality < mlThresholds.minDataQuality) {

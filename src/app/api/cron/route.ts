@@ -1708,6 +1708,8 @@ export async function GET(request: NextRequest) {
                   _kellyStake: p.recommendation.kellyStake,
                   _dixonColes: p.dixonColes,
                   _sources: p.dataQuality?.sources || [],
+                  // 🏆 Enjeu du match (phase saison, type compétition, importance)
+                  _matchImportance: p.factors?.matchImportance || undefined,
                 };
               });
             
