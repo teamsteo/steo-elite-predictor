@@ -59,6 +59,26 @@ export interface MLModel {
   accuracy: number;
   last_trained: string;
   created_at?: string;
+  // XGBoost params (from Python training script)
+  xgboost_params?: XGBoostParams | null;
+}
+
+export interface XGBoostParams {
+  trained: boolean;
+  sports: Record<string, XGBoostSportParams>;
+  global_cv_accuracy: number;
+  total_samples: number;
+  best_edge_threshold: number;
+}
+
+export interface XGBoostSportParams {
+  cv_accuracy: number;
+  best_confidence_threshold: number;
+  top_features: [string, number][];
+  feature_importance: Record<string, number>;
+  samples: number;
+  version: string;
+  trained_at: string;
 }
 
 export interface TrainingResult {
@@ -197,10 +217,14 @@ export async function loadMLModel(): Promise<MLModel> {
         ...data,
         confidence_weights: typeof data.confidence_weights === 'string' 
           ? JSON.parse(data.confidence_weights) 
-          : data.confidence_weights
+          : data.confidence_weights,
+        xgboost_params: data.xgboost_params 
+          ? (typeof data.xgboost_params === 'string' ? JSON.parse(data.xgboost_params) : data.xgboost_params)
+          : null
       } as MLModel;
       lastCacheUpdate = now;
-      console.log(`✅ UnifiedML: Modèle v${modelCache.version} chargé (${modelCache.samples_used} échantillons, ${modelCache.accuracy}% accuracy)`);
+      const xgbStatus = modelCache.xgboost_params?.trained ? `XGBoost ✅ (${modelCache.xgboost_params.total_samples} samples)` : 'heuristiques';
+      console.log(`✅ UnifiedML: Modèle v${modelCache.version} chargé (${modelCache.samples_used} échantillons, ${modelCache.accuracy}% accuracy) [${xgbStatus}]`);
       return modelCache;
     }
     
@@ -972,6 +996,157 @@ function incrementVersion(version: string): string {
 }
 
 // ============================================
+// XGBOOST PREDICTION ENGINE
+// ============================================
+
+/**
+ * Score une prédiction en utilisant les paramètres XGBoost entraînés.
+ * Simule un modèle XGBoost en appliquant les feature importances apprises.
+ *
+ * Retourne un score 0-1 et un ajustement de confiance basé sur le modèle.
+ */
+export function scoreWithXGBoost(
+  sport: string,
+  features: Record<string, number>,
+  model: MLModel
+): {
+  score: number;
+  isXGBoostTrained: boolean;
+  cvAccuracy: number;
+  confidenceThreshold: number;
+  featureContributions: { feature: string; weight: number; value: number }[];
+  recommendation: string;
+} {
+  // Default: no XGBoost trained
+  const defaultResponse = {
+    score: 0.5,
+    isXGBoostTrained: false,
+    cvAccuracy: 0,
+    confidenceThreshold: 0.5,
+    featureContributions: [],
+    recommendation: 'ML heuristique (pas de modèle XGBoost entraîné)'
+  };
+
+  if (!model.xgboost_params?.trained) {
+    return defaultResponse;
+  }
+
+  const sportLower = sport.toLowerCase();
+  const sportParams = model.xgboost_params.sports?.[sportLower] || 
+                     model.xgboost_params.sports?.[sport];
+
+  if (!sportParams) {
+    return defaultResponse;
+  }
+
+  const featureImportance = sportParams.feature_importance || {};
+  if (Object.keys(featureImportance).length === 0) {
+    return defaultResponse;
+  }
+
+  // Calculer le score pondéré par feature importances
+  let weightedScore = 0;
+  let totalWeight = 0;
+  const contributions: { feature: string; weight: number; value: number }[] = [];
+
+  for (const [featureName, importance] of Object.entries(featureImportance)) {
+    const value = features[featureName];
+
+    if (value === undefined || value === null) continue;
+
+    // Normaliser la valeur (centrer autour de 0.5)
+    let normalizedValue = value;
+    if (featureName.startsWith('odds_') || featureName === 'favorite_strength') {
+      normalizedValue = Math.max(0, Math.min(1, 1 / value)); // Inverser les cotes
+    } else if (featureName.includes('prob_') || featureName.includes('_score') || featureName.includes('_rating')) {
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName.includes('_diff') || featureName.includes('margin') || featureName.includes('spread')) {
+      // Les différences: sigmoid pour normaliser entre 0 et 1
+      normalizedValue = 1 / (1 + Math.exp(-value * 2));
+    }
+
+    const contribution = importance * normalizedValue;
+    weightedScore += contribution;
+    totalWeight += importance;
+
+    contributions.push({
+      feature: featureName,
+      weight: importance,
+      value: value
+    });
+  }
+
+  // Score final normalisé
+  const finalScore = totalWeight > 0 ? Math.max(0.05, Math.min(0.95, weightedScore / totalWeight)) : 0.5;
+
+  // Trier les contributions par importance
+  contributions.sort((a, b) => b.weight - a.weight);
+
+  // Générer une recommandation
+  const isAboveThreshold = finalScore >= sportParams.best_confidence_threshold;
+  let recommendation = '';
+  if (isAboveThreshold && finalScore >= 0.7) {
+    recommendation = `🏆 XGBoost CONFORT (${(finalScore * 100).toFixed(0)}%) — ${sportParams.cv_accuracy > 0.6 ? 'fiable' : 'prudent'}`;
+  } else if (isAboveThreshold) {
+    recommendation = `✅ XGBoost favorable (${(finalScore * 100).toFixed(0)}%)`;
+  } else {
+    recommendation = `⚠️ XGBoost incertain (${(finalScore * 100).toFixed(0)}%)`;
+  }
+
+  return {
+    score: finalScore,
+    isXGBoostTrained: true,
+    cvAccuracy: sportParams.cv_accuracy,
+    confidenceThreshold: sportParams.best_confidence_threshold,
+    featureContributions: contributions.slice(0, 5), // Top 5
+    recommendation
+  };
+}
+
+/**
+ * Obtient les stats XGBoost pour affichage
+ */
+export function getXGBoostStatus(model: MLModel): {
+  trained: boolean;
+  totalSamples: number;
+  globalCvAccuracy: number;
+  bestEdgeThreshold: number;
+  sports: { sport: string; cvAccuracy: number; samples: number; topFeatures: string[] }[];
+  lastTrained: string;
+  version: string;
+} {
+  if (!model.xgboost_params?.trained) {
+    return {
+      trained: false,
+      totalSamples: 0,
+      globalCvAccuracy: 0,
+      bestEdgeThreshold: model.edge_threshold,
+      sports: [],
+      lastTrained: model.last_trained,
+      version: model.version
+    };
+  }
+
+  const xgb = model.xgboost_params;
+  const sportList = Object.entries(xgb.sports || {}).map(([sport, params]) => ({
+    sport,
+    cvAccuracy: params.cv_accuracy,
+    samples: params.samples,
+    topFeatures: (params.top_features || []).slice(0, 5).map(f => f[0])
+  }));
+
+  return {
+    trained: true,
+    totalSamples: xgb.total_samples,
+    globalCvAccuracy: xgb.global_cv_accuracy,
+    bestEdgeThreshold: xgb.best_edge_threshold,
+    sports: sportList,
+    lastTrained: model.last_trained,
+    version: model.version
+  };
+}
+
+// ============================================
 // STATISTIQUES
 // ============================================
 
@@ -1050,5 +1225,7 @@ export default {
   updateMLPattern,
   trainUnifiedML,
   getUnifiedMLStats,
-  refreshMLCache
+  refreshMLCache,
+  scoreWithXGBoost,
+  getXGBoostStatus
 };
