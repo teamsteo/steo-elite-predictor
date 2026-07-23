@@ -845,3 +845,37 @@ Stage Summary:
 - **Bug timing bilan**: telegram-results était à 03:00 UTC (avant verify-night à 05:00 UTC) → déplacé à 05:30 UTC pour capter les résultats NBA de nuit
 - **Tennis bilan**: Fonctionne correctement — tennis est inclus dans verifyAllResults() et dans le bilan journalier via Supabase
 - Commit: 6ad0f70, pushé sur main, déploiement Vercel en cours
+
+---
+Task ID: 1
+Agent: Main
+Task: Phase 2 - XGBoost ML Pipeline Implementation
+
+Work Log:
+- Created ml/train_xgboost.py: Full Python XGBoost training script
+  - Connects to Supabase, fetches completed predictions with results
+  - Engineers 30+ features (odds, confidence, sport-specific, temporal, interactions)
+  - Trains XGBoost per sport with Stratified K-Fold cross-validation
+  - Exports feature importances + optimal thresholds to Supabase ml_model.xgboost_params
+  - Supports --sport, --dry-run, --no-export, --min-samples flags
+  - Sends Telegram notification on completion
+- Created ml/requirements.txt: xgboost, scikit-learn, pandas, supabase
+- Created ml/README.md: Full documentation of architecture and usage
+- Created .github/workflows/xgboost-training.yml: Daily training at 05:10 UTC
+- Updated src/lib/adaptiveThresholdsML.ts: calculateMLAdjustment now async, integrates XGBoost
+  - Loads ml_model from Supabase, checks if xgboost_params.trained
+  - Builds feature vector, calls scoreWithXGBoost()
+  - Mix: 60% heuristics + 40% XGBoost coefficients
+  - Confidence boost when both methods agree
+- Updated src/lib/unifiedPredictionService.ts: 
+  - calculateMLAdjustment now awaited (async)
+  - mlPrediction output includes xgboostUsed and xgboostScore
+  - XGBoost reasoning visible in prediction output
+- TypeScript compilation: 0 errors
+- Committed and pushed to GitHub (commit 0083615)
+
+Stage Summary:
+- XGBoost Phase 2 pipeline fully implemented and pushed to GitHub
+- Python script trains locally or via GitHub Actions
+- TypeScript services consume XGBoost coefficients from Supabase (no ML libs at runtime)
+- Next step: Run training script locally or configure GitHub Actions secrets for automatic training
