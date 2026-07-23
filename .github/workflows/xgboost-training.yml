@@ -11,7 +11,7 @@ on:
         required: false
         default: ''
       dry_run:
-        description: 'Dry run (pas d\'export Supabase)'
+        description: "Dry run (pas d'export Supabase)"
         required: false
         type: boolean
         default: false
