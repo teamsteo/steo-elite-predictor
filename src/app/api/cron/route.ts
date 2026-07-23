@@ -1755,11 +1755,14 @@ export async function GET(request: NextRequest) {
             break;
           }
           
-          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES dans Supabase
+          // 💾 Sauvegarder UNIQUEMENT les prédictions PUBLIÉES dans Supabase (MODE ADDITIF)
+          // - PAS de deleteByDate : on garde les prédictions des publications précédentes
+          // - addPredictions fait un UPSERT (onConflict: match_id) → pas de doublons
+          // - Si un match est republié avec des cotes mises à jour, l'upsert met à jour en place
+          // - Le bilan journalier comptera TOUTES les prédictions publiées dans la journée
           try {
             const todayISO = new Date().toISOString().split('T')[0];
-            const deleted = await SupabaseStore.deleteByDate(todayISO);
-            if (deleted > 0) console.log(`🧹 ${deleted} anciennes prédictions du jour supprimées`);
+            console.log(`📊 Mode additif: les prédictions précédentes sont conservées (upsert match_id)`);
             
             const { selected: publishedPredictions, totalEligible, excludedEstimated } = selectTopDailyPredictions(predictions);
             
