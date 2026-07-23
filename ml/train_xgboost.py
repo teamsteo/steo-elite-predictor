@@ -92,12 +92,19 @@ def get_supabase() -> Client:
 
 def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int = 30) -> pd.DataFrame:
     """
-    Charge toutes les prédictions résolues depuis Supabase.
-    Filtre sur les prédictions complétées avec un résultat connu.
+    Charge les données d'entraînement depuis Supabase.
+    Sources multiples:
+    1. predictions (status='completed', result_match non null) — prédictions avec résultat connu
+    2. matches (status='completed') — matchs avec scores et odds
+    Fusionne les deux sources pour maximiser les données.
     """
     print(f"\n📊 Chargement des données depuis Supabase...")
 
-    query = sb.table("predictions").select(
+    all_data = []
+
+    # ── Source 1: predictions complétées ──
+    print("   🔍 Source 1: predictions (status=completed)...")
+    query1 = sb.table("predictions").select(
         "id, sport, home_team, away_team, league, match_date, "
         "predicted_result, predicted_goals, confidence, "
         "odds_home, odds_away, odds_draw, "
@@ -105,22 +112,83 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     ).eq("status", "completed").not_.is_("result_match", "null")
 
     if sport:
-        query = query.eq("sport", sport)
+        query1 = query1.eq("sport", sport)
 
-    # Charger par lots de 2000 pour éviter les timeouts
-    all_data = []
     offset = 0
     batch_size = 2000
-
     while True:
-        res = query.range(offset, offset + batch_size - 1).execute()
+        res = query1.range(offset, offset + batch_size - 1).execute()
         if not res.data:
             break
         all_data.extend(res.data)
         if len(res.data) < batch_size:
             break
         offset += batch_size
-        print(f"   Chargé {len(all_data)} prédictions...")
+        print(f"      predictions: {len(all_data)} lignes...")
+
+    # ── Source 2: matches complétés (pour enrichir) ──
+    print("   🔍 Source 2: matches (scores disponibles)...")
+    query2 = sb.table("matches").select(
+        "id, sport, home_team, away_team, league, date, "
+        "home_score, away_score, "
+        "odds_home, odds_away, odds_draw, "
+        "home_xg, away_xg, winner, status"
+    ).not_.is_("home_score", "null").not_.is_("odds_home", "null")
+
+    if sport:
+        query2 = query2.eq("sport", sport)
+
+    offset = 0
+    match_count = 0
+    while True:
+        res = query2.range(offset, offset + batch_size - 1).execute()
+        if not res.data:
+            break
+        # Convertir les matchs au format predictions
+        for m in res.data:
+            # Déterminer le résultat
+            winner = m.get("winner") or ""
+            home_score = m.get("home_score") or 0
+            away_score = m.get("away_score") or 0
+            if not winner:
+                if home_score > away_score:
+                    winner = "home"
+                elif away_score > home_score:
+                    winner = "away"
+                else:
+                    winner = "draw"
+
+            # Skip si déjà dans predictions (éviter doublons)
+            existing_ids = {d.get("id") for d in all_data}
+            if m["id"] in existing_ids:
+                continue
+
+            all_data.append({
+                "id": m["id"],
+                "sport": m.get("sport", "football"),
+                "home_team": m.get("home_team", ""),
+                "away_team": m.get("away_team", ""),
+                "league": m.get("league"),
+                "match_date": m.get("date"),
+                "predicted_result": winner,  # Le "predicted" est en fait le résultat réel ici
+                "predicted_goals": None,
+                "confidence": "medium",
+                "odds_home": m.get("odds_home"),
+                "odds_away": m.get("odds_away"),
+                "odds_draw": m.get("odds_draw"),
+                "result_match": True,  # On compare le résultat réel vs lui-même (pour features odds)
+                "home_score": home_score,
+                "away_score": away_score,
+                "actual_result": winner,
+                "home_xg": m.get("home_xg"),
+                "away_xg": m.get("away_xg"),
+                "_source": "matches",  # Tag pour distinguer
+            })
+            match_count += 1
+        if len(res.data) < batch_size:
+            break
+        offset += batch_size
+        print(f"      matches: {match_count} lignes...")
 
     if not all_data:
         print("   ⚠️ Aucune donnée trouvée!")
@@ -182,6 +250,18 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         df["prob_home"] - df["prob_away"],
         df["prob_away"] - df["prob_home"]
     )
+
+    # --- xG Features (si disponibles) ---
+    if "home_xg" in df.columns:
+        df["xg_home"] = pd.to_numeric(df["home_xg"], errors="coerce").fillna(0)
+    else:
+        df["xg_home"] = 0.0
+    if "away_xg" in df.columns:
+        df["xg_away"] = pd.to_numeric(df["away_xg"], errors="coerce").fillna(0)
+    else:
+        df["xg_away"] = 0.0
+    df["xg_diff"] = df["xg_home"] - df["xg_away"]
+    df["xg_total"] = df["xg_home"] + df["xg_away"]
 
     # --- Confidence Features ---
     # Confidence encodée numériquement
@@ -253,7 +333,9 @@ def get_feature_columns(df: pd.DataFrame) -> list:
     exclude_cols = {
         "id", "sport", "home_team", "away_team", "league", "date", "match_date",
         "predicted_result", "predicted_goals", "confidence",
-        "result_match", "actual_result", "home_score", "away_score"
+        "result_match", "actual_result", "home_score", "away_score",
+        "home_xg", "away_xg", "winner", "status", "total_goals", "_source",
+        "checked_at", "created_at", "updated_at",
     }
     return [c for c in df.columns if c not in exclude_cols and df[c].dtype in [np.float64, np.int64, float, int, np.float32, np.int32, bool]]
 
