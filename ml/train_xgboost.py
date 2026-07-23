@@ -407,7 +407,7 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
         "xgboost_params": json.dumps(xgboost_params),
         "version": f"2.0-xgb-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}",
         "samples_used": total_samples,
-        "accuracy": round(global_cv * 100, 2),
+        "accuracy": int(round(global_cv * 100)),
         "last_trained": datetime.now(timezone.utc).isoformat(),
     }
 
