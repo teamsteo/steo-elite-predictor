@@ -81,6 +81,8 @@ export interface UnifiedPrediction {
     edge: number;
     valueBet: boolean;
     valueBetType: 'home' | 'draw' | 'away' | null;
+    xgboostUsed?: boolean;
+    xgboostScore?: number;
   };
   
   // Context factors
@@ -269,8 +271,8 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     confidence: 0.5,
   };
   
-  // 8. Calculate ML adjustment
-  const mlAdjustment = calculateMLAdjustment(featureVector, sportType as 'football' | 'basketball');
+  // 8. Calculate ML adjustment (async - includes XGBoost if trained)
+  const mlAdjustment = await calculateMLAdjustment(featureVector, sportType as 'football' | 'basketball');
   
   // 9. Combine probabilities: Market + Dixon-Coles + Context + ML
   let finalHomeProb: number;
@@ -402,7 +404,10 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     }
   }
   
-  // Risk level
+  // Add XGBoost reasoning if used
+  if (mlAdjustment.xgboostUsed) {
+    reasoning.push(`🧠 XGBoost ${mlAdjustment.xgboostScore !== undefined ? `score ${(mlAdjustment.xgboostScore * 100).toFixed(0)}%` : 'actif'} — coefficients entraînés appliqués`);
+  }
   let riskLevel: 'low' | 'medium' | 'high' = 'low';
   if (context?.unifiedAnalysis.riskLevel === 'high' || (context?.injuries.homeImpact || 0) + (context?.injuries.awayImpact || 0) < -10) {
     riskLevel = 'high';
@@ -487,6 +492,8 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       edge: Math.round(bestEdge * 1000) / 10,
       valueBet: isValueBet,
       valueBetType: isValueBet ? bestBet : null,
+      xgboostUsed: mlAdjustment.xgboostUsed,
+      xgboostScore: mlAdjustment.xgboostScore,
     },
     
     factors,

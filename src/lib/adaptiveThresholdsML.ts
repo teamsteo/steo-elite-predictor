@@ -7,21 +7,25 @@
  * - Ajuste dynamiquement les seuils (edge, impact blessures, poids forme)
  * - Utilise une approche Bayésienne simple pour mise à jour progressive
  * - Fournit des seuils personnalisés par sport/ligue
+ * - Phase 2: Intègre les coefficients XGBoost entraînés par Python
  * 
  * ALGORITHMES:
  * - Bayesian Updating: Mise à jour progressive des seuils
  * - Logistic Regression: Poids optimaux des features
  * - Moving Average: Lissage des seuils sur le temps
  * - A/B Testing: Comparaison de configurations
+ * - XGBoost (via Supabase): Feature importances entraînées hors Vercel
  * 
  * PERSISTANCE:
  * - Local: /data/ml_model.json (développement)
  * - Vercel: Désactivé (read-only) - mémoire uniquement
+ * - Supabase: ml_model.xgboost_params (coefficients XGBoost)
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { PredictionRecord, loadPredictions, PredictionStats } from './predictionTracker';
+import { loadMLModel, scoreWithXGBoost } from './unifiedMLService';
 
 // Détecter si on est sur Vercel (read-only filesystem)
 const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
@@ -638,24 +642,26 @@ export function getAdaptiveThresholds(sport?: 'football' | 'basketball'): MLThre
 }
 
 /**
- * Calcule l'ajustement de probabilité basé sur le ML
+ * Calcule l'ajustement de probabilité basé sur le ML.
+ * Phase 2: Intègre les coefficients XGBoost depuis Supabase quand disponibles.
+ * Si XGBoost est entraîné, ses feature importances pondèrent l'ajustement final.
  */
-export function calculateMLAdjustment(
+export async function calculateMLAdjustment(
   features: FeatureVector,
   sport: 'football' | 'basketball'
-): {
+): Promise<{
   probabilityAdjustment: number;
   confidenceAdjustment: number;
   recommendedBet: 'home' | 'away' | 'neutral';
-} {
+  xgboostUsed: boolean;
+  xgboostScore?: number;
+}> {
   const model = loadModel();
   const thresholds = getAdaptiveThresholds(sport);
   
-  // Contribution des features
+  // Contribution des features (heuristiques existantes)
   const contribution = calculateFeatureContribution(features, model.featureWeights);
-  
-  // Ajustement de probabilité
-  const probabilityAdjustment = contribution * thresholds.formWeight;
+  let probabilityAdjustment = contribution * thresholds.formWeight;
   
   // Ajustement de confiance
   let confidenceAdjustment = 0;
@@ -674,10 +680,95 @@ export function calculateMLAdjustment(
     recommendedBet = 'away';
   }
   
+  // ═══════════════════════════════════════════════════
+  // PHASE 2: XGBoost Integration
+  // Si un modèle XGBoost est entraîné (via Python script),
+  // on utilise les feature importances pour ajuster la prédiction.
+  // ═══════════════════════════════════════════════════
+  let xgboostUsed = false;
+  let xgboostScore: number | undefined;
+  
+  try {
+    const mlModel = await loadMLModel();
+    
+    if (mlModel?.xgboost_params?.trained) {
+      // Construire le feature vector pour XGBoost
+      const xgbFeatures: Record<string, number> = {
+        prob_home: features.homeWinProbability || 0.5,
+        prob_away: features.awayWinProbability || 0.5,
+        prob_draw: features.drawProbability || 0,
+        is_home_favorite: features.homeWinProbability > features.awayWinProbability ? 1 : 0,
+        confidence_numeric: features.dataQuality > 0.7 ? 1.0 : features.dataQuality > 0.5 ? 0.75 : 0.5,
+        pred_matches_favorite: 0, // sera calculé ci-dessous
+      };
+      
+      // Calculer favorite_strength et odds_ratio
+      const homeProb = xgbFeatures.prob_home;
+      const awayProb = xgbFeatures.prob_away;
+      xgbFeatures.favorite_strength = Math.abs(homeProb - awayProb);
+      xgbFeatures.odds_ratio = awayProb > 0 ? homeProb / awayProb : 1;
+      xgbFeatures.log_odds_ratio = Math.log(xgbFeatures.odds_ratio);
+      xgbFeatures.odds_confidence = homeProb * xgbFeatures.confidence_numeric;
+      xgbFeatures.favorite_confidence = xgbFeatures.favorite_strength * xgbFeatures.confidence_numeric;
+      
+      // Sport-specific flags
+      xgbFeatures[`is_${sport}`] = 1;
+      xgbFeatures.draw_signal = sport === 'football' ? (features.drawProbability || 0) : 0;
+      
+      // Edge as feature
+      xgbFeatures.edge = features.edge || 0;
+      
+      // Score XGBoost
+      const xgbResult = scoreWithXGBoost(sport, xgbFeatures, mlModel);
+      
+      if (xgbResult.isXGBoostTrained) {
+        xgboostUsed = true;
+        xgboostScore = xgbResult.score;
+        
+        // Mixer: 60% heuristiques + 40% XGBoost
+        // Plus XGBoost est confiant, plus son poids augmente
+        const xgbWeight = 0.4;
+        const heurWeight = 0.6;
+        
+        // XGBoost adjustment: convertir score (0-1) en adjustment (-0.15 to 0.15)
+        const xgbAdjustment = (xgbResult.score - 0.5) * 0.3; // scale to [-0.15, 0.15]
+        
+        probabilityAdjustment = probabilityAdjustment * heurWeight + xgbAdjustment * xgbWeight;
+        
+        // Boost de confiance si XGBoost est aligné avec heuristiques
+        if ((probabilityAdjustment > 0 && xgbResult.score > 0.5) ||
+            (probabilityAdjustment < 0 && xgbResult.score < 0.5)) {
+          confidenceAdjustment += 0.05; // +5% bonus d'alignement
+        }
+        
+        // Si XGBoost est très confiant, booster davantage
+        if (xgbResult.score > 0.7 || xgbResult.score < 0.3) {
+          confidenceAdjustment += 0.05;
+        }
+        
+        console.log(`🧠 XGBoost ${sport}: score=${xgbResult.score.toFixed(3)} adjustment=${xgbAdjustment.toFixed(4)} [${xgbResult.recommendation}]`);
+      }
+    }
+  } catch (e) {
+    // XGBoost non disponible — fallback silencieux vers heuristiques
+    console.debug('XGBoost non disponible, utilisation heuristiques seules');
+  }
+  
+  // Recommandation finale (après mix XGBoost)
+  if (xgboostUsed && xgboostScore !== undefined) {
+    if (xgboostScore > 0.6 && probabilityAdjustment > 0) {
+      recommendedBet = 'home';
+    } else if (xgboostScore < 0.4 && probabilityAdjustment < 0) {
+      recommendedBet = 'away';
+    }
+  }
+  
   return {
     probabilityAdjustment: Math.max(-0.15, Math.min(0.15, probabilityAdjustment)),
     confidenceAdjustment: Math.max(0, Math.min(0.3, confidenceAdjustment)),
     recommendedBet,
+    xgboostUsed,
+    xgboostScore,
   };
 }
 

@@ -1,0 +1,60 @@
+name: XGBoost Nightly Training
+
+on:
+  schedule:
+    # Tous les jours à 05:10 UTC (10 min avant le cron Vercel train-ml)
+    - cron: '10 5 * * *'
+  workflow_dispatch:
+    inputs:
+      sport:
+        description: 'Sport spécifique (laisser vide pour tous)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run (pas d\'export Supabase)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r ml/requirements.txt
+
+      - name: Run XGBoost Training
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.sport }}" ]; then
+            ARGS="$ARGS --sport ${{ github.event.inputs.sport }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python ml/train_xgboost.py $ARGS
+
+      - name: Upload training results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xgboost-training-${{ github.run_number }}
+          path: ml/last_training_result.json
+          retention-days: 30
