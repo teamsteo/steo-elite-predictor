@@ -18,6 +18,7 @@ import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
 import SupabaseStore, { type DbPrediction } from '@/lib/db-supabase';
 import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
 import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
+import { runBacktest, formatBacktestForTelegram } from '@/lib/backtestService';
 import { 
   publishDailySummaryToTelegram, 
   publishValueBetsToTelegram,
@@ -1314,6 +1315,16 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'backtest':
+        // Backtest ML vs hasard
+        try {
+          const backtestResult = await runBacktest(30);
+          result = { backtest: backtestResult };
+        } catch (e: any) {
+          result = { backtest: { success: false, error: e.message } };
+        }
+        break;
+        
       case 'ml-stats':
         // Statistiques du modèle ML
         try {
@@ -2229,7 +2240,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'rebuild-date'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'rebuild-date'] },
           { status: 400 }
         );
     }
@@ -2358,6 +2369,16 @@ export async function POST(request: NextRequest) {
           result = { mlTraining: mlTrainResult };
         } catch (e: any) {
           result = { mlTraining: { success: false, error: e.message } };
+        }
+        break;
+        
+      case 'backtest':
+        // Backtest ML vs hasard
+        try {
+          const backtestResult = await runBacktest(30);
+          result = { backtest: backtestResult };
+        } catch (e: any) {
+          result = { backtest: { success: false, error: e.message } };
         }
         break;
         
@@ -2670,7 +2691,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results'] },
           { status: 400 }
         );
     }

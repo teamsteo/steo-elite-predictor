@@ -16,7 +16,7 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_P
 // Types
 export interface MLPattern {
   id: string;
-  sport: 'football' | 'basketball' | 'hockey' | 'baseball';
+  sport: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis';
   pattern_type: string;
   condition: string;
   outcome: string;
@@ -31,7 +31,12 @@ export interface MatchAnalysis {
   homeTeam: string;
   awayTeam: string;
   league?: string;
-  sport: 'football' | 'basketball' | 'hockey' | 'baseball';
+  sport: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis';
+  
+  // Tennis
+  homeSetsWon?: number;
+  awaySetsWon?: number;
+  tournament?: string;
   
   // Football
   homeXg?: number;
@@ -185,6 +190,29 @@ function checkPatternApplies(pattern: MLPattern, analysis: MatchAnalysis): boole
       }
       return false;
     
+    // Tennis patterns
+    case 'heavy_favorite':
+      if (analysis.oddsHome !== undefined) {
+        return analysis.oddsHome < 1.4;
+      }
+      return analysis.sport === 'tennis';
+    
+    case 'underdog_win':
+      if (analysis.oddsHome !== undefined) {
+        return analysis.oddsHome > 3.0;
+      }
+      return false;
+    
+    case 'three_set_match':
+      return analysis.sport === 'tennis';
+    
+    case 'grand_slam_home_advantage':
+      if (analysis.tournament) {
+        const gsKeywords = ['grand slam', 'wimbledon', 'roland garros', 'us open', 'australian open'];
+        return gsKeywords.some(k => analysis.tournament!.toLowerCase().includes(k));
+      }
+      return false;
+    
     // Basketball patterns
     case 'league_scoring_rate':
     case 'over_threshold':
@@ -261,6 +289,22 @@ function generateRecommendation(pattern: MLPattern, analysis: MatchAnalysis): st
     case 'home_favorite':
     case 'home_favorite_low':
       return `${analysis.homeTeam} gagnant (cote: ${analysis.oddsHome})`;
+    
+    // Tennis
+    case 'heavy_favorite':
+      if (analysis.oddsHome !== undefined) {
+        return `${analysis.homeTeam} gros favori tennis (cote: ${analysis.oddsHome})`;
+      }
+      return `Gros favori tennis (${pattern.success_rate}%)`;
+    
+    case 'underdog_win':
+      return `Outsider potentiel tennis (${pattern.success_rate}%)`;
+    
+    case 'three_set_match':
+      return `Match serré 3 sets probable (${pattern.success_rate}%)`;
+    
+    case 'grand_slam_home_advantage':
+      return `Avantage J1 en Grand Slam (${pattern.success_rate}%)`;
     
     // Basketball
     case 'league_scoring_rate':
@@ -371,6 +415,10 @@ export async function analyzeMatchWithML(analysis: MatchAnalysis): Promise<Enhan
         
         case 'away_win':
           mlScore.away += scoreBoost;
+          break;
+        
+        case 'player1_win':
+          mlScore.home += scoreBoost;
           break;
         
         case 'over_2.5':
@@ -504,6 +552,7 @@ export async function getMLStats(): Promise<{
   basketballPatterns: number;
   hockeyPatterns: number;
   baseballPatterns: number;
+  tennisPatterns: number;
   avgSuccessRate: number;
   totalSamples: number;
 }> {
@@ -513,6 +562,7 @@ export async function getMLStats(): Promise<{
   const basketball = patterns.filter(p => p.sport === 'basketball');
   const hockey = patterns.filter(p => p.sport === 'hockey');
   const baseball = patterns.filter(p => p.sport === 'baseball');
+  const tennis = patterns.filter(p => p.sport === 'tennis');
   
   return {
     totalPatterns: patterns.length,
@@ -520,6 +570,7 @@ export async function getMLStats(): Promise<{
     basketballPatterns: basketball.length,
     hockeyPatterns: hockey.length,
     baseballPatterns: baseball.length,
+    tennisPatterns: tennis.length,
     avgSuccessRate: patterns.length > 0 
       ? Math.round(patterns.reduce((sum, p) => sum + p.success_rate, 0) / patterns.length)
       : 0,

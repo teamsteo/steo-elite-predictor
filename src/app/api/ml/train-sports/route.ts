@@ -289,6 +289,16 @@ export async function GET(request: NextRequest) {
       allPatterns = [...allPatterns, ...detectHockeyPatterns(hockeyMatches)];
     }
     
+    if (sport === 'all' || sport === 'tennis') {
+      const tennisMatches = matches.filter(m => m.sport === 'tennis' || m.sport === 'Tennis');
+      // Tennis patterns detected via ml_patterns table - no direct match data here typically
+    }
+    
+    if (sport === 'all' || sport === 'baseball') {
+      const baseballMatches = matches.filter(m => m.sport === 'baseball' || m.sport === 'mlb');
+      // Baseball patterns via ml_patterns table
+    }
+    
     // Charger les patterns existants
     const existingPatterns = await loadMLPatterns();
     

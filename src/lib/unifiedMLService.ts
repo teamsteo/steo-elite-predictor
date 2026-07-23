@@ -28,7 +28,7 @@ type GenericSupabaseClient = SupabaseClient<any, any, any>;
 
 export interface MLPattern {
   id: string;
-  sport: 'football' | 'basketball' | 'hockey' | 'baseball';
+  sport: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis';
   pattern_type: string;
   condition: string;
   outcome: string;
@@ -89,6 +89,10 @@ export interface MatchForTraining {
   league?: string;
   predicted_result?: string;
   result_match?: boolean;
+  // Tennis fields
+  home_sets_won?: number;
+  away_sets_won?: number;
+  league_tournament?: string;
 }
 
 // Client Supabase singleton
@@ -570,9 +574,191 @@ function detectHockeyPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
       description: `Avantage domicile NHL: ${Math.round((homeWinCount / matchesWithScores.length) * 100)}%`
     });
   }
-  
+
+  // Pattern: Over 5.5 buts NHL
+  if (matchesWithScores.length >= 10) {
+    const overCount = matchesWithScores.filter(m =>
+      (m.home_score! + m.away_score!) >= 6
+    ).length;
+    patterns.push({
+      sport: 'hockey',
+      pattern_type: 'total_goals',
+      condition: 'NHL total goals',
+      outcome: 'over_5.5',
+      success_rate: Math.round((overCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Over 5.5 buts NHL: ${Math.round((overCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
   return patterns;
 }
+
+/**
+ * Détecte les patterns Tennis depuis les matchs
+ */
+function detectTennisPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+
+  const tennisMatches = matches.filter(m =>
+    m.sport === 'tennis' || m.sport === 'Tennis'
+  );
+
+  if (tennisMatches.length < 5) return patterns;
+
+  const matchesWithScores = tennisMatches.filter(m =>
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+
+  if (matchesWithScores.length < 5) return patterns;
+
+  // Pattern: Gros favori (cote < 1.4) gagne
+  const favoriteMatches = matchesWithScores.filter(m =>
+    m.odds_home !== undefined && m.odds_home < 1.4
+  );
+
+  if (favoriteMatches.length >= 5) {
+    const favWinCount = favoriteMatches.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'heavy_favorite',
+      condition: 'odds_home < 1.4',
+      outcome: 'player1_win',
+      success_rate: Math.round((favWinCount / favoriteMatches.length) * 100),
+      sample_size: favoriteMatches.length,
+      description: `Gros favori tennis (< 1.4): gagne ${Math.round((favWinCount / favoriteMatches.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Underdog gagne quand cote > 3.0
+  const underdogMatches = matchesWithScores.filter(m =>
+    m.odds_home !== undefined && m.odds_home > 3.0
+  );
+
+  if (underdogMatches.length >= 5) {
+    const dogWinCount = underdogMatches.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'underdog_win',
+      condition: 'odds_home > 3.0',
+      outcome: 'player1_win',
+      success_rate: Math.round((dogWinCount / underdogMatches.length) * 100),
+      sample_size: underdogMatches.length,
+      description: `Outsider tennis (> 3.0): gagne ${Math.round((dogWinCount / underdogMatches.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Match serré (3 sets)
+  const closeMatches = matchesWithScores.filter(m => {
+    if (m.home_sets_won !== undefined && m.away_sets_won !== undefined) {
+      return (m.home_sets_won + m.away_sets_won) === 3;
+    }
+    return (m.home_score! >= 2 && m.away_score! >= 1) || (m.home_score! >= 1 && m.away_score! >= 2);
+  });
+
+  if (closeMatches.length >= 5) {
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'three_set_match',
+      condition: 'close match 3 sets',
+      outcome: 'competitive',
+      success_rate: Math.round((closeMatches.length / matchesWithScores.length) * 100),
+      sample_size: closeMatches.length,
+      description: `Match serré 3 sets: ${Math.round((closeMatches.length / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Avantage J1 Grand Slam
+  const gsKeywords = ['grand slam', 'wimbledon', 'roland garros', 'us open', 'australian open'];
+  const gsMatches = matchesWithScores.filter(m => {
+    const league = (m.league || '').toLowerCase();
+    return gsKeywords.some(k => league.includes(k));
+  });
+
+  if (gsMatches.length >= 5) {
+    const j1Win = gsMatches.filter(m => m.home_score! > m.away_score!).length;
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'grand_slam_home_advantage',
+      condition: 'Grand Slam tournament',
+      outcome: 'player1_win',
+      success_rate: Math.round((j1Win / gsMatches.length) * 100),
+      sample_size: gsMatches.length,
+      description: `Avantage J1 Grand Slam: ${Math.round((j1Win / gsMatches.length) * 100)}%`
+    });
+  }
+
+  return patterns;
+}
+
+/**
+ * Détecte les patterns Baseball (MLB) depuis les matchs
+ */
+function detectBaseballPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+
+  const mlbMatches = matches.filter(m =>
+    m.sport === 'baseball' || m.sport === 'mlb'
+  );
+
+  if (mlbMatches.length < 5) return patterns;
+
+  const matchesWithScores = mlbMatches.filter(m =>
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+
+  if (matchesWithScores.length < 5) return patterns;
+
+  // Pattern: Avantage domicile MLB
+  if (matchesWithScores.length >= 10) {
+    const homeWinCount = matchesWithScores.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'baseball',
+      pattern_type: 'home_advantage',
+      condition: 'MLB home game',
+      outcome: 'home_win',
+      success_rate: Math.round((homeWinCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Avantage domicile MLB: ${Math.round((homeWinCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Over 8.5 points MLB
+  if (matchesWithScores.length >= 10) {
+    const overCount = matchesWithScores.filter(m =>
+      (m.home_score! + m.away_score!) >= 9
+    ).length;
+    patterns.push({
+      sport: 'baseball',
+      pattern_type: 'total_runs',
+      condition: 'MLB total runs',
+      outcome: 'over_8.5',
+      success_rate: Math.round((overCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Over 8.5 points MLB: ${Math.round((overCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  return patterns;
+}
+
+// ============================================
+// SEUILS DYNAMIQUES PAR SPORT
+// ============================================
+
+const SPORT_THRESHOLDS: Record<string, number> = {
+  football: 55,
+  basketball: 52,
+  hockey: 52,
+  baseball: 50,
+  tennis: 52
+};
 
 // ============================================
 // ENTRAÎNEMENT PRINCIPAL
@@ -581,7 +767,7 @@ function detectHockeyPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
 /**
  * Entraîne le modèle ML avec les données disponibles
  */
-export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey' | 'all'): Promise<TrainingResult> {
+export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis' | 'all'): Promise<TrainingResult> {
   const result: TrainingResult = {
     success: false,
     samplesUsed: 0,
@@ -649,17 +835,31 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
       allPatterns = [...allPatterns, ...detectHockeyPatterns(hockeyMatches as MatchForTraining[])];
     }
     
+    if (!sport || sport === 'all' || sport === 'tennis') {
+      const tennisMatches = matches.filter(m => 
+        m.sport === 'tennis' || m.sport === 'Tennis'
+      );
+      allPatterns = [...allPatterns, ...detectTennisPatterns(tennisMatches as MatchForTraining[])];
+    }
+    
+    if (!sport || sport === 'all' || sport === 'baseball') {
+      const baseballMatches = matches.filter(m => 
+        m.sport === 'baseball' || m.sport === 'mlb'
+      );
+      allPatterns = [...allPatterns, ...detectBaseballPatterns(baseballMatches as MatchForTraining[])];
+    }
+    
     result.patternsDiscovered = allPatterns.length;
     console.log(`🔍 UnifiedML: ${allPatterns.length} patterns découverts`);
     
     // 3. Charger les patterns existants
     const existingPatterns = await loadMLPatterns();
     
-    // 4. Sauvegarder/mettre à jour les patterns (filtrer le bruit < 55%)
+    // 4. Sauvegarder/mettre à jour les patterns (filtrer le bruit avec seuils dynamiques par sport)
     for (const pattern of allPatterns) {
-      // Ignorer les patterns avec taux de succès < 55% (bruit)
-      if (pattern.success_rate < 55) {
-        console.log(`🔇 UnifiedML: Pattern "${pattern.pattern_type}" ignoré (bruit: ${pattern.success_rate}%)`);
+      const sportThreshold = SPORT_THRESHOLDS[pattern.sport] || 55;
+      if (pattern.success_rate < sportThreshold) {
+        console.log(`🔇 UnifiedML: Pattern "${pattern.pattern_type}" ignoré (${pattern.sport}: ${pattern.success_rate}% < ${sportThreshold}%)`);
         continue;
       }
       
@@ -785,6 +985,8 @@ export async function getUnifiedMLStats(): Promise<{
     football: number;
     basketball: number;
     hockey: number;
+    tennis: number;
+    baseball: number;
     avgSuccessRate: number;
   };
   recentTraining: {
@@ -799,6 +1001,8 @@ export async function getUnifiedMLStats(): Promise<{
   const football = patterns.filter(p => p.sport === 'football');
   const basketball = patterns.filter(p => p.sport === 'basketball');
   const hockey = patterns.filter(p => p.sport === 'hockey');
+  const tennis = patterns.filter(p => p.sport === 'tennis');
+  const baseball = patterns.filter(p => p.sport === 'baseball');
   
   return {
     model,
@@ -807,6 +1011,8 @@ export async function getUnifiedMLStats(): Promise<{
       football: football.length,
       basketball: basketball.length,
       hockey: hockey.length,
+      tennis: tennis.length,
+      baseball: baseball.length,
       avgSuccessRate: patterns.length > 0 
         ? Math.round(patterns.reduce((sum, p) => sum + p.success_rate, 0) / patterns.length)
         : 0
