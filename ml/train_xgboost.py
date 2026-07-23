@@ -98,7 +98,7 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     print(f"\n📊 Chargement des données depuis Supabase...")
 
     query = sb.table("predictions").select(
-        "id, sport, home_team, away_team, league, date, "
+        "id, sport, home_team, away_team, league, match_date, "
         "predicted_result, predicted_goals, confidence, "
         "odds_home, odds_away, odds_draw, "
         "result_match, home_score, away_score, actual_result"
@@ -132,7 +132,7 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     for col in ["odds_home", "odds_away", "odds_draw"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df["result_match"] = df["result_match"].astype(bool)
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce")
 
     # Filtrer les lignes avec des odds valides
     df = df.dropna(subset=["odds_home", "odds_away"])
@@ -204,9 +204,9 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df["league_rare"] = (~df["league"].isin(top_leagues)).astype(int)
 
     # --- Temporal Features ---
-    if "date" in df.columns:
-        df["day_of_week"] = df["date"].dt.dayofweek
-        df["month"] = df["date"].dt.month
+    if "match_date" in df.columns:
+        df["day_of_week"] = df["match_date"].dt.dayofweek
+        df["month"] = df["match_date"].dt.month
         df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
 
     # --- Interaction Features ---
@@ -251,7 +251,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def get_feature_columns(df: pd.DataFrame) -> list:
     """Retourne la liste des colonnes features (exclut target et métadonnées)."""
     exclude_cols = {
-        "id", "sport", "home_team", "away_team", "league", "date",
+        "id", "sport", "home_team", "away_team", "league", "date", "match_date",
         "predicted_result", "predicted_goals", "confidence",
         "result_match", "actual_result", "home_score", "away_score"
     }
