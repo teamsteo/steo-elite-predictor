@@ -104,10 +104,39 @@ CSV_FILES = {
     "baseball": os.path.join(DATA_DIR, "mlb_matches.csv"),
 }
 
+def _estimate_odds_from_scores(home_score: int, away_score: int, sport: str) -> tuple:
+    """
+    Estime les odds implicites à partir des scores historiques.
+    Utilise le home advantage et la différence de score comme proxy.
+    Marge bookmaker ~8% appliquée.
+    """
+    # Home advantage baseline par sport
+    home_advantage = {"baseball": 0.54, "hockey": 0.52, "football": 0.46, "basketball": 0.58, "tennis": 0.50}
+    base = home_advantage.get(sport, 0.50)
+
+    # Ajustement basé sur la différence de score
+    score_diff = home_score - away_score
+    # Une différence de 3 goals/points ≈ 15% d'ajustement
+    adjustment = np.clip(score_diff * 0.04, -0.25, 0.25)
+
+    prob_home = np.clip(base + adjustment, 0.10, 0.90)
+    prob_away = 1.0 - prob_home
+
+    # Appliquer marge bookmaker (overround ~8%)
+    margin = 1.08
+    odds_home = round(margin / prob_home, 2)
+    odds_away = round(margin / prob_away, 2)
+
+    return odds_home, odds_away
+
+
 def load_csv_data(sport: Optional[str] = None) -> list:
     """
     Charge les données historiques depuis les fichiers CSV locaux.
     Ces données proviennent des saisons précédentes (téléchargées pour backtesting).
+    Supporte deux modes:
+    - Avec odds réels (football, basketball)
+    - Sans odds (MLB, NHL): estimation basée sur les scores
     """
     all_data = []
     sports_to_load = [sport] if sport else list(CSV_FILES.keys())
@@ -119,16 +148,21 @@ def load_csv_data(sport: Optional[str] = None) -> list:
 
         try:
             df_csv = pd.read_csv(csv_path)
-            print(f"   📁 CSV {s}: {len(df_csv)} matchs historiques")
+            total_rows = len(df_csv)
+            print(f"   📁 CSV {s}: {total_rows} matchs historiques")
+
+            count_with_odds = 0
+            count_estimated = 0
+            count_skipped = 0
 
             for _, row in df_csv.iterrows():
                 odds_home = row.get("odds_home")
                 odds_away = row.get("odds_away")
                 odds_draw = row.get("odds_draw")
-
-                # Skip si pas de odds valides
-                if pd.isna(odds_home) or pd.isna(odds_away) or float(odds_home) <= 0 or float(odds_away) <= 0:
-                    continue
+                has_real_odds = (
+                    not pd.isna(odds_home) and not pd.isna(odds_away)
+                    and float(odds_home) > 0 and float(odds_away) > 0
+                )
 
                 result = str(row.get("result", "")).strip().upper()
                 if result == "H":
@@ -138,11 +172,33 @@ def load_csv_data(sport: Optional[str] = None) -> list:
                 elif result == "D":
                     actual = "draw"
                 else:
-                    continue  # Skip si pas de résultat clair
+                    count_skipped += 1
+                    continue
 
-                # TARGET: le favori gagne-t-il? (prédictif)
-                home_is_fav = float(odds_home) < float(odds_away)
-                fav_won = (actual == "home" and home_is_fav) or (actual == "away" and not home_is_fav)
+                home_score_val = row.get("home_score")
+                away_score_val = row.get("away_score")
+                home_score = int(home_score_val) if pd.notna(home_score_val) else 0
+                away_score = int(away_score_val) if pd.notna(away_score_val) else 0
+
+                if has_real_odds:
+                    final_odds_home = float(odds_home)
+                    final_odds_away = float(odds_away)
+                    final_odds_draw = float(odds_draw) if pd.notna(odds_draw) and float(odds_draw) > 0 else None
+                    count_with_odds += 1
+                    # TARGET avec odds réels: le favori gagne-t-il?
+                    home_is_fav = final_odds_home < final_odds_away
+                    target = (actual == "home" and home_is_fav) or (actual == "away" and not home_is_fav)
+                else:
+                    # Estimer odds à partir des scores
+                    if home_score == 0 and away_score == 0:
+                        count_skipped += 1
+                        continue
+                    final_odds_home, final_odds_away = _estimate_odds_from_scores(home_score, away_score, s)
+                    final_odds_draw = None
+                    count_estimated += 1
+                    # TARGET sans odds réels: home win (binaire pur, pas de biais favori)
+                    # On ne peut pas définir "favori" depuis des odds estimées du score
+                    target = (actual == "home")
 
                 all_data.append({
                     "id": str(row.get("id", f"csv_{s}_{len(all_data)}")),
@@ -153,20 +209,21 @@ def load_csv_data(sport: Optional[str] = None) -> list:
                     "match_date": row.get("match_date"),
                     "predicted_result": actual,
                     "predicted_goals": None,
-                    "confidence": "medium",
-                    "odds_home": float(odds_home),
-                    "odds_away": float(odds_away),
-                    "odds_draw": float(odds_draw) if pd.notna(odds_draw) and float(odds_draw) > 0 else None,
-                    "result_match": fav_won,
-                    "home_score": int(row.get("home_score", 0)) if pd.notna(row.get("home_score")) else None,
-                    "away_score": int(row.get("away_score", 0)) if pd.notna(row.get("away_score")) else None,
+                    "confidence": "estimated" if not has_real_odds else "medium",
+                    "odds_home": final_odds_home,
+                    "odds_away": final_odds_away,
+                    "odds_draw": final_odds_draw,
+                    "result_match": target,
+                    "home_score": home_score,
+                    "away_score": away_score,
                     "actual_result": actual,
                     "home_xg": row.get("home_xg"),
                     "away_xg": row.get("away_xg"),
                     "_source": "csv_historical",
+                    "_estimated_odds": not has_real_odds,
                 })
 
-            print(f"      ✅ {s}: {len([d for d in all_data if d['sport'] == s])} matchs avec odds valides")
+            print(f"      ✅ {s}: {count_with_odds} odds réels + {count_estimated} odds estimés ({count_skipped} skip)")
 
         except Exception as e:
             print(f"   ⚠️ Erreur lecture CSV {s}: {e}")
@@ -186,95 +243,98 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     all_data = []
 
     # ── Source 1: predictions complétées ──
-    print("   🔍 Source 1: predictions (status=completed)...")
-    query1 = sb.table("predictions").select(
-        "id, sport, home_team, away_team, league, match_date, "
-        "predicted_result, predicted_goals, confidence, "
-        "odds_home, odds_away, odds_draw, "
-        "result_match, home_score, away_score, actual_result"
-    ).eq("status", "completed").not_.is_("result_match", "null")
+    if sb is not None:
+        print("   🔍 Source 1: predictions (status=completed)...")
+        query1 = sb.table("predictions").select(
+            "id, sport, home_team, away_team, league, match_date, "
+            "predicted_result, predicted_goals, confidence, "
+            "odds_home, odds_away, odds_draw, "
+            "result_match, home_score, away_score, actual_result"
+        ).eq("status", "completed").not_.is_("result_match", "null")
 
-    if sport:
-        query1 = query1.eq("sport", sport)
+        if sport:
+            query1 = query1.eq("sport", sport)
 
-    offset = 0
-    batch_size = 2000
-    while True:
-        res = query1.range(offset, offset + batch_size - 1).execute()
-        if not res.data:
-            break
-        all_data.extend(res.data)
-        if len(res.data) < batch_size:
-            break
-        offset += batch_size
-        print(f"      predictions: {len(all_data)} lignes...")
+        offset = 0
+        batch_size = 2000
+        while True:
+            res = query1.range(offset, offset + batch_size - 1).execute()
+            if not res.data:
+                break
+            all_data.extend(res.data)
+            if len(res.data) < batch_size:
+                break
+            offset += batch_size
+            print(f"      predictions: {len(all_data)} lignes...")
 
-    # ── Source 2: matches complétés (pour enrichir) ──
-    print("   🔍 Source 2: matches (scores disponibles)...")
-    query2 = sb.table("matches").select(
-        "id, sport, home_team, away_team, league, date, "
-        "home_score, away_score, "
-        "odds_home, odds_away, odds_draw, "
-        "home_xg, away_xg, winner, status"
-    ).not_.is_("home_score", "null").not_.is_("odds_home", "null")
+        # ── Source 2: matches complétés (pour enrichir) ──
+        print("   🔍 Source 2: matches (scores disponibles)...")
+        query2 = sb.table("matches").select(
+            "id, sport, home_team, away_team, league, date, "
+            "home_score, away_score, "
+            "odds_home, odds_away, odds_draw, "
+            "home_xg, away_xg, winner, status"
+        ).not_.is_("home_score", "null").not_.is_("odds_home", "null")
 
-    if sport:
-        query2 = query2.eq("sport", sport)
+        if sport:
+            query2 = query2.eq("sport", sport)
 
-    offset = 0
-    match_count = 0
-    while True:
-        res = query2.range(offset, offset + batch_size - 1).execute()
-        if not res.data:
-            break
-        # Convertir les matchs au format predictions
-        for m in res.data:
-            # Déterminer le résultat
-            winner = m.get("winner") or ""
-            home_score = m.get("home_score") or 0
-            away_score = m.get("away_score") or 0
-            if not winner:
-                if home_score > away_score:
-                    winner = "home"
-                elif away_score > home_score:
-                    winner = "away"
-                else:
-                    winner = "draw"
+        offset = 0
+        match_count = 0
+        while True:
+            res = query2.range(offset, offset + batch_size - 1).execute()
+            if not res.data:
+                break
+            # Convertir les matchs au format predictions
+            for m in res.data:
+                # Déterminer le résultat
+                winner = m.get("winner") or ""
+                home_score = m.get("home_score") or 0
+                away_score = m.get("away_score") or 0
+                if not winner:
+                    if home_score > away_score:
+                        winner = "home"
+                    elif away_score > home_score:
+                        winner = "away"
+                    else:
+                        winner = "draw"
 
-            # Skip si déjà dans predictions (éviter doublons)
-            existing_ids = {d.get("id") for d in all_data}
-            if m["id"] in existing_ids:
-                continue
+                # Skip si déjà dans predictions (éviter doublons)
+                existing_ids = {d.get("id") for d in all_data}
+                if m["id"] in existing_ids:
+                    continue
 
-            all_data.append({
-                "id": m["id"],
-                "sport": m.get("sport", "football"),
-                "home_team": m.get("home_team", ""),
-                "away_team": m.get("away_team", ""),
-                "league": m.get("league"),
-                "match_date": m.get("date"),
-                "predicted_result": winner,  # Le "predicted" est en fait le résultat réel ici
-                "predicted_goals": None,
-                "confidence": "medium",
-                "odds_home": m.get("odds_home"),
-                "odds_away": m.get("odds_away"),
-                "odds_draw": m.get("odds_draw"),
-                "result_match": True,  # On compare le résultat réel vs lui-même (pour features odds)
-                "home_score": home_score,
-                "away_score": away_score,
-                "actual_result": winner,
-                "home_xg": m.get("home_xg"),
-                "away_xg": m.get("away_xg"),
-                "_source": "matches",  # Tag pour distinguer
-            })
-            match_count += 1
-        if len(res.data) < batch_size:
-            break
-        offset += batch_size
-        print(f"      matches: {match_count} lignes...")
+                all_data.append({
+                    "id": m["id"],
+                    "sport": m.get("sport", "football"),
+                    "home_team": m.get("home_team", ""),
+                    "away_team": m.get("away_team", ""),
+                    "league": m.get("league"),
+                    "match_date": m.get("date"),
+                    "predicted_result": winner,
+                    "predicted_goals": None,
+                    "confidence": "medium",
+                    "odds_home": m.get("odds_home"),
+                    "odds_away": m.get("odds_away"),
+                    "odds_draw": m.get("odds_draw"),
+                    "result_match": True,
+                    "home_score": home_score,
+                    "away_score": away_score,
+                    "actual_result": winner,
+                    "home_xg": m.get("home_xg"),
+                    "away_xg": m.get("away_xg"),
+                    "_source": "matches",
+                })
+                match_count += 1
+            if len(res.data) < batch_size:
+                break
+            offset += batch_size
+            print(f"      matches: {match_count} lignes...")
 
-    if not all_data:
-        print("   ⚠️ Aucune donnée trouvée dans Supabase!")
+        if not all_data:
+            print("   ⚠️ Aucune donnée trouvée dans Supabase!")
+    else:
+        print("   ⏭️ Source 1-2: Supabase non disponible (mode csv-only)")
 
     # ── Source 3: CSV historiques (saisons précédentes) ──
     print("   🔍 Source 3: CSV historiques (saisons précédentes)...")
@@ -327,11 +387,24 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Crée les features pour XGBoost à partir des données brutes.
     Chaque feature est conçue pour être calculable AVANT le match (prédictive).
+
+    ANTI-LEAKAGE pour odds estimés:
+    Les odds estimées depuis les scores sont retirées (remplacées par neutres)
+    car elles dévoilent le résultat. Le modèle utilise les features non-biaisées.
     """
     if df.empty:
         return df
 
     df = df.copy()
+
+    # --- ANTI-LEAKAGE: neutraliser les odds estimés ---
+    if "_estimated_odds" in df.columns:
+        estimated_mask = df["_estimated_odds"].fillna(False).astype(bool)
+        # Remplacer les odds estimées par des valeurs neutres (2.0 = prob 50%)
+        df.loc[estimated_mask, "odds_home"] = 2.0
+        df.loc[estimated_mask, "odds_away"] = 2.0
+        if "odds_draw" in df.columns:
+            df.loc[estimated_mask, "odds_draw"] = np.nan
 
     # --- Odds Features ---
     # Odds normalisées (probabilités implicites)
@@ -367,9 +440,13 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df["xg_total"] = df["xg_home"] + df["xg_away"]
 
     # --- Confidence Features ---
-    # Confidence encodée numériquement
-    confidence_map = {"very_high": 1.0, "high": 0.75, "medium": 0.5, "low": 0.25}
+    # Confidence encodée numériquement (estimated = données sans odds réels)
+    confidence_map = {"very_high": 1.0, "high": 0.75, "medium": 0.5, "low": 0.25, "estimated": 0.35}
     df["confidence_numeric"] = df["confidence"].map(confidence_map).fillna(0.5)
+
+    # Flag pour les données avec odds estimés (feature pour le modèle)
+    if "_estimated_odds" in df.columns:
+        df["estimated_odds_flag"] = df["_estimated_odds"].astype(int)
 
     # --- Sport-Specific Features ---
     # Football: draw probability is a strong signal
@@ -429,7 +506,7 @@ def get_feature_columns(df: pd.DataFrame) -> list:
         "predicted_result", "predicted_goals", "confidence",
         "result_match", "actual_result", "home_score", "away_score",
         "home_xg", "away_xg", "winner", "status", "total_goals", "_source",
-        "checked_at", "created_at", "updated_at",
+        "_estimated_odds", "checked_at", "created_at", "updated_at",
         # Anti-leakage: features dérivées du résultat (pas disponibles avant le match)
         "pred_home", "pred_away", "pred_draw", "pred_matches_favorite",
     }
@@ -665,6 +742,8 @@ def main():
                         help="Ne pas exporter vers Supabase")
     parser.add_argument("--no-telegram", action="store_true",
                         help="Ne pas envoyer la notification Telegram")
+    parser.add_argument("--csv-only", action="store_true",
+                        help="Utiliser uniquement les CSV locaux (pas de connexion Supabase)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -678,13 +757,17 @@ def main():
 
     start_time = time.time()
 
-    # Connexion Supabase
-    try:
-        sb = get_supabase()
-        print("✅ Connexion Supabase établie")
-    except Exception as e:
-        print(f"❌ Erreur connexion Supabase: {e}")
-        sys.exit(1)
+    # Connexion Supabase (optionnelle en mode csv-only)
+    sb = None
+    if not args.csv_only:
+        try:
+            sb = get_supabase()
+            print("✅ Connexion Supabase établie")
+        except Exception as e:
+            print(f"⚠️ Erreur connexion Supabase: {e}")
+            print("   Mode dégradé: données CSV uniquement")
+    else:
+        print("📁 MODE CSV-ONLY: pas de connexion Supabase")
 
     # Charger les données
     df = load_training_data(sb, sport=args.sport)
@@ -740,7 +823,7 @@ def main():
     print(f"   Verdict: {verdict}")
 
     # Export Supabase
-    if not args.no_export and results:
+    if not args.no_export and results and sb is not None:
         success = export_to_supabase(sb, results, global_cv, total_samples)
         if not success:
             print("⚠️ L'export a échoué mais les résultats sont en mémoire")
