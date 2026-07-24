@@ -8,6 +8,8 @@
  * - Priorité automatique pour grandes rencontres
  */
 
+import { stealthFetch } from './stealthFetch';
+
 // ============================================
 // TYPES
 // ============================================
@@ -390,8 +392,7 @@ export async function fetchLiveFootballMatches(): Promise<LiveFootballMatch[]> {
   // Récupérer les matchs de chaque ligue en parallèle
   const promises = ESPN_LEAGUES.map(async (league) => {
     try {
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.id}/scoreboard`,
+      const response = await stealthFetch(        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.id}/scoreboard`,
         {
           next: { revalidate: 30 }, // 30 secondes cache
           headers: { 'Accept': 'application/json' }
@@ -489,8 +490,7 @@ export async function fetchMatchDetails(matchId: string): Promise<LiveFootballMa
   try {
     // Essayer chaque ligue
     for (const league of ESPN_LEAGUES) {
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.id}/summary?event=${matchId}`,
+      const response = await stealthFetch(        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.id}/summary?event=${matchId}`,
         { next: { revalidate: 10 } }
       );
 
@@ -517,8 +517,7 @@ export async function fetchUpcomingMatches(): Promise<LiveFootballMatch[]> {
 
   const promises = ESPN_LEAGUES.map(async (league) => {
     try {
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.id}/scoreboard`,
+      const response = await stealthFetch(        `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.id}/scoreboard`,
         { next: { revalidate: 300 } }
       );
 

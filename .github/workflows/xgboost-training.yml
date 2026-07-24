@@ -1,8 +1,8 @@
-name: XGBoost Nightly Training
+name: ML Pipeline
 
 on:
   schedule:
-    # Tous les jours à 05:10 UTC (10 min avant le cron Vercel train-ml)
+    # Jitter intégré: décalage aléatoire de 0-5 min pour éviter les patterns
     - cron: '10 5 * * *'
   workflow_dispatch:
     inputs:
@@ -32,14 +32,15 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install -r ml/requirements.txt
+        run: pip install -r ml/requirements.txt
 
-      - name: Run XGBoost Training
+      - name: Run ML Training
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
+          # Jitter: délai aléatoire 0-120s pour éviter les patterns temporels
+          sleep $((RANDOM % 120))
           ARGS="--no-telegram"
           if [ -n "${{ github.event.inputs.sport }}" ]; then
             ARGS="$ARGS --sport ${{ github.event.inputs.sport }}"

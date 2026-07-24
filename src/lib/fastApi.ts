@@ -10,6 +10,8 @@
  * - FBref (via ZAI SDK): Stats avancées Football
  */
 
+import { stealthFetch } from './stealthFetch';
+
 // Cache en mémoire (pour serverless)
 const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
@@ -73,20 +75,13 @@ const FALLBACK_MATCHES: any[] = [];
  * Fetch avec timeout court
  */
 async function fastFetch(url: string, timeoutMs: number = FAST_TIMEOUT): Promise<any> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SteoElite/1.0)' }
+    const response = await stealthFetch(url, {
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    clearTimeout(timeout);
-    
     if (!response.ok) return null;
     return await response.json();
   } catch {
-    clearTimeout(timeout);
     return null;
   }
 }

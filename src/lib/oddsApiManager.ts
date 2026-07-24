@@ -15,6 +15,8 @@
 const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
 const BASE_URL = 'https://api.the-odds-api.com/v4';
 
+import { stealthFetch } from './stealthFetch';
+
 // Quota mensuel
 const MONTHLY_QUOTA = 500;
 const DAILY_BUDGET = 5; // Max 5 requêtes par jour (très conservateur)
@@ -142,8 +144,9 @@ async function makeApiRequest(endpoint: string): Promise<{
   
   try {
     console.log(`📡 Appel API: ${endpoint.split('?')[0]}...`);
-    const response = await fetch(url, {
-      next: { revalidate: 0 }, // Pas de cache Next.js
+    const response = await stealthFetch(url, {
+      next: { revalidate: 0 },
+      maxRetries: 1,
     });
     
     if (!response.ok) {

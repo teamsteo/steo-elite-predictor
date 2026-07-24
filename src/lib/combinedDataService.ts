@@ -7,6 +7,8 @@
  * 3. Estimation basée sur la notoriété des équipes (dernier recours, tag ⚠️)
  */
 
+import { stealthFetch } from './stealthFetch';
+
 // Configuration The Odds API (fallback)
 // 🔑 Fallback hardcoded si la Vercel env var n'est pas configurée
 const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
@@ -145,7 +147,7 @@ async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw:
     const url = `${ODDS_API_BASE}/sports/basketball_nba_summer_league/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`;
     console.log('📡 Odds API: appel direct Summer League (bypass quota manager)...');
     
-    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const response = await stealthFetch(url, { signal: AbortSignal.timeout(10000), maxRetries: 1 });
     if (response.ok) {
       const summerData = await response.json();
     
@@ -178,7 +180,7 @@ async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw:
         // ⚠️ Ne récupérer la NBA régulière que si la Summer League est vide
         if (oddsMap.size === 0) {
           const nbaUrl = `${ODDS_API_BASE}/sports/basketball_nba/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`;
-          const nbaResp = await fetch(nbaUrl, { signal: AbortSignal.timeout(10000) });
+          const nbaResp = await stealthFetch(nbaUrl, { signal: AbortSignal.timeout(10000), maxRetries: 1 });
           if (nbaResp.ok) {
             const nbaData = await nbaResp.json();
             if (Array.isArray(nbaData)) {

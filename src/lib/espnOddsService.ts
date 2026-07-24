@@ -59,6 +59,8 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const ODDS_API_KEY = process.env.THE_ODDS_API_KEY;
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
+import { stealthFetch } from './stealthFetch';
+
 // Équipes favorites pour estimation des cotes
 const FAVORITE_TEAMS: Record<string, string[]> = {
   Foot: [
@@ -241,7 +243,7 @@ async function fetchESPNFootball(oddsApiMap: Map<string, { home: number; draw: n
   
   for (const league of ESPN_LEAGUES.Foot) {
     try {
-      const response = await fetch(
+      const response = await stealthFetch(
         `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.key}/scoreboard`,
         { next: { revalidate: 300 } }
       );

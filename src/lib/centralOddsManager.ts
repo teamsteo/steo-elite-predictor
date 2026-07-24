@@ -20,6 +20,8 @@
  *   const data = await fetchOdds('basketball_nba_summer_league');
  */
 
+import { stealthFetch } from './stealthFetch';
+
 // ============================================
 // CONFIGURATION
 // ============================================
@@ -134,8 +136,9 @@ export async function fetchOdds(sportKey: string): Promise<any[]> {
   
   try {
     const url = `https://api.the-odds-api.com/v4/sports/${sportKey}/odds/?apiKey=${ODDS_API_KEY}&regions=eu&markets=h2h&oddsFormat=decimal`;
-    const response = await fetch(url, {
+    const response = await stealthFetch(url, {
       signal: AbortSignal.timeout(10000),
+      maxRetries: 1,
     });
     
     // 📊 Mettre à jour le quota depuis les headers (MÊME si erreur)

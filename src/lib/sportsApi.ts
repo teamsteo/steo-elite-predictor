@@ -6,6 +6,8 @@
  * Validation croisée pour données fiables uniquement
  */
 
+import { stealthFetch } from './stealthFetch';
+
 // Constantes de configuration
 const MAX_MATCHES_PER_DAY = 20;
 const CACHE_DURATION_MINUTES = 30;
@@ -164,7 +166,7 @@ async function fetchFromOddsApi(): Promise<RealMatch[]> {
     // D'abord, récupérer les ligues prioritaires (pour croisement)
     for (const sportKey of LEAGUES_TO_FETCH) {
       try {
-        const response = await fetch(
+        const response = await stealthFetch(
           `${provider.baseUrl}/sports/${sportKey}/odds/?apiKey=${provider.apiKey}&regions=uk,eu&markets=h2h&oddsFormat=decimal&dateFormat=iso`,
           {
             next: { revalidate: CACHE_DURATION_MINUTES * 60 },

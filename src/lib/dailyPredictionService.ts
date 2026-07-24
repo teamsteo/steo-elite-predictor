@@ -49,6 +49,8 @@ import { getUnifiedPrediction, type UnifiedPredictionInput } from './unifiedPred
 // INTERFACES
 // ============================================
 
+import { stealthFetch } from './stealthFetch';
+
 export interface DailyPrediction {
   // Identification
   id: string;
@@ -270,7 +272,7 @@ async function fetchFootballPredictions(): Promise<DailyPrediction[]> {
     const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
     
     // ESPN API - gratuit, avec filtre de date pour matchs d'aujourd'hui et demain
-    const response = await fetch(
+    const response = await stealthFetch(
       `https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=${todayStr}-${tomorrowStr}`,
       { 
         headers: { 'Accept': 'application/json' },
@@ -314,7 +316,7 @@ async function fetchBasketballPredictions(): Promise<DailyPrediction[]> {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
     
-    const response = await fetch(
+    const response = await stealthFetch(
       `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${todayStr}-${tomorrowStr}`,
       { 
         headers: { 'Accept': 'application/json' },
@@ -358,7 +360,7 @@ async function fetchHockeyPredictions(): Promise<DailyPrediction[]> {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('-').join('').slice(0, 8);
     
-    const response = await fetch(
+    const response = await stealthFetch(
       `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${todayStr}-${tomorrowStr}`,
       { 
         headers: { 'Accept': 'application/json' },

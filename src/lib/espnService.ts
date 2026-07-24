@@ -5,6 +5,8 @@
  * - Football: site.api.espn.com/apis/site/v2/sports/soccer/
  */
 
+import { stealthFetch } from './stealthFetch';
+
 export interface ESPNMatch {
   id: string;
   homeTeam: string;
@@ -67,7 +69,7 @@ export async function fetchESPNNBAGames(): Promise<ESPNMatch[]> {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0].replace(/-/g, '');
 
-    const response = await fetch(
+    const response = await stealthFetch(
       `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${todayStr}-${tomorrowStr}`,
       { next: { revalidate: 60 } }
     );
@@ -152,7 +154,7 @@ export async function fetchESPNFootballGames(): Promise<ESPNMatch[]> {
 
     for (const league of leagues) {
       try {
-        const response = await fetch(
+        const response = await stealthFetch(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.key}/scoreboard`,
           { next: { revalidate: 300 } }
         );
