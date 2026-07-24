@@ -367,7 +367,7 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     # Convertir les types
     for col in ["odds_home", "odds_away", "odds_draw"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    df["result_match"] = df["result_match"].astype(bool)
+    df["result_match"] = df["result_match"].fillna(False).astype(bool)
     df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce")
 
     # Filtrer les lignes avec des odds valides
@@ -458,7 +458,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Flag pour les données avec odds estimés (feature pour le modèle)
     if "_estimated_odds" in df.columns:
-        df["estimated_odds_flag"] = df["_estimated_odds"].astype(int)
+        df["estimated_odds_flag"] = df["_estimated_odds"].fillna(0).astype(int)
 
     # --- Sport-Specific Features ---
     # Football: draw probability is a strong signal
@@ -556,7 +556,7 @@ def train_sport_model(
         return None
 
     X = sport_df[feature_cols].fillna(0)
-    y = sport_df["result_match"].astype(int)
+    y = sport_df["result_match"].fillna(False).astype(int)
 
     # Vérifier la distribution
     pos_rate = y.mean()
