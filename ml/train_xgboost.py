@@ -153,10 +153,11 @@ def load_csv_data(sport: Optional[str] = None) -> list:
                     "odds_home": float(odds_home),
                     "odds_away": float(odds_away),
                     "odds_draw": float(odds_draw) if pd.notna(odds_draw) and float(odds_draw) > 0 else None,
-                    # TARGET: le favori gagne-t-il? (prédictif, pas déterministe)
-                    "result_match": (actual == "home" and float(odds_home) < float(odds_away)) or
-                                    (actual == "away" and float(odds_away) < float(odds_home)) or
-                                    (actual == "draw" and pd.notna(odds_draw)),
+                    # TARGET: l'équipe à la plus petite cote gagne-t-elle? (prédictif)
+                    # C'est la vraie question que le modèle doit apprendre à répondre
+                    home_is_fav = float(odds_home) < float(odds_away)
+                    fav_won = (actual == "home" and home_is_fav) or (actual == "away" and not home_is_fav)
+                    "result_match": fav_won,
                     "home_score": int(row.get("home_score", 0)) if pd.notna(row.get("home_score")) else None,
                     "away_score": int(row.get("away_score", 0)) if pd.notna(row.get("away_score")) else None,
                     "actual_result": actual,
@@ -300,7 +301,14 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     # Filtrer les lignes avec des odds valides
     df = df.dropna(subset=["odds_home", "odds_away"])
 
-    print(f"   ✅ {len(df)} prédictions chargées")
+    # ⚠️ ANTI-LEAKAGE: Supprimer les colonnes qui leakent la target
+    # predicted_result = le résultat qu'on essaie de prédire (pas une feature!)
+    # pred_home/pred_away/pred_draw/pred_matches_favorite sont dérivées de predicted_result
+    for leak_col in ["predicted_result", "actual_result"]:
+        if leak_col in df.columns:
+            df.drop(columns=[leak_col], inplace=True)
+
+    print(f"   ✅ {len(df)} prédictions chargées (anti-leakage appliqué)")
 
     # Stats par sport
     for s in df["sport"].unique():
@@ -431,6 +439,8 @@ def get_feature_columns(df: pd.DataFrame) -> list:
         "result_match", "actual_result", "home_score", "away_score",
         "home_xg", "away_xg", "winner", "status", "total_goals", "_source",
         "checked_at", "created_at", "updated_at",
+        # Anti-leakage: features dérivées du résultat (pas disponibles avant le match)
+        "pred_home", "pred_away", "pred_draw", "pred_matches_favorite",
     }
     return [c for c in df.columns if c not in exclude_cols and df[c].dtype in [np.float64, np.int64, float, int, np.float32, np.int32, bool]]
 
