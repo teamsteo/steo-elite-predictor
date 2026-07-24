@@ -140,6 +140,10 @@ def load_csv_data(sport: Optional[str] = None) -> list:
                 else:
                     continue  # Skip si pas de résultat clair
 
+                # TARGET: le favori gagne-t-il? (prédictif)
+                home_is_fav = float(odds_home) < float(odds_away)
+                fav_won = (actual == "home" and home_is_fav) or (actual == "away" and not home_is_fav)
+
                 all_data.append({
                     "id": str(row.get("id", f"csv_{s}_{len(all_data)}")),
                     "sport": s,
@@ -153,10 +157,6 @@ def load_csv_data(sport: Optional[str] = None) -> list:
                     "odds_home": float(odds_home),
                     "odds_away": float(odds_away),
                     "odds_draw": float(odds_draw) if pd.notna(odds_draw) and float(odds_draw) > 0 else None,
-                    # TARGET: l'équipe à la plus petite cote gagne-t-elle? (prédictif)
-                    # C'est la vraie question que le modèle doit apprendre à répondre
-                    home_is_fav = float(odds_home) < float(odds_away)
-                    fav_won = (actual == "home" and home_is_fav) or (actual == "away" and not home_is_fav)
                     "result_match": fav_won,
                     "home_score": int(row.get("home_score", 0)) if pd.notna(row.get("home_score")) else None,
                     "away_score": int(row.get("away_score", 0)) if pd.notna(row.get("away_score")) else None,
