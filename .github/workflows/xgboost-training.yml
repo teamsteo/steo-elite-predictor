@@ -51,6 +51,20 @@ jobs:
           fi
           python ml/train_xgboost.py $ARGS
 
+      - name: Trigger Telegram Bilan (backup)
+        if: success()
+        run: |
+          # Backup: envoyer le bilan journalier sur Telegram
+          # Sécurise même si le cron Vercel 5:30 échoue
+          sleep 30
+          echo "📊 Envoi du bilan journalier Telegram (backup)..."
+          YESTERDAY=$(date -d "yesterday" +%Y-%m-%d)
+          CRON_SECRET="${{ secrets.CRON_SECRET }}"
+          CRON_SECRET="${CRON_SECRET:-secretsteo-elitecron2026}"
+          RESPONSE=$(curl -s -m 120 \
+            "https://my-project-zeta-five-85.vercel.app/api/cron?secret=${CRON_SECRET}&action=telegram-results&date=${YESTERDAY}")
+          echo "Bilan response: $RESPONSE"
+
       - name: Upload training results
         if: always()
         uses: actions/upload-artifact@v4
