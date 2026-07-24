@@ -316,13 +316,13 @@ export async function stealthFetch(
  */
 export function getStealthState(): Record<string, Omit<DomainState, 'blockedUntil'> & { blocked: boolean }> {
   const result: Record<string, any> = {};
-  for (const [domain, state] of domainStates.entries()) {
+  domainStates.forEach((state, domain) => {
     result[domain] = {
       lastRequest: state.lastRequest,
       errorCount: state.errorCount,
       blocked: state.blockedUntil > Date.now(),
       totalRequests: state.totalRequests,
     };
-  }
+  });
   return result;
 }

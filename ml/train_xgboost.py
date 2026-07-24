@@ -97,14 +97,8 @@ CV_FOLDS = 5
 # ============================================================
 
 def get_supabase() -> Client:
-    """Crée et retourne le client Supabase avec headers furtifs."""
-    client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    # Injecter les headers furtifs dans le client httpx sous-jacent
-    try:
-        client.postgrest.session.headers.update(STEALTH_HEADERS)
-    except Exception:
-        pass  # Fallback silencieux si l'API interne change
-    return client
+    """Crée et retourne le client Supabase."""
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ============================================================
 # DATA LOADING
