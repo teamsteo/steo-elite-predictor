@@ -153,7 +153,10 @@ def load_csv_data(sport: Optional[str] = None) -> list:
                     "odds_home": float(odds_home),
                     "odds_away": float(odds_away),
                     "odds_draw": float(odds_draw) if pd.notna(odds_draw) and float(odds_draw) > 0 else None,
-                    "result_match": True,
+                    # TARGET: le favori gagne-t-il? (prédictif, pas déterministe)
+                    "result_match": (actual == "home" and float(odds_home) < float(odds_away)) or
+                                    (actual == "away" and float(odds_away) < float(odds_home)) or
+                                    (actual == "draw" and pd.notna(odds_draw)),
                     "home_score": int(row.get("home_score", 0)) if pd.notna(row.get("home_score")) else None,
                     "away_score": int(row.get("away_score", 0)) if pd.notna(row.get("away_score")) else None,
                     "actual_result": actual,
