@@ -41,6 +41,10 @@ SUPABASE_KEY = os.environ.get(
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bXNyYWtpb2V0dnZxb3B0aGJzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzc1NTAyNiwiZXhwIjoyMDg5MzMxMDI2fQ.cHkaxhUKCs5hpVLriZN9IHfoRfFuyvMNKOobP5cja14"
 )
 
+# Chemin vers les données historiques CSV (saisons précédentes)
+# Ces fichiers sont versionnés dans le repo et utilisés pour l'entraînement
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "migration")
+
 # Seuils de confiance par sport (alignés avec unifiedMLService.ts)
 SPORT_THRESHOLDS = {
     "football": 55.0,
@@ -89,6 +93,81 @@ def get_supabase() -> Client:
 # ============================================================
 # DATA LOADING
 # ============================================================
+
+# Chemin vers les données historiques CSV (saisons précédentes)
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "migration")
+
+CSV_FILES = {
+    "football": os.path.join(DATA_DIR, "football_matches.csv"),
+    "basketball": os.path.join(DATA_DIR, "basketball_matches.csv"),
+    "hockey": os.path.join(DATA_DIR, "nhl_matches.csv"),
+    "baseball": os.path.join(DATA_DIR, "mlb_matches.csv"),
+}
+
+def load_csv_data(sport: Optional[str] = None) -> list:
+    """
+    Charge les données historiques depuis les fichiers CSV locaux.
+    Ces données proviennent des saisons précédentes (téléchargées pour backtesting).
+    """
+    all_data = []
+    sports_to_load = [sport] if sport else list(CSV_FILES.keys())
+
+    for s in sports_to_load:
+        csv_path = CSV_FILES.get(s)
+        if not csv_path or not os.path.exists(csv_path):
+            continue
+
+        try:
+            df_csv = pd.read_csv(csv_path)
+            print(f"   📁 CSV {s}: {len(df_csv)} matchs historiques")
+
+            for _, row in df_csv.iterrows():
+                odds_home = row.get("odds_home")
+                odds_away = row.get("odds_away")
+                odds_draw = row.get("odds_draw")
+
+                # Skip si pas de odds valides
+                if pd.isna(odds_home) or pd.isna(odds_away) or float(odds_home) <= 0 or float(odds_away) <= 0:
+                    continue
+
+                result = str(row.get("result", "")).strip().upper()
+                if result == "H":
+                    actual = "home"
+                elif result == "A":
+                    actual = "away"
+                elif result == "D":
+                    actual = "draw"
+                else:
+                    continue  # Skip si pas de résultat clair
+
+                all_data.append({
+                    "id": str(row.get("id", f"csv_{s}_{len(all_data)}")),
+                    "sport": s,
+                    "home_team": str(row.get("home_team", "")),
+                    "away_team": str(row.get("away_team", "")),
+                    "league": str(row.get("league_name", row.get("league", ""))),
+                    "match_date": row.get("match_date"),
+                    "predicted_result": actual,
+                    "predicted_goals": None,
+                    "confidence": "medium",
+                    "odds_home": float(odds_home),
+                    "odds_away": float(odds_away),
+                    "odds_draw": float(odds_draw) if pd.notna(odds_draw) and float(odds_draw) > 0 else None,
+                    "result_match": True,
+                    "home_score": int(row.get("home_score", 0)) if pd.notna(row.get("home_score")) else None,
+                    "away_score": int(row.get("away_score", 0)) if pd.notna(row.get("away_score")) else None,
+                    "actual_result": actual,
+                    "home_xg": row.get("home_xg"),
+                    "away_xg": row.get("away_xg"),
+                    "_source": "csv_historical",
+                })
+
+            print(f"      ✅ {s}: {len([d for d in all_data if d['sport'] == s])} matchs avec odds valides")
+
+        except Exception as e:
+            print(f"   ⚠️ Erreur lecture CSV {s}: {e}")
+
+    return all_data
 
 def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int = 30) -> pd.DataFrame:
     """
@@ -189,6 +268,19 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
             break
         offset += batch_size
         print(f"      matches: {match_count} lignes...")
+
+    if not all_data:
+        print("   ⚠️ Aucune donnée trouvée dans Supabase!")
+
+    # ── Source 3: CSV historiques (saisons précédentes) ──
+    print("   🔍 Source 3: CSV historiques (saisons précédentes)...")
+    csv_data = load_csv_data(sport)
+    if csv_data:
+        # Éviter doublons avec Supabase
+        existing_ids = {d.get("id") for d in all_data}
+        new_csv = [d for d in csv_data if d["id"] not in existing_ids]
+        all_data.extend(new_csv)
+        print(f"      CSV: +{len(new_csv)} matchs ajoutés (total: {len(all_data)})")
 
     if not all_data:
         print("   ⚠️ Aucune donnée trouvée!")
