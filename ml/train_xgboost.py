@@ -315,7 +315,7 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
         sub = df[df["sport"] == s]
         wins = sub["result_match"].sum()
         wr = wins / len(sub) * 100 if len(sub) > 0 else 0
-        print(f"      {s}: {len(sub)} échantillons ({wr:.1f}% win rate)")
+        print(f"      {s}: {len(sub)} échantillons ({wr:.1f}% favori win rate)")
 
     return df
 
@@ -396,17 +396,8 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df["odds_confidence"] = df["prob_home"] * df["confidence_numeric"]
     df["favorite_confidence"] = df["favorite_strength"] * df["confidence_numeric"]
 
-    # --- Predicted Result Features ---
-    # Est-ce que la prédiction est "home"?
-    df["pred_home"] = (df["predicted_result"] == "home").astype(int)
-    df["pred_away"] = (df["predicted_result"] == "away").astype(int)
-    df["pred_draw"] = (df["predicted_result"] == "draw").astype(int)
-
-    # Alignement prédiction / favori
-    df["pred_matches_favorite"] = (
-        (df["pred_home"] == 1) & (df["is_home_favorite"] == 1) |
-        (df["pred_away"] == 1) & (df["is_home_favorite"] == 0)
-    ).astype(int)
+    # Note: pred_home/pred_away/pred_draw/pred_matches_favorite sont supprimés (anti-leakage)
+    # Ces features révélaient la réponse et n'existent pas avant le match
 
     # --- Tennis-Specific ---
     df["is_tennis"] = (df["sport"] == "tennis").astype(int)
