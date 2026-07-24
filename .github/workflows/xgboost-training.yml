@@ -3,7 +3,7 @@ name: ML Pipeline
 on:
   schedule:
     # Jitter intégré: décalage aléatoire de 0-5 min pour éviter les patterns
-    - cron: '10 5 * * *'
+    - cron: '0 5 * * *'
   workflow_dispatch:
     inputs:
       sport:
