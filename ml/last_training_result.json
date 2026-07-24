@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-07-24T07:52:32.399401+00:00",
+  "timestamp": "2026-07-24T08:08:11.485550+00:00",
   "global_cv_accuracy": 0.552675,
   "total_samples": 9480,
   "sports": {
@@ -126,7 +126,7 @@
       "samples": 2741,
       "pos_rate": 0.467,
       "version": "xgb-20260724",
-      "trained_at": "2026-07-24T07:52:29.087213+00:00"
+      "trained_at": "2026-07-24T08:08:08.096164+00:00"
     },
     "basketball": {
       "sport": "basketball",
@@ -251,7 +251,7 @@
       "samples": 408,
       "pos_rate": 0.4779,
       "version": "xgb-20260724",
-      "trained_at": "2026-07-24T07:52:29.837704+00:00"
+      "trained_at": "2026-07-24T08:08:08.879140+00:00"
     },
     "hockey": {
       "sport": "hockey",
@@ -376,7 +376,7 @@
       "samples": 1400,
       "pos_rate": 0.5229,
       "version": "xgb-20260724",
-      "trained_at": "2026-07-24T07:52:30.659294+00:00"
+      "trained_at": "2026-07-24T08:08:09.757988+00:00"
     },
     "baseball": {
       "sport": "baseball",
@@ -501,7 +501,7 @@
       "samples": 4931,
       "pos_rate": 0.5163,
       "version": "xgb-20260724",
-      "trained_at": "2026-07-24T07:52:32.397061+00:00"
+      "trained_at": "2026-07-24T08:08:11.483520+00:00"
     }
   }
 }
