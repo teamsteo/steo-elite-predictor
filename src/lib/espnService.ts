@@ -136,6 +136,17 @@ export async function fetchESPNFootballGames(): Promise<ESPNMatch[]> {
       { key: 'uefa.champions', name: 'Champions League', type: 'european' },
       { key: 'uefa.europa', name: 'Europa League', type: 'european' },
       { key: 'uefa.europa.conf', name: 'Conference League', type: 'european' },
+      // 🏆 Coupes nationales (actives été/début saison)
+      { key: 'ger.dfb_pokal', name: 'DFB Pokal', type: 'domestic' },
+      { key: 'fra.coupe_de_france', name: 'Coupe de France', type: 'domestic' },
+      { key: 'eng.league_cup', name: 'Carabao Cup', type: 'domestic' },
+      { key: 'esp.copa_del_rey', name: 'Copa del Rey', type: 'domestic' },
+      { key: 'ita.coppa_italia', name: 'Coppa Italia', type: 'domestic' },
+      // 🏆 Super coupes nationales (fin juillet / début août)
+      { key: 'esp.super_cup', name: 'Supercopa España', type: 'domestic' },
+      { key: 'ger.super_cup', name: 'DFL-Supercup', type: 'domestic' },
+      { key: 'ita.super_cup', name: 'Supercoppa Italiana', type: 'domestic' },
+      { key: 'fra.super_cup', name: 'Trophée des Champions', type: 'domestic' },
       // 🌍 COMPÉTITIONS INTERNATIONALES (codes ESPN validés)
       { key: 'fifa.world', name: 'Coupe du Monde', type: 'international' },
       { key: 'uefa.nations', name: 'Nations League', type: 'international' },

@@ -408,6 +408,17 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
       { key: 'soccer/uefa.champions', name: 'Champions League', sport: 'Football' },
       { key: 'soccer/uefa.europa', name: 'Europa League', sport: 'Football' },
       { key: 'soccer/uefa.europa.conf', name: 'Conference League', sport: 'Football' },
+      // 🏆 Coupes nationales (actives en été / début saison)
+      { key: 'soccer/ger.dfb_pokal', name: 'DFB Pokal', sport: 'Football' },
+      { key: 'soccer/fra.coupe_de_france', name: 'Coupe de France', sport: 'Football' },
+      { key: 'soccer/eng.league_cup', name: 'Carabao Cup', sport: 'Football' },
+      { key: 'soccer/esp.copa_del_rey', name: 'Copa del Rey', sport: 'Football' },
+      { key: 'soccer/ita.coppa_italia', name: 'Coppa Italia', sport: 'Football' },
+      // 🏆 Super coupes nationales (fin juillet / début août)
+      { key: 'soccer/esp.super_cup', name: 'Supercopa España', sport: 'Football' },
+      { key: 'soccer/ger.super_cup', name: 'DFL-Supercup', sport: 'Football' },
+      { key: 'soccer/ita.super_cup', name: 'Supercoppa Italiana', sport: 'Football' },
+      { key: 'soccer/fra.super_cup', name: 'Trophée des Champions', sport: 'Football' },
       // Autres ligues
       { key: 'soccer/ned.1', name: 'Eredivisie', sport: 'Football' },
       { key: 'soccer/por.1', name: 'Liga Portugal', sport: 'Football' },
