@@ -14,7 +14,12 @@
  * - Fractional Kelly (1/2, 1/4) pour réduire la volatilité
  * - Plafonds max pour protection
  * - Ajustement selon confiance du modèle
+ * - Ajustement par ligue (performance historique)
+ * - Ajustement CLV (Closing Line Value)
+ * - Suivi de bankroll réel avec historique
  */
+
+import { createClient } from '@supabase/supabase-js';
 
 // ============================================
 // TYPES
@@ -50,6 +55,61 @@ export interface BankrollStats {
   biggestLoss: number;
   currentStreak: number;
   maxStreak: number;
+}
+
+// ============================================
+// NEW TYPES: Bankroll History & Manager
+// ============================================
+
+export interface BankrollHistoryEntry {
+  date: string;
+  betId: string;
+  league: string;
+  sport: string;
+  odds: number;
+  stake: number;
+  won: boolean;
+  profit: number;
+  bankrollAfter: number;
+  kellyFraction: number;
+}
+
+export interface BankrollManager {
+  currentBankroll: number;
+  startingBankroll: number;
+  totalBets: number;
+  winRate: number;
+  roi: number;
+  profitLoss: number;
+  maxDrawdown: number;
+  currentStreak: number;
+  history: BankrollHistoryEntry[];
+
+  placeBet(bet: {
+    betId: string;
+    league: string;
+    sport: string;
+    odds: number;
+    probability: number;
+    confidence?: string;
+    won: boolean;
+  }): BankrollStats;
+
+  getStats(): BankrollStats;
+  reset(newBankroll: number): void;
+}
+
+// CLV-aware Kelly input extension
+export interface CLVAwareKellyInput extends KellyInput {
+  clv?: number;   // Closing Line Value (-1 to 1). Positive = market moved in our direction.
+  slippage?: number; // Expected slippage (0-0.05). Deducted from effective odds.
+}
+
+export interface CLVAwareKellyResult extends KellyResult {
+  clvAdjustment: {
+    adjustedEdge: number;
+    slippageDeduction: number;
+  };
 }
 
 // ============================================
@@ -320,6 +380,10 @@ export interface LeaguePerformance {
   kellyMultiplier: number; // 1.0 = normal, 0.5 = réduire, 0 = couper
   recommendation: 'strong' | 'normal' | 'reduce' | 'cut';
   lastUpdated: string;
+  // ENHANCED: track individual bet results for recency/streak/variance
+  recentResults?: boolean[];       // true = win, false = loss (most recent last)
+  totalStakes?: number[];          // stake amounts for variance calculation
+  lastBetDate?: string;            // ISO date of most recent bet
 }
 
 // Store en mémoire (persist via Supabase/ml_model export en production)
@@ -332,6 +396,9 @@ const LEAGUE_ALLOCATION_THRESHOLDS = {
   reduce: { minRoi: -10, minBets: 5, minWinRate: 0.25, kellyMultiplier: 0.25 },
   cut: { minRoi: -Infinity, minBets: 0, minWinRate: 0, kellyMultiplier: 0 },
 };
+
+// Maximum number of recent results to keep per league (for recency/streak)
+const MAX_RECENT_RESULTS = 50;
 
 /**
  * Met à jour la performance d'une ligue après un résultat
@@ -355,6 +422,9 @@ export function updateLeaguePerformance(
       kellyMultiplier: 1.0,
       recommendation: 'normal',
       lastUpdated: new Date().toISOString(),
+      recentResults: [],
+      totalStakes: [],
+      lastBetDate: undefined,
     };
   }
 
@@ -365,6 +435,19 @@ export function updateLeaguePerformance(
   lp.profit += won ? stake * (odds - 1) : -stake;
   lp.roi = lp.totalBets > 0 ? (lp.profit / (lp.totalBets * stake)) * 100 : 0;
   lp.avgEdge = ((lp.avgEdge * (lp.totalBets - 1)) + edge) / lp.totalBets;
+
+  // Track recent results for recency/streak/variance analysis
+  if (!lp.recentResults) lp.recentResults = [];
+  if (!lp.totalStakes) lp.totalStakes = [];
+  lp.recentResults.push(won);
+  lp.totalStakes.push(stake);
+  lp.lastBetDate = new Date().toISOString();
+
+  // Trim to keep bounded
+  if (lp.recentResults.length > MAX_RECENT_RESULTS) {
+    lp.recentResults = lp.recentResults.slice(-MAX_RECENT_RESULTS);
+    lp.totalStakes = lp.totalStakes.slice(-MAX_RECENT_RESULTS);
+  }
 
   // Recalculer la recommandation
   const thresholds = LEAGUE_ALLOCATION_THRESHOLDS;
@@ -388,25 +471,144 @@ export function updateLeaguePerformance(
 /**
  * Calcule la mise Kelly ajustée pour une ligue spécifique
  * Applique le multiplicateur d'allocation basé sur la performance historique
+ * 
+ * ENHANCED: also factors in recency bias, variance adjustment, and streak adjustment
  */
 export function calculateLeagueAdjustedKellyBet(
   input: KellyInput & { league: string }
-): KellyResult & { leagueAdjustment: { multiplier: number; recommendation: string } } {
+): KellyResult & {
+  leagueAdjustment: {
+    multiplier: number;
+    recommendation: string;
+    recencyFactor: number;
+    varianceFactor: number;
+    streakFactor: number;
+    breakdown: string;
+  };
+} {
   const baseResult = calculateKellyBet(input);
 
   const lp = leaguePerformanceStore[input.league];
-  const multiplier = lp ? lp.kellyMultiplier : 1.0;
+  let baseMultiplier = lp ? lp.kellyMultiplier : 1.0;
   const recommendation = lp ? lp.recommendation : 'normal';
 
-  // Appliquer le multiplicateur de ligue
-  const adjustedAmount = baseResult.amount * multiplier;
-  const adjustedFraction = baseResult.fraction * multiplier;
+  // --- ENHANCED: Recency Bias ---
+  // Leagues with more recent activity (within 7 days) get a slight boost;
+  // leagues inactive for 30+ days get a penalty.
+  let recencyFactor = 1.0;
+  if (lp?.lastBetDate) {
+    const daysSinceLastBet = (Date.now() - new Date(lp.lastBetDate).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceLastBet <= 7) {
+      recencyFactor = 1.0; // Fully active - no penalty
+    } else if (daysSinceLastBet <= 14) {
+      recencyFactor = 0.95; // Slightly stale
+    } else if (daysSinceLastBet <= 30) {
+      recencyFactor = 0.85; // Stale data
+    } else {
+      recencyFactor = 0.70; // Very stale, reduce trust
+    }
+  }
+
+  // --- ENHANCED: Variance Adjustment ---
+  // If a league has high variance in ROI across recent bets, reduce allocation.
+  // We compute the coefficient of variation of per-bet returns.
+  let varianceFactor = 1.0;
+  if (lp?.recentResults && lp?.totalStakes && lp.recentResults.length >= 5) {
+    const results = lp.recentResults;
+    const stakes = lp.totalStakes;
+    // Calculate per-bet ROI percentage for recent bets
+    const betRois: number[] = [];
+    for (let i = 0; i < results.length; i++) {
+      const stake = stakes[i] || 1; // avoid division by zero
+      if (results[i]) {
+        // Estimate profit from avgEdge as we don't store per-bet odds
+        const estimatedProfit = (lp.avgEdge / 100) * stake;
+        betRois.push((estimatedProfit / stake) * 100);
+      } else {
+        betRois.push(-100); // full loss
+      }
+    }
+    if (betRois.length > 1) {
+      const mean = betRois.reduce((s, v) => s + v, 0) / betRois.length;
+      const variance = betRois.reduce((s, v) => s + (v - mean) ** 2, 0) / betRois.length;
+      const stdDev = Math.sqrt(variance);
+      // Coefficient of variation: stdDev / |mean|
+      const absMean = Math.abs(mean) || 1;
+      const cv = stdDev / absMean;
+      // High CV means unstable performance: penalize
+      if (cv > 3) {
+        varianceFactor = 0.6;
+      } else if (cv > 2) {
+        varianceFactor = 0.75;
+      } else if (cv > 1.5) {
+        varianceFactor = 0.9;
+      }
+      // else varianceFactor stays 1.0
+    }
+  }
+
+  // --- ENHANCED: Streak Adjustment ---
+  // If a league is on a cold streak (3+ consecutive losses), reduce by 50%.
+  // Hot streaks (3+ consecutive wins) give a small bonus.
+  let streakFactor = 1.0;
+  if (lp?.recentResults && lp.recentResults.length >= 3) {
+    // Count consecutive losses from the most recent bet backwards
+    let consecutiveLosses = 0;
+    for (let i = lp.recentResults.length - 1; i >= 0; i--) {
+      if (!lp.recentResults[i]) {
+        consecutiveLosses++;
+      } else {
+        break;
+      }
+    }
+    if (consecutiveLosses >= 3) {
+      streakFactor = 0.5; // Cold streak: 50% reduction
+    } else if (consecutiveLosses === 2) {
+      streakFactor = 0.8; // Two losses: mild caution
+    }
+    // Hot streak bonus (3+ consecutive wins)
+    let consecutiveWins = 0;
+    for (let i = lp.recentResults.length - 1; i >= 0; i--) {
+      if (lp.recentResults[i]) {
+        consecutiveWins++;
+      } else {
+        break;
+      }
+    }
+    if (consecutiveWins >= 5) {
+      streakFactor = Math.max(streakFactor, 1.1); // Cap at 10% bonus
+    } else if (consecutiveWins >= 3) {
+      streakFactor = Math.max(streakFactor, 1.05); // Small 5% bonus
+    }
+  }
+
+  // Combine all factors
+  const combinedMultiplier = baseMultiplier * recencyFactor * varianceFactor * streakFactor;
+
+  // Build breakdown string
+  const parts: string[] = [];
+  parts.push(`base:${baseMultiplier.toFixed(2)}`);
+  if (recencyFactor !== 1.0) parts.push(`recency:${recencyFactor.toFixed(2)}`);
+  if (varianceFactor !== 1.0) parts.push(`variance:${varianceFactor.toFixed(2)}`);
+  if (streakFactor !== 1.0) parts.push(`streak:${streakFactor.toFixed(2)}`);
+  const breakdown = parts.join(' × ') + ` = ${combinedMultiplier.toFixed(3)}`;
+
+  // Appliquer le multiplicateur combiné
+  const adjustedAmount = baseResult.amount * combinedMultiplier;
+  const adjustedFraction = baseResult.fraction * combinedMultiplier;
 
   return {
     ...baseResult,
     amount: Math.round(adjustedAmount * 100) / 100,
     fraction: adjustedFraction,
-    leagueAdjustment: { multiplier, recommendation },
+    leagueAdjustment: {
+      multiplier: Math.round(combinedMultiplier * 1000) / 1000,
+      recommendation,
+      recencyFactor: Math.round(recencyFactor * 1000) / 1000,
+      varianceFactor: Math.round(varianceFactor * 1000) / 1000,
+      streakFactor: Math.round(streakFactor * 1000) / 1000,
+      breakdown,
+    },
   };
 }
 
@@ -439,6 +641,9 @@ export function loadLeaguePerformanceFromML(mlResults: Record<string, {
           kellyMultiplier: 1.0,
           recommendation: 'normal',
           lastUpdated: new Date().toISOString(),
+          recentResults: [],
+          totalStakes: [],
+          lastBetDate: undefined,
         };
       } else {
         // Mettre à jour avec les données ML si plus récentes
@@ -480,6 +685,338 @@ export function getLeaguePerformanceSummary(): {
 }
 
 // ============================================
+// SUPABASE PERSISTENCE FOR LEAGUE PERFORMANCE
+// ============================================
+
+/**
+ * Persist league performance to Supabase ml_model table
+ * Stores in a dedicated field `kelly_league_performance`
+ * alongside the existing xgboost_params
+ */
+export async function persistLeaguePerformance(
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<boolean> {
+  try {
+    const client = createClient(supabaseUrl, supabaseKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const serialized = JSON.parse(JSON.stringify(leaguePerformanceStore));
+
+    const { error } = await client
+      .from('ml_model')
+      .update({ kelly_league_performance: serialized } as any)
+      .eq('id', 'default_model');
+
+    if (error) {
+      console.warn('⚠️ Kelly: persistLeaguePerformance update failed:', error.message);
+      console.info('ℹ️ Ensure the ml_model table has a kelly_league_performance JSONB column.');
+      console.info('   Run: ALTER TABLE ml_model ADD COLUMN IF NOT EXISTS kelly_league_performance JSONB;');
+      return false;
+    }
+
+    console.log(`✅ Kelly: League performance persisted (${Object.keys(leaguePerformanceStore).length} leagues)`);
+    return true;
+  } catch (e: any) {
+    console.error('❌ Kelly: Exception persisting league performance:', e.message);
+    return false;
+  }
+}
+
+/**
+ * Load league performance from Supabase on startup/cold start
+ * Called once when the service initializes. Populates leaguePerformanceStore.
+ */
+export async function loadLeaguePerformanceFromSupabase(
+  supabaseUrl: string,
+  supabaseKey: string
+): Promise<void> {
+  try {
+    const client = createClient(supabaseUrl, supabaseKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { data, error } = await client
+      .from('ml_model')
+      .select('kelly_league_performance')
+      .eq('id', 'default_model')
+      .single();
+
+    if (error) {
+      console.warn('⚠️ Kelly: loadLeaguePerformanceFromSupabase query failed:', error.message);
+      return;
+    }
+
+    const raw = data?.kelly_league_performance;
+    if (!raw || typeof raw !== 'object') {
+      console.log('ℹ️ Kelly: No persisted league performance found, starting fresh.');
+      return;
+    }
+
+    // Parse if stored as string (JSONB may come back parsed already)
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+    // Validate and load into the store
+    const entries = parsed as Record<string, LeaguePerformance>;
+    let loaded = 0;
+    for (const [key, value] of Object.entries(entries)) {
+      if (value && typeof value === 'object' && 'league' in value) {
+        leaguePerformanceStore[key] = {
+          ...value,
+          // Ensure new fields exist (backwards compat)
+          recentResults: value.recentResults || [],
+          totalStakes: value.totalStakes || [],
+          lastBetDate: value.lastBetDate || undefined,
+        };
+        loaded++;
+      }
+    }
+
+    console.log(`✅ Kelly: Loaded league performance for ${loaded} leagues from Supabase.`);
+  } catch (e: any) {
+    console.error('❌ Kelly: Exception loading league performance:', e.message);
+  }
+}
+
+// ============================================
+// REAL BANKROLL TRACKING (BankrollManager)
+// ============================================
+
+/**
+ * Creates a BankrollManager instance that tracks actual bankroll over time.
+ * Includes full history, drawdown tracking, streak computation, and stats.
+ */
+function createBankrollManager(initialBankroll: number = DEFAULT_BANKROLL): BankrollManager {
+  let currentBankroll = initialBankroll;
+  const startingBankroll = initialBankroll;
+  let totalBets = 0;
+  let totalWins = 0;
+  let totalStaked = 0;
+  let totalProfit = 0;
+  let biggestWin = 0;
+  let biggestLoss = 0;
+  let maxBankroll = initialBankroll;
+  let maxDrawdown = 0;
+  let currentStreak = 0; // positive = wins, negative = losses
+  let maxStreak = 0;
+  const history: BankrollHistoryEntry[] = [];
+
+  function getStats(): BankrollStats {
+    const winRate = totalBets > 0 ? (totalWins / totalBets) * 100 : 0;
+    const roi = totalStaked > 0 ? (totalProfit / totalStaked) * 100 : 0;
+    const averageStake = totalBets > 0 ? totalStaked / totalBets : 0;
+    return {
+      currentBankroll: Math.round(currentBankroll * 100) / 100,
+      startingBankroll: Math.round(startingBankroll * 100) / 100,
+      totalBets,
+      winRate: Math.round(winRate * 10) / 10,
+      roi: Math.round(roi * 100) / 100,
+      profitLoss: Math.round(totalProfit * 100) / 100,
+      averageStake: Math.round(averageStake * 100) / 100,
+      biggestWin: Math.round(biggestWin * 100) / 100,
+      biggestLoss: Math.round(biggestLoss * 100) / 100,
+      currentStreak,
+      maxStreak,
+    };
+  }
+
+  function placeBet(bet: {
+    betId: string;
+    league: string;
+    sport: string;
+    odds: number;
+    probability: number;
+    confidence?: string;
+    won: boolean;
+  }): BankrollStats {
+    // Calculate Kelly stake based on current bankroll
+    const kellyResult = calculateKellyBet({
+      odds: bet.odds,
+      probability: bet.probability,
+      confidence: (bet.confidence as KellyInput['confidence']) || 'medium',
+      bankroll: currentBankroll,
+    });
+
+    const stake = kellyResult.amount;
+    const kellyFraction = kellyResult.fraction;
+
+    // Calculate profit/loss
+    let profit: number;
+    if (bet.won) {
+      profit = stake * (bet.odds - 1);
+    } else {
+      profit = -stake;
+    }
+
+    // Update bankroll
+    currentBankroll += profit;
+    if (currentBankroll < 0) currentBankroll = 0;
+
+    // Update tracking
+    totalBets++;
+    totalStaked += stake;
+    totalProfit += profit;
+    if (bet.won) totalWins++;
+    if (profit > biggestWin) biggestWin = profit;
+    if (profit < biggestLoss) biggestLoss = profit;
+
+    // Drawdown tracking
+    if (currentBankroll > maxBankroll) maxBankroll = currentBankroll;
+    const drawdown = maxBankroll > 0 ? (maxBankroll - currentBankroll) / maxBankroll : 0;
+    if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+
+    // Streak tracking
+    if (bet.won) {
+      currentStreak = currentStreak > 0 ? currentStreak + 1 : 1;
+    } else {
+      currentStreak = currentStreak < 0 ? currentStreak - 1 : -1;
+    }
+    const absStreak = Math.abs(currentStreak);
+    if (absStreak > maxStreak) maxStreak = absStreak;
+
+    // Record history
+    const entry: BankrollHistoryEntry = {
+      date: new Date().toISOString(),
+      betId: bet.betId,
+      league: bet.league,
+      sport: bet.sport,
+      odds: bet.odds,
+      stake: Math.round(stake * 100) / 100,
+      won: bet.won,
+      profit: Math.round(profit * 100) / 100,
+      bankrollAfter: Math.round(currentBankroll * 100) / 100,
+      kellyFraction: Math.round(kellyFraction * 10000) / 10000,
+    };
+    history.push(entry);
+
+    // Keep history bounded (last 500 bets)
+    if (history.length > 500) {
+      history.splice(0, history.length - 500);
+    }
+
+    return getStats();
+  }
+
+  function reset(newBankroll: number): void {
+    currentBankroll = newBankroll;
+    totalBets = 0;
+    totalWins = 0;
+    totalStaked = 0;
+    totalProfit = 0;
+    biggestWin = 0;
+    biggestLoss = 0;
+    maxBankroll = newBankroll;
+    maxDrawdown = 0;
+    currentStreak = 0;
+    maxStreak = 0;
+    history.length = 0;
+  }
+
+  return {
+    get currentBankroll() { return Math.round(currentBankroll * 100) / 100; },
+    get startingBankroll() { return Math.round(startingBankroll * 100) / 100; },
+    get totalBets() { return totalBets; },
+    get winRate() { return getStats().winRate; },
+    get roi() { return getStats().roi; },
+    get profitLoss() { return getStats().profitLoss; },
+    get maxDrawdown() { return Math.round(maxDrawdown * 10000) / 100; },
+    get currentStreak() { return currentStreak; },
+    get history() { return history; },
+    placeBet,
+    getStats,
+    reset,
+  };
+}
+
+/**
+ * Singleton BankrollManager instance.
+ * Use getBankrollManager() to access it.
+ */
+let _bankrollManager: BankrollManager | null = null;
+
+/**
+ * Returns the singleton BankrollManager.
+ * Optionally initializes with a specific bankroll (only on first call).
+ */
+export function getBankrollManager(initialBankroll?: number): BankrollManager {
+  if (!_bankrollManager) {
+    _bankrollManager = createBankrollManager(initialBankroll ?? DEFAULT_BANKROLL);
+  }
+  return _bankrollManager;
+}
+
+// ============================================
+// CLV-AWARE KELLY
+// ============================================
+
+/**
+ * Calculate CLV-aware Kelly bet.
+ * 
+ * CLV (Closing Line Value) measures whether the market moved in our direction.
+ * - Positive CLV (+0.02 to +0.10): market moved toward our pick → increase confidence
+ * - Negative CLV: market moved against us → decrease confidence
+ * 
+ * Slippage represents the expected difference between quoted odds and actual fill.
+ * - Typical slippage: 0.01 to 0.03 (1-3%)
+ * - Reduces effective odds, thereby reducing Kelly stake
+ */
+export function calculateCLVAwareKellyBet(input: CLVAwareKellyInput): CLVAwareKellyResult {
+  const { clv, slippage, odds, probability, confidence, bankroll } = input;
+
+  // Start with base Kelly result
+  const baseResult = calculateKellyBet({ odds, probability, confidence, bankroll });
+
+  // --- CLV Adjustment ---
+  // CLV is in range -1 to +1 typically, but in practice -0.10 to +0.10
+  // Positive CLV means the closing line moved in our favor (good signal)
+  const clvValue = clv || 0;
+  // Map CLV to an edge adjustment: each 0.01 of CLV adds ~0.5% to the effective edge
+  const clvEdgeBonus = clvValue * 50; // e.g. CLV=0.04 → +2% edge bonus
+
+  // --- Slippage Deduction ---
+  // Slippage reduces the effective odds: effective_odds = odds * (1 - slippage)
+  const slippageValue = slippage || 0;
+  const effectiveOdds = odds * (1 - slippageValue);
+  const slippageDeduction = odds - effectiveOdds; // absolute odds lost to slippage
+
+  // Recalculate Kelly with CLV-adjusted probability and slippage-reduced odds
+  const adjustedProbability = Math.min(100, Math.max(0, probability + clvEdgeBonus));
+  const clvAdjustedResult = calculateKellyBet({
+    odds: effectiveOdds,
+    probability: adjustedProbability,
+    confidence,
+    bankroll,
+  });
+
+  // If base result was already a skip/avoid, respect that
+  if (baseResult.recommendation === 'avoid') {
+    return {
+      ...baseResult,
+      clvAdjustment: {
+        adjustedEdge: Math.round((baseResult.edge + clvEdgeBonus - (slippageValue * 100)) * 10) / 10,
+        slippageDeduction: Math.round(slippageDeduction * 1000) / 1000,
+      },
+    };
+  }
+
+  // Use the CLV-adjusted result but enhance the explanation
+  const adjustedEdge = clvAdjustedResult.edge;
+  const explanation = baseResult.explanation
+    + (clvValue > 0 ? ` | CLV +${(clvValue * 100).toFixed(1)}% ↑` : clvValue < 0 ? ` | CLV ${(clvValue * 100).toFixed(1)}% ↓` : '')
+    + (slippageValue > 0 ? ` | Slippage -${(slippageValue * 100).toFixed(1)}%` : '');
+
+  return {
+    ...clvAdjustedResult,
+    explanation,
+    clvAdjustment: {
+      adjustedEdge: Math.round(adjustedEdge * 10) / 10,
+      slippageDeduction: Math.round(slippageDeduction * 1000) / 1000,
+    },
+  };
+}
+
+// ============================================
 // EXPORT
 // ============================================
 
@@ -494,6 +1031,13 @@ const KellyCriterionService = {
   calculateLeagueAdjustedKellyBet,
   loadLeaguePerformanceFromML,
   getLeaguePerformanceSummary,
+  // Supabase persistence
+  persistLeaguePerformance,
+  loadLeaguePerformanceFromSupabase,
+  // Bankroll Manager
+  getBankrollManager,
+  // CLV-aware
+  calculateCLVAwareKellyBet,
 };
 
 export default KellyCriterionService;

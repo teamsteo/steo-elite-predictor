@@ -764,87 +764,159 @@ def train_sport_model(
     print(f"   🎯 Meilleur seuil confiance: {best_threshold:.2f} (précision: {best_precision*100:.1f}%)")
 
     # ═══════════════════════════════════════════════════════════════
-    # AXE OPTIMISATION: CUSTOM LOSS (pénaliser fausses certitudes)
+    # AXE OPTIMISATION: NATIVE XGBOOST CUSTOM OBJECTIVE
     # ═══════════════════════════════════════════════════════════════
-    # Au lieu d'optimiser uniquement la logloss standard, on ajoute une
-    # pénalité asymétrique: les erreurs sur cotes extrêmes (fortes
-    # certitudes) coûtent plus cher. Un modèle confiant à tort est pire
-    # qu'un modèle incertain.
+    # Implémente un VRAI custom objective (pas juste un eval metric).
+    # Modifie directement les gradient/hessian que XGBoost optimise:
     #
-    # Formule: loss = logloss + asymmetry_weight * confidence^2 * (pred != true)
-    # Si le modèle dit 80% mais se trompe → pénalité x64 vs 50%
+    # Loss = logloss + α * confidence² * |pred - true|
     #
-    # On entraîne un 2ème modèle avec ce custom objective et on compare.
+    # - logloss gradient: (pred - true) / [pred(1-pred)]
+    # - logloss hessian : 1/[pred(1-pred)] - (pred-true)² / [pred²(1-pred)²]
+    # - Penalty grad    : amplifié quand |pred - 0.5| est grand (haute confiance)
+    # - Penalty hess    : second dérivé de la pénalité
+    #
+    # Effet: XGBoost natively évite les prédictions extrêmes mal fondées.
+    # Une erreur à 0.85 coûte ~3x plus cher qu'une erreur à 0.55.
     custom_loss_info = None
     if len(y) >= 100:
         try:
-            from xgboost import XGBClassifier as XGBC
+            from xgboost import XGBClassifier as XGBC, DMatrix
+            print(f"   ⚖️ Native Custom Objective (asymmetric confidence penalty)...")
 
-            print(f"   ⚖️ Custom Loss (asymmetric confidence penalty)...")
+            # ── Native custom objective: gradient + hessian modifiés ──
+            PENALTY_WEIGHT = 0.5  # α — coefficient de pénalité asymétrique
 
-            # Définir un custom eval metric pour XGBoost
-            def weighted_logloss(y_true, y_pred):
-                """Logloss pondéré: pénalise davantage les fausses certitudes."""
-                y_pred = np.clip(y_pred, 1e-7, 1 - 1e-7)
-                base_loss = -(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
-                # Pénalité asymétrique: plus la prédiction est extrême, plus une erreur coûte
-                confidence_factor = np.where(y_pred > 0.5, y_pred, 1 - y_pred)
-                # Erreur: 1 si faux, 0 si correct
-                is_wrong = (np.abs(y_pred - y_true) > 0.5).astype(float)
-                penalty = confidence_factor ** 2 * is_wrong * 0.5  # coeff 0.5
-                return base_loss + penalty
+            def asymmetric_logloss_obj(preds: np.ndarray, dtrain):
+                """
+                Custom objective XGBoost.
+                Returns (grad, hess) where:
+                  grad = d Loss / d pred
+                  hess = d² Loss / d pred²
 
-            # Entraîner avec early stopping sur un custom eval
+                Loss = -[y log(p) + (1-y) log(1-p)] + α * conf² * |p - y|
+                où conf = |p - 0.5| * 2  (0 à 1, 1 = très confiant)
+                """
+                y_true = dtrain.get_label()
+                p = np.clip(preds, 1e-7, 1 - 1e-7)
+
+                # --- Logloss standard ---
+                grad_ll = (p - y_true) / (p * (1 - p))
+                hess_ll = 1.0 / (p * (1 - p))  # approx; exact: 1/[p(1-p)] - (p-y)²/[p²(1-p)²]
+
+                # --- Pénalité asymétrique ---
+                # conf = |2p - 1| (0 pour p=0.5, 1 pour p=0 ou 1)
+                conf = np.abs(2 * p - 1)
+                # d/conf/dp = 2 * sign(2p-1)
+                sign_p = np.sign(2 * p - 1)
+                # |p - y| derivative: sign(p - y) sauf si p == y (non-diff)
+                sign_diff = np.sign(p - y_true)
+                # Pénalité: α * conf² * |p - y|
+                # d/dp = α * [2 * conf * (d conf/dp) * |p-y| + conf² * sign(p-y)]
+                #       = α * [2 * |2p-1| * 2 * sign_p * |p-y| + conf² * sign_diff]
+                # Simplifions (|2p-1| * sign_p = 2p - 1):
+                grad_pen = PENALTY_WEIGHT * (4 * (2 * p - 1) * np.abs(p - y_true) + conf * conf * sign_diff)
+                # Hess approx (la pénalité est non-lisse, on lisse):
+                # d²/dp² ≈ α * (8 * |p-y| + 8*(2p-1)*sign_diff + 4*conf*sign_p*sign_diff + ...)
+                # On simplifie à un terme stable:
+                hess_pen = PENALTY_WEIGHT * (8 * np.abs(p - y_true) + 4 * conf + 1e-3)
+
+                grad = grad_ll + grad_pen
+                hess = hess_ll + hess_pen
+                # Clip hess pour stabilité numérique
+                hess = np.clip(hess, 1e-3, 1e6)
+                return grad, hess
+
+            # --- Custom eval metric (pour afficher la loss) ---
+            def asymmetric_logloss_eval(y_true, y_pred):
+                """Eval metric: logloss + penalty (pour monitoring)."""
+                p = np.clip(y_pred, 1e-7, 1 - 1e-7)
+                ll = -(y_true * np.log(p) + (1 - y_true) * np.log(1 - p))
+                conf = np.abs(2 * p - 1)
+                pen = PENALTY_WEIGHT * conf * conf * np.abs(p - y_true)
+                return "asym_loss", float(np.mean(ll + pen))
+
+            # --- Entraîner le modèle custom ---
             custom_params = XGB_DEFAULT_PARAMS.copy()
-            custom_params["eval_metric"] = "logloss"
-            custom_model = XGBC(**custom_params)
-            custom_model.fit(X, y)
-
+            # Retirer l'objective standard pour utiliser le custom
+            custom_params.pop("objective", None)
+            custom_params["eval_metric"] = "logloss"  # métrique d'affichage
+            custom_model = XGBC(**custom_params, objective=asymmetric_logloss_obj)
+            custom_model.fit(X, y, eval_set=[(X, y)], verbose=False)
             y_proba_custom = custom_model.predict_proba(X)[:, 1]
 
-            # Comparer les distributions de proba
-            orig_mean_conf = np.mean(np.where(y_proba > 0.5, y_proba, 1 - y_proba))
-            custom_mean_conf = np.mean(np.where(y_proba_custom > 0.5, y_proba_custom, 1 - y_proba_custom))
+            # --- Comparer les distributions de proba ---
+            orig_mean_conf = float(np.mean(np.where(y_proba > 0.5, y_proba, 1 - y_proba)))
+            custom_mean_conf = float(np.mean(np.where(y_proba_custom > 0.5, y_proba_custom, 1 - y_proba_custom)))
 
-            # Mesurer: combien de fois le modèle custom évite une fausse certitude
-            false_confident_orig = ((y_proba > 0.65) & (y == 0)).sum()
-            false_confident_custom = ((y_proba_custom > 0.65) & (y == 0)).sum()
+            # Faux confiant: proba > 0.65 mais classe réelle 0
+            false_confident_orig = int(((y_proba > 0.65) & (y == 0)).sum())
+            false_confident_custom = int(((y_proba_custom > 0.65) & (y == 0)).sum())
 
-            # Brier scores comparés
-            brier_orig = np.mean((y_proba - y) ** 2)
-            brier_custom = np.mean((y_proba_custom - y) ** 2)
+            # Faux confiant extreme: proba > 0.80 mais classe 0
+            false_confident_ext_orig = int(((y_proba > 0.80) & (y == 0)).sum())
+            false_confident_ext_custom = int(((y_proba_custom > 0.80) & (y == 0)).sum())
 
-            # Décider si le custom est meilleur
+            # Brier scores (calibration)
+            brier_orig = float(np.mean((y_proba - y) ** 2))
+            brier_custom = float(np.mean((y_proba_custom - y) ** 2))
+
+            # Accuracy globale (la custom loss peut coûter un peu d'accuracy)
+            acc_orig = float(((y_proba > 0.5).astype(int) == y).mean())
+            acc_custom = float(((y_proba_custom > 0.5).astype(int) == y).mean())
+
+            # Décider si le custom est adopté:
+            # - réduit les fausses certitudes (sévérité extrême prioritaire)
+            # - Brier acceptable (≤ 2% de dégradation)
+            # - accuracy acceptable (≤ 1pp de dégradation)
             custom_improves = (
-                false_confident_custom < false_confident_orig and
-                brier_custom <= brier_orig * 1.02  # tolérance 2% sur Brier
+                false_confident_ext_custom < false_confident_ext_orig and
+                brier_custom <= brier_orig * 1.02 and
+                acc_custom >= acc_orig - 0.01
             )
 
             custom_loss_info = {
-                "method": "asymmetric_confidence_penalty",
-                "false_confident_orig": int(false_confident_orig),
-                "false_confident_custom": int(false_confident_custom),
+                "method": "native_custom_objective_asymmetric",
+                "penalty_weight": PENALTY_WEIGHT,
+                "false_confident_orig": false_confident_orig,
+                "false_confident_custom": false_confident_custom,
+                "false_confident_extreme_orig": false_confident_ext_orig,
+                "false_confident_extreme_custom": false_confident_ext_custom,
                 "false_confident_reduction_pct": round(
                     (1 - false_confident_custom / max(false_confident_orig, 1)) * 100, 1
                 ),
-                "brier_orig": round(float(brier_orig), 6),
-                "brier_custom": round(float(brier_custom), 6),
-                "mean_confidence_orig": round(float(orig_mean_conf), 4),
-                "mean_confidence_custom": round(float(custom_mean_conf), 4),
+                "false_confident_extreme_reduction_pct": round(
+                    (1 - false_confident_ext_custom / max(false_confident_ext_orig, 1)) * 100, 1
+                ),
+                "brier_orig": round(brier_orig, 6),
+                "brier_custom": round(brier_custom, 6),
+                "accuracy_orig": round(acc_orig, 4),
+                "accuracy_custom": round(acc_custom, 4),
+                "mean_confidence_orig": round(orig_mean_conf, 4),
+                "mean_confidence_custom": round(custom_mean_conf, 4),
                 "adopted": bool(custom_improves),
             }
 
             if custom_improves:
-                # Utiliser le modèle custom à la place
+                # Le modèle custom remplace l'original
                 model = custom_model
                 y_proba = y_proba_custom
-                print(f"      ✅ Custom Loss adopté! Fausses certitudes: "
-                      f"{false_confident_orig} → {false_confident_custom} (-{custom_loss_info['false_confident_reduction_pct']}%)")
+                print(f"      ✅ Custom Objective ADOPTÉ (native XGBoost)")
+                print(f"         Fausses certitudes (65%+): {false_confident_orig} → {false_confident_custom} "
+                      f"(-{custom_loss_info['false_confident_reduction_pct']}%)")
+                print(f"         Fausses certitudes (80%+): {false_confident_ext_orig} → {false_confident_ext_custom} "
+                      f"(-{custom_loss_info['false_confident_extreme_reduction_pct']}%)")
+                print(f"         Brier: {brier_orig:.4f} → {brier_custom:.4f} | "
+                      f"Acc: {acc_orig*100:.1f}% → {acc_custom*100:.1f}%")
             else:
-                print(f"      ℹ️ Logloss standard conservé (custom: {false_confident_custom} vs orig: {false_confident_orig} fausses certitudes)")
+                print(f"      ℹ️ Logloss standard conservé")
+                print(f"         Custom: {false_confident_custom} fausses certitudes (65%+) vs {false_confident_orig}")
+                print(f"         Brier custom {brier_custom:.4f} vs orig {brier_orig:.4f}")
 
         except Exception as e:
-            print(f"      ⚠️ Custom Loss échoué: {e}")
+            import traceback
+            print(f"      ⚠️ Custom Objective échoué: {e}")
+            print(traceback.format_exc()[:500])
 
     # ═══════════════════════════════════════════════════════════════
     # AXE OPTIMISATION: BACKTESTING AVEC SLIPPAGE + CLV
@@ -859,10 +931,13 @@ def train_sport_model(
     backtesting_info = None
     if "odds_home" in sport_df.columns and len(y) >= 50:
         try:
-            print(f"   📉 Backtesting (slippage + CLV)...")
+            print(f"   📉 Backtesting (slippage + CLV + drawdown + buckets)...")
 
             odds_h = sport_df["odds_home"].fillna(2.0).values
             odds_a = sport_df["odds_away"].fillna(2.0).values
+
+            # Pré-charger les CLV par équipe (une seule fois hors loop)
+            clv_by_team = enrichment.get("clv_by_team", {}) if enrichment else {}
 
             # Slippage scenarios
             slippage_scenarios = {
@@ -871,15 +946,39 @@ def train_sport_model(
                 "pessimiste": 0.05,  # 5% - marché illiquide ou délai
             }
 
+            # ── Helpers pour le bucketing confiance ──
+            confidence_buckets = {
+                "0.50-0.60": (0.50, 0.60),
+                "0.60-0.70": (0.60, 0.70),
+                "0.70-0.80": (0.70, 0.80),
+                "0.80+":     (0.80, 1.01),
+            }
+
+            def _bucket_for_proba(p):
+                for label, (lo, hi) in confidence_buckets.items():
+                    if lo <= p < hi:
+                        return label
+                return "0.80+"
+
             backtest_results = {}
+            # ROI par bucket — aggrégé sur tous les scénarios (indépendant du slippage)
+            bucket_stats = {label: {"bets": 0, "wins": 0, "stake": 0.0, "profit": 0.0}
+                            for label in confidence_buckets}
+
             for scenario_name, slippage_rate in slippage_scenarios.items():
                 simulated_bankroll = 1000.0  # Bankroll de départ
+                peak_bankroll = 1000.0
+                max_drawdown = 0.0
+                current_streak = 0      # positif = win streak, négatif = loss streak
+                max_consec_wins = 0
+                max_consec_losses = 0
                 total_bets = 0
                 total_wins = 0
                 total_stake = 0
                 total_profit = 0.0
                 clv_correct_count = 0
                 clv_total_count = 0
+                clv_aligned_count = 0   # CLV aligné avec notre prédiction
 
                 # Parier uniquement quand le modèle est confiant + value bet
                 for i in range(len(y)):
@@ -898,8 +997,7 @@ def train_sport_model(
                     if edge < 0.02:  # Min 2% d'edge
                         continue
 
-                    # Appliquer le slippage: la cote réel est pire que la cote détectée
-                    # Slippage réduit la cote (hausse la proba implicite)
+                    # Appliquer le slippage: la cote réelle est pire que la cote détectée
                     slipped_odds = base_odds * (1 - slippage_rate)
                     slipped_odds = max(slipped_odds, 1.01)  # Plancher
 
@@ -917,21 +1015,46 @@ def train_sport_model(
                         simulated_bankroll += profit
                         total_profit += profit
                         total_wins += 1
+                        current_streak = max(1, current_streak + 1)
+                        max_consec_wins = max(max_consec_wins, current_streak)
                     else:
                         simulated_bankroll -= stake
                         total_profit -= stake
+                        current_streak = min(-1, current_streak - 1)
+                        max_consec_losses = max(max_consec_losses, -current_streak)
 
-                    # CLV tracking (si disponible dans l'enrichment)
+                    # Drawdown tracking
+                    if simulated_bankroll > peak_bankroll:
+                        peak_bankroll = simulated_bankroll
+                    dd = (peak_bankroll - simulated_bankroll) / peak_bankroll if peak_bankroll > 0 else 0
+                    if dd > max_drawdown:
+                        max_drawdown = dd
+
+                    # ── Bucket tracking (uniquement sur scénario réaliste pour éviter doublons) ──
+                    if scenario_name == "realiste":
+                        b_label = _bucket_for_proba(proba)
+                        bucket_stats[b_label]["bets"] += 1
+                        bucket_stats[b_label]["stake"] += stake
+                        bucket_stats[b_label]["profit"] += profit if predicted_correct else -stake
+                        if predicted_correct:
+                            bucket_stats[b_label]["wins"] += 1
+
+                    # ── CLV tracking (si disponible dans l'enrichment) ──
                     # Le CLV valide: si notre proba est du côté du steam move → edge confirmé
-                    if enrichment:
+                    if clv_by_team:
                         home_team = str(sport_df.iloc[i].get("home_team", ""))
-                        clv_data = enrichment.get("clv_by_team", {})
-                        if home_team in clv_data:
-                            team_clv = clv_data[home_team].get("avg_clv", 0)
+                        away_team = str(sport_df.iloc[i].get("away_team", ""))
+                        # CLV du côté parié: si on parie home, on regarde le CLV de home_team
+                        bet_team = home_team if is_home_fav else away_team
+                        if bet_team in clv_by_team:
+                            team_clv = clv_by_team[bet_team].get("avg_clv", 0)
                             clv_total_count += 1
-                            # Si CLV > 0 et on gagne → le marché nous donne raison
-                            if team_clv > 0 and predicted_correct:
-                                clv_correct_count += 1
+                            # CLV aligné avec notre pari (positif = marché est allé dans notre sens)
+                            if team_clv > 0:
+                                clv_aligned_count += 1
+                                # Si en plus on gagne → le marché nous donne raison
+                                if predicted_correct:
+                                    clv_correct_count += 1
 
                 roi = (total_profit / total_stake * 100) if total_stake > 0 else 0
                 win_rate = (total_wins / total_bets * 100) if total_bets > 0 else 0
@@ -943,20 +1066,49 @@ def train_sport_model(
                     "total_bets": total_bets,
                     "avg_stake": round(total_stake / max(total_bets, 1), 2),
                     "slippage_rate": slippage_rate,
+                    "max_drawdown_pct": round(max_drawdown * 100, 1),
+                    "max_consec_wins": max_consec_wins,
+                    "max_consec_losses": max_consec_losses,
                 }
+
+            # ── Bucket ROI analysis (identifie les zones de confiance rentables) ──
+            bucket_roi = {}
+            for label, s in bucket_stats.items():
+                if s["bets"] >= 5:  # Seuil minimal pour stats fiables
+                    bucket_roi[label] = {
+                        "bets": s["bets"],
+                        "win_rate_pct": round(s["wins"] / s["bets"] * 100, 1),
+                        "roi_pct": round(s["profit"] / s["stake"] * 100, 1) if s["stake"] > 0 else 0,
+                        "total_stake": round(s["stake"], 2),
+                    }
+                else:
+                    bucket_roi[label] = {"bets": s["bets"], "win_rate_pct": None, "roi_pct": None}
 
             # CLV validation rate
             clv_validation = round(clv_correct_count / max(clv_total_count, 1) * 100, 1) if clv_total_count > 0 else None
+            clv_alignment = round(clv_aligned_count / max(clv_total_count, 1) * 100, 1) if clv_total_count > 0 else None
 
             # Déterminer le scénario réaliste
             realistic_roi = backtest_results["realiste"]["roi_pct"]
             worst_roi = backtest_results["pessimiste"]["roi_pct"]
+            max_dd = backtest_results["realiste"]["max_drawdown_pct"]
+
+            # Trouver le bucket le plus rentable (avec au moins 10 bets)
+            best_bucket = None
+            for label, b in bucket_roi.items():
+                if b.get("bets", 0) >= 10 and b.get("roi_pct") is not None:
+                    if best_bucket is None or b["roi_pct"] > best_bucket["roi_pct"]:
+                        best_bucket = {"bucket": label, **b}
 
             backtesting_info = {
                 "scenarios": backtest_results,
                 "slippage_resistant": realistic_roi > 0 and worst_roi > -20,
+                "max_drawdown_realiste_pct": max_dd,
                 "clv_validation_rate": clv_validation,
+                "clv_alignment_pct": clv_alignment,
                 "n_clv_matches": clv_total_count,
+                "confidence_buckets": bucket_roi,
+                "best_confidence_bucket": best_bucket,
                 "interpretation": (
                     "ROI résiste au slippage" if realistic_roi > 0
                     else "ROI sensible au slippage - réduire les stakes"
@@ -966,13 +1118,21 @@ def train_sport_model(
             print(f"      Slippage: optimiste {backtest_results['optimiste']['roi_pct']:+.1f}% | "
                   f"réaliste {backtest_results['realiste']['roi_pct']:+.1f}% | "
                   f"pessimiste {backtest_results['pessimiste']['roi_pct']:+.1f}%")
+            print(f"      Max drawdown (réaliste): {max_dd:.1f}% | "
+                  f"Max consec losses: {backtest_results['realiste']['max_consec_losses']}")
             if clv_validation is not None:
-                print(f"      CLV validation: {clv_validation}% (sur {clv_total_count} matchs)")
+                print(f"      CLV: {clv_validation}% gagnés quand aligné | "
+                      f"Alignment: {clv_alignment}% (sur {clv_total_count} matchs)")
+            if best_bucket:
+                print(f"      🎯 Best bucket: {best_bucket['bucket']} "
+                      f"(ROI {best_bucket['roi_pct']:+.1f}% | {best_bucket['bets']} bets)")
             verdict = "✅ Solide" if backtesting_info["slippage_resistant"] else "⚠️ Fragile"
             print(f"      Verdict backtest: {verdict}")
 
         except Exception as e:
+            import traceback
             print(f"      ⚠️ Backtesting échoué: {e}")
+            print(traceback.format_exc()[:500])
 
     # ── PILIER 4: CALIBRATION (Platt Scaling) ──
     calibration_info = None
@@ -1015,14 +1175,115 @@ def train_sport_model(
     # Utilise xG comme proxy lambda (expected goals) pour Poisson.
     # Si xG n'est pas disponible, utilise la moyenne de buts du sport.
     monte_carlo_info = None
-    if len(y) >= 50 and sport == "football":
+    # Tennis a un scoring non-Poisson (jeux/sets), on skip
+    if len(y) >= 50 and sport in ("football", "basketball", "hockey", "baseball"):
         try:
-            from scipy.stats import poisson as poisson_dist
+            print(f"   🎲 Monte-Carlo Poisson (10 000 simulations — {sport})...")
 
-            print(f"   🎲 Monte-Carlo Poisson (10 000 simulations)...")
+            # Parametres par sport
+            sport_mc_config = {
+                "football":   {"default_h": 1.5, "default_a": 1.1, "min_lambda": 0.3,
+                               "over_threshold": 2.5, "label": "Over 2.5 goals"},
+                "basketball": {"default_h": 110.0, "default_a": 105.0, "min_lambda": 80.0,
+                               "over_threshold": 220.5, "label": "Over 220.5 pts"},
+                "hockey":     {"default_h": 3.0, "default_a": 2.5, "min_lambda": 1.5,
+                               "over_threshold": 5.5, "label": "Over 5.5 goals"},
+                "baseball":   {"default_h": 4.5, "default_a": 4.0, "min_lambda": 1.5,
+                               "over_threshold": 8.5, "label": "Over 8.5 runs"},
+            }
+            mc_cfg = sport_mc_config[sport]
 
-            # Estimer les lambdas (expected goals) depuis les données
-            if "xg_home" in sport_df.columns and sport_df["xg_home"].sum() > 0:\n                lambda_home = sport_df["xg_home"].mean()\n                lambda_away = sport_df["xg_away"].mean()\n                source = "xG"\n            else:\n                # Proxy: avg goals from scores\n                lambda_home = sport_df["home_score"].mean() if "home_score" in sport_df.columns else 1.5\n                lambda_away = sport_df["away_score"].mean() if "away_score" in sport_df.columns else 1.1\n                source = "goals_avg\"\n\n            lambda_home = max(0.3, lambda_home)  # Plancher pour Poisson\n            lambda_away = max(0.3, lambda_away)\n\n            n_simulations = 10000\n            rng = np.random.default_rng(42)\n\n            # Simuler les scores\n            sim_home = rng.poisson(lambda_home, n_simulations)\n            sim_away = rng.poisson(lambda_away, n_simulations)\n\n            # Résultats\n            home_wins = (sim_home > sim_away).sum()\n            away_wins = (sim_away > sim_home).sum()\n            draws = (sim_home == sim_away).sum()\n\n            # Score distribution (top 10 scores les plus probables)\n            score_counts = {}\n            for i in range(n_simulations):\n                score = f\"{sim_home[i]}-{sim_away[i]}\"\n                score_counts[score] = score_counts.get(score, 0) + 1\n            top_scores = sorted(score_counts.items(), key=lambda x: x[1], reverse=True)[:10]\n\n            # Over 2.5 goals probabilité\n            over_25 = ((sim_home + sim_away) > 2.5).sum() / n_simulations * 100\n            # BTTS (Both Teams To Score)\n            btts = ((sim_home > 0) & (sim_away > 0)).sum() / n_simulations * 100\n\n            monte_carlo_info = {\n                \"method\": \"poisson_simulation\",\n                \"n_simulations\": n_simulations,\n                \"lambda_home\": round(float(lambda_home), 3),\n                \"lambda_away\": round(float(lambda_away), 3),\n                \"lambda_source\": source,\n                \"prob_home_win\": round(home_wins / n_simulations * 100, 1),\n                \"prob_draw\": round(draws / n_simulations * 100, 1),\n                \"prob_away_win\": round(away_wins / n_simulations * 100, 1),\n                \"over_25_goals_pct\": round(over_25, 1),\n                \"btts_pct\": round(btts, 1),\n                \"top_scores\": [(s, round(c / n_simulations * 100, 1)) for s, c in top_scores],\n            }\n\n            print(f\"      Lambda: {lambda_home:.2f} / {lambda_away:.2f} (source: {source})\")\n            print(f\"      MC proba: H {monte_carlo_info['prob_home_win']:.1f}% | \"\n                  f\"D {monte_carlo_info['prob_draw']:.1f}% | \"\n                  f\"A {monte_carlo_info['prob_away_win']:.1f}%\")\n            print(f\"      Over 2.5: {over_25:.1f}% | BTTS: {btts:.1f}%\")\n            print(f\"      Top score: {top_scores[0][0]} ({top_scores[0][1]:.1f}%)\")\n\n        except Exception as e:\n            print(f\"      ⚠️ Monte-Carlo échoué: {e}\")\n\n    # ── PILIER 5: PERFORMANCE PAR LIGUE (bankroll) ──
+            # Estimer les lambdas depuis les donnees
+            if "xg_home" in sport_df.columns and sport_df["xg_home"].sum() > 0 and sport == "football":
+                lambda_home = float(sport_df["xg_home"].mean())
+                lambda_away = float(sport_df["xg_away"].mean())
+                source = "xG"
+            elif "home_score" in sport_df.columns and "away_score" in sport_df.columns:
+                hs = pd.to_numeric(sport_df.get("home_score"), errors="coerce").dropna()
+                as_ = pd.to_numeric(sport_df.get("away_score"), errors="coerce").dropna()
+                lambda_home = float(hs.mean()) if len(hs) > 0 else mc_cfg["default_h"]
+                lambda_away = float(as_.mean()) if len(as_) > 0 else mc_cfg["default_a"]
+                source = "scores_avg"
+            else:
+                lambda_home = mc_cfg["default_h"]
+                lambda_away = mc_cfg["default_a"]
+                source = "sport_default"
+
+            # Plancher pour Poisson
+            lambda_home = max(mc_cfg["min_lambda"], lambda_home)
+            lambda_away = max(mc_cfg["min_lambda"], lambda_away)
+
+            n_simulations = 10000
+            rng = np.random.default_rng(42)
+
+            # Simuler les scores
+            sim_home = rng.poisson(lambda_home, n_simulations)
+            sim_away = rng.poisson(lambda_away, n_simulations)
+
+            # Resultats
+            home_wins = int((sim_home > sim_away).sum())
+            away_wins = int((sim_away > sim_home).sum())
+            draws = int((sim_home == sim_away).sum())
+
+            # Score distribution (top 10 scores les plus probables)
+            score_counts = {}
+            for i in range(n_simulations):
+                score = f"{sim_home[i]}-{sim_away[i]}"
+                score_counts[score] = score_counts.get(score, 0) + 1
+            top_scores = sorted(score_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+            # Over threshold probabilite
+            over_threshold = mc_cfg["over_threshold"]
+            over_pct = float(((sim_home + sim_away) > over_threshold).sum() / n_simulations * 100)
+            # BTTS (Both Teams To Score)
+            btts = float(((sim_home > 0) & (sim_away > 0)).sum() / n_simulations * 100)
+
+            # Expected totals
+            expected_total = float(np.mean(sim_home + sim_away))
+            std_total = float(np.std(sim_home + sim_away))
+
+            # Probabilites normalisees
+            if sport in ("basketball",):
+                prob_home = home_wins / n_simulations * 100
+                prob_away = away_wins / n_simulations * 100
+                prob_draw = 0.0
+            else:
+                prob_home = home_wins / n_simulations * 100
+                prob_draw = draws / n_simulations * 100
+                prob_away = away_wins / n_simulations * 100
+
+            monte_carlo_info = {
+                "method": "poisson_simulation",
+                "sport": sport,
+                "n_simulations": n_simulations,
+                "lambda_home": round(lambda_home, 3),
+                "lambda_away": round(lambda_away, 3),
+                "lambda_source": source,
+                "prob_home_win": round(prob_home, 1),
+                "prob_draw": round(prob_draw, 1),
+                "prob_away_win": round(prob_away, 1),
+                "expected_total_score": round(expected_total, 2),
+                "std_total_score": round(std_total, 2),
+                "over_threshold_label": mc_cfg["label"],
+                "over_threshold_value": over_threshold,
+                "over_threshold_pct": round(over_pct, 1),
+                "btts_pct": round(btts, 1),
+                "top_scores": [(s, round(c / n_simulations * 100, 1)) for s, c in top_scores],
+            }
+
+            print(f"      Lambda: {lambda_home:.2f} / {lambda_away:.2f} (source: {source})")
+            print(f"      MC proba: H {prob_home:.1f}% | D {prob_draw:.1f}% | A {prob_away:.1f}%")
+            print(f"      {mc_cfg['label']}: {over_pct:.1f}% | BTTS: {btts:.1f}%")
+            print(f"      Expected total: {expected_total:.1f} ± {std_total:.1f}")
+            if top_scores:
+                print(f"      Top score: {top_scores[0][0]} ({top_scores[0][1]:.1f}%)")
+
+        except Exception as e:
+            import traceback
+            print(f"      ⚠️ Monte-Carlo échoué: {e}")
+            print(traceback.format_exc()[:500])
+
+    # ── PILIER 5: PERFORMANCE PAR LIGUE (bankroll) ──
     league_perf = {}
     if "league" in sport_df.columns:
         sport_leagues = sport_df["league"].value_counts()

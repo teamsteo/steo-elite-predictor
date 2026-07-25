@@ -879,3 +879,85 @@ Stage Summary:
 - Python script trains locally or via GitHub Actions
 - TypeScript services consume XGBoost coefficients from Supabase (no ML libs at runtime)
 - Next step: Run training script locally or configure GitHub Actions secrets for automatic training
+
+---
+Task ID: 2-a
+Agent: Subagent (general-purpose)
+Task: Enrichir kellyCriterionService.ts avec persistance Supabase, bankroll tracking, dynamic allocation, CLV-aware Kelly
+
+Work Log:
+- Lu le fichier complet (499 lignes)
+- Implémenté persistance Supabase: persistLeaguePerformance() + loadLeaguePerformanceFromSupabase()
+  - Stockage dans ml_model.kelly_league_performance (JSONB)
+  - Rétrocompatible avec les anciens enregistrements
+- Implémenté BankrollManager réel: createBankrollManager() + getBankrollManager() singleton
+  - Tracking bankroll courant, total bets, win rate, ROI, max drawdown, streak
+  - History complète (500 derniers bets)
+- Enrichi calculateLeagueAdjustedKellyBet avec 3 nouveaux facteurs:
+  - Recency bias (7j=1.0, 14j=0.85, 30j+0.70)
+  - Variance adjustment (CV-based)
+  - Streak adjustment (3+ défaites = 0.5x, 3+ victoires = 1.05x)
+- Ajouté calculateCLVAwareKellyBet: ajuste edge selon CLV et slippage
+
+Stage Summary:
+- Fichier: 499 → 1043 lignes
+- 4 nouvelles fonctions exportées + 4 nouvelles interfaces
+- 0 dépendance npm ajoutée
+- Rétrocompatible 100% avec l'existant
+- Migration SQL requise: ALTER TABLE ml_model ADD COLUMN IF NOT EXISTS kelly_league_performance JSONB;
+
+---
+Task ID: 2-b
+Agent: Main
+Task: Enrichir train_xgboost.py avec Custom Loss native XGBoost + Backtesting CLV/Slippage amélioré + Monte-Carlo multi-sports
+
+Work Log:
+- Lu le fichier complet (1345 lignes, déjà enrichi partiellement)
+- Remplacé l'ancien "custom eval metric" par un VRAI custom objective XGBoost:
+  * Implémente asymmetric_logloss_obj(preds, dtrain) qui retourne (grad, hess) modifiés
+  * Loss = logloss + α * conf² * |pred - true| (α=0.5)
+  * Modifie directement les gradients pendant l'entraînement (pas post-hoc)
+  * Pénalité asymétrique: erreur à 0.85 coûte ~3x plus qu'à 0.55
+  * Comparaison originale vs custom (false_confident_extreme à 80%+)
+  * Adoption automatique si réduit fausses certitudes sans dégrader acc/Brier
+- Backtesting enrichi:
+  * Max drawdown tracking (peak bankroll vs current)
+  * Max consecutive wins/losses (streak tracking)
+  * ROI par bucket de confiance (0.50-0.60, 0.60-0.70, 0.70-0.80, 0.80+)
+  * CLV aligné avec notre pari (pas seulement home_team)
+  * CLV alignment_pct et clv_validation_rate séparés
+  * best_confidence_bucket identifié
+- Monte-Carlo étendu à tous les sports:
+  * Football: lambda ~1.5/1.1, Over 2.5 goals, BTTS
+  * Basketball: lambda ~110/105, Over 220.5 pts
+  * Hockey: lambda ~3.0/2.5, Over 5.5 goals
+  * Baseball: lambda ~4.5/4.0, Over 8.5 runs
+  * Tennis: skip (scoring non-Poisson)
+  * Expected total score + std
+- Corrigé un bug existant: le bloc Monte-Carlo était sur 1 ligne avec \n littéraux
+  (Python ne pouvait pas l'exécuter). Script scripts/fix_monte_carlo.py a réparé.
+- Validé: ast.parse() OK, module se charge, fonctions accessibles
+
+Stage Summary:
+- Fichier: 1345 → 1604 lignes
+- 4 axes d'optimisation implémentés (Custom Loss native + Backtesting avancé + Monte-Carlo multi-sports + Calibration)
+- 100% rétrocompatible (toutes les fonctions existantes préservées)
+- Syntaxe Python valide (ast.parse OK)
+- 0 nouvelle dépendance (xgboost, sklearn, numpy déjà présents)
+
+---
+Task ID: 2-c
+Agent: Main
+Task: Migration SQL Supabase pour persistance Kelly
+
+Work Log:
+- Créé scripts/migration_kelly_league_performance.sql
+- Ajoute colonne kelly_league_performance JSONB à ml_model
+- Commentaire de documentation inclus
+- Query de vérification incluse
+
+Stage Summary:
+- Migration à exécuter une fois dans Supabase SQL Editor
+- Permet à kellyCriterionService.ts de persister les performances par ligue
+- Élimine la perte de données au cold start Vercel
+
