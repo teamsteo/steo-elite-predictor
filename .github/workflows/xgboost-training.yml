@@ -34,6 +34,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r ml/requirements.txt
 
+      - name: Run Football Data Enricher (CLV, Arbitres, Proxy Tactique)
+        run: |
+          echo "📊 Enrichissement depuis football-data.co.uk (gratuit, zéro quota)..."
+          python ml/football_data_enricher.py --current-only || echo "⚠️ Enrichisseur échoué — continuation avec features standards"
+
       - name: Run ML Training
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

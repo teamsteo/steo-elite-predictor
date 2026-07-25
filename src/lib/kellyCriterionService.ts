@@ -305,6 +305,181 @@ function generateExplanation(
 }
 
 // ============================================
+// PILIER 5: SUIVI PERFORMANCE PAR LIGUE
+// ============================================
+
+export interface LeaguePerformance {
+  league: string;
+  totalBets: number;
+  wins: number;
+  losses: number;
+  profit: number;
+  roi: number;
+  avgEdge: number;
+  // Recommandation d'allocation Kelly
+  kellyMultiplier: number; // 1.0 = normal, 0.5 = réduire, 0 = couper
+  recommendation: 'strong' | 'normal' | 'reduce' | 'cut';
+  lastUpdated: string;
+}
+
+// Store en mémoire (persist via Supabase/ml_model export en production)
+let leaguePerformanceStore: Record<string, LeaguePerformance> = {};
+
+// Seuils pour l'allocation par ligue
+const LEAGUE_ALLOCATION_THRESHOLDS = {
+  strong: { minRoi: 5, minBets: 10, minWinRate: 0.45, kellyMultiplier: 1.0 },
+  normal: { minRoi: 0, minBets: 5, minWinRate: 0.35, kellyMultiplier: 0.75 },
+  reduce: { minRoi: -10, minBets: 5, minWinRate: 0.25, kellyMultiplier: 0.25 },
+  cut: { minRoi: -Infinity, minBets: 0, minWinRate: 0, kellyMultiplier: 0 },
+};
+
+/**
+ * Met à jour la performance d'une ligue après un résultat
+ */
+export function updateLeaguePerformance(
+  league: string,
+  edge: number,
+  odds: number,
+  won: boolean,
+  stake: number
+): void {
+  if (!leaguePerformanceStore[league]) {
+    leaguePerformanceStore[league] = {
+      league,
+      totalBets: 0,
+      wins: 0,
+      losses: 0,
+      profit: 0,
+      roi: 0,
+      avgEdge: 0,
+      kellyMultiplier: 1.0,
+      recommendation: 'normal',
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  const lp = leaguePerformanceStore[league];
+  lp.totalBets += 1;
+  lp.wins += won ? 1 : 0;
+  lp.losses += won ? 0 : 1;
+  lp.profit += won ? stake * (odds - 1) : -stake;
+  lp.roi = lp.totalBets > 0 ? (lp.profit / (lp.totalBets * stake)) * 100 : 0;
+  lp.avgEdge = ((lp.avgEdge * (lp.totalBets - 1)) + edge) / lp.totalBets;
+
+  // Recalculer la recommandation
+  const thresholds = LEAGUE_ALLOCATION_THRESHOLDS;
+  if (lp.roi >= thresholds.strong.minRoi && lp.totalBets >= thresholds.strong.minBets) {
+    lp.recommendation = 'strong';
+    lp.kellyMultiplier = thresholds.strong.kellyMultiplier;
+  } else if (lp.roi >= thresholds.normal.minRoi && lp.totalBets >= thresholds.normal.minBets) {
+    lp.recommendation = 'normal';
+    lp.kellyMultiplier = thresholds.normal.kellyMultiplier;
+  } else if (lp.roi >= thresholds.reduce.minRoi && lp.totalBets >= thresholds.reduce.minBets) {
+    lp.recommendation = 'reduce';
+    lp.kellyMultiplier = thresholds.reduce.kellyMultiplier;
+  } else {
+    lp.recommendation = 'cut';
+    lp.kellyMultiplier = thresholds.cut.kellyMultiplier;
+  }
+
+  lp.lastUpdated = new Date().toISOString();
+}
+
+/**
+ * Calcule la mise Kelly ajustée pour une ligue spécifique
+ * Applique le multiplicateur d'allocation basé sur la performance historique
+ */
+export function calculateLeagueAdjustedKellyBet(
+  input: KellyInput & { league: string }
+): KellyResult & { leagueAdjustment: { multiplier: number; recommendation: string } } {
+  const baseResult = calculateKellyBet(input);
+
+  const lp = leaguePerformanceStore[input.league];
+  const multiplier = lp ? lp.kellyMultiplier : 1.0;
+  const recommendation = lp ? lp.recommendation : 'normal';
+
+  // Appliquer le multiplicateur de ligue
+  const adjustedAmount = baseResult.amount * multiplier;
+  const adjustedFraction = baseResult.fraction * multiplier;
+
+  return {
+    ...baseResult,
+    amount: Math.round(adjustedAmount * 100) / 100,
+    fraction: adjustedFraction,
+    leagueAdjustment: { multiplier, recommendation },
+  };
+}
+
+/**
+ * Charge les performances par ligue depuis les résultats ML (export Supabase)
+ */
+export function loadLeaguePerformanceFromML(mlResults: Record<string, {
+  league_performance?: Record<string, {
+    samples: number;
+    accuracy: number;
+    roi_simulated: number;
+    recommendation: string;
+  }>;
+}>): void {
+  for (const [sport, result] of Object.entries(mlResults)) {
+    const lp = result.league_performance;
+    if (!lp) continue;
+
+    for (const [league, data] of Object.entries(lp)) {
+      const key = league;
+      if (!leaguePerformanceStore[key]) {
+        leaguePerformanceStore[key] = {
+          league: key,
+          totalBets: data.samples || 0,
+          wins: Math.round(data.accuracy * data.samples),
+          losses: data.samples - Math.round(data.accuracy * data.samples),
+          profit: data.roi_simulated * data.samples / 100,
+          roi: data.roi_simulated,
+          avgEdge: 0,
+          kellyMultiplier: 1.0,
+          recommendation: 'normal',
+          lastUpdated: new Date().toISOString(),
+        };
+      } else {
+        // Mettre à jour avec les données ML si plus récentes
+        const existing = leaguePerformanceStore[key];
+        if (data.samples > existing.totalBets) {
+          existing.totalBets = data.samples;
+          existing.roi = data.roi_simulated;
+          existing.recommendation = data.recommendation as 'strong' | 'normal' | 'reduce' | 'cut';
+          existing.kellyMultiplier =
+            data.recommendation === 'strong' ? 1.0 :
+            data.recommendation === 'normal' ? 0.75 :
+            data.recommendation === 'reduce' ? 0.25 : 0;
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Retourne le résumé des performances par ligue
+ */
+export function getLeaguePerformanceSummary(): {
+  total: number;
+  strong: string[];
+  normal: string[];
+  reduce: string[];
+  cut: string[];
+  topLeagues: LeaguePerformance[];
+} {
+  const entries = Object.values(leaguePerformanceStore);
+  return {
+    total: entries.length,
+    strong: entries.filter(e => e.recommendation === 'strong').map(e => e.league),
+    normal: entries.filter(e => e.recommendation === 'normal').map(e => e.league),
+    reduce: entries.filter(e => e.recommendation === 'reduce').map(e => e.league),
+    cut: entries.filter(e => e.recommendation === 'cut').map(e => e.league),
+    topLeagues: entries.sort((a, b) => b.roi - a.roi).slice(0, 10),
+  };
+}
+
+// ============================================
 // EXPORT
 // ============================================
 
@@ -314,6 +489,11 @@ const KellyCriterionService = {
   isValueBet,
   calculateOptimalPortfolio,
   simulateBankrollEvolution,
+  // Pilier 5
+  updateLeaguePerformance,
+  calculateLeagueAdjustedKellyBet,
+  loadLeaguePerformanceFromML,
+  getLeaguePerformanceSummary,
 };
 
 export default KellyCriterionService;

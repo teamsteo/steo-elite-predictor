@@ -1,0 +1,4709 @@
+{
+  "timestamp": "2026-07-25T20:06:04.489265+00:00",
+  "referee_profiles": {
+    "J Brooks": {
+      "name": "J Brooks",
+      "matches": 29,
+      "yellow_per_match": 4.48,
+      "red_per_match": 0.14,
+      "cards_per_match": 4.62,
+      "fouls_per_match": 21.72,
+      "goals_per_match": 2.86,
+      "home_win_pct": 69.0,
+      "away_win_pct": 13.8,
+      "draw_pct": 17.2,
+      "severity_index": 4.9,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 9.8
+    },
+    "D England": {
+      "name": "D England",
+      "matches": 42,
+      "yellow_per_match": 4.24,
+      "red_per_match": 0.17,
+      "cards_per_match": 4.4,
+      "fouls_per_match": 22.45,
+      "goals_per_match": 3.02,
+      "home_win_pct": 40.5,
+      "away_win_pct": 35.7,
+      "draw_pct": 23.8,
+      "severity_index": 4.74,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 9.5
+    },
+    "S Hooper": {
+      "name": "S Hooper",
+      "matches": 38,
+      "yellow_per_match": 4.42,
+      "red_per_match": 0.11,
+      "cards_per_match": 4.53,
+      "fouls_per_match": 21.11,
+      "goals_per_match": 2.97,
+      "home_win_pct": 42.1,
+      "away_win_pct": 28.9,
+      "draw_pct": 28.9,
+      "severity_index": 4.74,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 9.5
+    },
+    "S Attwell": {
+      "name": "S Attwell",
+      "matches": 44,
+      "yellow_per_match": 4.25,
+      "red_per_match": 0.11,
+      "cards_per_match": 4.36,
+      "fouls_per_match": 21.18,
+      "goals_per_match": 2.95,
+      "home_win_pct": 31.8,
+      "away_win_pct": 36.4,
+      "draw_pct": 31.8,
+      "severity_index": 4.59,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 9.2
+    },
+    "T Robinson": {
+      "name": "T Robinson",
+      "matches": 25,
+      "yellow_per_match": 4.16,
+      "red_per_match": 0.12,
+      "cards_per_match": 4.28,
+      "fouls_per_match": 22.8,
+      "goals_per_match": 2.56,
+      "home_win_pct": 40.0,
+      "away_win_pct": 24.0,
+      "draw_pct": 36.0,
+      "severity_index": 4.52,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 9.0
+    },
+    "R Jones": {
+      "name": "R Jones",
+      "matches": 40,
+      "yellow_per_match": 4.2,
+      "red_per_match": 0.1,
+      "cards_per_match": 4.3,
+      "fouls_per_match": 23.12,
+      "goals_per_match": 2.75,
+      "home_win_pct": 37.5,
+      "away_win_pct": 32.5,
+      "draw_pct": 30.0,
+      "severity_index": 4.5,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 9.0
+    },
+    "C Kavanagh": {
+      "name": "C Kavanagh",
+      "matches": 54,
+      "yellow_per_match": 3.98,
+      "red_per_match": 0.15,
+      "cards_per_match": 4.13,
+      "fouls_per_match": 21.83,
+      "goals_per_match": 2.37,
+      "home_win_pct": 42.6,
+      "away_win_pct": 27.8,
+      "draw_pct": 29.6,
+      "severity_index": 4.43,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.9
+    },
+    "T Bramall": {
+      "name": "T Bramall",
+      "matches": 33,
+      "yellow_per_match": 3.79,
+      "red_per_match": 0.18,
+      "cards_per_match": 3.97,
+      "fouls_per_match": 21.15,
+      "goals_per_match": 2.67,
+      "home_win_pct": 48.5,
+      "away_win_pct": 21.2,
+      "draw_pct": 30.3,
+      "severity_index": 4.33,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.7
+    },
+    "S Barrott": {
+      "name": "S Barrott",
+      "matches": 47,
+      "yellow_per_match": 4.15,
+      "red_per_match": 0.04,
+      "cards_per_match": 4.19,
+      "fouls_per_match": 20.21,
+      "goals_per_match": 2.94,
+      "home_win_pct": 40.4,
+      "away_win_pct": 36.2,
+      "draw_pct": 23.4,
+      "severity_index": 4.28,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.6
+    },
+    "P Bankes": {
+      "name": "P Bankes",
+      "matches": 45,
+      "yellow_per_match": 3.76,
+      "red_per_match": 0.16,
+      "cards_per_match": 3.91,
+      "fouls_per_match": 21.24,
+      "goals_per_match": 2.98,
+      "home_win_pct": 62.2,
+      "away_win_pct": 26.7,
+      "draw_pct": 11.1,
+      "severity_index": 4.22,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.4
+    },
+    "D Bond": {
+      "name": "D Bond",
+      "matches": 14,
+      "yellow_per_match": 3.93,
+      "red_per_match": 0.07,
+      "cards_per_match": 4.0,
+      "fouls_per_match": 22.29,
+      "goals_per_match": 2.93,
+      "home_win_pct": 57.1,
+      "away_win_pct": 14.3,
+      "draw_pct": 28.6,
+      "severity_index": 4.14,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.3
+    },
+    "A Madley": {
+      "name": "A Madley",
+      "matches": 41,
+      "yellow_per_match": 3.76,
+      "red_per_match": 0.12,
+      "cards_per_match": 3.88,
+      "fouls_per_match": 23.02,
+      "goals_per_match": 2.8,
+      "home_win_pct": 36.6,
+      "away_win_pct": 36.6,
+      "draw_pct": 26.8,
+      "severity_index": 4.12,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.2
+    },
+    "M Oliver": {
+      "name": "M Oliver",
+      "matches": 54,
+      "yellow_per_match": 3.7,
+      "red_per_match": 0.13,
+      "cards_per_match": 3.83,
+      "fouls_per_match": 22.93,
+      "goals_per_match": 2.67,
+      "home_win_pct": 33.3,
+      "away_win_pct": 38.9,
+      "draw_pct": 27.8,
+      "severity_index": 4.09,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.2
+    },
+    "T Harrington": {
+      "name": "T Harrington",
+      "matches": 29,
+      "yellow_per_match": 3.62,
+      "red_per_match": 0.14,
+      "cards_per_match": 3.76,
+      "fouls_per_match": 21.62,
+      "goals_per_match": 2.55,
+      "home_win_pct": 34.5,
+      "away_win_pct": 48.3,
+      "draw_pct": 17.2,
+      "severity_index": 4.03,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 8.1
+    },
+    "J Gillett": {
+      "name": "J Gillett",
+      "matches": 38,
+      "yellow_per_match": 3.87,
+      "red_per_match": 0.03,
+      "cards_per_match": 3.89,
+      "fouls_per_match": 20.74,
+      "goals_per_match": 2.89,
+      "home_win_pct": 28.9,
+      "away_win_pct": 47.4,
+      "draw_pct": 23.7,
+      "severity_index": 3.95,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 7.9
+    },
+    "M Salisbury": {
+      "name": "M Salisbury",
+      "matches": 29,
+      "yellow_per_match": 3.59,
+      "red_per_match": 0.1,
+      "cards_per_match": 3.69,
+      "fouls_per_match": 21.9,
+      "goals_per_match": 3.52,
+      "home_win_pct": 48.3,
+      "away_win_pct": 31.0,
+      "draw_pct": 20.7,
+      "severity_index": 3.9,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 7.8
+    },
+    "A Taylor": {
+      "name": "A Taylor",
+      "matches": 61,
+      "yellow_per_match": 3.44,
+      "red_per_match": 0.13,
+      "cards_per_match": 3.57,
+      "fouls_per_match": 20.92,
+      "goals_per_match": 3.31,
+      "home_win_pct": 34.4,
+      "away_win_pct": 42.6,
+      "draw_pct": 23.0,
+      "severity_index": 3.84,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 7.7
+    },
+    "C Pawson": {
+      "name": "C Pawson",
+      "matches": 43,
+      "yellow_per_match": 3.49,
+      "red_per_match": 0.12,
+      "cards_per_match": 3.6,
+      "fouls_per_match": 22.16,
+      "goals_per_match": 2.74,
+      "home_win_pct": 37.2,
+      "away_win_pct": 32.6,
+      "draw_pct": 30.2,
+      "severity_index": 3.84,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 7.7
+    },
+    "P Tierney": {
+      "name": "P Tierney",
+      "matches": 12,
+      "yellow_per_match": 3.33,
+      "red_per_match": 0.17,
+      "cards_per_match": 3.5,
+      "fouls_per_match": 20.17,
+      "goals_per_match": 2.17,
+      "home_win_pct": 41.7,
+      "away_win_pct": 16.7,
+      "draw_pct": 41.7,
+      "severity_index": 3.83,
+      "divisions": [
+        "E0"
+      ],
+      "severity_normalized": 7.7
+    }
+  },
+  "tactical_profiles": {
+    "Liverpool": {
+      "name": "Liverpool",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.0,
+        "goals_against_per_match": 0.95,
+        "shots_ratio": 0.622,
+        "shots_per_match": 16.87,
+        "shots_target_per_match": 5.53,
+        "goal_conversion_rate": 0.119,
+        "corners_per_match": 6.39,
+        "fouls_per_match": 10.71,
+        "cards_per_match": 1.47,
+        "defensive_compactness": 5.53,
+        "win_pct": 63.2
+      },
+      "away": {
+        "goals_for_per_match": 1.92,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.579,
+        "shots_per_match": 15.66,
+        "shots_target_per_match": 5.16,
+        "goal_conversion_rate": 0.123,
+        "corners_per_match": 6.37,
+        "fouls_per_match": 10.68,
+        "cards_per_match": 1.82,
+        "defensive_compactness": 6.37,
+        "win_pct": 47.4
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Bournemouth": {
+      "name": "Bournemouth",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.37,
+        "goals_against_per_match": 0.95,
+        "shots_ratio": 0.592,
+        "shots_per_match": 15.37,
+        "shots_target_per_match": 5.0,
+        "goal_conversion_rate": 0.089,
+        "corners_per_match": 6.16,
+        "fouls_per_match": 12.79,
+        "cards_per_match": 2.26,
+        "defensive_compactness": 5.5,
+        "win_pct": 39.5
+      },
+      "away": {
+        "goals_for_per_match": 1.68,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.48,
+        "shots_per_match": 13.71,
+        "shots_target_per_match": 5.0,
+        "goal_conversion_rate": 0.123,
+        "corners_per_match": 5.45,
+        "fouls_per_match": 12.76,
+        "cards_per_match": 2.74,
+        "defensive_compactness": 4.34,
+        "win_pct": 34.2
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Aston Villa": {
+      "name": "Aston Villa",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.74,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.575,
+        "shots_per_match": 14.58,
+        "shots_target_per_match": 5.21,
+        "goal_conversion_rate": 0.119,
+        "corners_per_match": 6.5,
+        "fouls_per_match": 10.13,
+        "cards_per_match": 1.53,
+        "defensive_compactness": 5.84,
+        "win_pct": 60.5
+      },
+      "away": {
+        "goals_for_per_match": 1.26,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.432,
+        "shots_per_match": 10.87,
+        "shots_target_per_match": 3.74,
+        "goal_conversion_rate": 0.116,
+        "corners_per_match": 4.84,
+        "fouls_per_match": 10.53,
+        "cards_per_match": 2.03,
+        "defensive_compactness": 4.71,
+        "win_pct": 39.5
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Newcastle": {
+      "name": "Newcastle",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.0,
+        "goals_against_per_match": 1.32,
+        "shots_ratio": 0.55,
+        "shots_per_match": 14.95,
+        "shots_target_per_match": 5.34,
+        "goal_conversion_rate": 0.134,
+        "corners_per_match": 6.5,
+        "fouls_per_match": 10.95,
+        "cards_per_match": 1.87,
+        "defensive_compactness": 4.84,
+        "win_pct": 57.9
+      },
+      "away": {
+        "goals_for_per_match": 1.18,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.484,
+        "shots_per_match": 11.79,
+        "shots_target_per_match": 3.87,
+        "goal_conversion_rate": 0.1,
+        "corners_per_match": 5.32,
+        "fouls_per_match": 9.58,
+        "cards_per_match": 1.66,
+        "defensive_compactness": 4.92,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Brighton": {
+      "name": "Brighton",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.58,
+        "goals_against_per_match": 1.21,
+        "shots_ratio": 0.585,
+        "shots_per_match": 14.53,
+        "shots_target_per_match": 5.03,
+        "goal_conversion_rate": 0.109,
+        "corners_per_match": 4.87,
+        "fouls_per_match": 11.47,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 5.55,
+        "win_pct": 44.7
+      },
+      "away": {
+        "goals_for_per_match": 1.53,
+        "goals_against_per_match": 1.55,
+        "shots_ratio": 0.499,
+        "shots_per_match": 12.53,
+        "shots_target_per_match": 4.63,
+        "goal_conversion_rate": 0.122,
+        "corners_per_match": 4.97,
+        "fouls_per_match": 11.97,
+        "cards_per_match": 2.45,
+        "defensive_compactness": 4.79,
+        "win_pct": 34.2
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Fulham": {
+      "name": "Fulham",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.32,
+        "shots_ratio": 0.565,
+        "shots_per_match": 13.97,
+        "shots_target_per_match": 4.45,
+        "goal_conversion_rate": 0.107,
+        "corners_per_match": 5.42,
+        "fouls_per_match": 10.74,
+        "cards_per_match": 1.87,
+        "defensive_compactness": 4.95,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.16,
+        "goals_against_per_match": 1.45,
+        "shots_ratio": 0.499,
+        "shots_per_match": 12.39,
+        "shots_target_per_match": 3.74,
+        "goal_conversion_rate": 0.093,
+        "corners_per_match": 4.92,
+        "fouls_per_match": 11.53,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 4.97,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Sunderland": {
+      "name": "Sunderland",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.32,
+        "goals_against_per_match": 1.05,
+        "shots_ratio": 0.501,
+        "shots_per_match": 12.0,
+        "shots_target_per_match": 3.42,
+        "goal_conversion_rate": 0.11,
+        "corners_per_match": 4.05,
+        "fouls_per_match": 10.32,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 5.0,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 0.89,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.346,
+        "shots_per_match": 8.79,
+        "shots_target_per_match": 3.21,
+        "goal_conversion_rate": 0.102,
+        "corners_per_match": 3.37,
+        "fouls_per_match": 11.11,
+        "cards_per_match": 2.37,
+        "defensive_compactness": 4.42,
+        "win_pct": 26.3
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "West Ham": {
+      "name": "West Ham",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.32,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.45,
+        "shots_per_match": 11.39,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.115,
+        "corners_per_match": 4.97,
+        "fouls_per_match": 11.53,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 4.82,
+        "win_pct": 28.9
+      },
+      "away": {
+        "goals_for_per_match": 1.11,
+        "goals_against_per_match": 1.66,
+        "shots_ratio": 0.42,
+        "shots_per_match": 11.76,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.094,
+        "corners_per_match": 4.0,
+        "fouls_per_match": 11.21,
+        "cards_per_match": 1.97,
+        "defensive_compactness": 3.58,
+        "win_pct": 26.3
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Tottenham": {
+      "name": "Tottenham",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.519,
+        "shots_per_match": 13.42,
+        "shots_target_per_match": 4.66,
+        "goal_conversion_rate": 0.112,
+        "corners_per_match": 6.66,
+        "fouls_per_match": 11.97,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 4.68,
+        "win_pct": 23.7
+      },
+      "away": {
+        "goals_for_per_match": 1.45,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.451,
+        "shots_per_match": 11.13,
+        "shots_target_per_match": 4.16,
+        "goal_conversion_rate": 0.13,
+        "corners_per_match": 5.21,
+        "fouls_per_match": 11.95,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 5.21,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Burnley": {
+      "name": "Burnley",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.95,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.399,
+        "shots_per_match": 10.84,
+        "shots_target_per_match": 3.32,
+        "goal_conversion_rate": 0.087,
+        "corners_per_match": 3.74,
+        "fouls_per_match": 10.0,
+        "cards_per_match": 1.26,
+        "defensive_compactness": 4.05,
+        "win_pct": 10.5
+      },
+      "away": {
+        "goals_for_per_match": 1.05,
+        "goals_against_per_match": 2.42,
+        "shots_ratio": 0.314,
+        "shots_per_match": 7.84,
+        "shots_target_per_match": 2.89,
+        "goal_conversion_rate": 0.134,
+        "corners_per_match": 3.53,
+        "fouls_per_match": 10.74,
+        "cards_per_match": 2.21,
+        "defensive_compactness": 3.95,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Wolves": {
+      "name": "Wolves",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.21,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.473,
+        "shots_per_match": 10.76,
+        "shots_target_per_match": 3.95,
+        "goal_conversion_rate": 0.112,
+        "corners_per_match": 3.53,
+        "fouls_per_match": 12.37,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 4.5,
+        "win_pct": 23.7
+      },
+      "away": {
+        "goals_for_per_match": 0.92,
+        "goals_against_per_match": 1.87,
+        "shots_ratio": 0.418,
+        "shots_per_match": 10.32,
+        "shots_target_per_match": 3.5,
+        "goal_conversion_rate": 0.089,
+        "corners_per_match": 3.82,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.34,
+        "defensive_compactness": 3.76,
+        "win_pct": 15.8
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Man City": {
+      "name": "Man City",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.32,
+        "goals_against_per_match": 0.97,
+        "shots_ratio": 0.662,
+        "shots_per_match": 16.58,
+        "shots_target_per_match": 6.03,
+        "goal_conversion_rate": 0.14,
+        "corners_per_match": 7.08,
+        "fouls_per_match": 8.74,
+        "cards_per_match": 1.66,
+        "defensive_compactness": 6.95,
+        "win_pct": 71.1
+      },
+      "away": {
+        "goals_for_per_match": 1.61,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.587,
+        "shots_per_match": 15.05,
+        "shots_target_per_match": 5.08,
+        "goal_conversion_rate": 0.107,
+        "corners_per_match": 6.08,
+        "fouls_per_match": 8.47,
+        "cards_per_match": 1.66,
+        "defensive_compactness": 5.97,
+        "win_pct": 44.7
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Chelsea": {
+      "name": "Chelsea",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.61,
+        "goals_against_per_match": 1.13,
+        "shots_ratio": 0.62,
+        "shots_per_match": 16.47,
+        "shots_target_per_match": 5.45,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 6.66,
+        "fouls_per_match": 11.08,
+        "cards_per_match": 2.47,
+        "defensive_compactness": 6.32,
+        "win_pct": 50.0
+      },
+      "away": {
+        "goals_for_per_match": 1.61,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.527,
+        "shots_per_match": 12.63,
+        "shots_target_per_match": 4.61,
+        "goal_conversion_rate": 0.127,
+        "corners_per_match": 5.63,
+        "fouls_per_match": 11.61,
+        "cards_per_match": 2.68,
+        "defensive_compactness": 5.66,
+        "win_pct": 39.5
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Crystal Palace": {
+      "name": "Crystal Palace",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.13,
+        "goals_against_per_match": 1.29,
+        "shots_ratio": 0.548,
+        "shots_per_match": 13.82,
+        "shots_target_per_match": 4.37,
+        "goal_conversion_rate": 0.082,
+        "corners_per_match": 4.47,
+        "fouls_per_match": 10.58,
+        "cards_per_match": 1.89,
+        "defensive_compactness": 4.76,
+        "win_pct": 26.3
+      },
+      "away": {
+        "goals_for_per_match": 1.29,
+        "goals_against_per_match": 1.39,
+        "shots_ratio": 0.466,
+        "shots_per_match": 11.39,
+        "shots_target_per_match": 4.24,
+        "goal_conversion_rate": 0.113,
+        "corners_per_match": 4.26,
+        "fouls_per_match": 10.87,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 4.34,
+        "win_pct": 36.8
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Nott'm Forest": {
+      "name": "Nott'm Forest",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.21,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.526,
+        "shots_per_match": 13.66,
+        "shots_target_per_match": 4.21,
+        "goal_conversion_rate": 0.089,
+        "corners_per_match": 5.13,
+        "fouls_per_match": 10.0,
+        "cards_per_match": 1.42,
+        "defensive_compactness": 5.05,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 1.58,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.425,
+        "shots_per_match": 11.05,
+        "shots_target_per_match": 4.26,
+        "goal_conversion_rate": 0.143,
+        "corners_per_match": 4.32,
+        "fouls_per_match": 11.0,
+        "cards_per_match": 2.45,
+        "defensive_compactness": 3.79,
+        "win_pct": 44.7
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Brentford": {
+      "name": "Brentford",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.92,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.469,
+        "shots_per_match": 12.47,
+        "shots_target_per_match": 4.82,
+        "goal_conversion_rate": 0.154,
+        "corners_per_match": 4.76,
+        "fouls_per_match": 8.55,
+        "cards_per_match": 1.55,
+        "defensive_compactness": 4.95,
+        "win_pct": 44.7
+      },
+      "away": {
+        "goals_for_per_match": 1.26,
+        "goals_against_per_match": 1.39,
+        "shots_ratio": 0.377,
+        "shots_per_match": 9.79,
+        "shots_target_per_match": 3.89,
+        "goal_conversion_rate": 0.129,
+        "corners_per_match": 4.63,
+        "fouls_per_match": 10.11,
+        "cards_per_match": 1.92,
+        "defensive_compactness": 3.24,
+        "win_pct": 34.2
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Man United": {
+      "name": "Man United",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.63,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.611,
+        "shots_per_match": 16.34,
+        "shots_target_per_match": 5.79,
+        "goal_conversion_rate": 0.1,
+        "corners_per_match": 5.42,
+        "fouls_per_match": 10.74,
+        "cards_per_match": 2.03,
+        "defensive_compactness": 5.89,
+        "win_pct": 52.6
+      },
+      "away": {
+        "goals_for_per_match": 1.34,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.521,
+        "shots_per_match": 13.21,
+        "shots_target_per_match": 4.47,
+        "goal_conversion_rate": 0.102,
+        "corners_per_match": 4.63,
+        "fouls_per_match": 10.42,
+        "cards_per_match": 1.95,
+        "defensive_compactness": 4.45,
+        "win_pct": 28.9
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Arsenal": {
+      "name": "Arsenal",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.0,
+        "goals_against_per_match": 0.74,
+        "shots_ratio": 0.678,
+        "shots_per_match": 16.08,
+        "shots_target_per_match": 5.26,
+        "goal_conversion_rate": 0.124,
+        "corners_per_match": 6.66,
+        "fouls_per_match": 9.89,
+        "cards_per_match": 1.32,
+        "defensive_compactness": 7.16,
+        "win_pct": 68.4
+      },
+      "away": {
+        "goals_for_per_match": 1.68,
+        "goals_against_per_match": 0.87,
+        "shots_ratio": 0.561,
+        "shots_per_match": 12.84,
+        "shots_target_per_match": 4.58,
+        "goal_conversion_rate": 0.131,
+        "corners_per_match": 5.63,
+        "fouls_per_match": 10.92,
+        "cards_per_match": 1.87,
+        "defensive_compactness": 6.37,
+        "win_pct": 52.6
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Leeds": {
+      "name": "Leeds",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.53,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.565,
+        "shots_per_match": 14.32,
+        "shots_target_per_match": 4.37,
+        "goal_conversion_rate": 0.107,
+        "corners_per_match": 5.58,
+        "fouls_per_match": 10.11,
+        "cards_per_match": 1.63,
+        "defensive_compactness": 5.79,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.05,
+        "goals_against_per_match": 1.84,
+        "shots_ratio": 0.436,
+        "shots_per_match": 10.84,
+        "shots_target_per_match": 3.58,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 3.26,
+        "fouls_per_match": 10.84,
+        "cards_per_match": 1.68,
+        "defensive_compactness": 4.05,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Everton": {
+      "name": "Everton",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.37,
+        "goals_against_per_match": 1.32,
+        "shots_ratio": 0.51,
+        "shots_per_match": 11.68,
+        "shots_target_per_match": 4.21,
+        "goal_conversion_rate": 0.117,
+        "corners_per_match": 4.61,
+        "fouls_per_match": 10.79,
+        "cards_per_match": 2.11,
+        "defensive_compactness": 4.97,
+        "win_pct": 28.9
+      },
+      "away": {
+        "goals_for_per_match": 0.97,
+        "goals_against_per_match": 1.16,
+        "shots_ratio": 0.394,
+        "shots_per_match": 10.03,
+        "shots_target_per_match": 3.37,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 3.79,
+        "fouls_per_match": 11.18,
+        "cards_per_match": 2.11,
+        "defensive_compactness": 3.87,
+        "win_pct": 34.2
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Girona": {
+      "name": "Girona",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.26,
+        "goals_against_per_match": 1.5,
+        "shots_ratio": 0.485,
+        "shots_per_match": 11.39,
+        "shots_target_per_match": 4.16,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 5.11,
+        "fouls_per_match": 10.5,
+        "cards_per_match": 2.13,
+        "defensive_compactness": 6.29,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 0.92,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.413,
+        "shots_per_match": 10.24,
+        "shots_target_per_match": 3.82,
+        "goal_conversion_rate": 0.09,
+        "corners_per_match": 3.87,
+        "fouls_per_match": 11.74,
+        "cards_per_match": 2.16,
+        "defensive_compactness": 4.11,
+        "win_pct": 18.4
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Vallecano": {
+      "name": "Vallecano",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.26,
+        "goals_against_per_match": 1.08,
+        "shots_ratio": 0.579,
+        "shots_per_match": 16.11,
+        "shots_target_per_match": 5.68,
+        "goal_conversion_rate": 0.078,
+        "corners_per_match": 6.18,
+        "fouls_per_match": 12.53,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 5.61,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 0.89,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.471,
+        "shots_per_match": 11.42,
+        "shots_target_per_match": 3.53,
+        "goal_conversion_rate": 0.078,
+        "corners_per_match": 4.82,
+        "fouls_per_match": 14.68,
+        "cards_per_match": 3.24,
+        "defensive_compactness": 4.13,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Villarreal": {
+      "name": "Villarreal",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.39,
+        "goals_against_per_match": 1.21,
+        "shots_ratio": 0.558,
+        "shots_per_match": 14.87,
+        "shots_target_per_match": 5.68,
+        "goal_conversion_rate": 0.161,
+        "corners_per_match": 5.32,
+        "fouls_per_match": 11.55,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 5.32,
+        "win_pct": 63.2
+      },
+      "away": {
+        "goals_for_per_match": 1.37,
+        "goals_against_per_match": 1.34,
+        "shots_ratio": 0.445,
+        "shots_per_match": 11.0,
+        "shots_target_per_match": 3.55,
+        "goal_conversion_rate": 0.124,
+        "corners_per_match": 3.68,
+        "fouls_per_match": 11.97,
+        "cards_per_match": 2.74,
+        "defensive_compactness": 5.05,
+        "win_pct": 47.4
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Oviedo": {
+      "name": "Oviedo",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.47,
+        "goals_against_per_match": 0.95,
+        "shots_ratio": 0.436,
+        "shots_per_match": 10.21,
+        "shots_target_per_match": 3.11,
+        "goal_conversion_rate": 0.046,
+        "corners_per_match": 4.63,
+        "fouls_per_match": 11.68,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 5.16,
+        "win_pct": 21.1
+      },
+      "away": {
+        "goals_for_per_match": 0.89,
+        "goals_against_per_match": 2.21,
+        "shots_ratio": 0.372,
+        "shots_per_match": 9.79,
+        "shots_target_per_match": 3.16,
+        "goal_conversion_rate": 0.091,
+        "corners_per_match": 3.26,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.37,
+        "defensive_compactness": 3.74,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Mallorca": {
+      "name": "Mallorca",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.34,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.482,
+        "shots_per_match": 12.13,
+        "shots_target_per_match": 4.18,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 4.32,
+        "fouls_per_match": 11.63,
+        "cards_per_match": 2.03,
+        "defensive_compactness": 4.13,
+        "win_pct": 42.1
+      },
+      "away": {
+        "goals_for_per_match": 0.82,
+        "goals_against_per_match": 1.55,
+        "shots_ratio": 0.359,
+        "shots_per_match": 8.89,
+        "shots_target_per_match": 2.97,
+        "goal_conversion_rate": 0.092,
+        "corners_per_match": 3.18,
+        "fouls_per_match": 12.82,
+        "cards_per_match": 2.5,
+        "defensive_compactness": 3.24,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Barcelona": {
+      "name": "Barcelona",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.87,
+        "goals_against_per_match": 0.79,
+        "shots_ratio": 0.739,
+        "shots_per_match": 19.47,
+        "shots_target_per_match": 7.45,
+        "goal_conversion_rate": 0.147,
+        "corners_per_match": 7.82,
+        "fouls_per_match": 9.84,
+        "cards_per_match": 1.21,
+        "defensive_compactness": 6.55,
+        "win_pct": 86.8
+      },
+      "away": {
+        "goals_for_per_match": 2.32,
+        "goals_against_per_match": 1.18,
+        "shots_ratio": 0.622,
+        "shots_per_match": 16.58,
+        "shots_target_per_match": 5.89,
+        "goal_conversion_rate": 0.14,
+        "corners_per_match": 6.05,
+        "fouls_per_match": 9.32,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 5.11,
+        "win_pct": 68.4
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Alaves": {
+      "name": "Alaves",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.03,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.527,
+        "shots_per_match": 11.71,
+        "shots_target_per_match": 4.0,
+        "goal_conversion_rate": 0.088,
+        "corners_per_match": 5.97,
+        "fouls_per_match": 14.95,
+        "cards_per_match": 2.58,
+        "defensive_compactness": 5.5,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 1.13,
+        "goals_against_per_match": 1.63,
+        "shots_ratio": 0.473,
+        "shots_per_match": 11.13,
+        "shots_target_per_match": 3.55,
+        "goal_conversion_rate": 0.102,
+        "corners_per_match": 3.92,
+        "fouls_per_match": 16.08,
+        "cards_per_match": 2.97,
+        "defensive_compactness": 4.95,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Levante": {
+      "name": "Levante",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.37,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.509,
+        "shots_per_match": 14.68,
+        "shots_target_per_match": 4.05,
+        "goal_conversion_rate": 0.093,
+        "corners_per_match": 5.21,
+        "fouls_per_match": 12.68,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 5.26,
+        "win_pct": 36.8
+      },
+      "away": {
+        "goals_for_per_match": 1.11,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.387,
+        "shots_per_match": 10.42,
+        "shots_target_per_match": 3.74,
+        "goal_conversion_rate": 0.106,
+        "corners_per_match": 3.32,
+        "fouls_per_match": 11.84,
+        "cards_per_match": 2.26,
+        "defensive_compactness": 2.8899999999999997,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Valencia": {
+      "name": "Valencia",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.39,
+        "goals_against_per_match": 1.13,
+        "shots_ratio": 0.56,
+        "shots_per_match": 12.58,
+        "shots_target_per_match": 3.74,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 5.92,
+        "fouls_per_match": 12.34,
+        "cards_per_match": 2.16,
+        "defensive_compactness": 5.84,
+        "win_pct": 44.7
+      },
+      "away": {
+        "goals_for_per_match": 0.97,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.416,
+        "shots_per_match": 9.37,
+        "shots_target_per_match": 2.76,
+        "goal_conversion_rate": 0.104,
+        "corners_per_match": 4.05,
+        "fouls_per_match": 11.37,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 4.37,
+        "win_pct": 18.4
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Sociedad": {
+      "name": "Sociedad",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.34,
+        "shots_ratio": 0.54,
+        "shots_per_match": 12.47,
+        "shots_target_per_match": 4.63,
+        "goal_conversion_rate": 0.12,
+        "corners_per_match": 6.34,
+        "fouls_per_match": 14.16,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 5.89,
+        "win_pct": 42.1
+      },
+      "away": {
+        "goals_for_per_match": 0.97,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.405,
+        "shots_per_match": 10.11,
+        "shots_target_per_match": 3.47,
+        "goal_conversion_rate": 0.096,
+        "corners_per_match": 4.89,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.45,
+        "defensive_compactness": 4.87,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Celta": {
+      "name": "Celta",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.61,
+        "goals_against_per_match": 1.29,
+        "shots_ratio": 0.528,
+        "shots_per_match": 11.87,
+        "shots_target_per_match": 4.79,
+        "goal_conversion_rate": 0.135,
+        "corners_per_match": 4.53,
+        "fouls_per_match": 11.24,
+        "cards_per_match": 1.89,
+        "defensive_compactness": 6.16,
+        "win_pct": 44.7
+      },
+      "away": {
+        "goals_for_per_match": 1.34,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.444,
+        "shots_per_match": 9.97,
+        "shots_target_per_match": 3.89,
+        "goal_conversion_rate": 0.135,
+        "corners_per_match": 3.21,
+        "fouls_per_match": 12.55,
+        "cards_per_match": 2.39,
+        "defensive_compactness": 5.05,
+        "win_pct": 34.2
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Getafe": {
+      "name": "Getafe",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 0.87,
+        "goals_against_per_match": 0.92,
+        "shots_ratio": 0.535,
+        "shots_per_match": 10.53,
+        "shots_target_per_match": 3.16,
+        "goal_conversion_rate": 0.083,
+        "corners_per_match": 3.89,
+        "fouls_per_match": 15.13,
+        "cards_per_match": 2.66,
+        "defensive_compactness": 6.5,
+        "win_pct": 31.6
+      },
+      "away": {
+        "goals_for_per_match": 0.87,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.464,
+        "shots_per_match": 10.13,
+        "shots_target_per_match": 2.97,
+        "goal_conversion_rate": 0.086,
+        "corners_per_match": 4.26,
+        "fouls_per_match": 15.87,
+        "cards_per_match": 3.53,
+        "defensive_compactness": 5.0,
+        "win_pct": 36.8
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Ath Bilbao": {
+      "name": "Ath Bilbao",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.42,
+        "goals_against_per_match": 0.89,
+        "shots_ratio": 0.651,
+        "shots_per_match": 14.32,
+        "shots_target_per_match": 4.84,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 5.79,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.03,
+        "defensive_compactness": 6.42,
+        "win_pct": 52.6
+      },
+      "away": {
+        "goals_for_per_match": 1.13,
+        "goals_against_per_match": 1.39,
+        "shots_ratio": 0.52,
+        "shots_per_match": 11.79,
+        "shots_target_per_match": 3.71,
+        "goal_conversion_rate": 0.096,
+        "corners_per_match": 5.08,
+        "fouls_per_match": 13.11,
+        "cards_per_match": 2.03,
+        "defensive_compactness": 5.66,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Sevilla": {
+      "name": "Sevilla",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.08,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.56,
+        "shots_per_match": 12.76,
+        "shots_target_per_match": 4.05,
+        "goal_conversion_rate": 0.085,
+        "corners_per_match": 4.89,
+        "fouls_per_match": 14.29,
+        "cards_per_match": 3.29,
+        "defensive_compactness": 6.18,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 1.24,
+        "goals_against_per_match": 1.76,
+        "shots_ratio": 0.495,
+        "shots_per_match": 11.16,
+        "shots_target_per_match": 3.74,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 4.76,
+        "fouls_per_match": 13.39,
+        "cards_per_match": 2.47,
+        "defensive_compactness": 4.92,
+        "win_pct": 23.7
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Espanol": {
+      "name": "Espanol",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.16,
+        "goals_against_per_match": 1.16,
+        "shots_ratio": 0.484,
+        "shots_per_match": 11.76,
+        "shots_target_per_match": 4.03,
+        "goal_conversion_rate": 0.098,
+        "corners_per_match": 4.61,
+        "fouls_per_match": 13.29,
+        "cards_per_match": 2.24,
+        "defensive_compactness": 4.92,
+        "win_pct": 39.5
+      },
+      "away": {
+        "goals_for_per_match": 1.03,
+        "goals_against_per_match": 1.63,
+        "shots_ratio": 0.391,
+        "shots_per_match": 10.32,
+        "shots_target_per_match": 2.92,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 3.87,
+        "fouls_per_match": 13.61,
+        "cards_per_match": 2.58,
+        "defensive_compactness": 4.26,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Ath Madrid": {
+      "name": "Ath Madrid",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.13,
+        "goals_against_per_match": 0.84,
+        "shots_ratio": 0.622,
+        "shots_per_match": 15.0,
+        "shots_target_per_match": 6.11,
+        "goal_conversion_rate": 0.142,
+        "corners_per_match": 6.82,
+        "fouls_per_match": 10.24,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 6.390000000000001,
+        "win_pct": 76.3
+      },
+      "away": {
+        "goals_for_per_match": 1.29,
+        "goals_against_per_match": 1.11,
+        "shots_ratio": 0.45,
+        "shots_per_match": 10.42,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.124,
+        "corners_per_match": 4.66,
+        "fouls_per_match": 11.63,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 5.53,
+        "win_pct": 36.8
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Elche": {
+      "name": "Elche",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.58,
+        "goals_against_per_match": 1.0,
+        "shots_ratio": 0.511,
+        "shots_per_match": 13.37,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.118,
+        "corners_per_match": 4.79,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 6.42,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 2.0,
+        "shots_ratio": 0.355,
+        "shots_per_match": 8.21,
+        "shots_target_per_match": 2.89,
+        "goal_conversion_rate": 0.122,
+        "corners_per_match": 2.79,
+        "fouls_per_match": 13.42,
+        "cards_per_match": 2.53,
+        "defensive_compactness": 4.58,
+        "win_pct": 5.3
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Betis": {
+      "name": "Betis",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.74,
+        "goals_against_per_match": 1.05,
+        "shots_ratio": 0.602,
+        "shots_per_match": 15.89,
+        "shots_target_per_match": 5.37,
+        "goal_conversion_rate": 0.109,
+        "corners_per_match": 5.03,
+        "fouls_per_match": 10.79,
+        "cards_per_match": 1.97,
+        "defensive_compactness": 5.82,
+        "win_pct": 50.0
+      },
+      "away": {
+        "goals_for_per_match": 1.32,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.488,
+        "shots_per_match": 12.18,
+        "shots_target_per_match": 4.45,
+        "goal_conversion_rate": 0.108,
+        "corners_per_match": 4.66,
+        "fouls_per_match": 11.13,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 4.79,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Real Madrid": {
+      "name": "Real Madrid",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.37,
+        "goals_against_per_match": 0.92,
+        "shots_ratio": 0.661,
+        "shots_per_match": 19.11,
+        "shots_target_per_match": 7.68,
+        "goal_conversion_rate": 0.124,
+        "corners_per_match": 7.45,
+        "fouls_per_match": 8.92,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 6.71,
+        "win_pct": 84.2
+      },
+      "away": {
+        "goals_for_per_match": 1.71,
+        "goals_against_per_match": 1.0,
+        "shots_ratio": 0.565,
+        "shots_per_match": 15.03,
+        "shots_target_per_match": 5.55,
+        "goal_conversion_rate": 0.114,
+        "corners_per_match": 5.24,
+        "fouls_per_match": 9.79,
+        "cards_per_match": 1.82,
+        "defensive_compactness": 5.39,
+        "win_pct": 55.3
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Osasuna": {
+      "name": "Osasuna",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.68,
+        "goals_against_per_match": 1.24,
+        "shots_ratio": 0.555,
+        "shots_per_match": 13.58,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.124,
+        "corners_per_match": 4.74,
+        "fouls_per_match": 13.55,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 6.08,
+        "win_pct": 50.0
+      },
+      "away": {
+        "goals_for_per_match": 0.74,
+        "goals_against_per_match": 1.45,
+        "shots_ratio": 0.402,
+        "shots_per_match": 9.34,
+        "shots_target_per_match": 2.71,
+        "goal_conversion_rate": 0.079,
+        "corners_per_match": 3.63,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.39,
+        "defensive_compactness": 4.11,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Bayern Munich": {
+      "name": "Bayern Munich",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 3.56,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.728,
+        "shots_per_match": 21.38,
+        "shots_target_per_match": 8.94,
+        "goal_conversion_rate": 0.166,
+        "corners_per_match": 7.18,
+        "fouls_per_match": 8.35,
+        "cards_per_match": 1.29,
+        "defensive_compactness": 7.12,
+        "win_pct": 82.4
+      },
+      "away": {
+        "goals_for_per_match": 2.94,
+        "goals_against_per_match": 0.97,
+        "shots_ratio": 0.64,
+        "shots_per_match": 16.62,
+        "shots_target_per_match": 7.47,
+        "goal_conversion_rate": 0.177,
+        "corners_per_match": 5.62,
+        "fouls_per_match": 9.12,
+        "cards_per_match": 1.91,
+        "defensive_compactness": 6.76,
+        "win_pct": 73.5
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "RB Leipzig": {
+      "name": "RB Leipzig",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.15,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.558,
+        "shots_per_match": 15.03,
+        "shots_target_per_match": 6.32,
+        "goal_conversion_rate": 0.143,
+        "corners_per_match": 6.0,
+        "fouls_per_match": 9.26,
+        "cards_per_match": 1.53,
+        "defensive_compactness": 5.44,
+        "win_pct": 58.8
+      },
+      "away": {
+        "goals_for_per_match": 1.35,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.461,
+        "shots_per_match": 12.74,
+        "shots_target_per_match": 4.15,
+        "goal_conversion_rate": 0.106,
+        "corners_per_match": 4.03,
+        "fouls_per_match": 11.12,
+        "cards_per_match": 2.12,
+        "defensive_compactness": 4.74,
+        "win_pct": 38.2
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Ein Frankfurt": {
+      "name": "Ein Frankfurt",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.06,
+        "goals_against_per_match": 1.44,
+        "shots_ratio": 0.566,
+        "shots_per_match": 14.59,
+        "shots_target_per_match": 5.56,
+        "goal_conversion_rate": 0.141,
+        "corners_per_match": 5.38,
+        "fouls_per_match": 10.15,
+        "cards_per_match": 1.59,
+        "defensive_compactness": 5.88,
+        "win_pct": 50.0
+      },
+      "away": {
+        "goals_for_per_match": 1.74,
+        "goals_against_per_match": 1.82,
+        "shots_ratio": 0.436,
+        "shots_per_match": 11.5,
+        "shots_target_per_match": 4.44,
+        "goal_conversion_rate": 0.151,
+        "corners_per_match": 4.24,
+        "fouls_per_match": 10.26,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 4.5,
+        "win_pct": 32.4
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Werder Bremen": {
+      "name": "Werder Bremen",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.18,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.542,
+        "shots_per_match": 14.41,
+        "shots_target_per_match": 4.29,
+        "goal_conversion_rate": 0.082,
+        "corners_per_match": 4.97,
+        "fouls_per_match": 9.82,
+        "cards_per_match": 2.41,
+        "defensive_compactness": 6.18,
+        "win_pct": 29.4
+      },
+      "away": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.76,
+        "shots_ratio": 0.42,
+        "shots_per_match": 11.03,
+        "shots_target_per_match": 4.15,
+        "goal_conversion_rate": 0.136,
+        "corners_per_match": 4.29,
+        "fouls_per_match": 9.94,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 4.06,
+        "win_pct": 35.3
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Freiburg": {
+      "name": "Freiburg",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.91,
+        "goals_against_per_match": 1.41,
+        "shots_ratio": 0.523,
+        "shots_per_match": 13.29,
+        "shots_target_per_match": 4.79,
+        "goal_conversion_rate": 0.144,
+        "corners_per_match": 4.41,
+        "fouls_per_match": 9.24,
+        "cards_per_match": 1.88,
+        "defensive_compactness": 5.97,
+        "win_pct": 52.9
+      },
+      "away": {
+        "goals_for_per_match": 1.03,
+        "goals_against_per_match": 1.82,
+        "shots_ratio": 0.429,
+        "shots_per_match": 10.82,
+        "shots_target_per_match": 3.65,
+        "goal_conversion_rate": 0.095,
+        "corners_per_match": 3.59,
+        "fouls_per_match": 9.41,
+        "cards_per_match": 1.44,
+        "defensive_compactness": 5.53,
+        "win_pct": 32.4
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Augsburg": {
+      "name": "Augsburg",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.26,
+        "goals_against_per_match": 1.41,
+        "shots_ratio": 0.523,
+        "shots_per_match": 13.65,
+        "shots_target_per_match": 4.88,
+        "goal_conversion_rate": 0.093,
+        "corners_per_match": 5.47,
+        "fouls_per_match": 10.56,
+        "cards_per_match": 2.5,
+        "defensive_compactness": 5.12,
+        "win_pct": 38.2
+      },
+      "away": {
+        "goals_for_per_match": 1.09,
+        "goals_against_per_match": 1.88,
+        "shots_ratio": 0.418,
+        "shots_per_match": 11.18,
+        "shots_target_per_match": 3.32,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 3.71,
+        "fouls_per_match": 10.82,
+        "cards_per_match": 2.35,
+        "defensive_compactness": 4.26,
+        "win_pct": 29.4
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Heidenheim": {
+      "name": "Heidenheim",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.06,
+        "goals_against_per_match": 2.06,
+        "shots_ratio": 0.473,
+        "shots_per_match": 12.24,
+        "shots_target_per_match": 3.94,
+        "goal_conversion_rate": 0.087,
+        "corners_per_match": 4.91,
+        "fouls_per_match": 10.26,
+        "cards_per_match": 1.18,
+        "defensive_compactness": 5.65,
+        "win_pct": 20.6
+      },
+      "away": {
+        "goals_for_per_match": 1.24,
+        "goals_against_per_match": 1.94,
+        "shots_ratio": 0.424,
+        "shots_per_match": 11.15,
+        "shots_target_per_match": 3.62,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 3.74,
+        "fouls_per_match": 10.88,
+        "cards_per_match": 2.15,
+        "defensive_compactness": 4.41,
+        "win_pct": 20.6
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Wolfsburg": {
+      "name": "Wolfsburg",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.41,
+        "goals_against_per_match": 1.82,
+        "shots_ratio": 0.51,
+        "shots_per_match": 13.56,
+        "shots_target_per_match": 4.62,
+        "goal_conversion_rate": 0.104,
+        "corners_per_match": 5.24,
+        "fouls_per_match": 11.06,
+        "cards_per_match": 2.09,
+        "defensive_compactness": 4.59,
+        "win_pct": 14.7
+      },
+      "away": {
+        "goals_for_per_match": 1.56,
+        "goals_against_per_match": 1.79,
+        "shots_ratio": 0.409,
+        "shots_per_match": 11.18,
+        "shots_target_per_match": 3.85,
+        "goal_conversion_rate": 0.139,
+        "corners_per_match": 4.06,
+        "fouls_per_match": 10.79,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 2.74,
+        "win_pct": 38.2
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Leverkusen": {
+      "name": "Leverkusen",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.18,
+        "goals_against_per_match": 1.21,
+        "shots_ratio": 0.654,
+        "shots_per_match": 18.06,
+        "shots_target_per_match": 6.53,
+        "goal_conversion_rate": 0.121,
+        "corners_per_match": 7.18,
+        "fouls_per_match": 8.85,
+        "cards_per_match": 1.91,
+        "defensive_compactness": 7.0,
+        "win_pct": 55.9
+      },
+      "away": {
+        "goals_for_per_match": 1.94,
+        "goals_against_per_match": 1.44,
+        "shots_ratio": 0.477,
+        "shots_per_match": 12.0,
+        "shots_target_per_match": 4.29,
+        "goal_conversion_rate": 0.162,
+        "corners_per_match": 4.76,
+        "fouls_per_match": 9.29,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 5.5,
+        "win_pct": 50.0
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Hoffenheim": {
+      "name": "Hoffenheim",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.76,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.541,
+        "shots_per_match": 15.12,
+        "shots_target_per_match": 5.44,
+        "goal_conversion_rate": 0.117,
+        "corners_per_match": 5.65,
+        "fouls_per_match": 12.65,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 5.41,
+        "win_pct": 41.2
+      },
+      "away": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.85,
+        "shots_ratio": 0.468,
+        "shots_per_match": 11.91,
+        "shots_target_per_match": 4.26,
+        "goal_conversion_rate": 0.126,
+        "corners_per_match": 4.76,
+        "fouls_per_match": 12.85,
+        "cards_per_match": 2.44,
+        "defensive_compactness": 4.24,
+        "win_pct": 32.4
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Union Berlin": {
+      "name": "Union Berlin",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.29,
+        "goals_against_per_match": 1.44,
+        "shots_ratio": 0.544,
+        "shots_per_match": 12.65,
+        "shots_target_per_match": 3.97,
+        "goal_conversion_rate": 0.102,
+        "corners_per_match": 4.56,
+        "fouls_per_match": 11.85,
+        "cards_per_match": 2.38,
+        "defensive_compactness": 5.71,
+        "win_pct": 29.4
+      },
+      "away": {
+        "goals_for_per_match": 1.03,
+        "goals_against_per_match": 1.76,
+        "shots_ratio": 0.445,
+        "shots_per_match": 11.44,
+        "shots_target_per_match": 3.47,
+        "goal_conversion_rate": 0.09,
+        "corners_per_match": 4.71,
+        "fouls_per_match": 12.41,
+        "cards_per_match": 1.88,
+        "defensive_compactness": 4.74,
+        "win_pct": 29.4
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Stuttgart": {
+      "name": "Stuttgart",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.91,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.619,
+        "shots_per_match": 16.47,
+        "shots_target_per_match": 6.26,
+        "goal_conversion_rate": 0.116,
+        "corners_per_match": 6.0,
+        "fouls_per_match": 9.71,
+        "cards_per_match": 2.21,
+        "defensive_compactness": 6.15,
+        "win_pct": 55.9
+      },
+      "away": {
+        "goals_for_per_match": 2.06,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.476,
+        "shots_per_match": 12.5,
+        "shots_target_per_match": 5.26,
+        "goal_conversion_rate": 0.165,
+        "corners_per_match": 4.97,
+        "fouls_per_match": 10.44,
+        "cards_per_match": 1.94,
+        "defensive_compactness": 4.88,
+        "win_pct": 38.2
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "St Pauli": {
+      "name": "St Pauli",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 0.79,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.51,
+        "shots_per_match": 11.21,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.071,
+        "corners_per_match": 5.47,
+        "fouls_per_match": 9.53,
+        "cards_per_match": 1.56,
+        "defensive_compactness": 5.94,
+        "win_pct": 20.6
+      },
+      "away": {
+        "goals_for_per_match": 0.88,
+        "goals_against_per_match": 1.5,
+        "shots_ratio": 0.441,
+        "shots_per_match": 10.09,
+        "shots_target_per_match": 2.91,
+        "goal_conversion_rate": 0.087,
+        "corners_per_match": 3.65,
+        "fouls_per_match": 10.47,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 4.38,
+        "win_pct": 20.6
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Dortmund": {
+      "name": "Dortmund",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.47,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.624,
+        "shots_per_match": 15.06,
+        "shots_target_per_match": 5.41,
+        "goal_conversion_rate": 0.164,
+        "corners_per_match": 6.82,
+        "fouls_per_match": 10.94,
+        "cards_per_match": 1.82,
+        "defensive_compactness": 6.91,
+        "win_pct": 70.6
+      },
+      "away": {
+        "goals_for_per_match": 1.68,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.49,
+        "shots_per_match": 12.12,
+        "shots_target_per_match": 4.24,
+        "goal_conversion_rate": 0.138,
+        "corners_per_match": 4.12,
+        "fouls_per_match": 10.47,
+        "cards_per_match": 2.24,
+        "defensive_compactness": 4.94,
+        "win_pct": 44.1
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Mainz": {
+      "name": "Mainz",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.32,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.529,
+        "shots_per_match": 13.35,
+        "shots_target_per_match": 4.44,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 6.0,
+        "fouls_per_match": 12.0,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 6.24,
+        "win_pct": 29.4
+      },
+      "away": {
+        "goals_for_per_match": 1.59,
+        "goals_against_per_match": 1.56,
+        "shots_ratio": 0.41,
+        "shots_per_match": 10.94,
+        "shots_target_per_match": 4.12,
+        "goal_conversion_rate": 0.145,
+        "corners_per_match": 3.88,
+        "fouls_per_match": 10.94,
+        "cards_per_match": 2.35,
+        "defensive_compactness": 4.09,
+        "win_pct": 41.2
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "FC Koln": {
+      "name": "FC Koln",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.76,
+        "goals_against_per_match": 1.76,
+        "shots_ratio": 0.557,
+        "shots_per_match": 15.0,
+        "shots_target_per_match": 5.41,
+        "goal_conversion_rate": 0.118,
+        "corners_per_match": 4.82,
+        "fouls_per_match": 8.59,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 5.29,
+        "win_pct": 29.4
+      },
+      "away": {
+        "goals_for_per_match": 1.12,
+        "goals_against_per_match": 1.94,
+        "shots_ratio": 0.434,
+        "shots_per_match": 11.76,
+        "shots_target_per_match": 3.76,
+        "goal_conversion_rate": 0.095,
+        "corners_per_match": 4.41,
+        "fouls_per_match": 8.06,
+        "cards_per_match": 1.94,
+        "defensive_compactness": 3.6500000000000004,
+        "win_pct": 11.8
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "M'gladbach": {
+      "name": "M'gladbach",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.56,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.442,
+        "shots_per_match": 12.12,
+        "shots_target_per_match": 4.62,
+        "goal_conversion_rate": 0.129,
+        "corners_per_match": 4.12,
+        "fouls_per_match": 9.94,
+        "cards_per_match": 1.85,
+        "defensive_compactness": 5.38,
+        "win_pct": 38.2
+      },
+      "away": {
+        "goals_for_per_match": 1.29,
+        "goals_against_per_match": 1.76,
+        "shots_ratio": 0.422,
+        "shots_per_match": 11.65,
+        "shots_target_per_match": 4.41,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 4.29,
+        "fouls_per_match": 10.79,
+        "cards_per_match": 1.65,
+        "defensive_compactness": 4.47,
+        "win_pct": 26.5
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Hamburg": {
+      "name": "Hamburg",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.47,
+        "goals_against_per_match": 1.29,
+        "shots_ratio": 0.518,
+        "shots_per_match": 13.29,
+        "shots_target_per_match": 4.71,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 3.76,
+        "fouls_per_match": 12.06,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 4.24,
+        "win_pct": 35.3
+      },
+      "away": {
+        "goals_for_per_match": 0.88,
+        "goals_against_per_match": 1.88,
+        "shots_ratio": 0.403,
+        "shots_per_match": 11.29,
+        "shots_target_per_match": 4.41,
+        "goal_conversion_rate": 0.078,
+        "corners_per_match": 3.59,
+        "fouls_per_match": 11.59,
+        "cards_per_match": 2.71,
+        "defensive_compactness": 4.06,
+        "win_pct": 17.6
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Rennes": {
+      "name": "Rennes",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.62,
+        "goals_against_per_match": 1.0,
+        "shots_ratio": 0.581,
+        "shots_per_match": 15.0,
+        "shots_target_per_match": 5.06,
+        "goal_conversion_rate": 0.108,
+        "corners_per_match": 6.12,
+        "fouls_per_match": 12.91,
+        "cards_per_match": 1.74,
+        "defensive_compactness": 6.0600000000000005,
+        "win_pct": 55.9
+      },
+      "away": {
+        "goals_for_per_match": 1.62,
+        "goals_against_per_match": 1.94,
+        "shots_ratio": 0.465,
+        "shots_per_match": 11.88,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.136,
+        "corners_per_match": 4.85,
+        "fouls_per_match": 12.5,
+        "cards_per_match": 2.12,
+        "defensive_compactness": 5.59,
+        "win_pct": 32.4
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Marseille": {
+      "name": "Marseille",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.41,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.617,
+        "shots_per_match": 15.38,
+        "shots_target_per_match": 6.38,
+        "goal_conversion_rate": 0.157,
+        "corners_per_match": 5.44,
+        "fouls_per_match": 12.68,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 7.0600000000000005,
+        "win_pct": 61.8
+      },
+      "away": {
+        "goals_for_per_match": 1.62,
+        "goals_against_per_match": 1.44,
+        "shots_ratio": 0.569,
+        "shots_per_match": 13.74,
+        "shots_target_per_match": 5.38,
+        "goal_conversion_rate": 0.118,
+        "corners_per_match": 4.94,
+        "fouls_per_match": 11.41,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 6.21,
+        "win_pct": 50.0
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Lens": {
+      "name": "Lens",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.59,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.64,
+        "shots_per_match": 17.38,
+        "shots_target_per_match": 5.88,
+        "goal_conversion_rate": 0.091,
+        "corners_per_match": 6.74,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.09,
+        "defensive_compactness": 6.62,
+        "win_pct": 61.8
+      },
+      "away": {
+        "goals_for_per_match": 1.59,
+        "goals_against_per_match": 1.15,
+        "shots_ratio": 0.526,
+        "shots_per_match": 13.56,
+        "shots_target_per_match": 4.44,
+        "goal_conversion_rate": 0.117,
+        "corners_per_match": 4.97,
+        "fouls_per_match": 13.94,
+        "cards_per_match": 2.76,
+        "defensive_compactness": 5.5,
+        "win_pct": 47.1
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Lyon": {
+      "name": "Lyon",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.97,
+        "goals_against_per_match": 1.15,
+        "shots_ratio": 0.55,
+        "shots_per_match": 13.97,
+        "shots_target_per_match": 5.41,
+        "goal_conversion_rate": 0.141,
+        "corners_per_match": 6.03,
+        "fouls_per_match": 12.26,
+        "cards_per_match": 1.62,
+        "defensive_compactness": 5.76,
+        "win_pct": 67.6
+      },
+      "away": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.38,
+        "shots_ratio": 0.457,
+        "shots_per_match": 11.32,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.132,
+        "corners_per_match": 5.29,
+        "fouls_per_match": 12.29,
+        "cards_per_match": 2.03,
+        "defensive_compactness": 4.59,
+        "win_pct": 35.3
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Monaco": {
+      "name": "Monaco",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.09,
+        "goals_against_per_match": 1.15,
+        "shots_ratio": 0.568,
+        "shots_per_match": 13.76,
+        "shots_target_per_match": 5.26,
+        "goal_conversion_rate": 0.152,
+        "corners_per_match": 4.85,
+        "fouls_per_match": 12.97,
+        "cards_per_match": 1.91,
+        "defensive_compactness": 6.029999999999999,
+        "win_pct": 64.7
+      },
+      "away": {
+        "goals_for_per_match": 1.53,
+        "goals_against_per_match": 1.65,
+        "shots_ratio": 0.508,
+        "shots_per_match": 13.21,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.116,
+        "corners_per_match": 5.62,
+        "fouls_per_match": 13.53,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 6.18,
+        "win_pct": 35.3
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Le Havre": {
+      "name": "Le Havre",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.03,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.475,
+        "shots_per_match": 11.32,
+        "shots_target_per_match": 3.62,
+        "goal_conversion_rate": 0.091,
+        "corners_per_match": 4.21,
+        "fouls_per_match": 12.59,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 5.62,
+        "win_pct": 23.5
+      },
+      "away": {
+        "goals_for_per_match": 1.09,
+        "goals_against_per_match": 1.65,
+        "shots_ratio": 0.402,
+        "shots_per_match": 9.94,
+        "shots_target_per_match": 3.35,
+        "goal_conversion_rate": 0.109,
+        "corners_per_match": 3.91,
+        "fouls_per_match": 12.18,
+        "cards_per_match": 1.97,
+        "defensive_compactness": 4.12,
+        "win_pct": 26.5
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Nice": {
+      "name": "Nice",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.68,
+        "goals_against_per_match": 1.24,
+        "shots_ratio": 0.527,
+        "shots_per_match": 14.29,
+        "shots_target_per_match": 5.26,
+        "goal_conversion_rate": 0.117,
+        "corners_per_match": 5.65,
+        "fouls_per_match": 11.91,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 4.74,
+        "win_pct": 44.1
+      },
+      "away": {
+        "goals_for_per_match": 1.35,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.422,
+        "shots_per_match": 11.32,
+        "shots_target_per_match": 4.38,
+        "goal_conversion_rate": 0.119,
+        "corners_per_match": 4.44,
+        "fouls_per_match": 11.91,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 4.26,
+        "win_pct": 26.5
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Toulouse": {
+      "name": "Toulouse",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.32,
+        "goals_against_per_match": 1.35,
+        "shots_ratio": 0.579,
+        "shots_per_match": 13.41,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 5.15,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 1.79,
+        "defensive_compactness": 6.21,
+        "win_pct": 32.4
+      },
+      "away": {
+        "goals_for_per_match": 1.35,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.469,
+        "shots_per_match": 10.85,
+        "shots_target_per_match": 4.09,
+        "goal_conversion_rate": 0.125,
+        "corners_per_match": 4.03,
+        "fouls_per_match": 13.68,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 5.0,
+        "win_pct": 35.3
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Brest": {
+      "name": "Brest",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.74,
+        "goals_against_per_match": 1.29,
+        "shots_ratio": 0.539,
+        "shots_per_match": 13.32,
+        "shots_target_per_match": 4.85,
+        "goal_conversion_rate": 0.13,
+        "corners_per_match": 4.35,
+        "fouls_per_match": 12.26,
+        "cards_per_match": 1.76,
+        "defensive_compactness": 5.56,
+        "win_pct": 50.0
+      },
+      "away": {
+        "goals_for_per_match": 1.06,
+        "goals_against_per_match": 2.06,
+        "shots_ratio": 0.406,
+        "shots_per_match": 9.97,
+        "shots_target_per_match": 3.35,
+        "goal_conversion_rate": 0.106,
+        "corners_per_match": 3.68,
+        "fouls_per_match": 13.06,
+        "cards_per_match": 2.09,
+        "defensive_compactness": 3.71,
+        "win_pct": 23.5
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Lille": {
+      "name": "Lille",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.62,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.616,
+        "shots_per_match": 13.88,
+        "shots_target_per_match": 5.0,
+        "goal_conversion_rate": 0.117,
+        "corners_per_match": 5.71,
+        "fouls_per_match": 11.06,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 6.26,
+        "win_pct": 55.9
+      },
+      "away": {
+        "goals_for_per_match": 1.44,
+        "goals_against_per_match": 1.12,
+        "shots_ratio": 0.547,
+        "shots_per_match": 12.56,
+        "shots_target_per_match": 4.5,
+        "goal_conversion_rate": 0.115,
+        "corners_per_match": 4.94,
+        "fouls_per_match": 11.76,
+        "cards_per_match": 2.74,
+        "defensive_compactness": 5.76,
+        "win_pct": 47.1
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Angers": {
+      "name": "Angers",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.06,
+        "goals_against_per_match": 1.56,
+        "shots_ratio": 0.405,
+        "shots_per_match": 9.56,
+        "shots_target_per_match": 3.41,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 3.97,
+        "fouls_per_match": 11.65,
+        "cards_per_match": 1.59,
+        "defensive_compactness": 5.15,
+        "win_pct": 32.4
+      },
+      "away": {
+        "goals_for_per_match": 0.74,
+        "goals_against_per_match": 1.41,
+        "shots_ratio": 0.381,
+        "shots_per_match": 8.85,
+        "shots_target_per_match": 2.71,
+        "goal_conversion_rate": 0.083,
+        "corners_per_match": 3.38,
+        "fouls_per_match": 10.41,
+        "cards_per_match": 1.47,
+        "defensive_compactness": 4.94,
+        "win_pct": 23.5
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Paris FC": {
+      "name": "Paris FC",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.65,
+        "goals_against_per_match": 1.59,
+        "shots_ratio": 0.536,
+        "shots_per_match": 13.41,
+        "shots_target_per_match": 4.53,
+        "goal_conversion_rate": 0.123,
+        "corners_per_match": 5.53,
+        "fouls_per_match": 10.82,
+        "cards_per_match": 2.65,
+        "defensive_compactness": 5.65,
+        "win_pct": 41.2
+      },
+      "away": {
+        "goals_for_per_match": 1.12,
+        "goals_against_per_match": 1.35,
+        "shots_ratio": 0.426,
+        "shots_per_match": 9.94,
+        "shots_target_per_match": 3.41,
+        "goal_conversion_rate": 0.112,
+        "corners_per_match": 3.24,
+        "fouls_per_match": 10.53,
+        "cards_per_match": 1.82,
+        "defensive_compactness": 3.24,
+        "win_pct": 23.5
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Auxerre": {
+      "name": "Auxerre",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.24,
+        "goals_against_per_match": 1.0,
+        "shots_ratio": 0.513,
+        "shots_per_match": 11.62,
+        "shots_target_per_match": 4.09,
+        "goal_conversion_rate": 0.106,
+        "corners_per_match": 4.53,
+        "fouls_per_match": 12.24,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 4.71,
+        "win_pct": 38.2
+      },
+      "away": {
+        "goals_for_per_match": 1.18,
+        "goals_against_per_match": 1.79,
+        "shots_ratio": 0.416,
+        "shots_per_match": 10.18,
+        "shots_target_per_match": 3.88,
+        "goal_conversion_rate": 0.116,
+        "corners_per_match": 4.15,
+        "fouls_per_match": 13.32,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 4.62,
+        "win_pct": 17.6
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Lorient": {
+      "name": "Lorient",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.82,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.538,
+        "shots_per_match": 11.94,
+        "shots_target_per_match": 4.41,
+        "goal_conversion_rate": 0.153,
+        "corners_per_match": 3.24,
+        "fouls_per_match": 9.65,
+        "cards_per_match": 1.71,
+        "defensive_compactness": 4.71,
+        "win_pct": 47.1
+      },
+      "away": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.473,
+        "shots_per_match": 10.76,
+        "shots_target_per_match": 3.47,
+        "goal_conversion_rate": 0.093,
+        "corners_per_match": 3.82,
+        "fouls_per_match": 9.53,
+        "cards_per_match": 1.59,
+        "defensive_compactness": 4.53,
+        "win_pct": 17.6
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Metz": {
+      "name": "Metz",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 0.88,
+        "goals_against_per_match": 1.88,
+        "shots_ratio": 0.483,
+        "shots_per_match": 11.76,
+        "shots_target_per_match": 3.82,
+        "goal_conversion_rate": 0.075,
+        "corners_per_match": 4.94,
+        "fouls_per_match": 11.53,
+        "cards_per_match": 1.41,
+        "defensive_compactness": 5.71,
+        "win_pct": 11.8
+      },
+      "away": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 2.59,
+        "shots_ratio": 0.315,
+        "shots_per_match": 8.35,
+        "shots_target_per_match": 2.53,
+        "goal_conversion_rate": 0.12,
+        "corners_per_match": 3.53,
+        "fouls_per_match": 11.24,
+        "cards_per_match": 2.06,
+        "defensive_compactness": 3.76,
+        "win_pct": 5.9
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Strasbourg": {
+      "name": "Strasbourg",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.85,
+        "goals_against_per_match": 1.15,
+        "shots_ratio": 0.466,
+        "shots_per_match": 11.24,
+        "shots_target_per_match": 4.74,
+        "goal_conversion_rate": 0.165,
+        "corners_per_match": 4.59,
+        "fouls_per_match": 10.91,
+        "cards_per_match": 1.74,
+        "defensive_compactness": 5.38,
+        "win_pct": 55.9
+      },
+      "away": {
+        "goals_for_per_match": 1.5,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.444,
+        "shots_per_match": 10.62,
+        "shots_target_per_match": 4.15,
+        "goal_conversion_rate": 0.141,
+        "corners_per_match": 3.76,
+        "fouls_per_match": 11.85,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 5.18,
+        "win_pct": 35.3
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Nantes": {
+      "name": "Nantes",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 1.09,
+        "goals_against_per_match": 1.32,
+        "shots_ratio": 0.517,
+        "shots_per_match": 11.88,
+        "shots_target_per_match": 3.71,
+        "goal_conversion_rate": 0.092,
+        "corners_per_match": 4.35,
+        "fouls_per_match": 12.29,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 4.5,
+        "win_pct": 23.5
+      },
+      "away": {
+        "goals_for_per_match": 0.91,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.394,
+        "shots_per_match": 9.38,
+        "shots_target_per_match": 3.29,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 3.47,
+        "fouls_per_match": 12.12,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 3.71,
+        "win_pct": 14.7
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Paris SG": {
+      "name": "Paris SG",
+      "total_matches": 68,
+      "home_matches": 34,
+      "away_matches": 34,
+      "home": {
+        "goals_for_per_match": 2.53,
+        "goals_against_per_match": 0.82,
+        "shots_ratio": 0.718,
+        "shots_per_match": 20.29,
+        "shots_target_per_match": 7.79,
+        "goal_conversion_rate": 0.125,
+        "corners_per_match": 7.29,
+        "fouls_per_match": 9.06,
+        "cards_per_match": 1.18,
+        "defensive_compactness": 7.29,
+        "win_pct": 79.4
+      },
+      "away": {
+        "goals_for_per_match": 2.35,
+        "goals_against_per_match": 1.06,
+        "shots_ratio": 0.611,
+        "shots_per_match": 15.85,
+        "shots_target_per_match": 7.18,
+        "goal_conversion_rate": 0.148,
+        "corners_per_match": 5.41,
+        "fouls_per_match": 8.88,
+        "cards_per_match": 1.03,
+        "defensive_compactness": 6.29,
+        "win_pct": 67.6
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Genoa": {
+      "name": "Genoa",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.13,
+        "goals_against_per_match": 1.34,
+        "shots_ratio": 0.516,
+        "shots_per_match": 11.79,
+        "shots_target_per_match": 3.97,
+        "goal_conversion_rate": 0.096,
+        "corners_per_match": 4.13,
+        "fouls_per_match": 12.55,
+        "cards_per_match": 1.87,
+        "defensive_compactness": 5.58,
+        "win_pct": 28.9
+      },
+      "away": {
+        "goals_for_per_match": 0.92,
+        "goals_against_per_match": 1.29,
+        "shots_ratio": 0.406,
+        "shots_per_match": 9.79,
+        "shots_target_per_match": 3.0,
+        "goal_conversion_rate": 0.094,
+        "corners_per_match": 3.63,
+        "fouls_per_match": 12.87,
+        "cards_per_match": 1.76,
+        "defensive_compactness": 4.24,
+        "win_pct": 23.7
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Lecce": {
+      "name": "Lecce",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 0.68,
+        "goals_against_per_match": 1.45,
+        "shots_ratio": 0.498,
+        "shots_per_match": 11.79,
+        "shots_target_per_match": 3.18,
+        "goal_conversion_rate": 0.058,
+        "corners_per_match": 4.68,
+        "fouls_per_match": 11.82,
+        "cards_per_match": 1.66,
+        "defensive_compactness": 5.18,
+        "win_pct": 23.7
+      },
+      "away": {
+        "goals_for_per_match": 0.76,
+        "goals_against_per_match": 1.39,
+        "shots_ratio": 0.401,
+        "shots_per_match": 9.95,
+        "shots_target_per_match": 2.68,
+        "goal_conversion_rate": 0.077,
+        "corners_per_match": 3.95,
+        "fouls_per_match": 13.05,
+        "cards_per_match": 1.95,
+        "defensive_compactness": 3.45,
+        "win_pct": 23.7
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Sassuolo": {
+      "name": "Sassuolo",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.32,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.441,
+        "shots_per_match": 10.74,
+        "shots_target_per_match": 3.68,
+        "goal_conversion_rate": 0.123,
+        "corners_per_match": 3.79,
+        "fouls_per_match": 11.79,
+        "cards_per_match": 2.21,
+        "defensive_compactness": 5.0,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.11,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.411,
+        "shots_per_match": 10.63,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.104,
+        "corners_per_match": 3.74,
+        "fouls_per_match": 12.16,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 5.05,
+        "win_pct": 26.3
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Napoli": {
+      "name": "Napoli",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.71,
+        "goals_against_per_match": 0.82,
+        "shots_ratio": 0.611,
+        "shots_per_match": 15.08,
+        "shots_target_per_match": 5.11,
+        "goal_conversion_rate": 0.113,
+        "corners_per_match": 6.55,
+        "fouls_per_match": 10.66,
+        "cards_per_match": 1.03,
+        "defensive_compactness": 7.05,
+        "win_pct": 71.1
+      },
+      "away": {
+        "goals_for_per_match": 1.37,
+        "goals_against_per_match": 0.84,
+        "shots_ratio": 0.53,
+        "shots_per_match": 11.47,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.119,
+        "corners_per_match": 4.42,
+        "fouls_per_match": 11.45,
+        "cards_per_match": 1.53,
+        "defensive_compactness": 6.29,
+        "win_pct": 52.6
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Milan": {
+      "name": "Milan",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.45,
+        "goals_against_per_match": 0.97,
+        "shots_ratio": 0.596,
+        "shots_per_match": 15.71,
+        "shots_target_per_match": 4.92,
+        "goal_conversion_rate": 0.092,
+        "corners_per_match": 5.47,
+        "fouls_per_match": 10.37,
+        "cards_per_match": 1.82,
+        "defensive_compactness": 6.029999999999999,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.55,
+        "goals_against_per_match": 1.08,
+        "shots_ratio": 0.501,
+        "shots_per_match": 12.21,
+        "shots_target_per_match": 4.5,
+        "goal_conversion_rate": 0.127,
+        "corners_per_match": 4.5,
+        "fouls_per_match": 10.66,
+        "cards_per_match": 1.89,
+        "defensive_compactness": 5.5,
+        "win_pct": 52.6
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Cremonese": {
+      "name": "Cremonese",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.95,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.439,
+        "shots_per_match": 10.32,
+        "shots_target_per_match": 3.68,
+        "goal_conversion_rate": 0.092,
+        "corners_per_match": 3.58,
+        "fouls_per_match": 13.37,
+        "cards_per_match": 2.11,
+        "defensive_compactness": 4.89,
+        "win_pct": 15.8
+      },
+      "away": {
+        "goals_for_per_match": 0.74,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.305,
+        "shots_per_match": 7.95,
+        "shots_target_per_match": 2.89,
+        "goal_conversion_rate": 0.093,
+        "corners_per_match": 3.42,
+        "fouls_per_match": 13.68,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 3.16,
+        "win_pct": 26.3
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Roma": {
+      "name": "Roma",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.84,
+        "goals_against_per_match": 0.66,
+        "shots_ratio": 0.614,
+        "shots_per_match": 14.63,
+        "shots_target_per_match": 4.95,
+        "goal_conversion_rate": 0.126,
+        "corners_per_match": 5.05,
+        "fouls_per_match": 11.37,
+        "cards_per_match": 1.58,
+        "defensive_compactness": 6.87,
+        "win_pct": 68.4
+      },
+      "away": {
+        "goals_for_per_match": 1.18,
+        "goals_against_per_match": 1.08,
+        "shots_ratio": 0.498,
+        "shots_per_match": 12.0,
+        "shots_target_per_match": 4.32,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 4.58,
+        "fouls_per_match": 13.05,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 5.66,
+        "win_pct": 44.7
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Bologna": {
+      "name": "Bologna",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.37,
+        "goals_against_per_match": 1.08,
+        "shots_ratio": 0.648,
+        "shots_per_match": 15.16,
+        "shots_target_per_match": 4.42,
+        "goal_conversion_rate": 0.09,
+        "corners_per_match": 5.82,
+        "fouls_per_match": 13.05,
+        "cards_per_match": 1.58,
+        "defensive_compactness": 6.529999999999999,
+        "win_pct": 42.1
+      },
+      "away": {
+        "goals_for_per_match": 1.42,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.518,
+        "shots_per_match": 11.24,
+        "shots_target_per_match": 3.97,
+        "goal_conversion_rate": 0.126,
+        "corners_per_match": 3.63,
+        "fouls_per_match": 14.18,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 6.05,
+        "win_pct": 42.1
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Cagliari": {
+      "name": "Cagliari",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.21,
+        "goals_against_per_match": 1.34,
+        "shots_ratio": 0.509,
+        "shots_per_match": 12.11,
+        "shots_target_per_match": 3.61,
+        "goal_conversion_rate": 0.1,
+        "corners_per_match": 5.03,
+        "fouls_per_match": 13.37,
+        "cards_per_match": 1.55,
+        "defensive_compactness": 5.05,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 0.89,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.407,
+        "shots_per_match": 9.87,
+        "shots_target_per_match": 3.05,
+        "goal_conversion_rate": 0.091,
+        "corners_per_match": 3.61,
+        "fouls_per_match": 13.58,
+        "cards_per_match": 2.5,
+        "defensive_compactness": 4.79,
+        "win_pct": 18.4
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Fiorentina": {
+      "name": "Fiorentina",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.39,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.55,
+        "shots_per_match": 13.5,
+        "shots_target_per_match": 4.34,
+        "goal_conversion_rate": 0.103,
+        "corners_per_match": 4.74,
+        "fouls_per_match": 11.95,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 6.0,
+        "win_pct": 42.1
+      },
+      "away": {
+        "goals_for_per_match": 1.26,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.433,
+        "shots_per_match": 10.66,
+        "shots_target_per_match": 3.58,
+        "goal_conversion_rate": 0.119,
+        "corners_per_match": 3.58,
+        "fouls_per_match": 12.13,
+        "cards_per_match": 2.45,
+        "defensive_compactness": 5.32,
+        "win_pct": 31.6
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Como": {
+      "name": "Como",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.66,
+        "goals_against_per_match": 1.08,
+        "shots_ratio": 0.65,
+        "shots_per_match": 15.71,
+        "shots_target_per_match": 5.76,
+        "goal_conversion_rate": 0.106,
+        "corners_per_match": 5.0,
+        "fouls_per_match": 12.66,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 7.24,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.34,
+        "goals_against_per_match": 1.05,
+        "shots_ratio": 0.537,
+        "shots_per_match": 12.37,
+        "shots_target_per_match": 4.11,
+        "goal_conversion_rate": 0.109,
+        "corners_per_match": 3.87,
+        "fouls_per_match": 13.82,
+        "cards_per_match": 2.47,
+        "defensive_compactness": 5.68,
+        "win_pct": 39.5
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Lazio": {
+      "name": "Lazio",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.58,
+        "goals_against_per_match": 1.34,
+        "shots_ratio": 0.57,
+        "shots_per_match": 13.71,
+        "shots_target_per_match": 5.05,
+        "goal_conversion_rate": 0.115,
+        "corners_per_match": 5.45,
+        "fouls_per_match": 10.95,
+        "cards_per_match": 2.53,
+        "defensive_compactness": 6.34,
+        "win_pct": 39.5
+      },
+      "away": {
+        "goals_for_per_match": 1.11,
+        "goals_against_per_match": 1.0,
+        "shots_ratio": 0.465,
+        "shots_per_match": 11.39,
+        "shots_target_per_match": 4.29,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 4.32,
+        "fouls_per_match": 10.79,
+        "cards_per_match": 2.37,
+        "defensive_compactness": 5.05,
+        "win_pct": 44.7
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Atalanta": {
+      "name": "Atalanta",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.61,
+        "goals_against_per_match": 1.03,
+        "shots_ratio": 0.622,
+        "shots_per_match": 15.97,
+        "shots_target_per_match": 5.24,
+        "goal_conversion_rate": 0.1,
+        "corners_per_match": 6.24,
+        "fouls_per_match": 11.16,
+        "cards_per_match": 1.37,
+        "defensive_compactness": 6.74,
+        "win_pct": 47.4
+      },
+      "away": {
+        "goals_for_per_match": 1.79,
+        "goals_against_per_match": 0.89,
+        "shots_ratio": 0.51,
+        "shots_per_match": 13.13,
+        "shots_target_per_match": 4.47,
+        "goal_conversion_rate": 0.136,
+        "corners_per_match": 4.5,
+        "fouls_per_match": 12.11,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 5.84,
+        "win_pct": 50.0
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Pisa": {
+      "name": "Pisa",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.47,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.458,
+        "shots_per_match": 10.26,
+        "shots_target_per_match": 3.11,
+        "goal_conversion_rate": 0.046,
+        "corners_per_match": 3.79,
+        "fouls_per_match": 13.32,
+        "cards_per_match": 2.16,
+        "defensive_compactness": 5.68,
+        "win_pct": 10.5
+      },
+      "away": {
+        "goals_for_per_match": 0.89,
+        "goals_against_per_match": 2.37,
+        "shots_ratio": 0.348,
+        "shots_per_match": 8.95,
+        "shots_target_per_match": 2.47,
+        "goal_conversion_rate": 0.1,
+        "corners_per_match": 3.32,
+        "fouls_per_match": 13.05,
+        "cards_per_match": 2.21,
+        "defensive_compactness": 4.68,
+        "win_pct": 0.0
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Juventus": {
+      "name": "Juventus",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.74,
+        "goals_against_per_match": 0.82,
+        "shots_ratio": 0.65,
+        "shots_per_match": 17.63,
+        "shots_target_per_match": 6.13,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 6.16,
+        "fouls_per_match": 11.97,
+        "cards_per_match": 1.47,
+        "defensive_compactness": 6.529999999999999,
+        "win_pct": 55.3
+      },
+      "away": {
+        "goals_for_per_match": 1.39,
+        "goals_against_per_match": 1.0,
+        "shots_ratio": 0.532,
+        "shots_per_match": 12.71,
+        "shots_target_per_match": 4.84,
+        "goal_conversion_rate": 0.11,
+        "corners_per_match": 4.26,
+        "fouls_per_match": 12.82,
+        "cards_per_match": 1.76,
+        "defensive_compactness": 5.18,
+        "win_pct": 42.1
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Parma": {
+      "name": "Parma",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.08,
+        "goals_against_per_match": 1.39,
+        "shots_ratio": 0.475,
+        "shots_per_match": 11.97,
+        "shots_target_per_match": 3.47,
+        "goal_conversion_rate": 0.09,
+        "corners_per_match": 4.11,
+        "fouls_per_match": 11.03,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 5.32,
+        "win_pct": 26.3
+      },
+      "away": {
+        "goals_for_per_match": 0.82,
+        "goals_against_per_match": 1.34,
+        "shots_ratio": 0.394,
+        "shots_per_match": 9.87,
+        "shots_target_per_match": 3.16,
+        "goal_conversion_rate": 0.083,
+        "corners_per_match": 4.16,
+        "fouls_per_match": 10.5,
+        "cards_per_match": 1.89,
+        "defensive_compactness": 3.84,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Udinese": {
+      "name": "Udinese",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.05,
+        "goals_against_per_match": 1.26,
+        "shots_ratio": 0.512,
+        "shots_per_match": 12.47,
+        "shots_target_per_match": 3.87,
+        "goal_conversion_rate": 0.084,
+        "corners_per_match": 4.79,
+        "fouls_per_match": 14.32,
+        "cards_per_match": 1.87,
+        "defensive_compactness": 5.42,
+        "win_pct": 34.2
+      },
+      "away": {
+        "goals_for_per_match": 1.21,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.422,
+        "shots_per_match": 10.61,
+        "shots_target_per_match": 3.79,
+        "goal_conversion_rate": 0.114,
+        "corners_per_match": 4.37,
+        "fouls_per_match": 13.47,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 4.5,
+        "win_pct": 34.2
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Verona": {
+      "name": "Verona",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 0.71,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.473,
+        "shots_per_match": 10.74,
+        "shots_target_per_match": 3.37,
+        "goal_conversion_rate": 0.066,
+        "corners_per_match": 4.82,
+        "fouls_per_match": 14.47,
+        "cards_per_match": 2.61,
+        "defensive_compactness": 5.89,
+        "win_pct": 13.2
+      },
+      "away": {
+        "goals_for_per_match": 0.84,
+        "goals_against_per_match": 1.66,
+        "shots_ratio": 0.406,
+        "shots_per_match": 10.05,
+        "shots_target_per_match": 3.0,
+        "goal_conversion_rate": 0.084,
+        "corners_per_match": 3.13,
+        "fouls_per_match": 16.5,
+        "cards_per_match": 2.58,
+        "defensive_compactness": 3.74,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Inter": {
+      "name": "Inter",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 2.37,
+        "goals_against_per_match": 0.97,
+        "shots_ratio": 0.655,
+        "shots_per_match": 17.37,
+        "shots_target_per_match": 6.05,
+        "goal_conversion_rate": 0.136,
+        "corners_per_match": 7.18,
+        "fouls_per_match": 11.89,
+        "cards_per_match": 1.29,
+        "defensive_compactness": 7.05,
+        "win_pct": 71.1
+      },
+      "away": {
+        "goals_for_per_match": 2.05,
+        "goals_against_per_match": 0.87,
+        "shots_ratio": 0.584,
+        "shots_per_match": 14.76,
+        "shots_target_per_match": 5.08,
+        "goal_conversion_rate": 0.139,
+        "corners_per_match": 4.97,
+        "fouls_per_match": 12.13,
+        "cards_per_match": 1.89,
+        "defensive_compactness": 6.37,
+        "win_pct": 63.2
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Torino": {
+      "name": "Torino",
+      "total_matches": 76,
+      "home_matches": 38,
+      "away_matches": 38,
+      "home": {
+        "goals_for_per_match": 1.16,
+        "goals_against_per_match": 1.24,
+        "shots_ratio": 0.468,
+        "shots_per_match": 11.71,
+        "shots_target_per_match": 3.74,
+        "goal_conversion_rate": 0.099,
+        "corners_per_match": 4.45,
+        "fouls_per_match": 12.87,
+        "cards_per_match": 1.76,
+        "defensive_compactness": 5.68,
+        "win_pct": 36.8
+      },
+      "away": {
+        "goals_for_per_match": 1.03,
+        "goals_against_per_match": 1.61,
+        "shots_ratio": 0.416,
+        "shots_per_match": 10.24,
+        "shots_target_per_match": 3.63,
+        "goal_conversion_rate": 0.1,
+        "corners_per_match": 3.55,
+        "fouls_per_match": 13.71,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 4.53,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Ipswich": {
+      "name": "Ipswich",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.74,
+        "goals_against_per_match": 2.32,
+        "shots_ratio": 0.431,
+        "shots_per_match": 10.95,
+        "shots_target_per_match": 3.58,
+        "goal_conversion_rate": 0.067,
+        "corners_per_match": 4.11,
+        "fouls_per_match": 10.21,
+        "cards_per_match": 1.89,
+        "defensive_compactness": 4.11,
+        "win_pct": 5.3
+      },
+      "away": {
+        "goals_for_per_match": 1.16,
+        "goals_against_per_match": 2.0,
+        "shots_ratio": 0.336,
+        "shots_per_match": 8.84,
+        "shots_target_per_match": 3.11,
+        "goal_conversion_rate": 0.131,
+        "corners_per_match": 3.53,
+        "fouls_per_match": 12.42,
+        "cards_per_match": 2.79,
+        "defensive_compactness": 2.63,
+        "win_pct": 15.8
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Southampton": {
+      "name": "Southampton",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.68,
+        "goals_against_per_match": 2.47,
+        "shots_ratio": 0.312,
+        "shots_per_match": 8.58,
+        "shots_target_per_match": 3.0,
+        "goal_conversion_rate": 0.08,
+        "corners_per_match": 3.16,
+        "fouls_per_match": 11.21,
+        "cards_per_match": 2.11,
+        "defensive_compactness": 2.74,
+        "win_pct": 5.3
+      },
+      "away": {
+        "goals_for_per_match": 0.68,
+        "goals_against_per_match": 2.05,
+        "shots_ratio": 0.359,
+        "shots_per_match": 9.47,
+        "shots_target_per_match": 2.84,
+        "goal_conversion_rate": 0.072,
+        "corners_per_match": 4.84,
+        "fouls_per_match": 12.95,
+        "cards_per_match": 2.74,
+        "defensive_compactness": 4.32,
+        "win_pct": 5.3
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Leicester": {
+      "name": "Leicester",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.79,
+        "goals_against_per_match": 1.79,
+        "shots_ratio": 0.367,
+        "shots_per_match": 9.26,
+        "shots_target_per_match": 2.89,
+        "goal_conversion_rate": 0.085,
+        "corners_per_match": 4.21,
+        "fouls_per_match": 10.95,
+        "cards_per_match": 2.21,
+        "defensive_compactness": 4.32,
+        "win_pct": 21.1
+      },
+      "away": {
+        "goals_for_per_match": 0.95,
+        "goals_against_per_match": 2.42,
+        "shots_ratio": 0.321,
+        "shots_per_match": 8.37,
+        "shots_target_per_match": 2.95,
+        "goal_conversion_rate": 0.113,
+        "corners_per_match": 3.21,
+        "fouls_per_match": 11.16,
+        "cards_per_match": 2.37,
+        "defensive_compactness": 3.5300000000000002,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "E0"
+      ]
+    },
+    "Las Palmas": {
+      "name": "Las Palmas",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.11,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.523,
+        "shots_per_match": 13.05,
+        "shots_target_per_match": 4.11,
+        "goal_conversion_rate": 0.085,
+        "corners_per_match": 5.21,
+        "fouls_per_match": 12.21,
+        "cards_per_match": 2.84,
+        "defensive_compactness": 6.109999999999999,
+        "win_pct": 21.1
+      },
+      "away": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.342,
+        "shots_per_match": 8.53,
+        "shots_target_per_match": 3.32,
+        "goal_conversion_rate": 0.117,
+        "corners_per_match": 3.21,
+        "fouls_per_match": 11.37,
+        "cards_per_match": 3.0,
+        "defensive_compactness": 3.4699999999999998,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Leganes": {
+      "name": "Leganes",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 1.21,
+        "goals_against_per_match": 1.42,
+        "shots_ratio": 0.391,
+        "shots_per_match": 8.58,
+        "shots_target_per_match": 2.89,
+        "goal_conversion_rate": 0.141,
+        "corners_per_match": 2.68,
+        "fouls_per_match": 13.58,
+        "cards_per_match": 2.21,
+        "defensive_compactness": 4.47,
+        "win_pct": 36.8
+      },
+      "away": {
+        "goals_for_per_match": 0.84,
+        "goals_against_per_match": 1.53,
+        "shots_ratio": 0.368,
+        "shots_per_match": 9.68,
+        "shots_target_per_match": 3.32,
+        "goal_conversion_rate": 0.087,
+        "corners_per_match": 3.26,
+        "fouls_per_match": 12.89,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 2.79,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Valladolid": {
+      "name": "Valladolid",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.58,
+        "goals_against_per_match": 1.68,
+        "shots_ratio": 0.404,
+        "shots_per_match": 9.47,
+        "shots_target_per_match": 2.58,
+        "goal_conversion_rate": 0.061,
+        "corners_per_match": 4.26,
+        "fouls_per_match": 12.11,
+        "cards_per_match": 2.74,
+        "defensive_compactness": 4.47,
+        "win_pct": 15.8
+      },
+      "away": {
+        "goals_for_per_match": 0.79,
+        "goals_against_per_match": 3.05,
+        "shots_ratio": 0.318,
+        "shots_per_match": 8.16,
+        "shots_target_per_match": 3.11,
+        "goal_conversion_rate": 0.097,
+        "corners_per_match": 3.95,
+        "fouls_per_match": 12.0,
+        "cards_per_match": 2.42,
+        "defensive_compactness": 5.26,
+        "win_pct": 5.3
+      },
+      "divisions": [
+        "SP1"
+      ]
+    },
+    "Holstein Kiel": {
+      "name": "Holstein Kiel",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.41,
+        "goals_against_per_match": 2.41,
+        "shots_ratio": 0.43,
+        "shots_per_match": 11.18,
+        "shots_target_per_match": 4.24,
+        "goal_conversion_rate": 0.126,
+        "corners_per_match": 3.59,
+        "fouls_per_match": 12.0,
+        "cards_per_match": 2.29,
+        "defensive_compactness": 4.18,
+        "win_pct": 23.5
+      },
+      "away": {
+        "goals_for_per_match": 1.47,
+        "goals_against_per_match": 2.29,
+        "shots_ratio": 0.373,
+        "shots_per_match": 10.41,
+        "shots_target_per_match": 4.06,
+        "goal_conversion_rate": 0.141,
+        "corners_per_match": 3.47,
+        "fouls_per_match": 11.94,
+        "cards_per_match": 2.53,
+        "defensive_compactness": 2.6500000000000004,
+        "win_pct": 11.8
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Bochum": {
+      "name": "Bochum",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 0.94,
+        "goals_against_per_match": 1.94,
+        "shots_ratio": 0.524,
+        "shots_per_match": 14.53,
+        "shots_target_per_match": 4.41,
+        "goal_conversion_rate": 0.065,
+        "corners_per_match": 5.76,
+        "fouls_per_match": 12.76,
+        "cards_per_match": 1.88,
+        "defensive_compactness": 5.06,
+        "win_pct": 17.6
+      },
+      "away": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 2.0,
+        "shots_ratio": 0.43,
+        "shots_per_match": 10.41,
+        "shots_target_per_match": 3.65,
+        "goal_conversion_rate": 0.096,
+        "corners_per_match": 3.59,
+        "fouls_per_match": 14.18,
+        "cards_per_match": 2.18,
+        "defensive_compactness": 4.53,
+        "win_pct": 17.6
+      },
+      "divisions": [
+        "D1"
+      ]
+    },
+    "Reims": {
+      "name": "Reims",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 1.47,
+        "shots_ratio": 0.481,
+        "shots_per_match": 12.12,
+        "shots_target_per_match": 3.41,
+        "goal_conversion_rate": 0.083,
+        "corners_per_match": 3.59,
+        "fouls_per_match": 11.41,
+        "cards_per_match": 2.06,
+        "defensive_compactness": 4.53,
+        "win_pct": 23.5
+      },
+      "away": {
+        "goals_for_per_match": 0.94,
+        "goals_against_per_match": 1.29,
+        "shots_ratio": 0.41,
+        "shots_per_match": 11.18,
+        "shots_target_per_match": 3.24,
+        "goal_conversion_rate": 0.084,
+        "corners_per_match": 4.29,
+        "fouls_per_match": 11.59,
+        "cards_per_match": 1.94,
+        "defensive_compactness": 3.88,
+        "win_pct": 23.5
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "St Etienne": {
+      "name": "St Etienne",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.41,
+        "goals_against_per_match": 1.94,
+        "shots_ratio": 0.47,
+        "shots_per_match": 12.71,
+        "shots_target_per_match": 3.82,
+        "goal_conversion_rate": 0.111,
+        "corners_per_match": 4.18,
+        "fouls_per_match": 12.94,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 3.88,
+        "win_pct": 35.3
+      },
+      "away": {
+        "goals_for_per_match": 0.88,
+        "goals_against_per_match": 2.59,
+        "shots_ratio": 0.328,
+        "shots_per_match": 8.59,
+        "shots_target_per_match": 3.29,
+        "goal_conversion_rate": 0.103,
+        "corners_per_match": 3.76,
+        "fouls_per_match": 13.41,
+        "cards_per_match": 2.0,
+        "defensive_compactness": 4.41,
+        "win_pct": 11.8
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Montpellier": {
+      "name": "Montpellier",
+      "total_matches": 34,
+      "home_matches": 17,
+      "away_matches": 17,
+      "home": {
+        "goals_for_per_match": 1.0,
+        "goals_against_per_match": 2.41,
+        "shots_ratio": 0.454,
+        "shots_per_match": 12.24,
+        "shots_target_per_match": 4.47,
+        "goal_conversion_rate": 0.082,
+        "corners_per_match": 5.35,
+        "fouls_per_match": 12.59,
+        "cards_per_match": 2.88,
+        "defensive_compactness": 5.29,
+        "win_pct": 17.6
+      },
+      "away": {
+        "goals_for_per_match": 0.35,
+        "goals_against_per_match": 2.24,
+        "shots_ratio": 0.37,
+        "shots_per_match": 9.59,
+        "shots_target_per_match": 2.47,
+        "goal_conversion_rate": 0.037,
+        "corners_per_match": 4.0,
+        "fouls_per_match": 12.53,
+        "cards_per_match": 2.65,
+        "defensive_compactness": 4.12,
+        "win_pct": 5.9
+      },
+      "divisions": [
+        "F1"
+      ]
+    },
+    "Empoli": {
+      "name": "Empoli",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.53,
+        "goals_against_per_match": 1.37,
+        "shots_ratio": 0.441,
+        "shots_per_match": 9.05,
+        "shots_target_per_match": 2.74,
+        "goal_conversion_rate": 0.058,
+        "corners_per_match": 4.42,
+        "fouls_per_match": 13.63,
+        "cards_per_match": 1.42,
+        "defensive_compactness": 5.37,
+        "win_pct": 10.5
+      },
+      "away": {
+        "goals_for_per_match": 1.21,
+        "goals_against_per_match": 1.74,
+        "shots_ratio": 0.403,
+        "shots_per_match": 10.16,
+        "shots_target_per_match": 3.05,
+        "goal_conversion_rate": 0.119,
+        "corners_per_match": 4.53,
+        "fouls_per_match": 16.16,
+        "cards_per_match": 2.32,
+        "defensive_compactness": 4.42,
+        "win_pct": 21.1
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Monza": {
+      "name": "Monza",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.68,
+        "goals_against_per_match": 1.63,
+        "shots_ratio": 0.434,
+        "shots_per_match": 10.47,
+        "shots_target_per_match": 2.95,
+        "goal_conversion_rate": 0.065,
+        "corners_per_match": 3.74,
+        "fouls_per_match": 13.79,
+        "cards_per_match": 2.26,
+        "defensive_compactness": 5.58,
+        "win_pct": 5.3
+      },
+      "away": {
+        "goals_for_per_match": 0.79,
+        "goals_against_per_match": 2.0,
+        "shots_ratio": 0.307,
+        "shots_per_match": 7.05,
+        "shots_target_per_match": 2.53,
+        "goal_conversion_rate": 0.112,
+        "corners_per_match": 3.42,
+        "fouls_per_match": 13.11,
+        "cards_per_match": 2.63,
+        "defensive_compactness": 4.21,
+        "win_pct": 10.5
+      },
+      "divisions": [
+        "I1"
+      ]
+    },
+    "Venezia": {
+      "name": "Venezia",
+      "total_matches": 38,
+      "home_matches": 19,
+      "away_matches": 19,
+      "home": {
+        "goals_for_per_match": 0.89,
+        "goals_against_per_match": 1.16,
+        "shots_ratio": 0.462,
+        "shots_per_match": 10.89,
+        "shots_target_per_match": 3.89,
+        "goal_conversion_rate": 0.082,
+        "corners_per_match": 4.0,
+        "fouls_per_match": 13.21,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 4.47,
+        "win_pct": 26.3
+      },
+      "away": {
+        "goals_for_per_match": 0.79,
+        "goals_against_per_match": 1.79,
+        "shots_ratio": 0.36,
+        "shots_per_match": 9.11,
+        "shots_target_per_match": 2.95,
+        "goal_conversion_rate": 0.087,
+        "corners_per_match": 3.53,
+        "fouls_per_match": 13.26,
+        "cards_per_match": 2.05,
+        "defensive_compactness": 3.79,
+        "win_pct": 0.0
+      },
+      "divisions": [
+        "I1"
+      ]
+    }
+  },
+  "clv_summary": {
+    "E0": {
+      "matches": 760,
+      "avg_clv_home": 0.0015,
+      "avg_clv_away": -0.0003,
+      "steam_move_pct": 0.3
+    },
+    "SP1": {
+      "matches": 760,
+      "avg_clv_home": -0.0004,
+      "avg_clv_away": 0.0005,
+      "steam_move_pct": 0.7
+    },
+    "D1": {
+      "matches": 612,
+      "avg_clv_home": 0.0011,
+      "avg_clv_away": -0.0002,
+      "steam_move_pct": 0.3
+    },
+    "F1": {
+      "matches": 612,
+      "avg_clv_home": 0.0001,
+      "avg_clv_away": 0.0013,
+      "steam_move_pct": 0.3
+    },
+    "I1": {
+      "matches": 760,
+      "avg_clv_home": 0.0005,
+      "avg_clv_away": 0.0004,
+      "steam_move_pct": 0.4
+    }
+  },
+  "clv_by_team": {
+    "Bayern Munich": {
+      "avg_clv": 0.0124,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Paris SG": {
+      "avg_clv": 0.0092,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Real Madrid": {
+      "avg_clv": 0.0076,
+      "matches": 38,
+      "steam_move_count": 1
+    },
+    "Liverpool": {
+      "avg_clv": 0.0073,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Barcelona": {
+      "avg_clv": 0.0068,
+      "matches": 38,
+      "steam_move_count": 1
+    },
+    "Leverkusen": {
+      "avg_clv": 0.0067,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Ath Madrid": {
+      "avg_clv": 0.0063,
+      "matches": 38,
+      "steam_move_count": 1
+    },
+    "Man City": {
+      "avg_clv": 0.0062,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Arsenal": {
+      "avg_clv": 0.0045,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Monaco": {
+      "avg_clv": 0.0044,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Leicester": {
+      "avg_clv": -0.0043,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Chelsea": {
+      "avg_clv": 0.0042,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Montpellier": {
+      "avg_clv": -0.0039,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Pisa": {
+      "avg_clv": 0.0038,
+      "matches": 25,
+      "steam_move_count": 0
+    },
+    "Le Havre": {
+      "avg_clv": -0.0038,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Cremonese": {
+      "avg_clv": 0.0037,
+      "matches": 25,
+      "steam_move_count": 0
+    },
+    "Leganes": {
+      "avg_clv": -0.0035,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Marseille": {
+      "avg_clv": 0.0034,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Milan": {
+      "avg_clv": 0.0032,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Tottenham": {
+      "avg_clv": 0.0031,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Las Palmas": {
+      "avg_clv": -0.0031,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Dortmund": {
+      "avg_clv": 0.0031,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Heidenheim": {
+      "avg_clv": -0.003,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Inter": {
+      "avg_clv": 0.0029,
+      "matches": 62,
+      "steam_move_count": 0
+    },
+    "Espanol": {
+      "avg_clv": -0.0029,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Augsburg": {
+      "avg_clv": -0.0029,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Holstein Kiel": {
+      "avg_clv": -0.0029,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "M'gladbach": {
+      "avg_clv": 0.0028,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Ipswich": {
+      "avg_clv": -0.0027,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Aston Villa": {
+      "avg_clv": 0.0026,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "St Pauli": {
+      "avg_clv": -0.0026,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Valladolid": {
+      "avg_clv": -0.0025,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Venezia": {
+      "avg_clv": -0.0025,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Alaves": {
+      "avg_clv": -0.0024,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Mallorca": {
+      "avg_clv": -0.0024,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Wolves": {
+      "avg_clv": -0.0023,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Rennes": {
+      "avg_clv": -0.0023,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Bochum": {
+      "avg_clv": -0.0022,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Newcastle": {
+      "avg_clv": 0.0021,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Ath Bilbao": {
+      "avg_clv": 0.0021,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Getafe": {
+      "avg_clv": -0.0021,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Brentford": {
+      "avg_clv": -0.002,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Crystal Palace": {
+      "avg_clv": -0.002,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Lazio": {
+      "avg_clv": 0.0018,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Nice": {
+      "avg_clv": -0.0018,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Ein Frankfurt": {
+      "avg_clv": 0.0017,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "St Etienne": {
+      "avg_clv": 0.0016,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Empoli": {
+      "avg_clv": -0.0016,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Genoa": {
+      "avg_clv": -0.0015,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Verona": {
+      "avg_clv": 0.0014,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "RB Leipzig": {
+      "avg_clv": 0.0014,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Torino": {
+      "avg_clv": 0.0013,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Valencia": {
+      "avg_clv": -0.0013,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Union Berlin": {
+      "avg_clv": -0.0013,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Udinese": {
+      "avg_clv": 0.0012,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Como": {
+      "avg_clv": -0.0012,
+      "matches": 62,
+      "steam_move_count": 0
+    },
+    "Sevilla": {
+      "avg_clv": -0.0012,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Reims": {
+      "avg_clv": -0.0012,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Nott'm Forest": {
+      "avg_clv": 0.0011,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Roma": {
+      "avg_clv": -0.001,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Parma": {
+      "avg_clv": 0.001,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Fulham": {
+      "avg_clv": 0.001,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Villarreal": {
+      "avg_clv": 0.001,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Brest": {
+      "avg_clv": 0.001,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Lens": {
+      "avg_clv": 0.001,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Bologna": {
+      "avg_clv": 0.0009,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Sassuolo": {
+      "avg_clv": -0.0009,
+      "matches": 24,
+      "steam_move_count": 0
+    },
+    "Sociedad": {
+      "avg_clv": -0.0009,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Angers": {
+      "avg_clv": -0.0009,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Lecce": {
+      "avg_clv": -0.0008,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Napoli": {
+      "avg_clv": 0.0008,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Betis": {
+      "avg_clv": -0.0008,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Osasuna": {
+      "avg_clv": -0.0008,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Werder Bremen": {
+      "avg_clv": -0.0008,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Cagliari": {
+      "avg_clv": 0.0007,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Fiorentina": {
+      "avg_clv": -0.0007,
+      "matches": 62,
+      "steam_move_count": 0
+    },
+    "Celta": {
+      "avg_clv": -0.0007,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Stuttgart": {
+      "avg_clv": 0.0007,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Atalanta": {
+      "avg_clv": 0.0006,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Juventus": {
+      "avg_clv": -0.0006,
+      "matches": 63,
+      "steam_move_count": 0
+    },
+    "Everton": {
+      "avg_clv": -0.0006,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Auxerre": {
+      "avg_clv": 0.0006,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Toulouse": {
+      "avg_clv": -0.0006,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Monza": {
+      "avg_clv": -0.0006,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Brighton": {
+      "avg_clv": -0.0005,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Hoffenheim": {
+      "avg_clv": -0.0005,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Strasbourg": {
+      "avg_clv": -0.0005,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Man United": {
+      "avg_clv": -0.0004,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Southampton": {
+      "avg_clv": -0.0004,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Bournemouth": {
+      "avg_clv": 0.0003,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Vallecano": {
+      "avg_clv": -0.0003,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "West Ham": {
+      "avg_clv": -0.0002,
+      "matches": 38,
+      "steam_move_count": 0
+    },
+    "Freiburg": {
+      "avg_clv": -0.0002,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Mainz": {
+      "avg_clv": -0.0002,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Lille": {
+      "avg_clv": 0.0002,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Wolfsburg": {
+      "avg_clv": -0.0001,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Nantes": {
+      "avg_clv": -0.0001,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Lyon": {
+      "avg_clv": -0.0001,
+      "matches": 34,
+      "steam_move_count": 0
+    },
+    "Girona": {
+      "avg_clv": 0.0,
+      "matches": 38,
+      "steam_move_count": 0
+    }
+  }
+}
