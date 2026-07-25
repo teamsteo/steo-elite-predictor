@@ -30,6 +30,7 @@ import urllib.request
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
+import numpy as np
 
 # ============================================================
 # CONFIGURATION
@@ -317,6 +318,8 @@ def compute_referee_profiles(matches: List[Dict]) -> Dict:
         "away_wins": 0,
         "draws": 0,
         "divisions": set(),
+        "match_cards": [],    # Cartons par match (pour variance)
+        "match_fouls": [],    # Fautes par match (pour ratio)
     })
 
     for m in matches:
@@ -342,6 +345,9 @@ def compute_referee_profiles(matches: List[Dict]) -> Dict:
             s["total_fouls"] += hf + af
             s["total_goals"] += fthg + ftag
             s["divisions"].add(m.get("_division", ""))
+            # Axe optimisation: tracker cartons/fautes par match pour variance
+            s["match_cards"].append(hy + ay + hr + ar)
+            s["match_fouls"].append(hf + af)
 
             if ftr == "H":
                 s["home_wins"] += 1
@@ -376,6 +382,24 @@ def compute_referee_profiles(matches: List[Dict]) -> Dict:
             # Indice de sévérité normalisé (0-10): 0 = très lax, 10 = très strict
             "severity_normalized": min(10, round((s["yellow_cards"] + s["red_cards"] * 3) / n * 2, 1)),
         }
+        # ── AXE OPTIMISATION: variance cartons + ratio fautes/cartons ──
+        # Écart-type des cartons par match (indicateur de prévisibilité de l'arbitre)
+        # Un arbitre avec variance élevée = imprévisible = risque pour les paris cartons
+        if len(s["match_cards"]) >= 5:
+            profiles[referee]["card_std"] = round(float(np.std(s["match_cards"])), 2)
+            profiles[referee]["card_variance"] = round(float(np.var(s["match_cards"])), 2)
+        else:
+            profiles[referee]["card_std"] = 0.0
+            profiles[referee]["card_variance"] = 0.0
+        # Ratio fautes/cartons: propension à tirer un carton après une faute
+        # Plus le ratio est élevé, plus l'arbitre est sévère sur les fautes
+        avg_fpm = s["total_fouls"] / n if n > 0 else 0
+        total_cpm = (s["yellow_cards"] + s["red_cards"]) / n if n > 0 else 0
+        profiles[referee]["foul_to_card_ratio"] = round(total_cpm / avg_fpm, 3) if avg_fpm > 0 else 0.0
+        # Home advantage: écart entre % victoires home et away (biais pro-domestique)
+        profiles[referee]["home_advantage_pct"] = round(
+            profiles[referee]["home_win_pct"] - profiles[referee]["away_win_pct"], 1
+        )
 
     # Top 10 arbitres les plus stricts
     sorted_refs = sorted(profiles.items(), key=lambda x: x[1]["severity_index"], reverse=True)
@@ -391,6 +415,97 @@ def compute_referee_profiles(matches: List[Dict]) -> Dict:
         "profiles": dict(sorted_refs[:200]),  # Top 200 arbitres
         "count": len(profiles),
     }
+
+
+# ============================================================
+# AXE OPTIMISATION: AGRÉGATS ARBITRES PAR LIGUE
+# ============================================================
+
+def compute_referee_league_aggregates(profiles: Dict) -> Dict:
+    """
+    Agrège les stats arbitres par division/ligue.
+    Permet d'associer des features arbitre au niveau ligue dans le modèle ML,
+    même quand l'arbitre d'un match spécifique n'est pas connu.
+
+    Pour chaque division:
+    - Sévérité moyenne (pondérée par matchs)
+    - Cartons/match moyen
+    - Variance des cartons (imprévisibilité)
+    - Ratio fautes/cartons (sévérité sur fautes)
+    - Biais pro-domestique moyen
+
+    Un _global fallback est calculé pour les ligues non couvertes.
+    """
+    div_stats = defaultdict(lambda: {
+        "referee_severity_weighted": 0,
+        "cards_pm_weighted": 0,
+        "fouls_pm_weighted": 0,
+        "card_variance_sum": 0.0,
+        "foul_card_ratio_sum": 0.0,
+        "home_bias_sum": 0.0,
+        "total_match_weight": 0,
+        "n_refs": 0,
+    })
+
+    for ref_name, profile in profiles.items():
+        divs = profile.get("divisions", [])
+        matches = profile.get("matches", 1)
+        for div in divs:
+            d = div_stats[div]
+            d["referee_severity_weighted"] += profile.get("severity_index", 0) * matches
+            d["cards_pm_weighted"] += profile.get("cards_per_match", 0) * matches
+            d["fouls_pm_weighted"] += profile.get("fouls_per_match", 0) * matches
+            d["card_variance_sum"] += profile.get("card_variance", 0)
+            d["foul_card_ratio_sum"] += profile.get("foul_to_card_ratio", 0)
+            d["home_bias_sum"] += profile.get("home_advantage_pct", 0)
+            d["total_match_weight"] += matches
+            d["n_refs"] += 1
+
+    result = {}
+    for div, d in div_stats.items():
+        w = d["total_match_weight"]
+        nr = d["n_refs"]
+        if w < 20:
+            continue
+
+        result[div] = {
+            "division": div,
+            "league_name": LEAGUE_MAP.get(div, {}).get("name", div),
+            "n_referees": nr,
+            "total_matches": w,
+            "avg_severity": round(d["referee_severity_weighted"] / w, 2),
+            "avg_cards_pm": round(d["cards_pm_weighted"] / w, 2),
+            "avg_fouls_pm": round(d["fouls_pm_weighted"] / w, 1),
+            "foul_card_ratio": round(d["foul_card_ratio_sum"] / nr, 3) if nr > 0 else 0.3,
+            "card_variance": round(d["card_variance_sum"] / nr, 2) if nr > 0 else 0.0,
+            "avg_home_bias": round(d["home_bias_sum"] / nr, 1) if nr > 0 else 0.0,
+        }
+
+    # Global average (fallback pour ligues non couvertes)
+    if result:
+        vals = list(result.values())
+        result["_global"] = {
+            "avg_severity": round(np.mean([v["avg_severity"] for v in vals]), 2),
+            "avg_cards_pm": round(np.mean([v["avg_cards_pm"] for v in vals]), 2),
+            "avg_fouls_pm": round(np.mean([v["avg_fouls_pm"] for v in vals]), 1),
+            "foul_card_ratio": round(np.mean([v["foul_card_ratio"] for v in vals]), 3),
+            "card_variance": round(np.mean([v["card_variance"] for v in vals]), 2),
+            "avg_home_bias": round(np.mean([v["avg_home_bias"] for v in vals]), 1),
+        }
+
+    print(f"\n📊 Agrégats arbitres par ligue: {len(result)} divisions")
+    for div_key in sorted(result.keys()):
+        if div_key.startswith("_"):
+            continue
+        stats = result[div_key]
+        name = stats["league_name"]
+        print(f"   {name}: sev={stats['avg_severity']:.1f} | "
+              f"{stats['avg_cards_pm']:.1f}cart/match | "
+              f"FC ratio={stats['foul_card_ratio']:.3f} | "
+              f"var={stats['card_variance']:.1f} | "
+              f"bias={stats['avg_home_bias']:+.1f}%")
+
+    return result
 
 
 # ============================================================
@@ -719,6 +834,9 @@ def main():
     # Pilier 3: Arbitres
     referee_result = compute_referee_profiles(matches)
 
+    # Axe Optimisation: Agrégats arbitres par ligue
+    referee_league_aggregates = compute_referee_league_aggregates(referee_result["profiles"])
+
     # Assembler le résultat
     enrichment = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -749,6 +867,7 @@ def main():
         "tactical_profiles": tactical_result["profiles"],
         "clv_summary": clv_result.get("summary", {}),
         "clv_by_team": clv_team,
+        "referee_league_agg": referee_league_aggregates,  # Axe opt: par ligue
     }
     training_path = os.path.join(ENRICH_DIR, "training_enrichment.json")
     save_enrichment(training_data, training_path)
