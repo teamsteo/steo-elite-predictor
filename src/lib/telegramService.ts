@@ -684,23 +684,21 @@ async function formatMatchBlock(
       'none': '⚪', 'very_low': '🟤', 'low': '🟡', 'medium': '🔵', 'high': '🟠', 'critical': '🔴',
     };
     
-    // Seulement afficher si l'enjeu n'est pas "medium" (standard) ou si non fiable
-    if (imp.stakeLevel !== 'medium' || !imp.formReliable || imp.insights.length > 0) {
-      contextLines.push(`${stakeEmoji[imp.stakeLevel] || '🔵'} ENJEU: ${imp.stakeLabel}`);
-      contextLines.push(`📋 ${imp.seasonPhaseLabel} · ${imp.competitionTypeLabel}`);
-      
-      if (!imp.formReliable) {
-        contextLines.push(`⚠️ ${imp.formReliabilityReason}`);
-      }
-      
-      // Insights (ex: "MATCH À 6 POINTS", "Course au titre")
-      for (const insight of imp.insights.slice(0, 1)) {
-        contextLines.push(insight);
-      }
+    // Toujours afficher l'enjeu du match
+    contextLines.push(`${stakeEmoji[imp.stakeLevel] || '🔵'} ENJEU: ${imp.stakeLabel}`);
+    contextLines.push(`📋 ${imp.seasonPhaseLabel} · ${imp.competitionTypeLabel}`);
+    
+    if (!imp.formReliable) {
+      contextLines.push(`⚠️ ${imp.formReliabilityReason}`);
+    }
+    
+    // Insights (ex: "MATCH À 6 POINTS", "Course au titre")
+    for (const insight of imp.insights.slice(0, 2)) {
+      contextLines.push(insight);
     }
   }
   
-  // Forme (depuis les reasoning ML si disponibles)
+  // Reasoning ML — afficher les informations clés comme "mise à jour"
   if (m._mlReasoning && m._mlReasoning.length > 0) {
     for (const r of m._mlReasoning) {
       // Forme
@@ -709,6 +707,34 @@ async function formatMatchBlock(
       }
       // Blessures
       if (r.includes('🏥 Impact blessures')) {
+        contextLines.push(r);
+      }
+      // Value bet
+      if (r.includes('📊 VALUE BET')) {
+        contextLines.push(r);
+      }
+      // Buts attendus
+      if (r.includes('⚽ Buts attendus')) {
+        contextLines.push(r);
+      }
+      // Avantage contextuel
+      if (r.includes('⚖️ Avantage contextuel')) {
+        contextLines.push(r);
+      }
+      // Enjeu élevé/critique
+      if (r.includes('🏆 ENJEU')) {
+        contextLines.push(r);
+      }
+      // Forme non fiable (été, pré-saison)
+      if (r.includes('⚠️ Forme')) {
+        contextLines.push(r);
+      }
+      // XGBoost
+      if (r.includes('🧠 XGBoost')) {
+        contextLines.push(r);
+      }
+      // Météo
+      if (r.includes('🌤️ Météo')) {
         contextLines.push(r);
       }
     }
@@ -740,7 +766,7 @@ async function formatMatchBlock(
   // Ajouter la section contexte si on a des lignes
   if (contextLines.length > 0) {
     block += `    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n`;
-    for (const line of contextLines.slice(0, 5)) { // Max 5 lignes de contexte
+    for (const line of contextLines.slice(0, 8)) { // Max 8 lignes de contexte
       block += `    ${line}\n`;
     }
   }
