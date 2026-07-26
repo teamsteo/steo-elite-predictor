@@ -108,6 +108,7 @@ export interface UnifiedPrediction {
       formReliabilityReason: string;
       warnings: string[];
       insights: string[];
+      contextSummary: string;
     };
   };
   
@@ -456,6 +457,7 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       formReliabilityReason: context.matchImportance.formReliabilityReason,
       warnings: context.matchImportance.warnings,
       insights: context.matchImportance.insights,
+      contextSummary: context.matchImportance.contextSummary,
     } : undefined,
   };
   

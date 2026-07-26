@@ -583,6 +583,7 @@ interface TelegramMatch {
     formReliabilityReason: string;
     warnings: string[];
     insights: string[];
+    contextSummary?: string;
   };
   // Contexte enrichi
   _enrichedContext?: {
@@ -676,39 +677,45 @@ async function formatMatchBlock(
   // SECTION CONTEXTE ENRICHI (enjeu, forme, blessures, news)
   // ══════════════════════════════════════════
   const contextLines: string[] = [];
-  
-  // Enjeu du match
-  if (m._matchImportance) {
+
+  // Enjeu du match — TOUJOURS affiché (default "RAS" si données manquantes)
+  {
     const imp = m._matchImportance;
     const stakeEmoji: Record<string, string> = {
       'none': '⚪', 'very_low': '🟤', 'low': '🟡', 'medium': '🔵', 'high': '🟠', 'critical': '🔴',
     };
-    
-    // Toujours afficher l'enjeu du match
-    contextLines.push(`${stakeEmoji[imp.stakeLevel] || '🔵'} ENJEU: ${imp.stakeLabel}`);
-    contextLines.push(`📋 ${imp.seasonPhaseLabel} · ${imp.competitionTypeLabel}`);
-    
-    if (!imp.formReliable) {
+    const stakeLevel = imp?.stakeLevel || 'medium';
+    const stakeLabel = imp?.stakeLabel || 'RAS';
+    const phaseLabel = imp?.seasonPhaseLabel || 'Saison régulière';
+    const compLabel = imp?.competitionTypeLabel || 'Championnat';
+
+    // Ligne 1: niveau d'enjeu (toujours présente)
+    contextLines.push(`${stakeEmoji[stakeLevel] || '🔵'} ENJEU: ${stakeLabel}`);
+    // Ligne 2: phase + type compétition
+    contextLines.push(`📋 ${phaseLabel} · ${compLabel}`);
+
+    if (imp && !imp.formReliable) {
       contextLines.push(`⚠️ ${imp.formReliabilityReason}`);
     }
-    
+
     // Insights (ex: "MATCH À 6 POINTS", "Course au titre")
-    for (const insight of imp.insights.slice(0, 2)) {
-      contextLines.push(insight);
+    if (imp?.insights) {
+      for (const insight of imp.insights.slice(0, 2)) {
+        contextLines.push(insight);
+      }
     }
+
+    // Résumé court du contexte (news + blessures + forme + météo + derby) — toujours présent
+    // Si vide/absent → "RAS"
+    const summary = imp?.contextSummary || 'RAS';
+    contextLines.push(`📝 ${summary}`);
   }
   
   // Reasoning ML — afficher les informations clés comme "mise à jour"
+  // NOTE: Forme, blessures, météo et enjeu sont déjà synthétisés dans le
+  // contextSummary ci-dessus → on évite les doublons en les filtrant ici.
   if (m._mlReasoning && m._mlReasoning.length > 0) {
     for (const r of m._mlReasoning) {
-      // Forme
-      if (r.includes('📈 Forme')) {
-        contextLines.push(r);
-      }
-      // Blessures
-      if (r.includes('🏥 Impact blessures')) {
-        contextLines.push(r);
-      }
       // Value bet
       if (r.includes('📊 VALUE BET')) {
         contextLines.push(r);
@@ -721,20 +728,8 @@ async function formatMatchBlock(
       if (r.includes('⚖️ Avantage contextuel')) {
         contextLines.push(r);
       }
-      // Enjeu élevé/critique
-      if (r.includes('🏆 ENJEU')) {
-        contextLines.push(r);
-      }
-      // Forme non fiable (été, pré-saison)
-      if (r.includes('⚠️ Forme')) {
-        contextLines.push(r);
-      }
       // XGBoost
       if (r.includes('🧠 XGBoost')) {
-        contextLines.push(r);
-      }
-      // Météo
-      if (r.includes('🌤️ Météo')) {
         contextLines.push(r);
       }
     }

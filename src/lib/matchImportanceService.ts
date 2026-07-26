@@ -81,11 +81,69 @@ export interface MatchImportance {
   // Warnings pour l'utilisateur
   warnings: string[];
   insights: string[];
-  
+
   // Forme fiable ?
   formReliable: boolean;
   formReliability: 'reliable' | 'uncertain' | 'unreliable';
   formReliabilityReason: string;
+
+  // Résumé court du contexte (news, blessures, forme, météo, derby)
+  // — toujours présent, "RAS" si rien à signaler
+  contextSummary: string;
+}
+
+// ============================================
+// TYPES POUR LE CONTEXTE EXTERNE
+// ============================================
+
+export interface MatchContextInput {
+  // News récentes (teamNewsService)
+  teamNews?: {
+    homeTeam?: { summary?: string; overallImpact?: { riskLevel?: string }; keyFactors?: string[] };
+    awayTeam?: { summary?: string; overallImpact?: { riskLevel?: string }; keyFactors?: string[] };
+  };
+  // Blessures (transfermarkt / NBA)
+  injuries?: {
+    homeImpact?: number;
+    awayImpact?: number;
+    summary?: string;
+    keyAbsentees?: { home?: string[]; away?: string[] };
+  };
+  // Forme FBref (football)
+  fbref?: {
+    homeForm?: { form?: string | null; formPoints?: number | null; last5?: Array<{ result: string }> | null } | null;
+    awayForm?: { form?: string | null; formPoints?: number | null; last5?: Array<{ result: string }> | null } | null;
+  };
+  // Forme NBA (basketball)
+  nba?: {
+    homeFormScore?: number;
+    awayFormScore?: number;
+  };
+  // Météo
+  weather?: {
+    current?: { condition?: string; temperature?: number };
+    impact?: { overall?: string };
+  };
+  // Facteurs de match (derby, etc.)
+  // — Forme allégée compatible avec MatchFactors de matchFactorsService.ts
+  matchFactors?: {
+    derby?: { isDerby?: boolean; intensity?: string };
+    restDays?: {
+      homeDaysRest?: number;
+      awayDaysRest?: number;
+      homeFatigue?: string;
+      awayFatigue?: string;
+      advantage?: string;
+    };
+    homeAdvantage?: {
+      advantage?: string;
+      adjustment?: number;
+    };
+    referee?: {
+      style?: string;
+      avgCardsPerGame?: number;
+    };
+  };
 }
 
 // ============================================
@@ -220,6 +278,10 @@ const LEAGUE_NAME_MAP: Record<string, string> = {
 /**
  * Analyse l'enjeu d'un match — fonction principale
  * Synchrone, rapide (< 1ms)
+ *
+ * @param context Données externes optionnelles (news, blessures, forme, météo, derby).
+ *                Si fourni, génère un `contextSummary` court (1-2 lignes) reprenant
+ *                les signaux-clés. Si absent → "RAS".
  */
 export function analyzeMatchImportance(
   league: string,
@@ -227,7 +289,8 @@ export function analyzeMatchImportance(
   matchDate?: Date,
   homeStanding?: number,
   awayStanding?: number,
-  totalTeams?: number
+  totalTeams?: number,
+  context?: MatchContextInput
 ): MatchImportance {
   const now = matchDate || new Date();
   const month = now.getUTCMonth() + 1; // 1-12
@@ -260,6 +323,9 @@ export function analyzeMatchImportance(
   // 5. Calculer les ajustements ML
   const { confidenceMultiplier, edgeThresholdBoost, kellyMultiplier } = 
     calculateMLAdjustments(stakeLevel, seasonPhase, formReliable);
+
+  // 6. Construire le résumé court du contexte (news + blessures + forme + météo + derby)
+  const contextSummary = buildMatchContextSummary(context, sport, insights);
   
   return {
     seasonPhase,
@@ -277,6 +343,7 @@ export function analyzeMatchImportance(
     formReliable,
     formReliability,
     formReliabilityReason,
+    contextSummary,
   };
 }
 
@@ -659,6 +726,143 @@ function calculateMLAdjustments(
 /**
  * Formate l'enjeu pour l'affichage Telegram (1-2 lignes)
  */
+
+/**
+ * Construit un résumé court (1-2 lignes max, ~120 caractères) du contexte match:
+ *   - Forme récente des deux équipes
+ *   - Absences clés (blessures)
+ *   - Alertes news (changement coach, conflit vestiaire, etc.)
+ *   - Météo impactante
+ *   - Derby
+ *
+ * Si aucun signal pertinent n'est disponible → renvoie "RAS".
+ *
+ * NOTE: Cette fonction est volontairement défensive — chaque champ peut être
+ * undefined, on évite tout throw.
+ */
+export function buildMatchContextSummary(
+  context: MatchContextInput | undefined,
+  sport: string,
+  insights: string[] = []
+): string {
+  if (!context) return 'RAS';
+
+  const parts: string[] = [];
+
+  // 1. Derby (signal fort, à afficher en premier)
+  if (context.matchFactors?.derby?.isDerby) {
+    const intensity = context.matchFactors.derby.intensity;
+    const intensitySuffix = intensity === 'extreme' ? ' (extrême)' : intensity === 'high' ? ' (fort)' : '';
+    parts.push(`🔥 Derby${intensitySuffix}`);
+  }
+
+  // 2. Forme récente
+  if (sport === 'basketball' && context.nba) {
+    const h = context.nba.homeFormScore;
+    const a = context.nba.awayFormScore;
+    if (typeof h === 'number' && typeof a === 'number') {
+      const label = (s: number) => s >= 65 ? 'chaud' : s <= 40 ? 'froid' : 'mitigé';
+      parts.push(`Forme: ${label(h)} vs ${label(a)}`);
+    }
+  } else if (context.fbref?.homeForm && context.fbref?.awayForm) {
+    const h = context.fbref.homeForm;
+    const a = context.fbref.awayForm;
+    if (h && a) {
+      if (h.form && a.form) {
+        parts.push(`Forme: ${h.form} vs ${a.form}`);
+      } else if (h.last5 && a.last5 && h.last5.length > 0 && a.last5.length > 0) {
+        const summarize = (last5: Array<{ result: string }>) => {
+          const w = last5.filter(r => r.result === 'W').length;
+          const d = last5.filter(r => r.result === 'D').length;
+          const l = last5.filter(r => r.result === 'L').length;
+          return `${w}V-${d}N-${l}D`;
+        };
+        parts.push(`Forme: ${summarize(h.last5)} vs ${summarize(a.last5)}`);
+      }
+    }
+  }
+
+  // 3. Blessures / absences clés
+  if (context.injuries) {
+    const { homeImpact, awayImpact, keyAbsentees, summary } = context.injuries;
+    const homeAbs = keyAbsentees?.home?.length || 0;
+    const awayAbs = keyAbsentees?.away?.length || 0;
+    const totalAbs = homeAbs + awayAbs;
+
+    // Impact numérique négatif = blessures significatives
+    const significantImpact =
+      (typeof homeImpact === 'number' && homeImpact <= -3) ||
+      (typeof awayImpact === 'number' && awayImpact <= -3) ||
+      totalAbs > 0;
+
+    if (significantImpact) {
+      if (totalAbs > 0) {
+        const detail: string[] = [];
+        if (homeAbs > 0) detail.push(`${homeAbs} absent${homeAbs > 1 ? 's' : ''} dom.`);
+        if (awayAbs > 0) detail.push(`${awayAbs} absent${awayAbs > 1 ? 's' : ''} ext.`);
+        parts.push(`🏥 ${detail.join(' · ')}`);
+      } else if (summary && summary !== 'Aucune blessure signalée' && summary !== 'Données non disponibles') {
+        // Fallback: résumé textuel court (max 50 chars)
+        const short = summary.length > 50 ? summary.slice(0, 47) + '…' : summary;
+        parts.push(`🏥 ${short}`);
+      }
+    }
+  }
+
+  // 4. News / alertes contextuelles (changement coach, conflit, etc.)
+  const newsSignals: string[] = [];
+  const collectNews = (team?: { summary?: string; overallImpact?: { riskLevel?: string }; keyFactors?: string[] }, side: 'dom' | 'ext' = 'dom') => {
+    if (!team) return;
+    const risk = team.overallImpact?.riskLevel;
+    if (risk === 'high' || risk === 'very_high') {
+      // Utiliser le 1er keyFactor comme signal court
+      const factor = team.keyFactors?.[0];
+      if (factor) {
+        const short = factor.length > 40 ? factor.slice(0, 37) + '…' : factor;
+        newsSignals.push(`${side}: ${short}`);
+      } else if (team.summary) {
+        const short = team.summary.length > 40 ? team.summary.slice(0, 37) + '…' : team.summary;
+        newsSignals.push(`${side}: ${short}`);
+      }
+    }
+  };
+  collectNews(context.teamNews?.homeTeam, 'dom');
+  collectNews(context.teamNews?.awayTeam, 'ext');
+  if (newsSignals.length > 0) {
+    parts.push(`📰 ${newsSignals.join(' · ')}`);
+  }
+
+  // 5. Météo (uniquement si impact modéré ou supérieur — 'minor' est trop commun)
+  const weatherImpact = context.weather?.impact?.overall;
+  if (weatherImpact && weatherImpact !== 'ideal' && weatherImpact !== 'minor' && context.weather) {
+    const cond = context.weather.current?.condition;
+    if (cond) {
+      const emoji = (weatherImpact === 'extreme' || weatherImpact === 'significant') ? '🌧️' : '⛅';
+      parts.push(`${emoji} ${cond}`);
+    }
+  }
+
+  // 6. Repos asymétrique (basketball surtout)
+  if (context.matchFactors?.restDays) {
+    const { homeDaysRest, awayDaysRest, homeFatigue, awayFatigue } = context.matchFactors.restDays;
+    if (typeof homeDaysRest === 'number' && typeof awayDaysRest === 'number' && Math.abs(homeDaysRest - awayDaysRest) >= 2) {
+      const fresher = homeDaysRest > awayDaysRest ? 'dom' : 'ext';
+      parts.push(`😴 Repos: ${fresher} plus frais`);
+    } else if (homeFatigue === 'exhausted' || awayFatigue === 'exhausted') {
+      const tired = homeFatigue === 'exhausted' ? 'dom' : 'ext';
+      parts.push(`😴 ${tired} épuisé`);
+    }
+  }
+
+  // Si aucun signal pertinent, retourner RAS
+  if (parts.length === 0) return 'RAS';
+
+  // Joindre, limiter à ~150 caractères
+  const summary = parts.join(' · ');
+  if (summary.length <= 150) return summary;
+  return summary.slice(0, 147) + '…';
+}
+
 export function formatImportanceForTelegram(importance: MatchImportance): string {
   const lines: string[] = [];
   

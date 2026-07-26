@@ -417,14 +417,25 @@ export async function getUnifiedMatchContext(params: {
   }
   
   // 6. Calculer l'enjeu du match (phase saison, type compétition, importance)
+  // + Contexte enrichi (news, blessures, forme, météo, derby) pour le résumé court
   const matchImportanceData = analyzeMatchImportance(
     params.league,
     params.sport === 'football' ? 'football' : params.sport === 'basketball' ? 'basketball' : 'tennis',
-    new Date()
+    new Date(),
+    undefined,  // homeStanding (non disponible via fbrefScraper)
+    undefined,  // awayStanding
+    undefined,  // totalTeams
+    {
+      teamNews: teamNewsData || undefined,
+      injuries: injuryData || undefined,
+      fbref: fbrefData || undefined,
+      nba: nbaData || undefined,
+      weather: weatherData || undefined,
+      matchFactors: matchFactorsData || undefined,
+    }
   );
-  if (matchImportanceData.insights.length > 0) {
-    sourcesUsed.push('MatchImportance');
-  }
+  // Le résumé de contexte est toujours présent (default "RAS")
+  sourcesUsed.push('MatchImportance');
   
   // 7. Générer l'analyse unifiée
   const unifiedAnalysis = generateUnifiedAnalysis(
