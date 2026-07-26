@@ -64,10 +64,6 @@
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
-      "schedule": "0 8 * * *"
-    },
-    {
       "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=summary",
       "schedule": "0 9 * * *"
     },
@@ -76,11 +72,7 @@
       "schedule": "0 13 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=valuebets",
-      "schedule": "0 17 * * *"
-    },
-    {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-valuebets",
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
       "schedule": "0 18 * * *"
     },
     {

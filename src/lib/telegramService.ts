@@ -620,7 +620,9 @@ async function formatMatchBlock(
 
   // Séparateur + titre
   block += '───────────────────────────\n';
-  block += `<b>${index}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}\n`;
+  // 💎 Marqueur "VALUE BET" si le match a un value bet détecté
+  const valueBetBadge = m.valueBetDetected ? ' 💎 <b>VALUE BET</b>' : '';
+  block += `<b>${index}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}${valueBetBadge}\n`;
 
   // Ligue
   if (m.league) block += `${emoji} ${m.league}\n`;
@@ -846,6 +848,11 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
     weekday: 'long', day: 'numeric', month: 'long' 
   });
 
+  // 📅 Déterminer le slot horaire (MATIN / SOIR) en fonction de l'heure UTC
+  // 07:00 UTC = matin (avant matchs EU) ; 18:00 UTC = soir (avant matchs US)
+  const hourUTC = new Date().getUTCHours();
+  const slotLabel = hourUTC < 14 ? 'MATIN' : 'SOIR';
+
   // Stats
   const safeCount = filtered.filter(p => (p.riskPercentage || 100) <= 30).length;
   const moderateCount = filtered.length - safeCount;
@@ -865,18 +872,18 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
   // Construire le message
   let message = '';
   
-  // En-tête
+  // En-tête — titre unique selon le slot horaire
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += '║   📢 <b>PRONOSTICS DU JOUR</b>\n';
+  message += `║   📅 <b>PRONOS DU JOUR — ${slotLabel}</b>\n`;
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
   
-  message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
+  message += `${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
   
   let statsLine = `📊 <b>${filtered.length}</b> pronostic${filtered.length > 1 ? 's' : ''} (top ${totalEligible})`;
   statsLine += `  ·  🟢 ${safeCount}  ·  🟡 ${moderateCount}`;
-  if (valueBetsCount > 0) statsLine += `  ·  💎 ${valueBetsCount}`;
+  if (valueBetsCount > 0) statsLine += `  ·  💎 ${valueBetsCount} value bet${valueBetsCount > 1 ? 's' : ''}`;
   message += `${statsLine}\n\n`;
   
   // Détail par sport (ordonné : Foot en premier)
@@ -930,7 +937,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
   let message = '';
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += '║   📢 <b>PRONOSTICS DU JOUR</b>\n';
+  message += '║   💣 <b>PRONOS DU JOUR — KAMIKAZE</b>\n';
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
 
@@ -1057,7 +1064,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
   let message = '';
 
   message += '╔════════════════════════╗\n';
-  message += `║ 💣 <b>SÉLECTION KAMIKAZE</b>  ║\n`;
+  message += `║ 💣 <b>KAMIKAZE DU JOUR</b>  ║\n`;
   message += '╚════════════════════════╝\n\n';
 
   message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
@@ -1580,7 +1587,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   // En-tête
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += '║   📊 <b>BILAN JOURNALIER</b>\n';
+  message += '║   📊 <b>BILAN DE LA VEILLE</b>\n';
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
   message += `📅 <b>${dateLabel}</b>\n\n`;
@@ -1807,7 +1814,7 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     let message = '';
     message += '╔═════════════════════════════╗\n';
     message += '║\n';
-    message += '║   💣 <b>BILAN KAMIKAZE</b>\n';
+    message += '║   💣 <b>BILAN KAMIKAZE</b> — Résultats\n';
     message += '║\n';
     message += '╚═════════════════════════════╝\n\n';
     message += `📅 <b>${dateLabel}</b>\n\n`;

@@ -539,7 +539,7 @@ function buildSummaryMessage(
   
   // En-tête
   message += '╔════════════════════════════╗\n';
-  message += '║  🎾 PRONOSTICS TENNIS 2026  ║\n';
+  message += '║   🎾 <b>TENNIS DU JOUR</b>   ║\n';
   message += '╚════════════════════════════╝\n\n';
   
   message += `📅 <b>${today.charAt(0).toUpperCase() + today.slice(1)}</b>\n\n`;
