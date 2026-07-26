@@ -621,22 +621,86 @@ def engineer_features(df: pd.DataFrame, enrichment=None) -> pd.DataFrame:
         ref_global = ref_league_agg.get("_global", {})
 
         # Maps ligue du dataset → code football-data.co.uk
+        # Inclut tous les alias courants (avec/sans accents, codes, noms alternatifs)
         league_to_div = {
-            "Premier League": "E0", "Championship": "E1",
-            "La Liga": "SP1", "Segunda": "SP2",
-            "Bundesliga": "D1", "2. Bundesliga": "D2",
-            "Serie A": "I1", "Serie B": "I2",
-            "Ligue 1": "F1", "Ligue 2": "F2",
-            "Eredivisie": "N1", "Primeira Liga": "P1",
-            "Belgian Pro League": "B1",
-            "Scottish Premiership": "SC0",
+            # England
+            "Premier League": "E0", "EPL": "E0", "English Premier League": "E0",
+            "England Premier League": "E0", "England - Premier League": "E0",
+            "Championship": "E1", "EFL Championship": "E1",
+            "League One": "E2", "League Two": "E3",
+            # Spain
+            "La Liga": "SP1", "LaLiga": "SP1", "LaLiga Santander": "SP1",
+            "Spanish La Liga": "SP1", "Spain - La Liga": "SP1",
+            "Primera Division": "SP1", "Primera División": "SP1",
+            "Segunda": "SP2", "Segunda Division": "SP2", "Segunda División": "SP2",
+            "LaLiga 2": "SP2", "La Liga 2": "SP2",
+            # Italy
+            "Serie A": "I1", "Série A": "I1", "Italian Serie A": "I1",
+            "Italy - Serie A": "I1", "SerieA": "I1", "Serie A IT": "I1",
+            "Serie B": "I2", "Série B": "I2", "SerieB": "I2",
+            # Germany
+            "Bundesliga": "D1", "German Bundesliga": "D1",
+            "Germany - Bundesliga": "D1", "Bundesliga 1": "D1",
+            "2. Bundesliga": "D2", "Bundesliga 2": "D2", "2 Bundesliga": "D2",
+            # France
+            "Ligue 1": "F1", "Ligue1": "F1", "French Ligue 1": "F1",
+            "France - Ligue 1": "F1", "Ligue1 Uber Eats": "F1",
+            "Ligue 2": "F2", "Ligue2": "F2",
+            # Netherlands
+            "Eredivisie": "N1", "Dutch Eredivisie": "N1",
+            # Portugal
+            "Primeira Liga": "P1", "Liga Portugal": "P1",
+            "Portuguese Primeira Liga": "P1", "Liga Portugal Bwin": "P1",
+            # Belgium
+            "Belgian Pro League": "B1", "Jupiler Pro League": "B1",
+            "First Division A": "B1",
+            # Scotland
+            "Scottish Premiership": "SC0", "Scottish Premier League": "SC0",
+            "SPFL Premiership": "SC0",
+            # Greece
+            "Greek Super League": "G1", "Super League Greece": "G1",
+            "Super League 1": "G1",
         }
 
+        # Normalisation: compare en lowercase sans accents
+        import unicodedata
+        def _normalize(s):
+            if not s:
+                return ""
+            s = str(s).strip().lower()
+            # Supprime les accents
+            s = unicodedata.normalize("NFKD", s)
+            s = "".join(c for c in s if not unicodedata.combining(c))
+            return s
+
+        # Version normalisée du mapping pour matching robuste
+        league_to_div_normalized = {_normalize(k): v for k, v in league_to_div.items()}
+
         def _get_ref_agg(row_league, field, default=0.0):
-            """Récupère l'agrégat arbitre pour une ligue."""
+            """Récupère l'agrégat arbitre pour une ligue (matching robuste)."""
             if not row_league or pd.isna(row_league):
                 return ref_global.get(field, default) if ref_global else default
+            # 1. Match exact
             div = league_to_div.get(str(row_league).strip())
+            # 2. Match normalisé (sans accents, lowercase)
+            if not div:
+                norm = _normalize(row_league)
+                div = league_to_div_normalized.get(norm)
+            # 3. Match partiel (la ligue contient un mot-clé connu)
+            if not div:
+                norm = _normalize(row_league)
+                for keyword, code in [
+                    ("premier league", "E0"), ("epl", "E0"),
+                    ("la liga", "SP1"), ("laliga", "SP1"),
+                    ("serie a", "I1"), ("seriea", "I1"),
+                    ("bundesliga", "D1"),
+                    ("ligue 1", "F1"), ("ligue1", "F1"),
+                    ("eredivisie", "N1"), ("primeira", "P1"),
+                    ("jupiler", "B1"), ("premiership", "SC0"),
+                ]:
+                    if keyword in norm:
+                        div = code
+                        break
             if div and div in ref_league_agg:
                 return float(ref_league_agg[div].get(field, default))
             return ref_global.get(field, default) if ref_global else default
@@ -655,6 +719,24 @@ def engineer_features(df: pd.DataFrame, enrichment=None) -> pd.DataFrame:
 
         print(f"   📊 Enrichi: CLV({len(clv_by_team)}) Tact({len(tac_profiles)}) Arb({len(ref_profiles)})")
         print(f"      Agrégats arbitres: {len(ref_league_agg)} divisions + global fallback")
+
+        # Debug: vérifier le taux de match des ligues
+        if "league" in df.columns and len(df) > 0:
+            matched = df["league"].apply(lambda lg: bool(_get_ref_agg(lg, "avg_severity", None) is not None or ref_global))
+            # Compter combien de ligues différentes ont été résolues vs fallback
+            league_counts = df["league"].fillna("Inconnu").value_counts()
+            n_matched = 0
+            n_fallback = 0
+            for lg_name, cnt in league_counts.items():
+                div_test = league_to_div.get(str(lg_name).strip())
+                if not div_test:
+                    norm_test = _normalize(lg_name)
+                    div_test = league_to_div_normalized.get(norm_test)
+                if div_test:
+                    n_matched += cnt
+                else:
+                    n_fallback += cnt
+            print(f"      🎯 Ligues résolues: {n_matched}/{len(df)} ({n_matched/len(df)*100:.1f}%) | fallback global: {n_fallback}")
 
     return df
 
@@ -709,6 +791,18 @@ def train_sport_model(
     pos_rate = y.mean()
     print(f"   Distribution: {y.sum()}/{len(y)} wins ({pos_rate*100:.1f}%)")
     print(f"   Features: {len(feature_cols)}")
+
+    # Anti-modèle-inutile: si toutes les features sont constantes (std≈0), skip
+    # Évite de pousser un modèle à 0 feature importance en production
+    feature_std = X.std()
+    n_informative = int((feature_std > 0.01).sum())
+    if n_informative < 3:
+        print(f"   ⚠️ {sport}: seulement {n_informative} feature(s) avec variance > 0.01")
+        print(f"      → Le modèle ne pourrait pas apprendre (toutes features constantes)")
+        print(f"      → Cause probable: données manquantes (xg, tactical, clv) pour ce sport")
+        print(f"      → Skip pour éviter de pousser un modèle inutile en production")
+        return None
+    print(f"   📊 Features informatives: {n_informative}/{len(feature_cols)} (variance > 0.01)")
 
     if dry_run:
         print(f"   🔍 DRY RUN - Features utilisées:")
