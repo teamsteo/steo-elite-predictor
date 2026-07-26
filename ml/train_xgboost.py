@@ -787,9 +787,10 @@ def train_sport_model(
             # ── Native custom objective: gradient + hessian modifiés ──
             PENALTY_WEIGHT = 0.5  # α — coefficient de pénalité asymétrique
 
-            def asymmetric_logloss_obj(preds: np.ndarray, dtrain):
+            def asymmetric_logloss_obj(y_true: np.ndarray, preds: np.ndarray):
                 """
-                Custom objective XGBoost.
+                Custom objective XGBoost (signature XGBoost 2.x sklearn wrapper).
+                Reçoit (y_true, preds) comme ndarrays.
                 Returns (grad, hess) where:
                   grad = d Loss / d pred
                   hess = d² Loss / d pred²
@@ -797,7 +798,11 @@ def train_sport_model(
                 Loss = -[y log(p) + (1-y) log(1-p)] + α * conf² * |p - y|
                 où conf = |p - 0.5| * 2  (0 à 1, 1 = très confiant)
                 """
-                y_true = dtrain.get_label()
+                # Compatibilité: si on reçoit un DMatrix (ancienne API), extraire les labels
+                if hasattr(y_true, 'get_label'):
+                    dtrain = y_true
+                    y_true = dtrain.get_label()
+                y_true = np.asarray(y_true)
                 p = np.clip(preds, 1e-7, 1 - 1e-7)
 
                 # --- Logloss standard ---
