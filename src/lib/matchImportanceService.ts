@@ -783,7 +783,10 @@ export function buildMatchContextSummary(
   }
 
   // 3. Blessures / absences clés
-  if (context.injuries) {
+  // NOTE: Le tennis est un sport individuel — pas de blessures d'équipe.
+  // Les abandons/retraits sont gérés via les news tennis (différentes du foot).
+  // On skippe donc complètement cette section pour le tennis.
+  if (sport !== 'tennis' && context.injuries) {
     const { homeImpact, awayImpact, keyAbsentees, summary } = context.injuries;
     const homeAbs = keyAbsentees?.home?.length || 0;
     const awayAbs = keyAbsentees?.away?.length || 0;
