@@ -551,7 +551,9 @@ export const SupabaseStore = {
     bySport: {
       football: { total: number; wins: number; winRate: number };
       basketball: { total: number; wins: number; winRate: number };
+      baseball: { total: number; wins: number; winRate: number };
       hockey: { total: number; wins: number; winRate: number };
+      tennis: { total: number; wins: number; winRate: number };
     };
   }> {
     const supabase = getSupabase();
@@ -565,7 +567,9 @@ export const SupabaseStore = {
       bySport: {
         football: { total: 0, wins: 0, winRate: 0 },
         basketball: { total: 0, wins: 0, winRate: 0 },
-        hockey: { total: 0, wins: 0, winRate: 0 }
+        baseball: { total: 0, wins: 0, winRate: 0 },
+        hockey: { total: 0, wins: 0, winRate: 0 },
+        tennis: { total: 0, wins: 0, winRate: 0 }
       }
     };
     
@@ -586,7 +590,9 @@ export const SupabaseStore = {
       const bySport = {
         football: { total: 0, wins: 0, winRate: 0 },
         basketball: { total: 0, wins: 0, winRate: 0 },
-        hockey: { total: 0, wins: 0, winRate: 0 }
+        baseball: { total: 0, wins: 0, winRate: 0 },
+        hockey: { total: 0, wins: 0, winRate: 0 },
+        tennis: { total: 0, wins: 0, winRate: 0 }
       };
       
       for (const p of completed) {
