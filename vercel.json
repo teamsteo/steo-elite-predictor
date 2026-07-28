@@ -68,6 +68,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=results",
+      "schedule": "0 11 * * *"
+    },
+    {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-kamikaze",
       "schedule": "0 13 * * *"
     },

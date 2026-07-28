@@ -499,17 +499,113 @@ async function publishKamikaze(test: boolean): Promise<PublishResult> {
 // ============================================
 
 async function publishResults(test: boolean): Promise<PublishResult> {
-  console.log('[TennisAutoPublish] 📊 Publication résultats...');
-  
-  // TODO: Implémenter la récupération des résultats réels
-  // Pour l'instant, juste un message placeholder
-  
+  console.log('[TennisAutoPublish] 📊 Publication bilan tennis...');
+
+  // Récupérer les pronostics tennis "completed" d'hier depuis Supabase
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateStr = yesterday.toISOString().split('T')[0];
+
+  const tennisPredictions = await SupabaseStore.getPredictionsByDate(dateStr);
+  const tennis = tennisPredictions.filter(p => p.sport === 'tennis');
+
+  if (tennis.length === 0) {
+    return {
+      success: true,
+      published: 0,
+      mode: 'results',
+      message: 'Aucun pronostic tennis à comparer pour hier',
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  // Stats
+  const verified = tennis.filter(p => p.status === 'completed' && p.result_match !== null && p.result_match !== undefined);
+  const wins = verified.filter(p => p.result_match === true);
+  const losses = verified.filter(p => p.result_match === false);
+  const winRate = verified.length > 0 ? Math.round((wins.length / verified.length) * 100) : 0;
+
+  // ROI (basé sur les cotes)
+  let profitUnits = 0;
+  let totalStaked = verified.length; // 1u par pronostic
+  for (const p of verified) {
+    if (p.result_match === true) {
+      // Gagné : profit = cote - 1
+      const winningOdds = p.predicted_result === 'home' ? p.odds_home : p.odds_away;
+      profitUnits += (winningOdds || 1.5) - 1;
+    } else if (p.result_match === false) {
+      // Perdu : -1u
+      profitUnits -= 1;
+    }
+  }
+  const roi = totalStaked > 0 ? Math.round((profitUnits / totalStaked) * 100) : 0;
+
+  // Formatter la date
+  const dateObj = new Date(dateStr + 'T12:00:00');
+  const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+
+  let message = '';
+
+  // En-tête
+  message += '╔════════════════════════════╗\n';
+  message += '║   🎾 <b>BILAN TENNIS</b>     ║\n';
+  message += '╚════════════════════════════╝\n\n';
+  message += `📅 <b>${dateLabel}</b>\n\n`;
+
+  if (verified.length === 0) {
+    // Matchs en attente de vérification
+    message += `⏳ <b>${tennis.length} pronostic${tennis.length > 1 ? 's' : ''} en attente</b>\n`;
+    message += `Résultats pas encore disponibles sur ESPN.\n`;
+  } else {
+    // Résumé
+    const globalEmoji = winRate >= 60 ? '🏆' : winRate >= 40 ? '📊' : '📉';
+    message += `${globalEmoji} <b>${wins.length}/${verified.length} corrects</b>  ·  <b>${winRate}%</b>\n\n`;
+
+    // ROI
+    const roiSign = roi >= 0 ? '+' : '';
+    const roiEmoji = roi >= 0 ? '💰' : '📉';
+    message += `${roiEmoji} ROI: <b>${roiSign}${roi}%</b> (${profitUnits >= 0 ? '+' : ''}${profitUnits.toFixed(2)}u)\n\n`;
+
+    // Détails par match
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    for (const p of verified) {
+      const emoji = p.result_match === true ? '✅' : p.result_match === false ? '❌' : '⏳';
+      const odds = p.predicted_result === 'home' ? p.odds_home : p.odds_away;
+      const winner = p.predicted_result === 'home' ? p.home_team : p.away_team;
+
+      message += `${emoji} <b>${p.home_team}</b> vs <b>${p.away_team}</b>\n`;
+      message += `    🏆 ${p.league || 'ATP/WTA'}\n`;
+      message += `    🎯 Prono: <b>${winner}</b> @ <b>${(odds || 0).toFixed(2)}</b>\n`;
+      if (p.result_match === true) {
+        message += `    💰 Gain: +${((odds || 1.5) - 1).toFixed(2)}u\n`;
+      } else {
+        message += `    📉 Perte: -1.00u\n`;
+      }
+      message += '\n';
+    }
+  }
+
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += `📊 Total pronos: ${tennis.length}  ·  Vérifiés: ${verified.length}\n`;
+
+  if (!test) {
+    await sendTelegramMessage(message);
+  }
+
   return {
     success: true,
-    published: 0,
+    published: verified.length,
     mode: 'results',
-    message: 'Fonctionnalité en cours de développement',
+    message: `${verified.length} résultats tennis publiés (${wins.length}W/${losses.length}L)`,
     timestamp: new Date().toISOString(),
+    details: {
+      veryHigh: wins.length,
+      high: 0,
+      medium: losses.length,
+      total: verified.length,
+    },
   };
 }
 
