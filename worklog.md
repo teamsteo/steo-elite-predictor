@@ -987,3 +987,29 @@ Stage Summary:
 - Avec ces fixes, même si la vérification échoue, les prédictions pending apparaîtront dans le bilan avec "⏳ En attente"
 - Baseball correctement catégorisé dans Supabase pour les futures prédictions
 
+
+---
+Task ID: fix1-fix3
+Agent: main
+Task: 3 reliability fixes for ML pipeline
+
+Work Log:
+- FIX #1: Restructured prediction pipeline order in unifiedPredictionService.ts
+  - Preliminary edge calculated BEFORE calculateMLAdjustment() call
+  - Football: preliminaryEdge = max(|DC prob - implied prob|)
+  - Other sports: preliminaryEdge = max(|context adjustment|)
+  - XGBoost now receives real disagreement signal, not 0
+- FIX #2: XGBoost trained for 4 sports (football/basketball/hockey/baseball)
+  - Fixed enrichment scope bug in train_xgboost.py (enrichment passed as param)
+  - Training results: football 77.2% CV +43.9pp, basketball 408 samples, hockey 1400, baseball 4931
+  - Created /api/ml/sync-xgboost route to push results to Supabase from Vercel
+- FIX #3: Adaptive thresholds persisted to Supabase
+  - Added _persistToSupabase() in adaptiveThresholdsML.ts
+  - Added loadModelFromSupabase() with async loading on cold start
+  - Thresholds survive Vercel serverless cold starts
+
+Stage Summary:
+- 3 files changed: unifiedPredictionService.ts, adaptiveThresholdsML.ts, ml/train_xgboost.py
+- 1 new API route: /api/ml/sync-xgboost
+- XGBoost training results saved to ml/last_training_result.json
+- Deployed to Vercel (commit 8ba1bfe)
