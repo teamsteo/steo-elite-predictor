@@ -28,7 +28,7 @@ export interface UnifiedPredictionInput {
   id: string;
   homeTeam: string;
   awayTeam: string;
-  sport: 'Foot' | 'NBA' | 'NHL' | 'NFL';
+  sport: string;
   league: string;
   oddsHome: number;
   oddsDraw: number | null;
@@ -39,7 +39,7 @@ export interface UnifiedPrediction {
   matchId: string;
   homeTeam: string;
   awayTeam: string;
-  sport: 'Foot' | 'NBA' | 'NHL' | 'NFL';
+  sport: string;
   league: string;
   
   // ESPN/DraftKings odds
@@ -153,8 +153,11 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   let hasAdvancedStats = false;
   
   // 1. Get ML thresholds
+  // FIX C3: Mapping sport correct — NHL→hockey, NFL→football, MLB→baseball
   const sportType = match.sport === 'Foot' ? 'football' : 
-                    match.sport === 'NBA' ? 'basketball' : 'football';
+                    match.sport === 'NBA' ? 'basketball' : 
+                    match.sport === 'NHL' ? 'hockey' : 
+                    match.sport === 'MLB' ? 'baseball' : 'football';
   const mlThresholds = getAdaptiveThresholds(sportType);
   sources.push('ML-Thresholds');
   
@@ -258,8 +261,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   }
   
   // 7. Build feature vector for ML
+  // FIX C2: L'edge initial est un placeholder — recalculé après combinaison (step 10)
   const featureVector: FeatureVector = {
-    edge: Math.max(impliedHome - (1/oddsHome), impliedAway - (1/oddsAway)),
+    edge: 0, // sera mis à jour après le calcul des probas finales
     dataQuality: context?.unifiedAnalysis.dataQuality || 30,
     homeInjuries: context?.injuries.home.length || 0,
     awayInjuries: context?.injuries.away.length || 0,
@@ -270,10 +274,13 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     homeNetRating: context?.nba?.homeStats?.netRating || 0,
     awayNetRating: context?.nba?.awayStats?.netRating || 0,
     confidence: 0.5,
+    homeWinProbability: impliedHome,
+    awayWinProbability: impliedAway,
+    drawProbability: impliedDraw,
   };
   
   // 8. Calculate ML adjustment (async - includes XGBoost if trained)
-  const mlAdjustment = await calculateMLAdjustment(featureVector, sportType as 'football' | 'basketball');
+  const mlAdjustment = await calculateMLAdjustment(featureVector, sportType);
   
   // 9. Combine probabilities: Market + Dixon-Coles + Context + ML
   let finalHomeProb: number;
@@ -312,10 +319,16 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   finalDrawProb /= totalProb;
   finalAwayProb /= totalProb;
   
-  // 10. Calculate edge
+  // 10. Calculate edge (FIX C2: model prob vs market implied prob — can be positive)
   const homeEdge = finalHomeProb - impliedHome;
   const drawEdge = finalDrawProb - impliedDraw;
   const awayEdge = finalAwayProb - impliedAway;
+
+  // Update feature vector with final probabilities for XGBoost scoring
+  featureVector.edge = Math.max(homeEdge, awayEdge, drawEdge);
+  featureVector.homeWinProbability = finalHomeProb;
+  featureVector.awayWinProbability = finalAwayProb;
+  featureVector.drawProbability = finalDrawProb;
   
   // 11. Determine best bet and confidence
   let bestBet: 'home' | 'draw' | 'away' = 'home';
@@ -407,7 +420,7 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   
   // Add XGBoost reasoning if used
   if (mlAdjustment.xgboostUsed) {
-    reasoning.push(`🧠 XGBoost ${mlAdjustment.xgboostScore !== undefined ? `score ${(mlAdjustment.xgboostScore * 100).toFixed(0)}%` : 'actif'} — coefficients entraînés appliqués`);
+    reasoning.push(`🧠 XGBoost ${mlAdjustment.xgboostScore !== undefined ? `score ${Math.round(mlAdjustment.xgboostScore * 100)}/100` : 'actif'} — coefficients entraînés appliqués`);
   }
   let riskLevel: 'low' | 'medium' | 'high' = 'low';
   if (context?.unifiedAnalysis.riskLevel === 'high' || (context?.injuries.homeImpact || 0) + (context?.injuries.awayImpact || 0) < -10) {
@@ -566,11 +579,13 @@ function generateTeamStatsFromContext(
  * Calculate Kelly fraction
  */
 function calculateKellyFraction(odds: number, probability: number): number {
+  // FIX H4: Protection division par zéro quand odds ≤ 1.0
   const b = odds - 1;
+  if (b <= 0) return 0; // Pas de value si odds ≤ 1.0
   const p = probability;
   const q = 1 - p;
   
-  let kellyFraction = (b * p - q) / b;
+  const kellyFraction = (b * p - q) / b;
   return Math.max(0, kellyFraction);
 }
 

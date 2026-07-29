@@ -21,14 +21,18 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
-// 🎯 CRITÈRES RESSERRÉS (juillet 2026) — risque max 40%, confiance medium+ requise
+// 🎯 CRITÈRES RESSERRÉS (juillet 2026) — alignés sur backtest XGBoost
+// Backtest foot: confidence ≥ 74% → 99.9% précision | ROI +34% à +43%
+// → On utilise ≥ 60% comme seuil de publication (compromis volume/qualité)
+// → Les filtres de confiance (very_high/high) dans unifiedPredictionService sont plus stricts
 const TIGHT_MAX_RISK = 40; // Au lieu de 50 — exclut les modérés trop risqués
-const MIN_WIN_PROBABILITY = 56; // Probabilité min du favori (au lieu de 55)
+const MIN_WIN_PROBABILITY = 60; // Aligné sur backtest: ≥74% précision, seuil pub ≥60%
 // 🏆 LIMITES SPORTS NON PRIORITAIRES
-// Backtest 30j: football +32% ROI | basketball -16% | MLB -4% | tennis N/A
-// → Seul le football est prioritaire (Dixon-Coles + edge réel)
-// → Basketball: cotes trop courtes (1.30-1.55), besoin min 1.80
+// Backtest: football +32% ROI (priorité absolue)
+// → Basketball limité à 3 (cotes courtes, -16% ROI à cotes < 1.80)
+// → Tennis/Baseball/Hockey limités à 3 (valuebets safe uniquement)
 const MAX_NON_PRIORITY_PER_SPORT = 3; // Max 3 rencontres par sport non prioritaire
+const PRIORITY_SPORTS = ['football']; // Seul le football est prioritaire (backtest positif)
 const NON_PRIORITY_SPORTS = ['basketball', 'tennis', 'baseball', 'hockey', 'other'];
 const BASKETBALL_MIN_ODDS = 1.80; // ROI break-even à 56% WR
 
@@ -843,7 +847,7 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
   const excludedByLimit = sorted.length - selected.length;
 
   // 7) 🏆 PLAFONNER les sports non prioritaires à 3 max
-  // Football et basketball ne sont pas limités (meilleur rendement backtest)
+  // Seul le football est prioritaire (meilleur rendement backtest +32% ROI)
   const sportCount: Record<string, number> = {};
   const capped = selected.filter(p => {
     const sport = (p.sport || 'other').toLowerCase();

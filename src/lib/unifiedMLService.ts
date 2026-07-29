@@ -1054,15 +1054,37 @@ export function scoreWithXGBoost(
 
     if (value === undefined || value === null) continue;
 
-    // Normaliser la valeur (centrer autour de 0.5)
+    // FIX M5+H1: Normalisation par catégorie avec protection
+    // - prob_* : clamp [0,1] (déjà des probabilités)
+    // - odds_confidence, favorite_confidence : clamp [0,1] (produits de proba)
+    // - odds_ratio : sigmoid pour normaliser range infini
+    // - log_odds_ratio : sigmoid
+    // - favorite_strength : clamp [0,1] (déjà un écart)
+    // - *_diff, margin, spread : sigmoid
+    // - edge : clamp [-1,1] puis shift vers [0,1]
+    // - is_* : clamp [0,1]
+    // - draw_signal : clamp [0,1]
     let normalizedValue = value;
-    if (featureName.startsWith('odds_') || featureName === 'favorite_strength') {
-      normalizedValue = Math.max(0, Math.min(1, 1 / value)); // Inverser les cotes
-    } else if (featureName.includes('prob_') || featureName.includes('_score') || featureName.includes('_rating')) {
+    if (featureName.startsWith('is_') || featureName === 'draw_signal') {
       normalizedValue = Math.max(0, Math.min(1, value));
-    } else if (featureName.includes('_diff') || featureName.includes('margin') || featureName.includes('spread')) {
-      // Les différences: sigmoid pour normaliser entre 0 et 1
+    } else if (featureName === 'odds_ratio') {
+      // FIX M4: odds_ratio peut être très grand — sigmoid pour normaliser
+      normalizedValue = 1 / (1 + Math.exp(-(value - 1) * 2)); // centré autour de 1 (50/50)
+    } else if (featureName === 'log_odds_ratio') {
       normalizedValue = 1 / (1 + Math.exp(-value * 2));
+    } else if (featureName === 'odds_confidence' || featureName === 'favorite_confidence' || featureName === 'favorite_strength') {
+      // FIX H1: Ces features sont déjà dans [0,1] — clamp direct, PAS d'inversion
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName.startsWith('prob_') || featureName.includes('_score') || featureName.includes('_rating') || featureName === 'confidence_numeric') {
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName === 'edge') {
+      // Edge peut être négatif ou positif — normaliser vers [0,1]
+      normalizedValue = Math.max(0, Math.min(1, value + 0.5)); // shift: -0.5→0, 0→0.5, +0.5→1
+    } else if (featureName.includes('_diff') || featureName.includes('margin') || featureName.includes('spread')) {
+      normalizedValue = 1 / (1 + Math.exp(-value * 2));
+    } else {
+      // Par défaut: clamp [0,1]
+      normalizedValue = Math.max(0, Math.min(1, value));
     }
 
     const contribution = importance * normalizedValue;

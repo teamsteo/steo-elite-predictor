@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Adaptive Thresholds ML - Machine Learning pour Seuils Adaptatifs
  * 
@@ -99,6 +98,10 @@ export interface FeatureVector {
   homeNetRating: number;
   awayNetRating: number;
   confidence: number;
+  // Phase 2: Probabilités pour XGBoost
+  homeWinProbability: number;
+  awayWinProbability: number;
+  drawProbability: number;
 }
 
 // ============================================
@@ -234,6 +237,10 @@ function extractFeatures(p: PredictionRecord): FeatureVector {
     homeNetRating: ((p.context.homeNetRating || 0) + 10) / 20, // -10 à +10 -> 0-1
     awayNetRating: ((p.context.awayNetRating || 0) + 10) / 20,
     confidence: { very_high: 1, high: 0.75, medium: 0.5, low: 0.25 }[p.prediction.confidence] || 0.5,
+    // FIX C1: Probabilités pour XGBoost (par défaut 0.5 si pas disponible)
+    homeWinProbability: ((p.context as any).homeWinProbability || 50) / 100,
+    awayWinProbability: ((p.context as any).awayWinProbability || 50) / 100,
+    drawProbability: ((p.context as any).drawProbability || 0) / 100,
   };
 }
 
@@ -304,7 +311,7 @@ export function trainModel(): {
   
   // 4. Optimiser les poids des features
   const featureOptimization = optimizeFeatureWeights(resolved, model.featureWeights);
-  model.featureWeights = featureOptimization.weights;
+  model.featureWeights = featureOptimization as unknown as Record<string, number>;
   improvements.push(`Feature weights mis à jour`);
   
   // 5. Optimiser les ajustements par sport
@@ -432,14 +439,13 @@ function optimizeInjuryFactor(
     const injuryDiff = p.context.homeInjuries - p.context.awayInjuries;
     const wasCorrect = p.result!.isCorrect;
     
-    // Si plus de blessures à domicile et prédiction home correcte -> impact sous-estimé
-    // Si plus de blessures à l'extérieur et prédiction away correcte -> impact sous-estimé
+    // FIX M1: Différencier les branches — aligned+correct augmente, misaligned+wrong diminue
     if ((injuryDiff > 0 && p.prediction.bet === 'away' && wasCorrect) ||
         (injuryDiff < 0 && p.prediction.bet === 'home' && wasCorrect)) {
-      injuryImpactSum += 0.1;
+      injuryImpactSum += 0.1; // blessures alignées avec prédiction correcte → sous-estimé
     } else if ((injuryDiff > 0 && p.prediction.bet === 'home' && !wasCorrect) ||
                (injuryDiff < 0 && p.prediction.bet === 'away' && !wasCorrect)) {
-      injuryImpactSum += 0.1;
+      injuryImpactSum -= 0.1; // blessures désalignées avec prédiction incorrecte → sur-estimé
     }
   }
   
@@ -599,18 +605,12 @@ function calculateModelAccuracy(
   predictions: PredictionRecord[],
   thresholds: MLThresholds
 ): number {
-  const correct = predictions.filter(p => {
-    if (!p.result) return false;
-    
-    // Prédiction aurait-elle été faite avec les nouveaux seuils?
-    if (p.prediction.edge < thresholds.edgeThreshold * 100) return true; // Skip, pas de pari
-    
-    return p.result.isCorrect;
-  }).length;
-  
-  const total = predictions.filter(p => 
+  // FIX M2: Les paris skip (edge < seuil) doivent être exclus du numérateur ET du dénominateur
+  const betted = predictions.filter(p => 
     p.result && p.prediction.edge >= thresholds.edgeThreshold * 100
-  ).length;
+  );
+  const correct = betted.filter(p => p.result!.isCorrect).length;
+  const total = betted.length;
   
   return total > 0 ? Math.round((correct / total) * 100) : 0;
 }
@@ -628,7 +628,7 @@ function incrementVersion(version: string): string {
 /**
  * Récupère les seuils actuels (pour utilisation dans expertAdvisor)
  */
-export function getAdaptiveThresholds(sport?: 'football' | 'basketball'): MLThresholds {
+export function getAdaptiveThresholds(sport?: string): MLThresholds {
   const model = loadModel();
   
   let thresholds = { ...model.thresholds };
@@ -648,7 +648,7 @@ export function getAdaptiveThresholds(sport?: 'football' | 'basketball'): MLThre
  */
 export async function calculateMLAdjustment(
   features: FeatureVector,
-  sport: 'football' | 'basketball'
+  sport: string
 ): Promise<{
   probabilityAdjustment: number;
   confidenceAdjustment: number;
@@ -693,23 +693,32 @@ export async function calculateMLAdjustment(
     
     if (mlModel?.xgboost_params?.trained) {
       // Construire le feature vector pour XGBoost
+      // FIX C1: homeWinProbability/awayWinProbability/drawProbability sont maintenant dans FeatureVector
+      const homeProb = features.homeWinProbability;
+      const awayProb = features.awayWinProbability;
+      const drawProb = features.drawProbability || 0;
+      const isHomeFavorite = homeProb > awayProb ? 1 : 0;
+      const favoriteStrength = Math.abs(homeProb - awayProb);
+      const oddsRatio = awayProb > 0.001 ? homeProb / awayProb : 1;
+      const logOddsRatio = Math.log(Math.max(0.01, oddsRatio));
+      const confidenceNumeric = features.dataQuality > 0.7 ? 1.0 : features.dataQuality > 0.5 ? 0.75 : 0.5;
+      const predMatchesFavorite = isHomeFavorite;
+
       const xgbFeatures: Record<string, number> = {
-        prob_home: features.homeWinProbability || 0.5,
-        prob_away: features.awayWinProbability || 0.5,
-        prob_draw: features.drawProbability || 0,
-        is_home_favorite: features.homeWinProbability > features.awayWinProbability ? 1 : 0,
-        confidence_numeric: features.dataQuality > 0.7 ? 1.0 : features.dataQuality > 0.5 ? 0.75 : 0.5,
-        pred_matches_favorite: 0, // sera calculé ci-dessous
+        prob_home: homeProb,
+        prob_away: awayProb,
+        prob_draw: drawProb,
+        is_home_favorite: isHomeFavorite,
+        confidence_numeric: confidenceNumeric,
+        pred_matches_favorite: predMatchesFavorite,
       };
       
-      // Calculer favorite_strength et odds_ratio
-      const homeProb = xgbFeatures.prob_home;
-      const awayProb = xgbFeatures.prob_away;
-      xgbFeatures.favorite_strength = Math.abs(homeProb - awayProb);
-      xgbFeatures.odds_ratio = awayProb > 0 ? homeProb / awayProb : 1;
-      xgbFeatures.log_odds_ratio = Math.log(xgbFeatures.odds_ratio);
-      xgbFeatures.odds_confidence = homeProb * xgbFeatures.confidence_numeric;
-      xgbFeatures.favorite_confidence = xgbFeatures.favorite_strength * xgbFeatures.confidence_numeric;
+      // Calculer derived features
+      xgbFeatures.favorite_strength = favoriteStrength;
+      xgbFeatures.odds_ratio = oddsRatio;
+      xgbFeatures.log_odds_ratio = logOddsRatio;
+      xgbFeatures.odds_confidence = Math.min(homeProb * confidenceNumeric, 1);
+      xgbFeatures.favorite_confidence = Math.min(favoriteStrength * confidenceNumeric, 1);
       
       // Sport-specific flags
       xgbFeatures[`is_${sport}`] = 1;

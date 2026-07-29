@@ -637,7 +637,7 @@ export async function fetchESPNLiveOdds(): Promise<ESPNOddMatch[]> {
 export function findESPNOddsForMatch(
   homeTeam: string, 
   awayTeam: string, 
-  sport?: 'Foot' | 'NBA' | 'NHL' | 'NFL'
+  sport?: string
 ): ESPNOddMatch | null {
   if (!global.espnOddsCache?.matches) return null;
   
