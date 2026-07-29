@@ -206,13 +206,30 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
     isSafeOrModerate(p.prediction.riskPercentage) &&
     p.crossValidation.status !== 'excluded'
   );
-  
-  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré -> Afficher directement les Kamikaze
-  if (publishable.length === 0 && predictions.length > 0) {
-    console.log(`[TennisAutoPublish] ⚠️ ${predictions.length} matchs mais aucun safe/modéré`);
 
-    // Filtrer les Kamikaze (risque >= 51%)
-    const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage));
+  // 🎾 LIMITER À 3 VALUEBETS SAFE MAX (tennis = sport non prioritaire)
+  // Filtrer: safe uniquement (risk <= 30%) + valuebet (EV > 10%)
+  // Trier par % réussite décroissant, prendre top 3
+  const safeValueBets = publishable.filter(p =>
+    p.prediction.riskPercentage <= 30 &&
+    p.betting.recommendedBet &&
+    (p.betting.expectedValue || 0) > 10
+  ).sort((a, b) => b.prediction.winProbability - a.prediction.winProbability)
+   .slice(0, 3);
+
+  const finalPublishable = safeValueBets.length > 0 ? safeValueBets : [];
+  if (finalPublishable.length === 0 && publishable.length > 0) {
+    console.log(`[TennisAutoPublish] ⚠️ ${publishable.length} matchs safe/modéré mais aucun valuebet safe — tennis non publié`);
+  }
+  
+  // 🆕 CAS: Il y a des matchs mais aucun safe/modéré -> Tennis kamikaze aussi limité à 3
+  if (finalPublishable.length === 0 && predictions.length > 0) {
+    console.log(`[TennisAutoPublish] ⚠️ ${predictions.length} matchs mais aucun valuebet safe`);
+
+    // Filtrer les Kamikaze (risque >= 51%) — max 3
+    const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage))
+      .sort((a, b) => b.prediction.winProbability - a.prediction.winProbability)
+      .slice(0, 3);
 
     // 💾 Sauvegarder les kamikaze dans Supabase (même voie de secours)
     if (kamikazePicks.length > 0) {
@@ -255,7 +272,7 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
   }
   
   // Trier par confiance et importance
-  publishable.sort((a, b) => {
+  finalPublishable.sort((a, b) => {
     const confOrder = { very_high: 0, high: 1, medium: 2, low: 3 };
     const confDiff = (confOrder[a.prediction.confidence] || 2) - (confOrder[b.prediction.confidence] || 2);
     if (confDiff !== 0) return confDiff;
@@ -263,13 +280,13 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
   });
   
   // Construire le message
-  const message = buildSummaryMessage(publishable, atpRankings, wtaRankings);
+  const message = buildSummaryMessage(finalPublishable, atpRankings, wtaRankings);
   
   // 💾 Sauvegarder les prédictions tennis dans Supabase (pour le bilan)
   let savedCount = 0;
   try {
     const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    const dbPredictions = publishable.map(p => {
+    const dbPredictions = finalPublishable.map(p => {
       const dateStr = new Date().toISOString().split('T')[0];
       return {
         match_id: `tennis-${cleanTeam(p.player1)}-${cleanTeam(p.player2)}-${dateStr}`,
@@ -294,7 +311,7 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
   }
 
   // Envoyer si pas en test
-  if (!test && publishable.length > 0) {
+  if (!test && finalPublishable.length > 0) {
     const sent = await sendTelegramMessage(message);
     if (!sent) {
       return {
@@ -308,17 +325,17 @@ async function publishDailySummary(test: boolean): Promise<PublishResult> {
   }
   
   // Stats
-  const veryHigh = publishable.filter(p => p.prediction.confidence === 'very_high').length;
-  const high = publishable.filter(p => p.prediction.confidence === 'high').length;
-  const medium = publishable.filter(p => p.prediction.confidence === 'medium').length;
+  const veryHigh = finalPublishable.filter(p => p.prediction.confidence === 'very_high').length;
+  const high = finalPublishable.filter(p => p.prediction.confidence === 'high').length;
+  const medium = finalPublishable.filter(p => p.prediction.confidence === 'medium').length;
   
   return {
     success: true,
-    published: publishable.length,
+    published: finalPublishable.length,
     mode: 'summary',
-    message: `${publishable.length} pronostics publiés`,
+    message: `${finalPublishable.length} pronostics publiés (max 3 valuebets safe)`,
     timestamp: new Date().toISOString(),
-    details: { veryHigh, high, medium, total: publishable.length },
+    details: { veryHigh, high, medium, total: finalPublishable.length },
   };
 }
 
@@ -357,21 +374,24 @@ async function publishMajorTournaments(test: boolean): Promise<PublishResult> {
     }
   }
   
-  // Filtrer safe/modéré
+  // Filtrer safe/modéré + LIMITER À 3 MAX
   const publishable = predictions.filter(p => isSafeOrModerate(p.prediction.riskPercentage));
+  const safeVB = publishable.filter(p => p.betting.recommendedBet && (p.betting.expectedValue || 0) > 10)
+    .sort((a, b) => b.prediction.winProbability - a.prediction.winProbability).slice(0, 3);
+  const finalPublishable = safeVB.length > 0 ? safeVB : [];
   
   // Construire et envoyer le message
-  const message = buildMajorTournamentsMessage(publishable);
+  const message = buildMajorTournamentsMessage(finalPublishable);
   
-  if (!test && publishable.length > 0) {
+  if (!test && finalPublishable.length > 0) {
     await sendTelegramMessage(message);
   }
   
   return {
     success: true,
-    published: publishable.length,
+    published: finalPublishable.length,
     mode: 'major',
-    message: `${publishable.length} pronostics grands tournois`,
+    message: `${finalPublishable.length} pronostics grands tournois (max 3 valuebets safe)`,
     timestamp: new Date().toISOString(),
   };
 }
@@ -396,12 +416,15 @@ async function publishValueBets(test: boolean): Promise<PublishResult> {
     }
   }
   
-  // Filtrer uniquement les value bets
-  const valueBets = predictions.filter(p => 
+  // Filtrer uniquement les value bets + LIMITER À 3 MAX (sport non prioritaire)
+  const allValueBets = predictions.filter(p => 
     p.betting.recommendedBet &&
     p.betting.expectedValue > 10 &&
     isSafeOrModerate(p.prediction.riskPercentage)
   );
+  const valueBets = allValueBets
+    .sort((a, b) => b.prediction.winProbability - a.prediction.winProbability)
+    .slice(0, 3);
   
   if (valueBets.length === 0) {
     return {
@@ -486,8 +509,10 @@ async function publishKamikaze(test: boolean): Promise<PublishResult> {
     }
   }
   
-  // Filtrer UNIQUEMENT les Kamikaze (risque > 50%)
-  const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage));
+  // Filtrer UNIQUEMENT les Kamikaze (risque > 50%) — max 3
+  const kamikazePicks = predictions.filter(p => isKamikaze(p.prediction.riskPercentage))
+    .sort((a, b) => b.prediction.winProbability - a.prediction.winProbability)
+    .slice(0, 3);
   
   if (kamikazePicks.length === 0) {
     return {
