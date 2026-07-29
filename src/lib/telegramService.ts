@@ -1605,9 +1605,10 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       const emoji = sportEmojis[sport] || '🏟️';
       const name = sportNames[sport] || sport;
       const verified = s.wins + s.losses;
+      const hasPending = s.pending > 0;
 
-      // Ne montrer que les sports qui ont au moins 1 match terminé
-      if (verified === 0) continue;
+      // Ne montrer que les sports qui ont au moins 1 match (terminé OU en attente)
+      if (verified === 0 && !hasPending) continue;
 
       // Séparateur visuel entre les sports
       if (si > 0) {
@@ -1615,11 +1616,15 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       }
 
       // Indicateur de performance
-      const sportEmoji = s.winRate >= 60 ? '🏆' : s.winRate >= 40 ? '📊' : '📉';
+      const sportEmoji = verified > 0 ? (s.winRate >= 60 ? '🏆' : s.winRate >= 40 ? '📊' : '📉') : '⏳';
       message += `${emoji} <b>${name}</b> ${sportEmoji}\n`;
 
-      // Ligne principale: X/Y corrects · Z%
-      message += `    ✅ ${s.wins}/${verified} corrects  ·  <b>${s.winRate}%</b>\n`;
+      if (verified > 0) {
+        // Ligne principale: X/Y corrects · Z%
+        message += `    ✅ ${s.wins}/${verified} corrects  ·  <b>${s.winRate}%</b>\n`;
+      } else {
+        message += `    ⏳ ${s.pending} en attente de résultat\n`;
+      }
 
       // ROI par sport
       if (verified > 0 && s.profitUnits !== 0) {
@@ -1634,14 +1639,21 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   }
 
   // =============================================
-  // RÉSULTAT GLOBAL (uniquement les terminés)
+  // RÉSULTAT GLOBAL (terminés + en attente)
   // =============================================
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-  const globalEmoji = summary.winRate >= 60 ? '🏆' : summary.winRate >= 40 ? '📊' : '📉';
+  const globalEmoji = summary.totalVerified > 0
+    ? (summary.winRate >= 60 ? '🏆' : summary.winRate >= 40 ? '📊' : '📉')
+    : '⏳';
   message += `${globalEmoji} <b>RÉSULTAT GLOBAL</b>\n`;
-  message += `    ✅ ${summary.wins}/${summary.totalVerified} corrects`;
-  if (summary.totalVerified > 0) message += `  ·  <b>${summary.winRate}%</b>`;
-  message += '\n';
+  if (summary.totalVerified > 0) {
+    message += `    ✅ ${summary.wins}/${summary.totalVerified} corrects  ·  <b>${summary.winRate}%</b>\n`;
+  } else {
+    message += `    ⏳ Aucun résultat vérifié\n`;
+  }
+  if (summary.totalPending > 0) {
+    message += `    📋 ${summary.totalPending} en attente de résultat\n`;
+  }
 
   // ROI (rendement) global
   if (summary.totalVerified > 0 && summary.profitUnits !== 0) {
@@ -1653,18 +1665,22 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   message += '\n';
 
   // =============================================
-  // DÉTAILS PAR MATCH — UNIQUEMENT LES TERMINÉS
+  // DÉTAILS PAR MATCH — TERMINÉS + EN ATTENTE
   // =============================================
-  const completedDetails = summary.details.filter(d => d.status === 'completed');
-  if (completedDetails.length > 0) {
+  const allDetails = summary.details; // Tous : completed + pending
+  if (allDetails.length > 0) {
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     message += '<b>DÉTAILS</b>\n\n';
 
-    // Trier: par sport d'abord (ordre priorité)
-    const sortedDetails = completedDetails.sort((a, b) => {
+    // Trier: par sport d'abord (ordre priorité), puis terminés avant pending
+    const sortedDetails = allDetails.sort((a, b) => {
       const priorityA = sportPriority[a.sport] || 99;
       const priorityB = sportPriority[b.sport] || 99;
-      return priorityA - priorityB;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      // Terminés avant pending
+      const statusA = a.status === 'completed' ? 0 : 1;
+      const statusB = b.status === 'completed' ? 0 : 1;
+      return statusA - statusB;
     });
 
     let currentSport = '';
@@ -1685,12 +1701,12 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
 
-      if (d.resultMatch !== null) {
+      if (d.status === 'completed' && d.resultMatch !== null) {
         const resultEmoji = d.resultMatch ? '✅' : '❌';
         const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
         message += `    ${resultEmoji} <b>${d.predicted}</b> → <b>${actual}</b>\n`;
       } else {
-        message += `    ⚠️ En attente de résultat\n`;
+        message += `    ⏳ <b>${d.predicted}</b> — En attente\n`;
       }
     }
     message += '\n';

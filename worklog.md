@@ -961,3 +961,29 @@ Stage Summary:
 - Permet à kellyCriterionService.ts de persister les performances par ligue
 - Élimine la perte de données au cold start Vercel
 
+---
+Task ID: 1
+Agent: Super Z (main)
+Task: Fix bilan journalier Telegram — tennis manquant + baseball partiellement affiché
+
+Work Log:
+- Analysé le flux complet: cron vercel.json → /api/cron → telegramService.ts → publishDailyResultsToTelegram → fetchDailyResultsFromSupabase
+- Analysé tennis-auto-publish/route.ts pour le stockage tennis dans Supabase
+- Analysé db-supabase.ts pour la normalisation des sports
+
+Bugs identifiés et corrigés:
+1. **BUG 1** — `normalizeSport()` (db-supabase.ts:106): Baseball normalisé en `'other'` au lieu de `'baseball'` (TODO jamais corrigé). Fix: retourner `'baseball'`.
+2. **BUG 2** — `publishDailyResultsToTelegram` + `fetchDailyResultsFromSupabase`: Le bilan n'affichait QUE les prédictions `completed`. Les `pending` étaient exclues du résumé par sport ET des détails. Conséquence: si ESPN/fallback ne trouvait pas les résultats tennis, ils disparaissaient totalement du bilan. Fix: Afficher les pending avec ⏳ dans le bilan par sport + dans les détails.
+3. **BUG 3** — `publish_manual_bilan.ts`: Appelait `verify-night` (NBA uniquement) au lieu de `verify` (tous sports). Fix: Remplacé par `verify` + pause 3s pour Supabase.
+
+Fichiers modifiés:
+- `/home/z/my-project/src/lib/db-supabase.ts` (normalizeSport: baseball → 'baseball')
+- `/home/z/my-project/src/lib/telegramService.ts` (bilan: pending inclus dans par sport + détails + global)
+- `/home/z/my-project/scripts/publish_manual_bilan.ts` (verify-all au lieu de verify-night)
+- Build TypeScript: clean ✅
+
+Stage Summary:
+- Le bilan du 28 juillet manquait tennis (4 matchs) et 10/12 baseball car les prédictions étaient `pending` (non vérifiées) et exclues de l'affichage
+- Avec ces fixes, même si la vérification échoue, les prédictions pending apparaîtront dans le bilan avec "⏳ En attente"
+- Baseball correctement catégorisé dans Supabase pour les futures prédictions
+
