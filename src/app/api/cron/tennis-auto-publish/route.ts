@@ -42,6 +42,43 @@ interface PublishResult {
 }
 
 // ============================================
+// ESPN GUARD — Vérifie que ESPN a des résultats tennis
+// ============================================
+
+async function checkESPNResultsAvailable(): Promise<boolean> {
+  const today = new Date();
+  const dates: string[] = [];
+  for (let i = 3; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0].replace(/-/g, ''));
+  }
+
+  for (const tour of ['atp', 'wta']) {
+    for (const dateStr of dates) {
+      try {
+        const response = await fetch(
+          `https://site.api.espn.com/apis/site/v2/sports/tennis/${tour}/scoreboard?dates=${dateStr}`,
+          { cache: 'no-store', headers: { 'Accept': 'application/json' } }
+        );
+        if (!response.ok) continue;
+        const data = await response.json();
+        const events = data.events || [];
+        if (events.length > 0) {
+          console.log(`[TennisAutoPublish] ✅ ESPN ${tour.toUpperCase()} ${dateStr}: ${events.length} événements`);
+          return true; // Au moins 1 événement trouvé = ESPN a des données tennis
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  console.log('[TennisAutoPublish] ⛔ Aucun événement tennis trouvé sur ESPN pour les 4 derniers jours');
+  return false;
+}
+
+// ============================================
 // GET - Point d'entrée CRON
 // ============================================
 
@@ -60,6 +97,24 @@ export async function GET(request: Request) {
   console.log('================================================');
   
   try {
+    // 🎾 VÉRIFICATION ESPN : si pas de résultats tennis disponibles, annuler TOUTE publication
+    // On pinge ESPN pour les 3 derniers jours. Si 0 événements = pas de saison active / pas de données
+    if (!test) {
+      console.log('[TennisAutoPublish] 🔍 Vérification disponibilité résultats ESPN...');
+      const espnAvailable = await checkESPNResultsAvailable();
+      if (!espnAvailable) {
+        console.log('[TennisAutoPublish] ⛔ ESPN ne fournit aucun résultat tennis — publication annulée');
+        return NextResponse.json({
+          success: true,
+          published: 0,
+          mode,
+          message: '⛔ Tennis non publié : aucun résultat disponible sur ESPN',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      console.log('[TennisAutoPublish] ✅ Résultats tennis disponibles sur ESPN — publication autorisée');
+    }
+
     let result: PublishResult;
     
     switch (mode) {

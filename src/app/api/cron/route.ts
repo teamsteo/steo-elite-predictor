@@ -2112,28 +2112,34 @@ export async function GET(request: NextRequest) {
           }));
           
           // Ajouter les prédictions tennis pour le kamikaze
+          // ⚠️ SEULEMENT si ESPN a des résultats tennis disponibles
           try {
-            const tennisResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/tennis`);
-            if (tennisResponse.ok) {
-              const tennisData = await tennisResponse.json();
-              const tennisPredictions = (tennisData.predictions || []).map((p: any) => ({
-                homeTeam: p.player1,
-                awayTeam: p.player2,
-                sport: 'Tennis',
-                league: p.tournament,
-                date: p.date,
-                recommendation: p.prediction?.winnerName,
-                predictedResult: p.prediction?.winner === 'player1' ? 'home' : 'away',
-                confidence: p.prediction?.confidence,
-                valueBetDetected: p.betting?.recommendedBet,
-                riskPercentage: p.prediction?.riskPercentage,
-                winProbability: p.prediction?.winProbability,
-                oddsHome: p.odds1,
-                oddsAway: p.odds2,
-                oddsDraw: null,
-              }));
-              predictions = [...predictions, ...tennisPredictions];
-              console.log(`🎾 Tennis ajouté au kamikaze: ${tennisPredictions.length} matchs`);
+            const espnTennisAvailable = await fetchTennisResultsFromESPN();
+            if (espnTennisAvailable.length > 0) {
+              const tennisResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/tennis`);
+              if (tennisResponse.ok) {
+                const tennisData = await tennisResponse.json();
+                const tennisPredictions = (tennisData.predictions || []).map((p: any) => ({
+                  homeTeam: p.player1,
+                  awayTeam: p.player2,
+                  sport: 'Tennis',
+                  league: p.tournament,
+                  date: p.date,
+                  recommendation: p.prediction?.winnerName,
+                  predictedResult: p.prediction?.winner === 'player1' ? 'home' : 'away',
+                  confidence: p.prediction?.confidence,
+                  valueBetDetected: p.betting?.recommendedBet,
+                  riskPercentage: p.prediction?.riskPercentage,
+                  winProbability: p.prediction?.winProbability,
+                  oddsHome: p.odds1,
+                  oddsAway: p.odds2,
+                  oddsDraw: null,
+                }));
+                predictions = [...predictions, ...tennisPredictions];
+                console.log(`🎾 Tennis ajouté au kamikaze: ${tennisPredictions.length} matchs (ESPN OK)`);
+              }
+            } else {
+              console.log('🎾 Tennis EXCLU du kamikaze : aucun résultat disponible sur ESPN');
             }
           } catch (e) {
             console.log('⚠️ Impossible de récupérer tennis pour kamikaze:', e);
