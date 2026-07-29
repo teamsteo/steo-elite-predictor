@@ -30,10 +30,12 @@ const MIN_WIN_PROBABILITY = 60; // Aligné sur backtest: ≥74% précision, seui
 // 🏆 LIMITES SPORTS NON PRIORITAIRES
 // Backtest: football +32% ROI (priorité absolue)
 // → Basketball limité à 3 (cotes courtes, -16% ROI à cotes < 1.80)
-// → Tennis/Baseball/Hockey limités à 3 (valuebets safe uniquement)
+// → Baseball/Hockey limités à 3 (valuebets safe uniquement)
+// 🎾 Tennis EXCLU des pronostics Telegram (pas de pipeline ML fiable)
 const MAX_NON_PRIORITY_PER_SPORT = 3; // Max 3 rencontres par sport non prioritaire
 const PRIORITY_SPORTS = ['football']; // Seul le football est prioritaire (backtest positif)
-const NON_PRIORITY_SPORTS = ['basketball', 'tennis', 'baseball', 'hockey', 'other'];
+const NON_PRIORITY_SPORTS = ['basketball', 'baseball', 'hockey', 'other'];
+const EXCLUDED_TELEGRAM_SPORTS = ['tennis']; // Sports exclus des pronostics Telegram
 const BASKETBALL_MIN_ODDS = 1.80; // ROI break-even à 56% WR
 
 /**
@@ -71,8 +73,8 @@ const SPORT_EMOJIS: Record<string, string> = {
   'NBA': '🏀', 'nba': '🏀', 'BASKET': '🏀',
   // Hockey
   'NHL': '🏒', 'Hockey': '🏒', 'hockey': '🏒',
-  // Tennis
-  'Tennis': '🎾', 'tennis': '🎾',
+  // Tennis — EXCLU des pronostics Telegram
+  // 'Tennis': '🎾', 'tennis': '🎾',
   // Baseball
   'Baseball': '⚾', 'baseball': '⚾', 'MLB': '⚾', 'mlb': '⚾',
 };
@@ -85,7 +87,7 @@ const SPORT_PRIORITY: Record<string, number> = {
   'foot': 1, 'football': 1, 'soccer': 1,
   'basket': 2, 'basketball': 2, 'nba': 2,
   'nhl': 3, 'hockey': 3,
-  'tennis': 4,
+  // tennis: 4, — EXCLU des pronostics Telegram
   'mlb': 5, 'baseball': 5,
 };
 
@@ -97,7 +99,7 @@ function getSportPriority(sport: string): number {
   return 99; // Autres sports à la fin
 }
 
-/** Trie les sports : Football → Basket → Hockey → Tennis → Autres */
+/** Trie les sports : Football → Basket → Hockey → Baseball → Autres */
 function sortSportsByPriority(sports: string[]): string[] {
   return [...sports].sort((a, b) => getSportPriority(a) - getSportPriority(b));
 }
@@ -802,8 +804,16 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
  excludedRisk: number;
  excludedByLimit: number;
 } {
+  // 0) 🎾 EXCLURE le tennis des pronostics Telegram (pas de pipeline ML fiable)
+  const nonTennis = predictions.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
+  });
+  const excludedTennis = predictions.length - nonTennis.length;
+  if (excludedTennis > 0) console.log(`🎾 ${excludedTennis} pronostics tennis exclus des prédictions Telegram`);
+
   // 1) Filtrer: cotes réelles uniquement
-  const withRealOdds = predictions.filter(p => !p.isEstimated);
+  const withRealOdds = nonTennis.filter(p => !p.isEstimated);
   const excludedEstimated = predictions.length - withRealOdds.length;
   
   // 2) CRITÈRES RESSERRÉS: risque ≤ 40% (au lieu de 50%)
@@ -821,6 +831,7 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
 
   // 4b) 🏀 BASKETBALL: cote minimum 1.80 (backtest -16% ROI à cotes courtes)
   // Les favoris NBA à 1.30-1.55 ne sont pas rentables même à 56% WR
+  // 4c) 🎾 TENNIS: déjà exclu à l'étape 0
   const withMinOdds = domesticOnly.filter(p => {
     const sport = (p.sport || '').toLowerCase();
     if (sport === 'basketball' || sport === 'basket' || sport === 'nba') {
@@ -1404,9 +1415,8 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       else if (sport === 'nhl') sport = 'hockey';
       else if (sport === 'mlb') sport = 'baseball';
 
-      // 🎾 EXCLURE le tennis non vérifié du bilan
-      // Si ESPN n'a pas fourni les résultats, on ne montre pas le tennis du tout
-      if (sport === 'tennis' && p.status === 'pending') continue;
+      // 🎾 EXCLURE le tennis des pronostics Telegram (pas de pipeline ML fiable)
+      if (sport === 'tennis') continue;
 
       // 🏆 PLAFONNER les sports non prioritaires à 3 max
       if (NON_PRIORITY_SPORTS.includes(sport)) {
@@ -1415,12 +1425,13 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       }
 
       // ⚠️ Inférer le vrai sport à partir du league si sport='other'
+      // 🎾 Tennis EXCLU — ne pas inférer tennis depuis 'other'
       if (sport === 'other' && p.league) {
         const league = p.league.toLowerCase();
         if (league.includes('mlb') || league.includes('baseball')) sport = 'baseball';
         else if (league.includes('nba') || league.includes('basketball')) sport = 'basketball';
         else if (league.includes('nhl') || league.includes('hockey')) sport = 'hockey';
-        else if (league.includes('atp') || league.includes('wta') || league.includes('tennis')) sport = 'tennis';
+        // tennis (atp/wta) reste 'other' — exclu du bilan
       }
       if (!summary.bySport[sport]) {
         summary.bySport[sport] = { total: 0, wins: 0, losses: 0, winRate: 0, pending: 0, roi: 0, profitUnits: 0 };
@@ -1624,13 +1635,13 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
   // Maps sport
   const sportEmojis: Record<string, string> = {
-    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'baseball': '⚾', 'other': '🏟️',
+    'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'baseball': '⚾', 'other': '🏟️',
   };
   const sportNames: Record<string, string> = {
-    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'baseball': 'Baseball', 'other': 'Autres',
+    'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'baseball': 'Baseball', 'other': 'Autres',
   };
   const sportPriority: Record<string, number> = {
-    'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'baseball': 5, 'other': 99,
+    'football': 1, 'basketball': 2, 'hockey': 3, 'baseball': 4, 'other': 99,
   };
   const sortedSports = Object.keys(summary.bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
 
@@ -1812,7 +1823,13 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     if (allDayPredictions.length === 0) return false;
 
     // ⚠️ UNIQUEMENT les kamikazes (risk_percentage > 50)
-    const kamikazePredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) > 50);
+    // 🎾 EXCLURE le tennis des pronostics Telegram
+    const kamikazePredictions = allDayPredictions.filter(p => {
+      if ((p.risk_percentage ?? 100) <= 50) return false;
+      const sport = (p.sport || 'other').toLowerCase();
+      if (sport === 'tennis') return false;
+      return true;
+    });
     if (kamikazePredictions.length === 0) return false;
 
     // Calculer les stats
@@ -1877,7 +1894,7 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
     const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
 
-    const sportEmojis: Record<string, string> = { 'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'baseball': '⚾', 'other': '🏟️' };
+    const sportEmojis: Record<string, string> = { 'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'baseball': '⚾', 'other': '🏟️' };
 
     let message = '';
     message += '╔═════════════════════════════╗\n';
@@ -2059,13 +2076,13 @@ export async function publishMonthlyResultsToTelegram(monthISO?: string): Promis
 
     // Maps sport
     const sportEmojis: Record<string, string> = {
-      'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'tennis': '🎾', 'other': '🏟️',
+      'football': '⚽', 'basketball': '🏀', 'hockey': '🏒', 'baseball': '⚾', 'other': '🏟️',
     };
     const sportNames: Record<string, string> = {
-      'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'tennis': 'Tennis', 'other': 'Autres',
+      'football': 'Football', 'basketball': 'Basket', 'hockey': 'Hockey', 'baseball': 'Baseball', 'other': 'Autres',
     };
     const sportPriority: Record<string, number> = {
-      'football': 1, 'basketball': 2, 'hockey': 3, 'tennis': 4, 'other': 99,
+      'football': 1, 'basketball': 2, 'hockey': 3, 'baseball': 4, 'other': 99,
     };
     const sortedSports = Object.keys(bySport).sort((a, b) => (sportPriority[a] || 99) - (sportPriority[b] || 99));
 

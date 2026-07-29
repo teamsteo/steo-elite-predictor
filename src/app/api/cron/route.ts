@@ -76,7 +76,7 @@ interface MatchResult {
   status: 'finished';
   actualResult: 'home' | 'draw' | 'away';
   league?: string;
-  sport: 'football' | 'basketball' | 'baseball' | 'tennis' | 'other';
+  sport: 'football' | 'basketball' | 'baseball' | 'other'; // 🎾 tennis exclu des pronostics Telegram
   espnDate?: string; // YYYYMMDD pour matching par date (critique pour MLB/NBA)
 }
 
@@ -1150,7 +1150,8 @@ async function verifyTennisResults(): Promise<{
 }
 
 /**
- * Vérification complète (Football + NBA + MLB + Tennis)
+ * Vérification complète (Football + NBA + MLB)
+ * 🎾 Tennis EXCLU des prédictions Telegram
  */
 async function verifyAllResults(): Promise<{
   verified: number;
@@ -1161,19 +1162,19 @@ async function verifyAllResults(): Promise<{
   statsUpdate?: { success: boolean; message: string };
   mlSync?: { synced: number; mlStats: any };
 }> {
-  const [footballResult, nbaResult, mlbResult, tennisResult] = await Promise.all([
+  const [footballResult, nbaResult, mlbResult] = await Promise.all([
     verifyFootballResults(),
     verifyNBAResults(),
     verifyMLBResults(),
-    verifyTennisResults()
+    // 🎾 Tennis vérification SUPPRIMÉE — exclu des pronostics Telegram
   ]);
 
   const result = {
-    verified: footballResult.verified + nbaResult.verified + mlbResult.verified + tennisResult.verified,
-    updated: footballResult.updated + nbaResult.updated + mlbResult.updated + tennisResult.updated,
-    won: footballResult.won + nbaResult.won + mlbResult.won + tennisResult.won,
-    lost: footballResult.lost + nbaResult.lost + mlbResult.lost + tennisResult.lost,
-    errors: [...footballResult.errors, ...nbaResult.errors, ...mlbResult.errors, ...tennisResult.errors],
+    verified: footballResult.verified + nbaResult.verified + mlbResult.verified,
+    updated: footballResult.updated + nbaResult.updated + mlbResult.updated,
+    won: footballResult.won + nbaResult.won + mlbResult.won,
+    lost: footballResult.lost + nbaResult.lost + mlbResult.lost,
+    errors: [...footballResult.errors, ...nbaResult.errors, ...mlbResult.errors],
     statsUpdate: undefined as { success: boolean; message: string } | undefined,
     mlSync: undefined as { synced: number; mlStats: any } | undefined
   };
@@ -1729,7 +1730,7 @@ export async function GET(request: NextRequest) {
               if (league.includes('mlb') || league.includes('baseball')) correctSport = 'baseball';
               else if (league.includes('nba') || league.includes('basketball')) correctSport = 'basketball';
               else if (league.includes('nhl') || league.includes('hockey')) correctSport = 'hockey';
-              else if (league.includes('atp') || league.includes('wta') || league.includes('tennis')) correctSport = 'tennis';
+              else if (league.includes('atp') || league.includes('wta') || league.includes('tennis')) correctSport = 'other'; // 🎾 tennis reste 'other' — exclu
               
               if (correctSport && p.id) {
                 const { error } = await supabaseDirect
@@ -2111,39 +2112,8 @@ export async function GET(request: NextRequest) {
             oddsDraw: m.oddsDraw,
           }));
           
-          // Ajouter les prédictions tennis pour le kamikaze
-          // ⚠️ SEULEMENT si ESPN a des résultats tennis disponibles
-          try {
-            const espnTennisAvailable = await fetchTennisResultsFromESPN();
-            if (espnTennisAvailable.length > 0) {
-              const tennisResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'https://my-project-zeta-five-85.vercel.app'}/api/tennis`);
-              if (tennisResponse.ok) {
-                const tennisData = await tennisResponse.json();
-                const tennisPredictions = (tennisData.predictions || []).map((p: any) => ({
-                  homeTeam: p.player1,
-                  awayTeam: p.player2,
-                  sport: 'Tennis',
-                  league: p.tournament,
-                  date: p.date,
-                  recommendation: p.prediction?.winnerName,
-                  predictedResult: p.prediction?.winner === 'player1' ? 'home' : 'away',
-                  confidence: p.prediction?.confidence,
-                  valueBetDetected: p.betting?.recommendedBet,
-                  riskPercentage: p.prediction?.riskPercentage,
-                  winProbability: p.prediction?.winProbability,
-                  oddsHome: p.odds1,
-                  oddsAway: p.odds2,
-                  oddsDraw: null,
-                }));
-                predictions = [...predictions, ...tennisPredictions];
-                console.log(`🎾 Tennis ajouté au kamikaze: ${tennisPredictions.length} matchs (ESPN OK)`);
-              }
-            } else {
-              console.log('🎾 Tennis EXCLU du kamikaze : aucun résultat disponible sur ESPN');
-            }
-          } catch (e) {
-            console.log('⚠️ Impossible de récupérer tennis pour kamikaze:', e);
-          }
+          // 🎾 Tennis EXCLU du kamikaze — pas de pipeline ML fiable
+          // Les prédictions tennis ne sont plus ajoutées aux pronostics Telegram
           
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           

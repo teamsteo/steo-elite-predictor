@@ -1,13 +1,13 @@
 /**
- * API Cron Tennis Predictions
+ * API Cron Tennis Predictions — DÉSACTIVÉ
  * 
- * Publie automatiquement les pronostics tennis sur Telegram
- * - Tournois majeurs uniquement (Grand Chelem, Masters 1000, WTA 1000)
- * - Filtre safe et modéré (risque ≤ 50%)
+ * 🎾 Tennis EXCLU des pronostics Telegram (pas de pipeline ML fiable)
+ * Ce cron est désactivé. Les prédictions tennis ne sont plus publiées sur Telegram.
+ * 
+ * Pour réactiver: restaurer l'import de runTennisTelegramJob et la logique d'envoi.
  */
 
 import { NextResponse } from 'next/server';
-import { runTennisTelegramJob } from '../../../../lib/telegramTennisService';
 
 // Vérification du secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -25,43 +25,13 @@ export async function GET(request: Request) {
       );
     }
     
-    console.log('🎾 Cron Tennis Predictions: Démarrage');
-    console.log('=====================================');
-    
-    // Récupérer le type de publication
-    const mode = searchParams.get('mode') || 'summary';
-    
-    let result;
-    
-    switch (mode) {
-      case 'major':
-        // Publier uniquement les grands tournois
-        console.log('📋 Mode: Grands tournois uniquement');
-        result = await runTennisTelegramJob({ majorOnly: true });
-        break;
-        
-      case 'valuebets':
-        // Publier uniquement les value bets
-        console.log('📋 Mode: Value bets uniquement');
-        result = await runTennisTelegramJob({ valueBetsOnly: true });
-        break;
-        
-      case 'summary':
-      default:
-        // Publier le résumé complet
-        console.log('📋 Mode: Résumé complet');
-        result = await runTennisTelegramJob({});
-        break;
-    }
-    
-    console.log('=====================================');
-    console.log(`✅ Résultat: ${result.message}`);
+    console.log('🎾 Cron Tennis Predictions: DÉSACTIVÉ — tennis exclu des pronostics Telegram');
     
     return NextResponse.json({
-      success: result.success,
-      published: result.published,
-      message: result.message,
-      mode,
+      success: true,
+      published: 0,
+      message: 'Tennis cron désactivé — plus de pronostics tennis sur Telegram',
+      mode: 'disabled',
       timestamp: new Date().toISOString(),
     });
     
