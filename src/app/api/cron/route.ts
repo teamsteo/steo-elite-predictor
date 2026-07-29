@@ -850,6 +850,170 @@ async function fetchTennisResultsFromESPN(): Promise<TennisMatchResult[]> {
 }
 
 /**
+ * 🔧 FALLBACK: Récupérer les résultats tennis via z-ai SDK (page_reader)
+ * Utilise tennis-db.com quand ESPN ne retourne aucun résultat.
+ * tennis-db.com fournit des pages .md par tournoi avec les résultats structurés.
+ * On cherche d'abord les tournois actifs via les prédictions pending, puis on fetch
+ * les résultats depuis tennis-db.com.
+ */
+async function fetchTennisResultsFromTennisDB(pendingPredictions: DbPrediction[]): Promise<TennisMatchResult[]> {
+  const results: TennisMatchResult[] = [];
+  let zai: any = null;
+
+  try {
+    // Initialiser le SDK z-ai pour le page_reader
+    const ZAI = (await import('z-ai-web-dev-sdk')).default;
+    zai = await ZAI.create();
+    console.log('🎾 [TennisDB Fallback] z-ai SDK initialisé');
+  } catch (e: any) {
+    console.log(`🎾 [TennisDB Fallback] z-ai SDK non disponible: ${e.message}`);
+    return results;
+  }
+
+  // Extraire les tournois uniques depuis les prédictions pending
+  const tournamentNames = [...new Set(
+    pendingPredictions
+      .map(p => p.league || '')
+      .filter(l => l.length > 0)
+  )];
+
+  console.log(`🎾 [TennisDB Fallback] Tournois à chercher: ${tournamentNames.join(', ')}`);
+
+  // Essayer de trouver les résultats via z-ai page_reader
+  // On cherche sur tennis-db.com et tennisuptodate.com
+  for (const tournName of tournamentNames.slice(0, 5)) { // Max 5 tournois pour éviter timeout
+    try {
+      // Construire une requête de recherche pour trouver les résultats
+      const searchQuery = `${tournName} tennis results completed matches ${new Date().toISOString().split('T')[0]}`;
+      
+      const searchResult = await zai.functions.invoke('web_search', {
+        query: searchQuery,
+        num: 3,
+      });
+
+      // Chercher un lien tennis-db.com dans les résultats
+      const tennisDbUrl = (searchResult || []).find(
+        (r: any) => r.url && r.url.includes('tennis-db.com/tournaments')
+      );
+
+      if (tennisDbUrl) {
+        // Ajouter .md pour le format structuré
+        const mdUrl = tennisDbUrl.url.endsWith('.md') ? tennisDbUrl.url : tennisDbUrl.url + '.md';
+        console.log(`🎾 [TennisDB] Lecture: ${mdUrl}`);
+        
+        try {
+          const pageResult = await zai.functions.invoke('page_reader', { url: mdUrl });
+          const html = pageResult?.data?.html || '';
+          
+          // Extraire le contenu texte (les pages .md sont dans un <pre>)
+          const preMatch = html.match(/<pre[^>]*>([\s\S]*?)<\/pre>/);
+          const text = preMatch ? preMatch[1] : html;
+          
+          // Parser les résultats
+          const lines = text.split('\n');
+          for (const line of lines) {
+            // Format: "YYYY-MM-DD · ROUND: Winner d. Loser score1 score2 [score3...]"
+            const resultMatch = line.match(
+              /(\d{4}-\d{2}-\d{2})\s*·\s*(\w+):\s*(.+)\s+d\.\s+(.+)\s+((?:\d+-\d+\s*)+)/
+            );
+            if (!resultMatch) continue;
+
+            const winner = resultMatch[3].trim();
+            const loser = resultMatch[4].trim();
+            const scores = resultMatch[5].trim();
+
+            const setScores = scores.match(/\d+-\d+/g) || [];
+            let setsWon1 = 0;
+            let setsWon2 = 0;
+            for (const set of setScores) {
+              const parts = set.split('-');
+              const s1 = parseInt(parts[0]);
+              const s2 = parseInt(parts[1]);
+              if (!isNaN(s1) && !isNaN(s2)) {
+                if (s1 > s2) setsWon1++;
+                else setsWon2++;
+              }
+            }
+
+            results.push({
+              player1: winner,
+              player2: loser,
+              winner: 'home' as const,
+              setsWon1,
+              setsWon2,
+              tournament: tournName,
+            });
+          }
+        } catch (pageError: any) {
+          console.log(`🎾 [TennisDB] Erreur lecture page: ${pageError.message}`);
+        }
+      }
+    } catch (error: any) {
+      console.log(`🎾 [TennisDB] Skip ${tournName}: ${error.message || 'timeout'}`);
+    }
+  }
+
+  // 🔧 FALLBACK 2: Si toujours rien, essier tennisuptodate.com
+  if (results.length === 0 && tournamentNames.length > 0) {
+    console.log('🎾 [TennisDB] Essai tennisuptodate.com...');
+    try {
+      const tourn = tournamentNames[0];
+      const searchQuery = `site:tennisuptodate.com ${tourn} 2026 results scores`;
+      const searchResult = await zai.functions.invoke('web_search', {
+        query: searchQuery,
+        num: 3,
+      });
+      
+      const tucUrl = (searchResult || []).find(
+        (r: any) => r.url && r.url.includes('tennisuptodate.com')
+      );
+      
+      if (tucUrl) {
+        const pageResult = await zai.functions.invoke('page_reader', { url: tucUrl.url });
+        const html = pageResult?.data?.html || '';
+        
+        // Parser les blocs de résultat depuis tennisuptodate
+        // Format: "Player1 d. Player2 score" 
+        const resultRegex = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+d\.\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(\d+-\d+(?:\s+\d+-\d+(?:\s+\d+-\d+)?)?)/g;
+        let match;
+        while ((match = resultRegex.exec(html)) !== null) {
+          const winner = match[1].trim();
+          const loser = match[2].trim();
+          const scores = match[3].trim();
+          
+          const setScores = scores.match(/\d+-\d+/g) || [];
+          let setsWon1 = 0;
+          let setsWon2 = 0;
+          for (const set of setScores) {
+            const parts = set.split('-');
+            const s1 = parseInt(parts[0]);
+            const s2 = parseInt(parts[1]);
+            if (!isNaN(s1) && !isNaN(s2)) {
+              if (s1 > s2) setsWon1++;
+              else setsWon2++;
+            }
+          }
+          
+          results.push({
+            player1: winner,
+            player2: loser,
+            winner: 'home' as const,
+            setsWon1,
+            setsWon2,
+            tournament: tourn,
+          });
+        }
+      }
+    } catch (e: any) {
+      console.log(`🎾 [TennisDB] tennisuptodate fallback échoué: ${e.message}`);
+    }
+  }
+
+  console.log(`🎾 [TennisDB Fallback] ${results.length} résultats trouvés (total)`);
+  return results;
+}
+
+/**
  * Matcher un résultat tennis avec une prédiction Supabase (fuzzy matching noms de joueurs)
  */
 function matchTennisPrediction(
@@ -908,13 +1072,21 @@ async function verifyTennisResults(): Promise<{
 
     console.log(`📋 ${pending.length} pronostics Tennis en attente à vérifier`);
 
-    // Récupérer les résultats tennis depuis ESPN
-    const tennisResults = await fetchTennisResultsFromESPN();
+    // Récupérer les résultats tennis depuis ESPN (source principale)
+    let tennisResults = await fetchTennisResultsFromESPN();
+
+    // 🔧 FALLBACK: Si ESPN ne retourne rien, utiliser z-ai SDK + tennis-db.com / tennisuptodate.com
+    if (tennisResults.length === 0) {
+      console.log('🎾 ESPN vide → tentative fallback z-ai + tennis-db...');
+      tennisResults = await fetchTennisResultsFromTennisDB(pending);
+    }
 
     if (tennisResults.length === 0) {
-      console.log('🎾 Aucun résultat tennis trouvé sur ESPN');
+      console.log('🎾 Aucun résultat tennis trouvé (ESPN + TennisDB)');
       return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
     }
+
+    console.log(`🎾 ${tennisResults.length} résultats tennis trouvés (ESPN ou fallback)`);
 
     // Pour chaque prédiction, chercher le résultat correspondant
     for (const prediction of pending) {
@@ -923,8 +1095,32 @@ async function verifyTennisResults(): Promise<{
       const result = tennisResults.find(r => matchTennisPrediction(prediction, r));
 
       if (result) {
-        const predictedResult = prediction.predicted_result;
-        const actualResult = result.winner; // 'home' or 'away'
+        const predictedResult = prediction.predicted_result; // 'home' or 'away'
+
+        // 🔧 Pour le fallback tennis-db: player1 = winner, mais il faut vérifier
+        // si player1 correspond à home_team ou away_team de la prédiction
+        let actualResult: 'home' | 'away' = result.winner;
+
+        // Si le résultat vient du fallback (tennis-db), player1 est toujours le winner.
+        // On vérifie si le winner (player1) correspond à home_team de la prédiction.
+        const normalize = (s: string) =>
+          s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+        const predHomeNorm = normalize(prediction.home_team || '');
+        const predAwayNorm = normalize(prediction.away_team || '');
+        const resWinnerNorm = normalize(result.player1);
+
+        // Si le winner du résultat ne correspond ni à home ni à away de la prédiction,
+        // c'est probablement que le format est "Winner d. Loser" (fallback tennis-db)
+        // où winner=player1 mais home/away dans la prédiction est inversé.
+        if (resWinnerNorm && predHomeNorm && predAwayNorm) {
+          if (resWinnerNorm === predAwayNorm) {
+            actualResult = 'away';
+          } else if (resWinnerNorm === predHomeNorm) {
+            actualResult = 'home';
+          }
+          // Sinon garder result.winner tel quel (ESPN format)
+        }
+
         const resultMatch = predictedResult === actualResult;
 
         // Mettre à jour Supabase directement
@@ -942,7 +1138,7 @@ async function verifyTennisResults(): Promise<{
           console.log(`🎾 Tennis: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${result.setsWon1}-${result.setsWon2} sets)`);
         }
       } else {
-        console.log(`⏳ Tennis: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
+        console.log(`⏳ Tennis: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé`);
       }
     }
   } catch (error: any) {
