@@ -24,9 +24,13 @@ const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
 // 🎯 CRITÈRES RESSERRÉS (juillet 2026) — risque max 40%, confiance medium+ requise
 const TIGHT_MAX_RISK = 40; // Au lieu de 50 — exclut les modérés trop risqués
 const MIN_WIN_PROBABILITY = 56; // Probabilité min du favori (au lieu de 55)
-// 🏆 LIMITES SPORTS NON PRIORITAIRES (tennis, baseball, hockey)
+// 🏆 LIMITES SPORTS NON PRIORITAIRES
+// Backtest 30j: football +32% ROI | basketball -16% | MLB -4% | tennis N/A
+// → Seul le football est prioritaire (Dixon-Coles + edge réel)
+// → Basketball: cotes trop courtes (1.30-1.55), besoin min 1.80
 const MAX_NON_PRIORITY_PER_SPORT = 3; // Max 3 rencontres par sport non prioritaire
-const NON_PRIORITY_SPORTS = ['tennis', 'baseball', 'hockey', 'other'];
+const NON_PRIORITY_SPORTS = ['basketball', 'tennis', 'baseball', 'hockey', 'other'];
+const BASKETBALL_MIN_ODDS = 1.80; // ROI break-even à 56% WR
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
@@ -810,10 +814,21 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
   
   // 4) Exclure les matchs internationaux (fiabilité réduite)
   const domesticOnly = withConfidence.filter(p => !(p as any).isInternational);
+
+  // 4b) 🏀 BASKETBALL: cote minimum 1.80 (backtest -16% ROI à cotes courtes)
+  // Les favoris NBA à 1.30-1.55 ne sont pas rentables même à 56% WR
+  const withMinOdds = domesticOnly.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    if (sport === 'basketball' || sport === 'basket' || sport === 'nba') {
+      const betOdds = p.predictedResult === 'home' ? p.oddsHome : p.oddsAway;
+      return (betOdds || 0) >= BASKETBALL_MIN_ODDS;
+    }
+    return true;
+  });
   
   // 5) Trier par fiabilité: risque croissant (plus fiable en premier)
   // En cas d'égalité: probabilité de réussite décroissante
-  const sorted = [...domesticOnly].sort((a, b) => {
+  const sorted = [...withMinOdds].sort((a, b) => {
     const riskA = a.riskPercentage ?? 100;
     const riskB = b.riskPercentage ?? 100;
     if (riskA !== riskB) return riskA - riskB;
