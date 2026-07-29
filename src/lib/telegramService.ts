@@ -1362,6 +1362,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       else if (sport === 'nhl') sport = 'hockey';
       else if (sport === 'mlb') sport = 'baseball';
 
+      // 🎾 EXCLURE le tennis non vérifié du bilan
+      // Si ESPN n'a pas fourni les résultats, on ne montre pas le tennis du tout
+      if (sport === 'tennis' && p.status === 'pending') continue;
+
       // ⚠️ Inférer le vrai sport à partir du league si sport='other'
       if (sport === 'other' && p.league) {
         const league = p.league.toLowerCase();
