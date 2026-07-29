@@ -160,10 +160,23 @@ function ensureDataDir(): void {
   }
 }
 
+// FIX #3: Flag pour éviter de charger Supabase en boucle
+let supabaseLoadAttempted = false;
+
 function loadModel(): MLModel {
-  // Sur Vercel, utiliser le stockage mémoire
   if (IS_VERCEL && memoryModel) {
     return memoryModel;
+  }
+  
+  // FIX #3: Sur Vercel, charger les adaptive thresholds depuis Supabase
+  if (IS_VERCEL) {
+    if (!supabaseLoadAttempted) {
+      supabaseLoadAttempted = true;
+      loadModelFromSupabase().then(m => {
+        if (m) { memoryModel = m; console.log("[Vercel] Thresholds loaded from Supabase"); }
+      });
+    }
+    return getDefaultModel();
   }
   
   ensureDataDir();
@@ -206,15 +219,80 @@ function getDefaultModel(): MLModel {
 }
 
 function saveModel(model: MLModel): void {
-  // Sur Vercel, stocker en mémoire uniquement
+  // FIX #3: Sur Vercel, persister dans Supabase (pas seulement en mémoire volatile)
   if (IS_VERCEL) {
     memoryModel = model;
     console.log(`🧠 [Vercel] Modèle ML stocké en mémoire`);
+    _persistToSupabase(model);
     return;
   }
   
   ensureDataDir();
   fs.writeFileSync(ML_MODEL_FILE, JSON.stringify(model, null, 2));
+}
+
+/**
+ * FIX #3: Persister les adaptive thresholds dans Supabase
+ */
+async function _persistToSupabase(model: MLModel): Promise<void> {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) return;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data: existing } = await supabase
+      .from('ml_model').select('xgboost_params').eq('id', 'default_model').single();
+    let xgboostParams: any = {};
+    if (existing?.xgboost_params) {
+      xgboostParams = typeof existing.xgboost_params === 'string'
+        ? JSON.parse(existing.xgboost_params) : existing.xgboost_params;
+    }
+    xgboostParams.adaptive_thresholds = {
+      thresholds: model.thresholds,
+      featureWeights: model.featureWeights,
+      sportAdjustments: model.sportAdjustments,
+      confidence: model.confidence,
+      savedAt: new Date().toISOString(),
+    };
+    await supabase
+      .from('ml_model')
+      .update({ xgboost_params: JSON.stringify(xgboostParams) })
+      .eq('id', 'default_model');
+    console.log('🧠 [Vercel] Adaptive thresholds persistés dans Supabase');
+  } catch (e) {
+    console.debug('[Vercel] Impossible de persister dans Supabase:', e);
+  }
+}
+
+/**
+ * FIX #3: Charger les adaptive thresholds depuis Supabase
+ */
+async function loadModelFromSupabase(): Promise<MLModel | null> {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) return null;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data } = await supabase
+      .from('ml_model').select('xgboost_params').eq('id', 'default_model').single();
+    if (!data?.xgboost_params) return null;
+    const params = typeof data.xgboost_params === 'string'
+      ? JSON.parse(data.xgboost_params) : data.xgboost_params;
+    if (!params.adaptive_thresholds) return null;
+    const at = params.adaptive_thresholds;
+    return {
+      thresholds: at.thresholds,
+      featureWeights: at.featureWeights || {},
+      sportAdjustments: at.sportAdjustments || {},
+      confidence: at.confidence || 0.5,
+      trainingHistory: [],
+    };
+  } catch (e) {
+    console.debug('Impossible de charger thresholds depuis Supabase:', e);
+    return null;
+  }
 }
 
 // ============================================

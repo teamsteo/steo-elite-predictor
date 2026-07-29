@@ -261,9 +261,32 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   }
   
   // 7. Build feature vector for ML
-  // FIX C2: L'edge initial est un placeholder — recalculé après combinaison (step 10)
+  // FIX #1: Calculer un edge préliminaire AVANT calculateMLAdjustment
+  let preliminaryEdge = 0;
+  let preliminaryHomeProb = impliedHome;
+  let preliminaryAwayProb = impliedAway;
+  let preliminaryDrawProb = impliedDraw;
+  
+  if (match.sport === 'Foot' && dixonColesResult) {
+    preliminaryHomeProb = dcHomeProb;
+    preliminaryAwayProb = dcAwayProb;
+    preliminaryDrawProb = dcDrawProb;
+    preliminaryEdge = Math.max(
+      Math.abs(dcHomeProb - impliedHome),
+      Math.abs(dcAwayProb - impliedAway),
+      Math.abs(dcDrawProb - impliedDraw)
+    );
+  } else {
+    preliminaryHomeProb = impliedHome + contextAdjustment.homeAdjustment;
+    preliminaryAwayProb = impliedAway + contextAdjustment.awayAdjustment;
+    preliminaryEdge = Math.max(
+      Math.abs(contextAdjustment.homeAdjustment),
+      Math.abs(contextAdjustment.awayAdjustment)
+    );
+  }
+  
   const featureVector: FeatureVector = {
-    edge: 0, // sera mis à jour après le calcul des probas finales
+    edge: Math.max(0, preliminaryEdge),
     dataQuality: context?.unifiedAnalysis.dataQuality || 30,
     homeInjuries: context?.injuries.home.length || 0,
     awayInjuries: context?.injuries.away.length || 0,
@@ -274,9 +297,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     homeNetRating: context?.nba?.homeStats?.netRating || 0,
     awayNetRating: context?.nba?.awayStats?.netRating || 0,
     confidence: 0.5,
-    homeWinProbability: impliedHome,
-    awayWinProbability: impliedAway,
-    drawProbability: impliedDraw,
+    homeWinProbability: preliminaryHomeProb,
+    awayWinProbability: preliminaryAwayProb,
+    drawProbability: preliminaryDrawProb,
   };
   
   // 8. Calculate ML adjustment (async - includes XGBoost if trained)
