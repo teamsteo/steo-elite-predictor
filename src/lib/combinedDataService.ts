@@ -212,76 +212,9 @@ async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw:
     } else {
       console.log(`📡 Odds API: erreur HTTP ${response.status} (passe au tennis)`);
     }
-    // 🎾 Tennis: découverte DYNAMIQUE des sports tennis actifs
-    // Les endpoints génériques (tennis_atp_singles) n'existent qu'hors Grands Chelems
-    // Pendant Wimbledon/RG/USO/AO → endpoints spécifiques (ex: tennis_atp_wimbledon)
-    // L'endpoint /sports est GRATUIT et ne compte pas dans le quota
-    try {
-      const sportsResp = await fetch(`${ODDS_API_BASE}/sports/?apiKey=${apiKey}`, { signal: AbortSignal.timeout(8000) });
-      if (sportsResp.ok) {
-        const sportsData = await sportsResp.json();
-        if (Array.isArray(sportsData)) {
-          const activeTennisSports = (sportsData as any[])
-            .filter((s: any) => s.key.startsWith('tennis_') && s.active === true)
-            .map((s: any) => s.key);
-          console.log(`🎾 Sports tennis actifs: ${activeTennisSports.join(', ') || 'aucun'}`);
-          
-          for (const tennisSportKey of activeTennisSports) {
-            try {
-              const tUrl = `${ODDS_API_BASE}/sports/${tennisSportKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal`;
-              const tResp = await fetch(tUrl, { signal: AbortSignal.timeout(10000) });
-              if (!tResp.ok) continue;
-              const tData = await tResp.json();
-              if (!Array.isArray(tData)) continue;
-              
-              // Extraire le nom du tournoi depuis la clé
-              const leagueName = tennisSportKey
-                .replace('tennis_', '')
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (c: string) => c.toUpperCase());
-              
-              for (const event of tData) {
-                const home = event.home_team || '';
-                const away = event.away_team || '';
-                const bookmaker = event.bookmakers?.find((b: any) => 
-                  b.markets?.some((m: any) => m.key === 'h2h' && m.outcomes?.length >= 2)
-                );
-                if (!bookmaker) continue;
-                const h2h = bookmaker.markets.find((m: any) => m.key === 'h2h');
-                if (h2h) {
-                  const homeOdds = h2h.outcomes?.find((o: any) => o.name === home);
-                  const awayOdds = h2h.outcomes?.find((o: any) => o.name === away);
-                  if (homeOdds?.price && awayOdds?.price) {
-                    const key = `${home.toLowerCase()}_${away.toLowerCase()}`;
-                    oddsMap.set(key, {
-                      home: homeOdds.price,
-                      draw: null,
-                      away: awayOdds.price,
-                    });
-                    // 🎾 Stocker l'événement tennis complet pour création standalone
-                    tennisApiEvents.push({
-                      home_team: home,
-                      away_team: away,
-                      commence_time: event.commence_time || new Date().toISOString(),
-                      home_odds: homeOdds.price,
-                      away_odds: awayOdds.price,
-                      league: leagueName,
-                    });
-                  }
-                }
-              }
-            } catch (tErr: any) {
-              console.log(`🎾 Odds API ${tennisSportKey} erreur (non bloquant): ${tErr.message}`);
-            }
-          }
-          if (tennisApiEvents.length > 0) {
-            console.log(`🎾 Odds API: ${tennisApiEvents.length} matchs tennis récupérés`);
-          }
-        }
-      }
-    } catch (e: any) {
-      console.log(`🎾 Odds API tennis erreur (non bloquant): ${e.message}`);
-    }
+    // 🎾 Tennis: DÉSACTIVÉ — exclu des pronostics Telegram (pas de pipeline ML fiable)
+    // Le bloc de découverte dynamique des sports tennis + fetching odds est désactivé
+    // pour économiser le quota Odds API.
 
   } catch (e: any) {
     console.log(`📡 Odds API fallback erreur (non bloquant): ${e.message}`);
@@ -635,66 +568,7 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
       return false;
     });
 
-    // 🎾 TENNIS STANDALONE: Ajouter les matchs tennis de l'Odds API non trouvés par ESPN
-    // ESPN n'a souvent pas de cotes tennis → les matchs tombent en estimation → exclus
-    // Solution: créer directement les matchs depuis les données de l'Odds API
-    const espnTennisKeys = new Set(
-      filteredMatches
-        .filter((m: any) => m.sport === 'Tennis' && m.oddsSource === 'the-odds-api')
-        .map((m: any) => [m.homeTeam.toLowerCase().replace(/[^a-z]/g, ''), m.awayTeam.toLowerCase().replace(/[^a-z]/g, '')].join('_'))
-    );
-    let tennisStandaloneCount = 0;
-    for (const te of tennisApiEvents) {
-      const teKey = [te.home_team.toLowerCase().replace(/[^a-z]/g, ''), te.away_team.toLowerCase().replace(/[^a-z]/g, '')].join('_');
-      // Skip if already matched by ESPN
-      if (espnTennisKeys.has(teKey)) continue;
-      
-      const matchDate = te.commence_time ? new Date(te.commence_time) : new Date();
-      const isFinished = false;
-      const isLive = false;
-      
-      // 🚫 Exclure si hors fenêtre temporelle
-      if (matchDate >= tomorrowExclude) continue;
-      if (matchDate < yesterdayLimit) continue;
-      
-      const homeProb = te.home_odds > 0 ? Math.round((1 / te.home_odds) * 100) : 50;
-      const awayProb = te.away_odds > 0 ? Math.round((1 / te.away_odds) * 100) : 50;
-      const favoriteProb = Math.max(homeProb, awayProb);
-      const riskPercentage = 100 - favoriteProb;
-      const predictedResult = homeProb > awayProb ? 'home' : 'away';
-      const winProbability = favoriteProb;
-      const confidence = favoriteProb >= 70 ? 'high' : favoriteProb >= 55 ? 'medium' : 'low';
-      
-      filteredMatches.push({
-        id: `oddsapi_tennis_${teKey}`,
-        homeTeam: te.home_team,
-        awayTeam: te.away_team,
-        sport: 'Tennis',
-        league: te.league,
-        date: te.commence_time || matchDate.toISOString(),
-        status: 'upcoming',
-        isLive,
-        isFinished,
-        oddsHome: te.home_odds,
-        oddsDraw: null,
-        oddsAway: te.away_odds,
-        bookmaker: 'The Odds API',
-        hasRealOdds: true,
-        oddsSource: 'the-odds-api' as const,
-        isEstimated: false,
-        isInternational: false,
-        competitionType: 'domestic' as const,
-        riskPercentage,
-        winProbability,
-        predictedResult,
-        confidence,
-        recommendation: homeProb > awayProb ? te.home_team : te.away_team,
-      });
-      tennisStandaloneCount++;
-    }
-    if (tennisStandaloneCount > 0) {
-      console.log(`🎾 +${tennisStandaloneCount} matchs tennis standalone (Odds API direct)`);
-    }
+    // 🎾 TENNIS STANDALONE — DÉSACTIVÉ (exclu des pronostics Telegram, pas de pipeline ML fiable)\n    // Les matchs tennis de l'Odds API ne sont plus ajoutés aux prédictions\n    const tennisStandaloneCount = 0;
 
     // ⚠️ DÉDOUBLONNER par noms d'équipes (les double-headers MLB peuvent créer des doublons)
     // Garder le premier match trouvé (généralement le premier jeu du double-header)

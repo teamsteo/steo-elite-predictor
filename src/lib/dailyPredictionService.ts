@@ -162,11 +162,9 @@ export async function generateDailyPredictions(): Promise<DailyPredictionsFile> 
   predictions.push(...hockeyPredictions);
   console.log(`✅ Hockey: ${hockeyPredictions.length} matchs`);
   
-  // 4. Tennis (BetExplorer avec protection anti-ban)
-  console.log('\n📡 Récupération Tennis...');
-  const tennisPredictions = await fetchTennisPredictions();
-  predictions.push(...tennisPredictions);
-  console.log(`✅ Tennis: ${tennisPredictions.length} matchs`);
+  // 4. Tennis — DÉSACTIVÉ (exclu des pronostics Telegram, pas de pipeline ML fiable)
+  console.log('\n🎾 Tennis: DÉSACTIVÉ — exclu des prédictions');
+  const tennisPredictions: DailyPrediction[] = [];
   
   // Calculer le résumé
   const summary = calculateSummary(predictions);
@@ -394,6 +392,11 @@ async function fetchHockeyPredictions(): Promise<DailyPrediction[]> {
 }
 
 async function fetchTennisPredictions(): Promise<DailyPrediction[]> {
+  // 🎾 Tennis DÉSACTIVÉ — exclu des pronostics Telegram
+  console.log('🎾 Tennis scraping désactivé — pas de pipeline ML fiable');
+  return [];
+  
+  /* ORIGINAL CODE DÉSACTIVÉ
   const predictions: DailyPrediction[] = [];
   
   try {
@@ -444,6 +447,7 @@ async function fetchTennisPredictions(): Promise<DailyPrediction[]> {
   }
   
   return predictions;
+  END ORIGINAL */
 }
 
 // ============================================
