@@ -978,7 +978,9 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
  * Message spécial quand aucun safe/modéré : affiche les Kamikaze disponibles
  */
 async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise<boolean> {
-  const kamikazePicks = predictions.filter(p => isKamikaze(p.riskPercentage));
+  // 🎾 EXCLURE le tennis des pronostics Telegram
+  const nonTennis = predictions.filter(p => !EXCLUDED_TELEGRAM_SPORTS.includes(p.sport) && !p.sport.includes('tennis'));
+  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage));
 
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -1035,7 +1037,9 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
 // ============================================
 
 export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
-  const valueBets = predictions.filter(p => 
+  // 🎾 EXCLURE le tennis des pronostics Telegram
+  const nonTennis = predictions.filter(p => !EXCLUDED_TELEGRAM_SPORTS.includes(p.sport) && !p.sport.includes('tennis'));
+  const valueBets = nonTennis.filter(p => 
     p.valueBetDetected && 
     p.confidence !== 'low' && 
     isSafeOrModerate(p.riskPercentage)
@@ -1096,7 +1100,9 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
 // ============================================
 
 export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
-  const kamikazePicks = predictions.filter(p => isKamikaze(p.riskPercentage));
+  // 🎾 EXCLURE le tennis des pronostics Telegram
+  const nonTennis = predictions.filter(p => !EXCLUDED_TELEGRAM_SPORTS.includes(p.sport) && !p.sport.includes('tennis'));
+  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage));
 
   if (kamikazePicks.length === 0) {
     console.log('⚠️ Aucun pronostic Kamikaze à publier');

@@ -369,9 +369,9 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
       { key: 'soccer/fifa.world', name: 'Coupe du Monde', sport: 'Football', isInternational: true },
       // 🇺🇸 MLS (actif en été)
       { key: 'soccer/usa.1', name: 'MLS', sport: 'Football' },
-      // 🎾 Tennis (ATP + WTA)
-      { key: 'tennis/atp', name: 'ATP', sport: 'Tennis' },
-      { key: 'tennis/wta', name: 'WTA', sport: 'Tennis' },
+      // 🎾 Tennis (ATP + WTA) — EXCLU des pronostics Telegram (pas de pipeline ML fiable)
+      // { key: 'tennis/atp', name: 'ATP', sport: 'Tennis' },
+      // { key: 'tennis/wta', name: 'WTA', sport: 'Tennis' },
     ];
     
     // 🎯 ÉTAPE 2: Récupérer ESPN pour hier, aujourd'hui ET demain

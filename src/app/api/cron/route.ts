@@ -35,7 +35,7 @@ import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedP
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-const CRON_VERSION = 'v13'; // Max 10 pronostics + cotes réelles uniquement + tennis intégré + bilan cohérent
+const CRON_VERSION = 'v14'; // Max 10 pronostics + cotes réelles uniquement + tennis EXCLU + bilan cohérent
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
