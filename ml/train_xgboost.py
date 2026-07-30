@@ -761,7 +761,8 @@ def train_sport_model(
     df: pd.DataFrame,
     sport: str,
     min_samples: int = 30,
-    dry_run: bool = False
+    dry_run: bool = False,
+    enrichment: Optional[Dict] = None,
 ) -> Optional[dict]:
     """
     Entraîne un modèle XGBoost pour un sport spécifique.
@@ -1037,6 +1038,7 @@ def train_sport_model(
 
             # Pré-charger les CLV par équipe (une seule fois hors loop)
             clv_by_team = enrichment.get("clv_by_team", {}) if enrichment else {}
+            # enrichment est maintenant passé en paramètre (fix NameError)
 
             # Slippage scenarios
             slippage_scenarios = {
@@ -1644,7 +1646,7 @@ def main():
     results = {}
 
     for sport in sports_to_train:
-        result = train_sport_model(df, sport, min_samples=args.min_samples, dry_run=args.dry_run)
+        result = train_sport_model(df, sport, min_samples=args.min_samples, dry_run=args.dry_run, enrichment=enrichment)
         if result:
             results[sport] = result
 

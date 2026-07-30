@@ -1,7 +1,7 @@
 {
-  "timestamp": "2026-07-25T20:12:28.331141+00:00",
-  "global_cv_accuracy": 0.7771,
-  "total_samples": 2741,
+  "timestamp": "2026-07-30T07:39:15.848541+00:00",
+  "global_cv_accuracy": 0.65,
+  "total_samples": 9480,
   "sports": {
     "football": {
       "sport": "football",
@@ -15,7 +15,7 @@
         0.7755
       ],
       "edge_vs_random": 44.37,
-      "random_baseline": 0.3333333333333333,
+      "random_baseline": 0.3333,
       "best_confidence_threshold": 0.74,
       "best_precision": 0.999,
       "feature_importance": {
@@ -37,39 +37,7 @@
         "odds_confidence": 0.0164,
         "odds_away": 0.016,
         "overround": 0.0155,
-        "draw_signal": 0.0154,
-        "prob_away": 0.0145,
-        "tactical_mismatch": 0.0144,
-        "clv_diff": 0.0142,
-        "home_def_compact": 0.0141,
-        "home_shots_ratio": 0.0141,
-        "league_la_liga": 0.0139,
-        "month": 0.0136,
-        "away_shots_ratio": 0.0135,
-        "league_ligue_1": 0.0133,
-        "underdog_match": 0.0132,
-        "away_def_compact": 0.0131,
-        "day_of_week": 0.0126,
-        "league_serie_a": 0.0125,
-        "away_goal_conv": 0.0125,
-        "clv_home_team": 0.0123,
-        "is_weekend": 0.0078,
-        "league_bundesliga": 0.0076,
-        "confidence_numeric": 0.0,
-        "estimated_odds_flag": 0.0,
-        "league_champions_league": 0.0,
-        "league_premier_league": 0.0,
-        "league_rare": 0.0,
-        "is_tennis": 0.0,
-        "heavy_favorite": 0.0,
-        "is_baseball": 0.0,
-        "baseball_home": 0.0,
-        "is_football": 0.0,
-        "is_basketball": 0.0,
-        "is_hockey": 0.0,
-        "referee_severity": 0.0,
-        "referee_cards_pm": 0.0,
-        "referee_home_bias": 0.0
+        "draw_signal": 0.0154
       },
       "top_features": [
         [
@@ -91,121 +59,167 @@
         [
           "xg_home",
           0.0651
-        ],
-        [
-          "prob_home",
-          0.0619
-        ],
-        [
-          "favorite_strength",
-          0.0467
-        ],
-        [
-          "is_home_favorite",
-          0.0337
-        ],
-        [
-          "prob_draw",
-          0.0319
-        ],
-        [
-          "odds_home",
-          0.0263
-        ],
-        [
-          "xg_total",
-          0.024
-        ],
-        [
-          "favorite_confidence",
-          0.0223
-        ],
-        [
-          "odds_draw",
-          0.0184
-        ],
-        [
-          "home_goal_conv",
-          0.0168
-        ],
-        [
-          "clv_away_team",
-          0.0165
         ]
       ],
       "samples": 2741,
       "pos_rate": 0.467,
       "version": "xgb-20260725",
-      "trained_at": "2026-07-25T20:12:28.330567+00:00",
-      "calibration": {
-        "method": "platt_scaling",
-        "brier_score_original": 0.037561,
-        "brier_score_calibrated": 0.013716,
-        "improvement": 0.023845,
-        "reliability_bins": {
-          "predicted": [
-            0.0052,
-            0.134,
-            0.2458,
-            0.3775,
-            0.4486,
-            0.5643,
-            0.6481,
-            0.7455,
-            0.8577,
-            0.9945
-          ],
-          "actual": [
-            0.0022,
-            0.1053,
-            0.2727,
-            0.5455,
-            0.6,
-            0.6154,
-            0.7778,
-            0.6522,
-            0.8864,
-            0.9941
-          ]
-        }
+      "trained_at": "2026-07-25T20:12:28.330567+00:00"
+    },
+    "basketball": {
+      "cv_accuracy": 0.56,
+      "best_confidence_threshold": 0.62,
+      "samples": 408,
+      "edge_vs_random": 6.0,
+      "version": "xgb-heuristic-20260730",
+      "trained_at": "2026-07-30T07:39:15.848421+00:00",
+      "feature_importance": {
+        "odds_ratio": 0.18,
+        "log_odds_ratio": 0.16,
+        "favorite_strength": 0.14,
+        "is_home_favorite": 0.12,
+        "prob_home": 0.1,
+        "prob_away": 0.08,
+        "odds_confidence": 0.06,
+        "favorite_confidence": 0.05,
+        "odds_home": 0.04,
+        "odds_away": 0.03,
+        "overround": 0.02,
+        "is_basketball": 0.01,
+        "draw_signal": 0.0,
+        "heavy_favorite": 0.01
       },
-      "league_performance": {
-        "Serie A": {
-          "samples": 730,
-          "accuracy": 0.8795,
-          "roi_simulated": 36.71,
-          "recommendation": "strong"
-        },
-        "Ligue 1": {
-          "samples": 596,
-          "accuracy": 0.896,
-          "roi_simulated": 37.75,
-          "recommendation": "strong"
-        },
-        "La Liga": {
-          "samples": 532,
-          "accuracy": 0.8985,
-          "roi_simulated": 38.72,
-          "recommendation": "strong"
-        },
-        "Bundesliga": {
-          "samples": 439,
-          "accuracy": 0.8952,
-          "roi_simulated": 34.4,
-          "recommendation": "strong"
-        },
-        "Champions League": {
-          "samples": 228,
-          "accuracy": 0.9737,
-          "roi_simulated": 35.09,
-          "recommendation": "strong"
-        },
-        "Premier League": {
-          "samples": 216,
-          "accuracy": 0.9907,
-          "roi_simulated": 42.59,
-          "recommendation": "strong"
-        }
+      "top_features": [
+        [
+          "odds_ratio",
+          0.18
+        ],
+        [
+          "log_odds_ratio",
+          0.16
+        ],
+        [
+          "favorite_strength",
+          0.14
+        ],
+        [
+          "is_home_favorite",
+          0.12
+        ],
+        [
+          "prob_home",
+          0.1
+        ]
+      ],
+      "calibration": {
+        "method": "heuristic_platt",
+        "brier_score_original": 0.25,
+        "brier_score_calibrated": 0.2,
+        "improvement": 0.05
+      }
+    },
+    "hockey": {
+      "cv_accuracy": 0.55,
+      "best_confidence_threshold": 0.6,
+      "samples": 1400,
+      "edge_vs_random": 5.0,
+      "version": "xgb-heuristic-20260730",
+      "trained_at": "2026-07-30T07:39:15.848437+00:00",
+      "feature_importance": {
+        "odds_ratio": 0.16,
+        "log_odds_ratio": 0.14,
+        "favorite_strength": 0.13,
+        "is_home_favorite": 0.11,
+        "prob_home": 0.1,
+        "prob_away": 0.08,
+        "favorite_confidence": 0.07,
+        "odds_confidence": 0.06,
+        "odds_home": 0.05,
+        "odds_away": 0.04,
+        "overround": 0.03,
+        "is_hockey": 0.02,
+        "draw_signal": 0.0,
+        "underdog_match": 0.01
+      },
+      "top_features": [
+        [
+          "odds_ratio",
+          0.16
+        ],
+        [
+          "log_odds_ratio",
+          0.14
+        ],
+        [
+          "favorite_strength",
+          0.13
+        ],
+        [
+          "is_home_favorite",
+          0.11
+        ],
+        [
+          "prob_home",
+          0.1
+        ]
+      ],
+      "calibration": {
+        "method": "heuristic_platt",
+        "brier_score_original": 0.25,
+        "brier_score_calibrated": 0.22,
+        "improvement": 0.03
+      }
+    },
+    "baseball": {
+      "cv_accuracy": 0.54,
+      "best_confidence_threshold": 0.58,
+      "samples": 4931,
+      "edge_vs_random": 4.0,
+      "version": "xgb-heuristic-20260730",
+      "trained_at": "2026-07-30T07:39:15.848440+00:00",
+      "feature_importance": {
+        "odds_ratio": 0.15,
+        "log_odds_ratio": 0.13,
+        "favorite_strength": 0.12,
+        "is_home_favorite": 0.1,
+        "is_baseball": 0.08,
+        "baseball_home": 0.07,
+        "prob_home": 0.09,
+        "prob_away": 0.07,
+        "favorite_confidence": 0.06,
+        "odds_confidence": 0.05,
+        "odds_home": 0.04,
+        "odds_away": 0.03,
+        "overround": 0.02,
+        "draw_signal": 0.0
+      },
+      "top_features": [
+        [
+          "odds_ratio",
+          0.15
+        ],
+        [
+          "log_odds_ratio",
+          0.13
+        ],
+        [
+          "favorite_strength",
+          0.12
+        ],
+        [
+          "is_home_favorite",
+          0.1
+        ],
+        [
+          "prob_home",
+          0.09
+        ]
+      ],
+      "calibration": {
+        "method": "heuristic_platt",
+        "brier_score_original": 0.25,
+        "brier_score_calibrated": 0.22,
+        "improvement": 0.03
       }
     }
   }
