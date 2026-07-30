@@ -420,7 +420,7 @@ export async function getUnifiedMatchContext(params: {
   // + Contexte enrichi (news, blessures, forme, météo, derby) pour le résumé court
   const matchImportanceData = analyzeMatchImportance(
     params.league,
-    params.sport === 'football' ? 'football' : params.sport === 'basketball' ? 'basketball' : 'tennis',
+    params.sport || 'football',  // football, basketball, hockey, baseball — passe le sport directement
     new Date(),
     undefined,  // homeStanding (non disponible via fbrefScraper)
     undefined,  // awayStanding
