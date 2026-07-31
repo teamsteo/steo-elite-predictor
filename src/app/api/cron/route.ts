@@ -2176,11 +2176,17 @@ export async function GET(request: NextRequest) {
         
       case 'telegram-results':
         // Publier le bilan quotidien des pronostics (prédictions vs résultats réels)
+        // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
         try {
-          // D'abord lancer la vérification pour mettre à jour les résultats
-          console.log('🔄 Vérification des résultats avant bilan...');
-          const verifyResult = await verifyAllResults();
-          console.log(`✅ Vérification: ${verifyResult.verified} matchs, ${verifyResult.updated} mis à jour`);
+          // D'abord lancer la vérification pour mettre à jour les résultats (non-bloquant)
+          let verifyResult = { verified: 0, updated: 0, won: 0, lost: 0, errors: [] as string[] };
+          try {
+            console.log('🔄 Vérification des résultats avant bilan...');
+            verifyResult = await verifyAllResults();
+            console.log(`✅ Vérification: ${verifyResult.verified} matchs, ${verifyResult.updated} mis à jour`);
+          } catch (verifyErr: any) {
+            console.error(`⚠️ verifyAllResults() échoué (non-bloquant): ${verifyErr.message}`);
+          }
           
           // Petite pause pour que Supabase soit à jour
           await new Promise(resolve => setTimeout(resolve, 2000));
@@ -2215,6 +2221,9 @@ export async function GET(request: NextRequest) {
             noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
             noDataMsg += '⏳ <b>Aucun pronostic à vérifier</b>\n\n';
             noDataMsg += `🔍 Vérification: ${verifyResult.verified} matchs vérifiés, ${verifyResult.updated} mis à jour\n`;
+            if (verifyResult.errors.length > 0) {
+              noDataMsg += `⚠️ Erreurs vérification: ${verifyResult.errors.slice(0, 3).join(', ')}\n`;
+            }
             noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
             noDataMsg += '🤖 Bilan journalier · Aucune prédiction active\n';
             noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━';
@@ -2236,6 +2245,12 @@ export async function GET(request: NextRequest) {
             } 
           };
         } catch (e: any) {
+          // ⚠️ Dernier recours: même si tout crash, essayer d'envoyer un message d'erreur
+          try {
+            const errMsg = `⚠️ <b>ERREUR BILAN</b>\n\n${e.message}\n\n📅 Le cron tourne mais une erreur est survenue.`;
+            const { sendTelegramMessage } = await import('@/lib/telegramService');
+            await sendTelegramMessage(errMsg);
+          } catch { /* silent */ }
           result = { telegram: { success: false, error: e.message } };
         }
         break;
