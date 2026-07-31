@@ -36,9 +36,24 @@ import time
 import math
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
-
 import numpy as np
 import pandas as pd
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """JSON encoder qui convertit les types numpy en types Python natifs."""
+    def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 from scipy import stats as scipy_stats
 from supabase import create_client, Client
 
@@ -1478,7 +1493,7 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
     # Upsert dans ml_model
     update_data = {
         "id": "default_model",
-        "xgboost_params": json.dumps(xgboost_params),
+        "xgboost_params": json.dumps(xgboost_params, cls=NumpyEncoder),
         "version": f"xgb-{datetime.now(timezone.utc).strftime('%y%m%d')}",
         "samples_used": total_samples,
         "accuracy": int(round(global_cv * 100)),
@@ -1697,7 +1712,7 @@ def main():
     }
     output_path = os.path.join(os.path.dirname(__file__), "last_training_result.json")
     with open(output_path, "w") as f:
-        json.dump(output, f, indent=2, default=str)
+        json.dump(output, f, indent=2, cls=NumpyEncoder)
     print(f"\n💾 Résultats sauvegardés: {output_path}")
 
     print("\n✅ Pipeline terminé!")
