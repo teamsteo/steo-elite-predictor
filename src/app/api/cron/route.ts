@@ -2123,14 +2123,6 @@ export async function GET(request: NextRequest) {
               };
             });
             
-            // Mapper les odds correctement
-            dbPredictions.forEach((pred: any, i: number) => {
-              const leg = combo.legs[i] as any;
-              pred.odds_home = leg.predictedResult === 'home' ? leg.odds : (leg.oddsHome || null);
-              pred.odds_away = leg.predictedResult === 'away' ? leg.odds : (leg.oddsAway || null);
-              pred.odds_draw = leg.predictedResult === 'draw' ? leg.odds : (leg.oddsDraw || null);
-            });
-            
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 ${saved} legs combo sauvegardées (combo_id: ${combo.comboId})`);
           } catch (saveErr: any) {
