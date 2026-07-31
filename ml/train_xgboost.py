@@ -1495,7 +1495,7 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
         "id": "default_model",
         "xgboost_params": json.dumps(xgboost_params, cls=NumpyEncoder),
         "version": f"xgb-{datetime.now(timezone.utc).strftime('%y%m%d')}",
-        "samples_used": total_samples,
+        "samples_used": int(total_samples),
         "accuracy": int(round(global_cv * 100)),
         "last_trained": datetime.now(timezone.utc).isoformat(),
     }
@@ -1506,7 +1506,7 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
         edges = [r["edge_vs_random"] for r in results.values() if r]
         if edges:
             best_edge = max(edges) / 100  # Convertir pp en ratio
-            update_data["edge_threshold"] = round(best_edge, 4)
+            update_data["edge_threshold"] = float(round(best_edge, 4))
 
     try:
         res = sb.table("ml_model").upsert(update_data, on_conflict="id").execute()
