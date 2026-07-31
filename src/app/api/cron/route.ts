@@ -2193,6 +2193,36 @@ export async function GET(request: NextRequest) {
           const kamikazeBilanDate = targetDate || undefined;
           const kamikazeResult = await publishKamikazeBilanToTelegram(kamikazeBilanDate);
           
+          // 🔔 Si aucun bilan n'a été publié (période creuse, pas de pronostics),
+          // envoyer un message informatif sur Telegram pour confirmer que le cron tourne
+          if (!telegramResult && !kamikazeResult) {
+            const bilanDate = targetDate || (() => {
+              const yesterday = new Date();
+              yesterday.setDate(yesterday.getDate() - 1);
+              return yesterday.toISOString().split('T')[0];
+            })();
+            const dateObj = new Date(bilanDate + 'T12:00:00');
+            const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+            const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+            const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+            
+            let noDataMsg = '╔═════════════════════════════╗\n';
+            noDataMsg += '║\n';
+            noDataMsg += '║   📊 <b>BILAN DE LA VEILLE</b>\n';
+            noDataMsg += '║\n';
+            noDataMsg += '╚═════════════════════════════╝\n\n';
+            noDataMsg += `📅 <b>${dateLabel}</b>\n\n`;
+            noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+            noDataMsg += '⏳ <b>Aucun pronostic à vérifier</b>\n\n';
+            noDataMsg += `🔍 Vérification: ${verifyResult.verified} matchs vérifiés, ${verifyResult.updated} mis à jour\n`;
+            noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+            noDataMsg += '🤖 Bilan journalier · Aucune prédiction active\n';
+            noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+            
+            const { sendTelegramMessage } = await import('@/lib/telegramService');
+            await sendTelegramMessage(noDataMsg);
+          }
+          
           result = { 
             telegram: { 
               success: telegramResult || kamikazeResult,
@@ -2200,7 +2230,9 @@ export async function GET(request: NextRequest) {
               kamikazeBilan: kamikazeResult,
               message: telegramResult 
                 ? '📊 Bilan journalier publié sur Telegram'
-                : 'Aucun pronostic safe/modéré à comparer pour cette date'
+                : kamikazeResult 
+                  ? '💣 Bilan kamikaze uniquement (pas de safe/modéré)'
+                  : '📊 Message informatif envoyé (aucun pronostic à vérifier)'
             } 
           };
         } catch (e: any) {
