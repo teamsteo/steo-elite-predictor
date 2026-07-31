@@ -1,6 +1,79 @@
 # Worklog - Projet Steo Élite
 
 ---
+## Session du 2026-07-31 - Audit Complet Système + Fixes Combo LLM
+
+### Contexte
+Audit complet du système suite à la demande utilisateur de vérification de l'intégralité du système.
+
+### Audit Réalisé — 4 Problèmes Trouvés et Corrigés
+
+#### ✅ Éléments vérifiés et fonctionnels
+1. **comboService.ts** — Service LLM complet : filtre foot+basket, max 3 legs, appel ZAI SDK
+2. **Cron `telegram-combo`** — 3 crons dans vercel.json (07:30, 12:30, 17:00 UTC) — 2-3x/jour ✓
+3. **publishComboToTelegram()** — Section nommée "🤖 COMBO IA DU JOUR" avec badge distinctif ✓
+4. **Sauvegarde Supabase** — Legs sauvegardés avec combo_id, combo_name, is_combo ✓
+5. **Export telegramService** — publishComboToTelegram dans l'export default ✓
+6. **Bilan découplé** — verifyAllResults non-bloquant, bilan toujours publié ✓
+
+#### ❌ FIX 1: `telegram-combo` manquant des validActions (2 endroits)
+- **Fichier** : `src/app/api/cron/route.ts` lignes 2595 et 3046
+- **Correction** : Ajouté `telegram-combo` dans les deux listes validActions
+- **Impact** : Sans ce fix, un appel avec mauvais paramètre retournait erreur 400 sans mentionner telegram-combo
+
+#### ❌ FIX 2: Colonnes combo absentes du type DbPrediction
+- **Fichier** : `src/lib/db-supabase.ts`
+- **Correction** : Ajouté `combo_id?: string`, `combo_name?: string`, `is_combo?: boolean` dans l'interface DbPrediction
+- **Impact** : TypeScript ne connaissait pas ces champs — passait via `any` mais pas propre
+
+#### ❌ FIX 3: Pas de section combo dans le bilan journalier
+- **Fichier** : `src/lib/telegramService.ts`
+- **Correction** :
+  - Ajouté type `ComboResultSummary` pour structurer les combos
+  - `fetchDailyResultsFromSupabase` sépare désormais les combos des pronostics normaux
+  - Les combos sont groupés par `combo_id`, statut calculé (won/lost/partial/pending)
+  - Section "🤖 BILAN COMBOS IA" ajoutée dans le bilan Telegram avec détails par leg
+- **Impact** : Les combos étaient mélangés avec les pronostics normaux dans le bilan → maintenant section dédiée
+
+#### ❌ FIX 4: SQL migration pour colonnes combo
+- **Fichier** : `download/add-combo-columns.sql`
+- **Contenu** : ALTER TABLE + INDEX sur combo_id et is_combo
+- **Action requise** : Exécuter ce SQL dans Supabase Dashboard → SQL Editor
+
+#### 🔧 FIX mineur: TypeScript error dans cron route
+- **Fichier** : `src/app/api/cron/route.ts` ligne 2128
+- **Correction** : Cast `combo.legs[i] as any` pour accéder aux propriétés oddsHome/oddsAway/oddsDraw
+
+### Compilation
+- `npx tsc --noEmit` → 0 erreurs ✅
+
+### Action requise par l'utilisateur
+1. **Exécuter le SQL** `/download/add-combo-columns.sql` dans le SQL Editor de Supabase Dashboard
+2. **Deploy** le code mis à jour sur Vercel
+
+### Architecture finale du système Combo
+
+```
+vercel.json crons (3x/jour)
+  → /api/cron?action=telegram-combo
+    → comboService.ts: generateComboWithLLM()
+      → ZAI SDK (LLM)
+      → Retourne combo de 2-3 legs foot/basket
+    → SupabaseStore.addPredictions() (sauvegarde legs)
+    → publishComboToTelegram() (publication Telegram)
+
+vercel.json cron (05:30 UTC)
+  → /api/cron?action=telegram-results
+    → fetchDailyResultsFromSupabase()
+      → Sépare combos (is_combo=true) des pronostics normaux
+      → Groupe legs par combo_id, calcule statut parlay
+    → publishDailyResultsToTelegram()
+      → Section "BILAN COMBOS IA" avec résultat global par combo
+      → Détail ✅/❌ par leg
+      → Cote combinée
+```
+
+---
 ## Session du 2026-04-03 - Création Onglet Stats Dédié
 
 ### Contexte

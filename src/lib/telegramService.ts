@@ -1309,6 +1309,24 @@ export async function testTelegramConnection(): Promise<{
 // PUBLICATION BILAN QUOTIDIEN
 // ============================================
 
+interface ComboResultSummary {
+  comboId: string;
+  comboName: string;
+  legs: Array<{
+    homeTeam: string;
+    awayTeam: string;
+    sport: string;
+    league: string;
+    predicted: string;
+    resultMatch: boolean | null;
+    status: string;
+    odds?: number;
+  }>;
+  allLegsVerified: boolean;
+  allLegsWon: boolean;
+  status: 'won' | 'lost' | 'partial' | 'pending';
+}
+
 interface DailyResultSummary {
   date: string;
   totalPredictions: number;
@@ -1323,6 +1341,7 @@ interface DailyResultSummary {
   profitUnits: number;    // Bénéfice en unités (-1 par perte, cote-1 par gain)
   streaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }>;
   bySport: Record<string, { total: number; wins: number; losses: number; winRate: number; pending: number; roi: number; profitUnits: number }>;
+  combos: ComboResultSummary[];
   details: Array<{
     homeTeam: string;
     awayTeam: string;
@@ -1391,6 +1410,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     profitUnits: 0,
     streaks: {},
     bySport: {},
+    combos: [],
     details: [],
   };
 
@@ -1400,9 +1420,64 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     const dayPredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) <= 50);
     if (dayPredictions.length === 0) return emptySummary;
 
+    // 🤖 Séparer les combos (is_combo=true) des pronostics normaux
+    const comboPredictions = dayPredictions.filter(p => p.is_combo === true);
+    const normalPredictions = dayPredictions.filter(p => !p.is_combo);
+
+    // Grouper les legs par combo_id
+    const comboMap = new Map<string, any[]>();
+    const comboNames = new Map<string, string>();
+    for (const p of comboPredictions) {
+      const cid = p.combo_id || 'unknown';
+      if (!comboMap.has(cid)) comboMap.set(cid, []);
+      comboMap.get(cid)!.push(p);
+      if (p.combo_name) comboNames.set(cid, p.combo_name);
+    }
+
+    // Construire les résumés de combo
+    const combos: ComboResultSummary[] = [];
+    for (const [comboId, legs] of comboMap) {
+      const allVerified = legs.every(l => l.status === 'completed');
+      const allPending = legs.every(l => l.status === 'pending');
+      const allWon = allVerified && legs.every(l => l.result_match === true);
+      const anyLost = legs.some(l => l.result_match === false);
+
+      let status: ComboResultSummary['status'] = 'pending';
+      if (allPending) status = 'pending';
+      else if (allWon) status = 'won';
+      else if (anyLost) status = 'lost';
+      else status = 'partial';
+
+      combos.push({
+        comboId,
+        comboName: comboNames.get(comboId) || 'Combo',
+        legs: legs.map(l => {
+          const predictedLabel = formatPredictedResult(l.predicted_result, l.sport, l.home_team, l.away_team, l.odds_home, l.odds_draw, l.odds_away);
+          let betOdds = 1.0;
+          if (l.predicted_result === 'home') betOdds = l.odds_home || 1.0;
+          else if (l.predicted_result === 'away') betOdds = l.odds_away || 1.0;
+          else if (l.predicted_result === 'draw') betOdds = l.odds_draw || 1.0;
+          return {
+            homeTeam: l.home_team || '',
+            awayTeam: l.away_team || '',
+            sport: l.sport || 'football',
+            league: l.league || '',
+            predicted: predictedLabel,
+            resultMatch: l.result_match ?? null,
+            status: l.status || 'pending',
+            odds: betOdds,
+          };
+        }),
+        allLegsVerified: allVerified,
+        allLegsWon: allWon,
+        status,
+      });
+    }
+
     const summary: DailyResultSummary = {
       ...emptySummary,
-      totalPredictions: dayPredictions.length,
+      totalPredictions: normalPredictions.length,
+      combos,
     };
 
     // Grouper par sport et calculer les stats
@@ -1412,7 +1487,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     // 🏆 Compteur par sport pour plafonner les non-prioritaires à 3
     const sportCounts: Record<string, number> = {};
 
-    for (const p of dayPredictions) {
+    for (const p of normalPredictions) {
       // ⚠️ Normaliser le sport (anciennes données pouvant avoir 'foot', 'basket', 'nhl')
       let sport = (p.sport || 'other').toLowerCase();
       // Normalisation des variantes
@@ -1732,6 +1807,41 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     message += `    ${roiEmoji} ROI: <b>${roiSign}${summary.roi}%</b> (${profitSign}${summary.profitUnits.toFixed(2)}u)\n`;
   }
   message += '\n';
+
+  // =============================================
+  // 🤖 BILAN DES COMBOS (PARLEYS)
+  // =============================================
+  if (summary.combos && summary.combos.length > 0) {
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '🤖 <b>BILAN COMBOS IA</b>\n\n';
+
+    for (const combo of summary.combos) {
+      const statusEmoji = combo.status === 'won' ? '🏆' : combo.status === 'lost' ? '❌' : combo.status === 'partial' ? '⏳' : '⏳';
+      const statusLabel = combo.status === 'won' ? 'GAGNÉ' : combo.status === 'lost' ? 'PERDU' : combo.status === 'partial' ? 'EN COURS' : 'EN ATTENTE';
+
+      message += `${statusEmoji} <b>${combo.comboName}</b> — <b>${statusLabel}</b>\n`;
+
+      for (let i = 0; i < combo.legs.length; i++) {
+        const leg = combo.legs[i];
+        const sportEmoji = (leg.sport || '').includes('basket') ? '🏀' : '⚽';
+        const legResult = leg.status === 'completed'
+          ? (leg.resultMatch === true ? '✅' : '❌')
+          : '⏳';
+        message += `    ${legResult} ${sportEmoji} ${leg.homeTeam} vs ${leg.awayTeam} → <b>${leg.predicted}</b>`;
+        if (leg.odds && leg.odds > 1) message += ` (${leg.odds.toFixed(2)})`;
+        message += '\n';
+      }
+
+      // Cote combinée si toutes les legs ont des cotes
+      const legsWithOdds = combo.legs.filter(l => l.odds && l.odds > 1);
+      if (legsWithOdds.length === combo.legs.length) {
+        const combinedOdds = legsWithOdds.reduce((acc, l) => acc * (l.odds || 1), 1);
+        message += `    📈 Cote combinée: x${combinedOdds.toFixed(2)}\n`;
+      }
+
+      message += '\n';
+    }
+  }
 
   // =============================================
   // DÉTAILS PAR MATCH — TERMINÉS + EN ATTENTE

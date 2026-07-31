@@ -72,6 +72,11 @@ export interface DbPrediction {
   features?: any;
   model_confidence?: number;
   
+  // Combo (parlay) fields
+  combo_id?: string;
+  combo_name?: string;
+  is_combo?: boolean;
+  
   created_at?: string;
   checked_at?: string;
 }
