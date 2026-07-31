@@ -219,7 +219,7 @@ export const SupabaseStore = {
     }
   },
   
-  async addPredictions(predictions: Omit<DbPrediction, 'id' | 'created_at'>[]): Promise<number> {
+  async addPredictions(predictions: Array<Record<string, any>>): Promise<number> {
     const supabase = getSupabase();
     if (!supabase) return 0;
     

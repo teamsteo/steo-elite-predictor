@@ -2931,7 +2931,14 @@ export async function POST(request: NextRequest) {
 
       case 'telegram-results':
         try {
-          const verifyResult = await verifyAllResults();
+          // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
+          let verifyResult = { verified: 0, updated: 0, won: 0, lost: 0, errors: [] as string[] };
+          try {
+            console.log('🔄 [POST] Vérification des résultats avant bilan...');
+            verifyResult = await verifyAllResults();
+          } catch (verifyErr: any) {
+            console.error(`⚠️ [POST] verifyAllResults() échoué (non-bloquant): ${verifyErr.message}`);
+          }
           await new Promise(resolve => setTimeout(resolve, 2000));
           const targetDate = url.searchParams.get('date');
           const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
@@ -3027,6 +3034,111 @@ export async function POST(request: NextRequest) {
                 ? `${valueBetsCount} value bet(s) publié(s) sur Telegram`
                 : 'Erreur ou aucun value bet à publier'
             }
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
+      case 'telegram-combo':
+        // 🤖 Générer et publier un combiné intelligent via LLM (POST)
+        try {
+          const { generateComboWithLLM } = await import('@/lib/comboService');
+          const { publishComboToTelegram: publishCombo } = await import('@/lib/telegramService');
+          
+          invalidateEspnCache();
+          const matches = await getMatchesWithRealOdds();
+          
+          if (!matches || matches.length === 0) {
+            result = { telegram: { success: false, message: 'Aucun match disponible pour combo' } };
+            break;
+          }
+          
+          const upcomingWithOdds = matches.filter((m: any) =>
+            !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
+          );
+          
+          const comboInputs: any[] = upcomingWithOdds
+            .filter((m: any) => {
+              const sport = (m.sport || '').toLowerCase();
+              return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket');
+            })
+            .map((m: any) => ({
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
+              league: m.league || 'Unknown',
+              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
+              oddsHome: m.oddsHome,
+              oddsAway: m.oddsAway,
+              oddsDraw: m.oddsDraw,
+              riskPercentage: m.riskPercentage ?? 50,
+              valueBetDetected: m.valueBets?.length > 0 || m.valueBetDetected,
+              valueBetType: m.valueBets?.[0]?.type || m.valueBetType || null,
+              confidence: m.confidence || 'medium',
+              date: m.date,
+              _mlEdge: m._mlEdge,
+              _kellyStake: m._kellyStake,
+              _mlReasoning: m._mlReasoning,
+              _matchImportance: m._matchImportance,
+            }));
+          
+          if (comboInputs.length < 2) {
+            result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2)' } };
+            break;
+          }
+          
+          const combo = await generateComboWithLLM(comboInputs);
+          
+          if (!combo) {
+            result = { telegram: { success: false, message: 'LLM: pas de combo généré' } };
+            break;
+          }
+          
+          try {
+            const dbPredictions = combo.legs.map((leg: any) => {
+              const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+              const dateStr = new Date().toISOString().split('T')[0];
+              const timeSuffix = combo.comboId.split('-').pop() || '';
+              const matchId = `${cleanTeam(leg.homeTeam)}-${cleanTeam(leg.awayTeam)}-${cleanTeam(leg.league || '')}-${dateStr}-${timeSuffix}`;
+              return {
+                match_id: matchId,
+                home_team: leg.homeTeam,
+                away_team: leg.awayTeam,
+                league: leg.league || 'Unknown',
+                sport: (leg.sport || 'football').toLowerCase(),
+                match_date: new Date().toISOString(),
+                odds_home: leg.predictedResult === 'home' ? leg.odds : null,
+                odds_draw: leg.predictedResult === 'draw' ? leg.odds : null,
+                odds_away: leg.predictedResult === 'away' ? leg.odds : null,
+                predicted_result: leg.predictedResult,
+                confidence: leg.confidence || 'medium',
+                risk_percentage: 100 - leg.winProbability,
+                combo_id: combo.comboId,
+                combo_name: combo.name,
+                is_combo: true,
+                status: 'pending' as const,
+              };
+            });
+            
+            const saved = await SupabaseStore.addPredictions(dbPredictions);
+            console.log(`💾 [POST] ${saved} legs combo sauvegardées (combo_id: ${combo.comboId})`);
+          } catch (saveErr: any) {
+            console.log('⚠️ Erreur sauvegarde combo Supabase:', saveErr.message);
+          }
+          
+          const telegramResult = await publishCombo(combo);
+          
+          result = {
+            telegram: {
+              success: telegramResult,
+              comboId: combo.comboId,
+              comboName: combo.name,
+              legs: combo.legs.length,
+              combinedOdds: combo.combinedOdds,
+              message: telegramResult ? `🤖 Combo "${combo.name}" publié` : 'Erreur publication combo',
+            },
           };
         } catch (e: any) {
           result = { telegram: { success: false, error: e.message } };
