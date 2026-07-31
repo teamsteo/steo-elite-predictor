@@ -82,6 +82,18 @@
     {
       "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-monthly",
       "schedule": "0 4 1 * *"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-combo",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-combo",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-combo",
+      "schedule": "0 17 * * *"
     }
   ]
 }

@@ -2034,6 +2034,131 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'telegram-combo':
+        // 🤖 Générer et publier un combiné intelligent via LLM
+        try {
+          const { generateComboWithLLM } = await import('@/lib/comboService');
+          const { publishComboToTelegram: publishCombo } = await import('@/lib/telegramService');
+          
+          // Récupérer les matchs du jour
+          invalidateEspnCache();
+          const matches = await getMatchesWithRealOdds();
+          
+          if (!matches || matches.length === 0) {
+            result = { telegram: { success: false, message: 'Aucun match disponible pour combo' } };
+            break;
+          }
+          
+          // Filtrer: à venir, cotes réelles, foot et basket uniquement
+          const upcomingWithOdds = matches.filter((m: any) =>
+            !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
+          );
+          
+          // Mapper vers le format ComboMatch
+          const comboInputs: any[] = upcomingWithOdds
+            .filter((m: any) => {
+              const sport = (m.sport || '').toLowerCase();
+              return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket');
+            })
+            .map((m: any) => ({
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
+              league: m.league || 'Unknown',
+              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
+              oddsHome: m.oddsHome,
+              oddsAway: m.oddsAway,
+              oddsDraw: m.oddsDraw,
+              riskPercentage: m.riskPercentage ?? 50,
+              valueBetDetected: m.valueBets?.length > 0 || m.valueBetDetected,
+              valueBetType: m.valueBets?.[0]?.type || m.valueBetType || null,
+              confidence: m.confidence || 'medium',
+              date: m.date,
+              _mlEdge: m._mlEdge,
+              _kellyStake: m._kellyStake,
+              _mlReasoning: m._mlReasoning,
+              _matchImportance: m._matchImportance,
+            }));
+          
+          console.log(`🤖 Combo: ${comboInputs.length} matchs foot/basket éligibles`);
+          
+          if (comboInputs.length < 2) {
+            result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2)' } };
+            break;
+          }
+          
+          // LLM génère le combo
+          const combo = await generateComboWithLLM(comboInputs);
+          
+          if (!combo) {
+            result = { telegram: { success: false, message: 'LLM: pas de combo généré (pas assez de value bets qualifiés)' } };
+            break;
+          }
+          
+          // 💾 Sauvegarder les legs dans Supabase (pour le bilan journalier)
+          try {
+            const dbPredictions = combo.legs.map((leg: any) => {
+              const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+              const dateStr = new Date().toISOString().split('T')[0];
+              const timeSuffix = combo.comboId.split('-').pop() || '';
+              const matchId = `${cleanTeam(leg.homeTeam)}-${cleanTeam(leg.awayTeam)}-${cleanTeam(leg.league || '')}-${dateStr}-${timeSuffix}`;
+              return {
+                match_id: matchId,
+                home_team: leg.homeTeam,
+                away_team: leg.awayTeam,
+                league: leg.league || 'Unknown',
+                sport: (leg.sport || 'football').toLowerCase(),
+                match_date: new Date().toISOString(),
+                odds_home: leg.predictedResult === 'home' ? leg.odds : (leg.predictedResult === 'away' ? null : null),
+                odds_draw: leg.predictedResult === 'draw' ? leg.odds : null,
+                odds_away: leg.predictedResult === 'away' ? leg.odds : (leg.predictedResult === 'home' ? null : null),
+                predicted_result: leg.predictedResult,
+                confidence: leg.confidence || 'medium',
+                risk_percentage: 100 - leg.winProbability,
+                combo_id: combo.comboId,
+                combo_name: combo.name,
+                is_combo: true,
+                status: 'pending' as const,
+              };
+            });
+            
+            // Mapper les odds correctement
+            dbPredictions.forEach((pred: any, i: number) => {
+              const leg = combo.legs[i];
+              pred.odds_home = leg.predictedResult === 'home' ? leg.odds : (leg.oddsHome || null);
+              pred.odds_away = leg.predictedResult === 'away' ? leg.odds : (leg.oddsAway || null);
+              pred.odds_draw = leg.predictedResult === 'draw' ? leg.odds : (leg.oddsDraw || null);
+            });
+            
+            const saved = await SupabaseStore.addPredictions(dbPredictions);
+            console.log(`💾 ${saved} legs combo sauvegardées (combo_id: ${combo.comboId})`);
+          } catch (saveErr: any) {
+            console.log('⚠️ Erreur sauvegarde combo Supabase:', saveErr.message);
+          }
+          
+          // Publier sur Telegram
+          const telegramResult = await publishCombo(combo);
+          
+          result = {
+            telegram: {
+              success: telegramResult,
+              comboId: combo.comboId,
+              comboName: combo.name,
+              legs: combo.legs.length,
+              combinedOdds: combo.combinedOdds,
+              combinedWinProb: (combo.combinedWinProbability * 100).toFixed(1) + '%',
+              riskLevel: combo.riskLevel,
+              message: telegramResult
+                ? `🤖 Combo "${combo.name}" publié (${combo.legs.length} legs, x${combo.combinedOdds.toFixed(2)})`
+                : 'Erreur publication combo',
+            },
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+        
       case 'telegram-valuebets':
         // Publier uniquement les value bets sur Telegram
         try {

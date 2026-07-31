@@ -2165,6 +2165,76 @@ export async function publishMonthlyResultsToTelegram(monthISO?: string): Promis
   }
 }
 
+// ============================================
+// PUBLICATION COMBO LLM (Combiné Intelligent)
+// ============================================
+
+/**
+ * Publie un combiné intelligent généré par l'IA sur Telegram
+ * Section nommée distincte avec badge 🤖 pour identification
+ */
+export async function publishComboToTelegram(combo: any): Promise<boolean> {
+  const sportEmojis: Record<string, string> = {
+    'football': '⚽', 'basketball': '🏀',
+  };
+  const riskEmojis: Record<string, string> = {
+    'low': '🟢', 'medium': '🟡', 'high': '🔴',
+  };
+
+  const today = new Date().toLocaleDateString('fr-FR', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  });
+
+  let message = '';
+  message += '╔═════════════════════════════╗\n';
+  message += '║\n';
+  message += '║   🤖 <b>COMBO IA DU JOUR</b>  ║\n';
+  message += '║\n';
+  message += '╚═════════════════════════════╝\n\n';
+  message += `📅 ${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
+  message += `✨ <b>${combo.name}</b>\n\n`;
+
+  // Raisonnement global
+  if (combo.reasoning) {
+    message += `💡 ${combo.reasoning}\n\n`;
+  }
+
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += `<b> ${combo.legs.length} SÉLECTION${combo.legs.length > 1 ? 'S' : ''}</b>\n`;
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+
+  for (let i = 0; i < combo.legs.length; i++) {
+    const leg = combo.legs[i];
+    const emoji = sportEmojis[leg.sport] || '🏟️';
+    const riskEmoji = riskEmojis[leg.confidence === 'high' ? 'low' : leg.confidence === 'low' ? 'high' : 'medium'] || '🟡';
+
+    message += `<b>${i + 1}.</b> ${emoji} <b>${leg.homeTeam} vs ${leg.awayTeam}</b>\n`;
+    message += `    🏆 ${leg.league}\n`;
+    message += `    🎯 <b>${leg.betLabel}</b>\n`;
+    message += `    📊 Cote: <b>${leg.odds.toFixed(2)}</b> · Chance: <b>${leg.winProbability}%</b>\n`;
+    if (leg.reasoning) {
+      message += `    💡 ${leg.reasoning}\n`;
+    }
+    message += '\n';
+  }
+
+  // Stats du combo
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += '<b>STATS COMBO</b>\n\n';
+  message += `    📈 Cote combinée: <b>x${combo.combinedOdds.toFixed(2)}</b>\n`;
+  message += `    🎯 Proba combinée: <b>${(combo.combinedWinProbability * 100).toFixed(1)}%</b>\n`;
+  message += `    ${riskEmojis[combo.riskLevel] || '🟡'} Risque: <b>${combo.riskLevel === 'low' ? 'Faible' : combo.riskLevel === 'medium' ? 'Modéré' : 'Élevé'}</b>\n`;
+  message += `    💰 Valeur attendue: <b>${combo.expectedValue > 0 ? '+' : ''}${(combo.expectedValue * 100).toFixed(1)}%</b>\n`;
+  message += '\n';
+
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += '🤖 Combo généré par IA · Parlay intelligent\n';
+  message += '⚠️ Les combinés multiplient les cotes MAIS aussi le risque\n';
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+  return await sendTelegramMessageLong(message);
+}
+
 export default {
   sendTelegramMessage,
   publishPredictionToTelegram,
@@ -2176,6 +2246,7 @@ export default {
   publishDailyResultsToTelegram,
   publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
+  publishComboToTelegram,
   getTelegramChatId,
   testTelegramConnection,
   isSafeOrModerate,
