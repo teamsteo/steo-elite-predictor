@@ -21,13 +21,16 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
-// 🎯 CRITÈRES RESSERRÉS (juillet 2026) — alignés sur backtest XGBoost
+// 🎯 CRITÈRES ALIGNÉS SUR BACKTEST XGBoost (août 2026)
 // Backtest foot: confidence ≥ 74% → 99.9% précision | ROI +34% à +43%
-// → On utilise ≥ 60% comme seuil de publication (compromis volume/qualité)
+// → Foot: risk ≤ 25% (win prob ≥ 75%) — dans la zone prouvée du backtest
+// → Basket: risk ≤ 30% (win prob ≥ 70%) — cotes courtes, besoin de plus de certitude
+// → NHL/Baseball: risk ≤ 30% (win prob ≥ 70%) — instabilité plus élevée
 // → Les filtres de confiance (very_high/high) dans unifiedPredictionService sont plus stricts
-const TIGHT_MAX_RISK = 40; // Foot/basket: risque max 40%
+const TIGHT_MAX_RISK_FOOTBALL = 25; // Football: risque max 25% (backtest 74%+ → 99.9%)
+const TIGHT_MAX_RISK_BASKETBALL = 30; // Basketball: risque max 30% (cotes courtes, + min 1.80)
 const TIGHT_MAX_RISK_HIGH_RISK_SPORTS = 30; // NHL/baseball: risque max 30% (instabilité plus élevée)
-const MIN_WIN_PROBABILITY = 60; // Aligné sur backtest: ≥74% précision, seuil pub ≥60%
+const MIN_WIN_PROBABILITY = 70; // Aligné sur backtest: ≥74% précision, seuil pub ≥70%
 // 🏆 LIMITES SPORTS NON PRIORITAIRES
 // Backtest: football +32% ROI (priorité absolue)
 // → Basketball limité à 3 (cotes courtes, -16% ROI à cotes < 1.80)
@@ -832,17 +835,23 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
   const withRealOdds = nonTennis.filter(p => !p.isEstimated);
   const excludedEstimated = predictions.length - withRealOdds.length;
   
-  // 2) CRITÈRES RESSERRÉS: risque ≤ 40% (foot/basket) ou ≤ 30% (NHL/baseball)
-  // Foot/basket = risque faible, NHL/baseball = risque plus élevé → seuil plus strict
+  // 2) CRITÈRES ALIGNÉS SUR BACKTEST: football ≤ 25%, basket ≤ 30%, NHL/baseball ≤ 30%
+  // Plus on s'éloigne de 74% win prob, plus le ratio win/loss se dégrade
   const underRisk = withRealOdds.filter(p => {
     const sport = (p.sport || '').toLowerCase();
-    const isHighRiskSport = sport === 'baseball' || sport === 'hockey' || sport === 'nhl' || sport === 'mlb';
-    const maxRisk = isHighRiskSport ? TIGHT_MAX_RISK_HIGH_RISK_SPORTS : TIGHT_MAX_RISK;
+    let maxRisk: number;
+    if (sport === 'baseball' || sport === 'hockey' || sport === 'nhl' || sport === 'mlb') {
+      maxRisk = TIGHT_MAX_RISK_HIGH_RISK_SPORTS;
+    } else if (sport === 'basketball' || sport === 'basket' || sport === 'nba') {
+      maxRisk = TIGHT_MAX_RISK_BASKETBALL;
+    } else {
+      maxRisk = TIGHT_MAX_RISK_FOOTBALL;
+    }
     return (p.riskPercentage ?? 100) <= maxRisk;
   });
   const excludedRisk = withRealOdds.length - underRisk.length;
   
-  // 3) Confiance minimum: proba ≥ 58% (exclut les trop serrés)
+  // 3) Confiance minimum: proba ≥ 70% (aligné sur backtest)
   const withConfidence = underRisk.filter(p => {
     const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
     return wp >= MIN_WIN_PROBABILITY;
