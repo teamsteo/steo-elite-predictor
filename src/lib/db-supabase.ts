@@ -610,7 +610,7 @@ export const SupabaseStore = {
         }
       }
       
-      for (const sport of ['football', 'basketball', 'hockey'] as const) {
+      for (const sport of ['football', 'basketball', 'baseball', 'hockey', 'tennis'] as const) {
         if (bySport[sport].total > 0) {
           bySport[sport].winRate = Math.round((bySport[sport].wins / bySport[sport].total) * 100);
         }

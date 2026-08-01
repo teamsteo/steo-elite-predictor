@@ -1631,10 +1631,12 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     // Calcul des séries (streaks) par sport — requête optimisée Supabase (status=completed + result_match non null)
     try {
       const completed = await SupabaseStore.getRecentCompletedPredictions(500);
+      // Exclure les legs de combo pour ne pas gonfler les séries
+      const completedNoCombos = completed.filter(p => !p.is_combo);
       // Déjà triés par date décroissante via la requête Supabase
 
       const sportStreaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }> = {};
-      for (const p of completed) {
+      for (const p of completedNoCombos) {
         let sport = (p.sport || 'other').toLowerCase();
         // Normaliser pour éviter les clés dupliquées (foot vs football, nhl vs hockey)
         if (sport === 'foot' || sport === 'soccer') sport = 'football';
@@ -1982,6 +1984,7 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     // ⚠️ UNIQUEMENT les kamikazes (risk_percentage > 50)
     // 🎾 EXCLURE le tennis des pronostics Telegram
     const kamikazePredictions = allDayPredictions.filter(p => {
+      if (p.is_combo === true) return false; // Exclure les legs de combo
       if ((p.risk_percentage ?? 100) <= 50) return false;
       const sport = (p.sport || 'other').toLowerCase();
       if (sport === 'tennis') return false;
