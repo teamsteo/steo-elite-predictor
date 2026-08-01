@@ -25,7 +25,8 @@ const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
 // Backtest foot: confidence ≥ 74% → 99.9% précision | ROI +34% à +43%
 // → On utilise ≥ 60% comme seuil de publication (compromis volume/qualité)
 // → Les filtres de confiance (very_high/high) dans unifiedPredictionService sont plus stricts
-const TIGHT_MAX_RISK = 40; // Au lieu de 50 — exclut les modérés trop risqués
+const TIGHT_MAX_RISK = 40; // Foot/basket: risque max 40%
+const TIGHT_MAX_RISK_HIGH_RISK_SPORTS = 30; // NHL/baseball: risque max 30% (instabilité plus élevée)
 const MIN_WIN_PROBABILITY = 60; // Aligné sur backtest: ≥74% précision, seuil pub ≥60%
 // 🏆 LIMITES SPORTS NON PRIORITAIRES
 // Backtest: football +32% ROI (priorité absolue)
@@ -537,6 +538,12 @@ function formatPrediction(prediction: {
     message += `${probEmoji} <b>CHANCE: ${winProb}%</b>  ·  ${riskEmoji} <b>${riskLabel}</b>\n`;
   }
   
+  // ⚠️ RISQUE ÉLEVÉ pour NHL/baseball
+  const predSport = (prediction.sport || '').toLowerCase();
+  if (predSport.includes('base') || predSport.includes('mlb') || predSport.includes('hockey') || predSport.includes('nhl')) {
+    message += `⚠️ <i>Sport à risque élevé</i>\n`;
+  }
+  
   if (prediction.valueBetDetected && prediction.valueBetType) {
     message += `💎 <b>Value: ${prediction.valueBetType}</b>\n`;
   }
@@ -658,6 +665,13 @@ async function formatMatchBlock(
   // Confiance claire : niveau de risque + chance de réussite
   const riskLevel = (m.riskPercentage || 100) <= 30 ? 'Safe' : (m.riskPercentage || 100) <= 50 ? 'Modéré' : 'Kamikaze';
   block += `${riskEmoji} <b>${riskLevel}</b> — Chance: <b>${winProb}%</b>\n`;
+  
+  // ⚠️ RISQUE ÉLEVÉ pour NHL/baseball — toujours affiché pour informer l'utilisateur
+  const sportLower = (m.sport || '').toLowerCase();
+  const isHighRiskSport = sportLower.includes('base') || sportLower.includes('mlb') || sportLower.includes('hockey') || sportLower.includes('nhl');
+  if (isHighRiskSport) {
+    block += `⚠️ <i>Sport à risque élevé — Sélection stricte (risk ≤ 30%)</i>\n`;
+  }
 
   // Prédiction de buts (football uniquement)
   if (isFootball && includeGoals && m.oddsHome && m.oddsAway && !m.isEstimated && m.league) {
@@ -816,8 +830,14 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
   const withRealOdds = nonTennis.filter(p => !p.isEstimated);
   const excludedEstimated = predictions.length - withRealOdds.length;
   
-  // 2) CRITÈRES RESSERRÉS: risque ≤ 40% (au lieu de 50%)
-  const underRisk = withRealOdds.filter(p => (p.riskPercentage ?? 100) <= TIGHT_MAX_RISK);
+  // 2) CRITÈRES RESSERRÉS: risque ≤ 40% (foot/basket) ou ≤ 30% (NHL/baseball)
+  // Foot/basket = risque faible, NHL/baseball = risque plus élevé → seuil plus strict
+  const underRisk = withRealOdds.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    const isHighRiskSport = sport === 'baseball' || sport === 'hockey' || sport === 'nhl' || sport === 'mlb';
+    const maxRisk = isHighRiskSport ? TIGHT_MAX_RISK_HIGH_RISK_SPORTS : TIGHT_MAX_RISK;
+    return (p.riskPercentage ?? 100) <= maxRisk;
+  });
   const excludedRisk = withRealOdds.length - underRisk.length;
   
   // 3) Confiance minimum: proba ≥ 58% (exclut les trop serrés)
