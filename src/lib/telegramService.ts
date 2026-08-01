@@ -532,8 +532,9 @@ function formatPrediction(prediction: {
   
   if (prediction.riskPercentage !== undefined) {
     const winProb = prediction.winProbability || (100 - prediction.riskPercentage);
-    const riskEmoji = prediction.riskPercentage <= 30 ? '🟢' : '🟡';
-    const riskLabel = prediction.riskPercentage <= 30 ? 'SAFE' : 'MODÉRÉ';
+    const risk = prediction.riskPercentage;
+    const riskEmoji = (risk || 100) <= 30 ? '🟢' : (risk || 100) <= 50 ? '🟡' : '🔴';
+    const riskLabel = (risk || 100) <= 30 ? 'SAFE' : (risk || 100) <= 50 ? 'MODÉRÉ' : 'KAMIKAZE';
     const probEmoji = winProb >= 70 ? '🔥' : winProb >= 50 ? '✅' : '⚡';
     message += `${probEmoji} <b>CHANCE: ${winProb}%</b>  ·  ${riskEmoji} <b>${riskLabel}</b>\n`;
   }
@@ -631,8 +632,9 @@ async function formatMatchBlock(
   const { time } = formatDateTime(m.date, m.displayDate);
   const isFootball = isFootballMatch(m.sport);
   const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
-  const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
-  const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : (m.riskPercentage || 100) <= 40 ? 'Modéré' : 'Risqué';
+  const risk = m.riskPercentage || 100;
+  const riskEmoji = risk <= 30 ? '🟢' : risk <= 50 ? '🟡' : '🔴';
+  const riskLabel = risk <= 30 ? 'Safe' : risk <= 50 ? 'Modéré' : 'Kamikaze';
   const betLabel = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
   const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
 
@@ -999,7 +1001,10 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
  */
 async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise<boolean> {
   // 🎾 EXCLURE le tennis des pronostics Telegram
-  const nonTennis = predictions.filter(p => !EXCLUDED_TELEGRAM_SPORTS.includes(p.sport) && !p.sport.includes('tennis'));
+  const nonTennis = predictions.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
+  });
   const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage));
 
   const today = new Date().toLocaleDateString('fr-FR', {
@@ -1058,7 +1063,10 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
 
 export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
   // 🎾 EXCLURE le tennis des pronostics Telegram
-  const nonTennis = predictions.filter(p => !EXCLUDED_TELEGRAM_SPORTS.includes(p.sport) && !p.sport.includes('tennis'));
+  const nonTennis = predictions.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
+  });
   const valueBets = nonTennis.filter(p => 
     p.valueBetDetected && 
     p.confidence !== 'low' && 
@@ -1087,8 +1095,8 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const { time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
     const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
-    const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : '🟡';
-    const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : 'Modéré';
+    const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : (m.riskPercentage || 100) <= 50 ? '🟡' : '🔴';
+    const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : (m.riskPercentage || 100) <= 50 ? 'Modéré' : 'Kamikaze';
     
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
@@ -1121,7 +1129,10 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
 
 export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
   // 🎾 EXCLURE le tennis des pronostics Telegram
-  const nonTennis = predictions.filter(p => !EXCLUDED_TELEGRAM_SPORTS.includes(p.sport) && !p.sport.includes('tennis'));
+  const nonTennis = predictions.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
+  });
   const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage));
 
   if (kamikazePicks.length === 0) {
@@ -1505,8 +1516,8 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     let totalStakes = 0;
     let totalProfit = 0;
 
-    // 🏆 Compteur par sport pour plafonner les non-prioritaires à 3
-    const sportCounts: Record<string, number> = {};
+    // 📊 BILAN : PAS de plafond par sport — on comptabilise TOUT ce qui est publié
+    // Le plafond ne s'applique qu'à la SÉLECTION (selectTopDailyPredictions)
 
     for (const p of normalPredictions) {
       // ⚠️ Normaliser le sport (anciennes données pouvant avoir 'foot', 'basket', 'nhl')
@@ -1519,12 +1530,6 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
 
       // 🎾 EXCLURE le tennis des pronostics Telegram (pas de pipeline ML fiable)
       if (sport === 'tennis') continue;
-
-      // 🏆 PLAFONNER les sports non prioritaires à 3 max
-      if (NON_PRIORITY_SPORTS.includes(sport)) {
-        sportCounts[sport] = (sportCounts[sport] || 0) + 1;
-        if (sportCounts[sport] > MAX_NON_PRIORITY_PER_SPORT) continue;
-      }
 
       // ⚠️ Inférer le vrai sport à partir du league si sport='other'
       // 🎾 Tennis EXCLU — ne pas inférer tennis depuis 'other'
@@ -1621,7 +1626,12 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
 
       const sportStreaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }> = {};
       for (const p of completed) {
-        const sport = p.sport || 'other';
+        let sport = (p.sport || 'other').toLowerCase();
+        // Normaliser pour éviter les clés dupliquées (foot vs football, nhl vs hockey)
+        if (sport === 'foot' || sport === 'soccer') sport = 'football';
+        else if (sport === 'basket' || sport === 'nba') sport = 'basketball';
+        else if (sport === 'nhl') sport = 'hockey';
+        else if (sport === 'mlb') sport = 'baseball';
         if (!sportStreaks[sport]) {
           sportStreaks[sport] = { type: p.result_match ? 'win' : 'loss', count: 1 };
         } else if (p.result_match && sportStreaks[sport].type === 'win') {
@@ -1844,7 +1854,8 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       for (let i = 0; i < combo.legs.length; i++) {
         const leg = combo.legs[i];
-        const sportEmoji = (leg.sport || '').includes('basket') ? '🏀' : '⚽';
+        const legSport = (leg.sport || '').toLowerCase();
+        const sportEmoji = legSport.includes('basket') ? '🏀' : legSport.includes('base') || legSport.includes('mlb') ? '⚾' : legSport.includes('hockey') || legSport.includes('nhl') ? '🏒' : '⚽';
         const legResult = leg.status === 'completed'
           ? (leg.resultMatch === true ? '✅' : '❌')
           : '⏳';
@@ -1914,7 +1925,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
   // Pied de message
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-  message += '🤖 Bilan journalier · Safe & Modéré uniquement\n';
+  message += '🤖 Bilan journalier · Tous pronostics publiés\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
   // Envoyer le message
@@ -2154,8 +2165,9 @@ export async function publishMonthlyResultsToTelegram(monthISO?: string): Promis
     // Récupérer TOUTES les prédictions terminées du mois depuis Supabase
     const allPredictions = await SupabaseStore.getAllPredictions();
     
-    // Filtrer: status=completed, match_date dans le mois cible
+    // Filtrer: status=completed, match_date dans le mois cible, exclure les combos
     const monthPredictions = allPredictions.filter(p => {
+      if (p.is_combo === true) return false; // Exclure les legs de combo
       if (p.status !== 'completed' || p.result_match === null || p.result_match === undefined) return false;
       const matchDate = p.match_date?.split('T')[0]; // "2026-06-15"
       return matchDate?.startsWith(targetMonth);
