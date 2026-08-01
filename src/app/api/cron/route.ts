@@ -1298,14 +1298,16 @@ async function fullSyncFromStatsHistory(): Promise<{
     const bySport: any = {
       football: { total: 0, wins: 0, losses: 0, winRate: 0 },
       basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
-      hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
+      hockey: { total: 0, wins: 0, losses: 0, winRate: 0 },
+      baseball: { total: 0, wins: 0, losses: 0, winRate: 0 }
     };
 
     for (const p of completed) {
       const sport = (p.sport || '').toLowerCase();
-      let key: 'football' | 'basketball' | 'hockey' = 'football';
+      let key: 'football' | 'basketball' | 'hockey' | 'baseball' = 'football';
       if (sport.includes('basket') || sport.includes('nba')) key = 'basketball';
       else if (sport.includes('hockey') || sport.includes('nhl')) key = 'hockey';
+      else if (sport.includes('baseball') || sport.includes('mlb')) key = 'baseball';
 
       bySport[key].total++;
       if (p.result_match === true) {
@@ -1316,7 +1318,7 @@ async function fullSyncFromStatsHistory(): Promise<{
     }
 
     // Calculer winRates
-    for (const sport of ['football', 'basketball', 'hockey'] as const) {
+    for (const sport of ['football', 'basketball', 'hockey', 'baseball'] as const) {
       if (bySport[sport].total > 0) {
         bySport[sport].winRate = Math.round((bySport[sport].wins / bySport[sport].total) * 100);
       }
@@ -1339,7 +1341,8 @@ async function fullSyncFromStatsHistory(): Promise<{
         bySport: {
           football: `${bySport.football.wins}/${bySport.football.total} = ${bySport.football.winRate}%`,
           basketball: `${bySport.basketball.wins}/${bySport.basketball.total} = ${bySport.basketball.winRate}%`,
-          hockey: `${bySport.hockey.wins}/${bySport.hockey.total} = ${bySport.hockey.winRate}%`
+          hockey: `${bySport.hockey.wins}/${bySport.hockey.total} = ${bySport.hockey.winRate}%`,
+          baseball: `${bySport.baseball.wins}/${bySport.baseball.total} = ${bySport.baseball.winRate}%`
         }
       }
     };
@@ -1854,7 +1857,8 @@ export async function GET(request: NextRequest) {
             homeTeam: m.homeTeam,
             awayTeam: m.awayTeam,
             sport: m.sport === 'Basketball' ? 'NBA' as const : 
-                   m.sport === 'Hockey' ? 'NHL' as const : 'Foot' as const,
+                   m.sport === 'Hockey' ? 'NHL' as const : 
+                   m.sport === 'Baseball' ? 'MLB' as const : 'Foot' as const,
             league: m.league || 'Unknown',
             oddsHome: m.oddsHome,
             oddsDraw: m.oddsDraw || null,
@@ -1893,7 +1897,7 @@ export async function GET(request: NextRequest) {
                 return {
                   homeTeam: p.homeTeam,
                   awayTeam: p.awayTeam,
-                  sport: p.sport === 'NBA' ? 'Basketball' : p.sport === 'NHL' ? 'Hockey' : 'Football',
+                  sport: p.sport === 'NBA' ? 'Basketball' : p.sport === 'NHL' ? 'Hockey' : p.sport === 'MLB' ? 'Baseball' : 'Football',
                   league: p.league,
                   date: undefined, // Pas de date dans unified, on utilise l'original
                   displayDate: '',

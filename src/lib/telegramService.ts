@@ -1415,9 +1415,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   };
 
   try {
-    // ⚠️ FILTRER : uniquement Safe + Modéré (risk_percentage <= 50)
-    // Le bilan journalier ne concerne PAS les kamikazes
-    const dayPredictions = allDayPredictions.filter(p => (p.risk_percentage ?? 100) <= 50);
+    // 📊 BILAN COMPLET : TOUS les pronostics publiés (safe, modéré, kamikaze)
+    // Le filtre risk ne s'applique qu'à la SÉLECTION, pas au BILAN
+    // Foot/basket = risque faible, NHL/baseball = risque plus élevé → TOUS tracqués
+    const dayPredictions = allDayPredictions;
     if (dayPredictions.length === 0) return emptySummary;
 
     // 🤖 Séparer les combos (is_combo=true) des pronostics normaux
