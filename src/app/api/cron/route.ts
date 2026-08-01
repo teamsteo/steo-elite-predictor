@@ -1965,26 +1965,16 @@ export async function GET(request: NextRequest) {
             break;
           }
           
-          // 💾 Sauvegarder TOUTES les prédictions éligibles dans Supabase (MODE ADDITIF)
-          // - PAS de deleteByDate : on garde les prédictions des publications précédentes
-          // - addPredictions fait un UPSERT (onConflict: match_id) → pas de doublons
-          // - IMPORTANT: on sauvegarde TOUT ce qui passe les filtres de base (cotes réelles,
-          //   risque ≤ 50%, proba ≥ 56%), PAS seulement le top 10 publié.
-          //   Le top 10 est pour l'affichage Telegram, le bilan doit compter TOUT.
+          // 📊 Sélectionner le top 10 PUBLIÉ (même filtres que Telegram)
+          const { selected: publishedList, totalEligible } = selectTopDailyPredictions(predictions);
+          
+          // 💾 Sauvegarder en Supabase exactement ce qui est publié sur Telegram
+          // → Le bilan comptera les MÊMES pronostics que ceux vus par les utilisateurs
           try {
             const todayISO = new Date().toISOString().split('T')[0];
-            console.log(`📊 Mode additif: les prédictions précédentes sont conservées (upsert match_id)`);
+            console.log(`📊 Sauvegarde Supabase: ${publishedList.length} pronostics publiés sur Telegram`);
             
-            // Sauvegarder toutes les prédictions éligibles (pas limité au top 10)
-            // Les filtres : cotes réelles, risque ≤ 50% (safe/modéré), proba ≥ 56%
-            const eligiblePredictions = predictions.filter((p: any) =>
-              !p.isEstimated &&
-              (p.riskPercentage ?? 100) <= 50 &&
-              (p.winProbability ?? (100 - (p.riskPercentage ?? 50))) >= 56 &&
-              !(p as any).isInternational
-            );
-            
-            const dbPredictions = eligiblePredictions.map((p: any) => {
+            const dbPredictions = publishedList.map((p: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
               const dateStr = (p.date || '').split('T')[0] || todayISO;
               const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
@@ -2007,13 +1997,12 @@ export async function GET(request: NextRequest) {
               };
             });
             const saved = await SupabaseStore.addPredictions(dbPredictions);
-            console.log(`💾 ${saved} prédictions sauvegardées en Supabase (sur ${eligiblePredictions.length} éligibles)`);
+            console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${publishedList.length} publiés)`);
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
           }
           
           const telegramResult = await publishDailySummaryToTelegram(predictions);
-          const { selected: publishedList, totalEligible } = selectTopDailyPredictions(predictions);
           result = { 
             telegram: { 
               success: telegramResult, 
