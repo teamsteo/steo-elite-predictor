@@ -1283,16 +1283,38 @@ def train_sport_model(
 
             frac_pos, mean_pred = calibration_curve(y, cal_proba, n_bins=10, strategy='uniform')
 
+            # Extract Platt scaling coefficients (A, B) for TypeScript runtime
+            # P_calibrated = 1 / (1 + exp(-(A * score + B)))
+            platt_a = 0.0
+            platt_b = 0.0
+            try:
+                # sklearn stores as calibrated.calibrated_classifiers_[0].a_, b_
+                platt_a = float(calibrated.calibrated_classifiers_[0].a_[0])
+                platt_b = float(calibrated.calibrated_classifiers_[0].b_[0])
+            except (AttributeError, IndexError):
+                # Fallback: extract from calibration curve slope
+                if len(mean_pred) >= 2:
+                    # Linear regression: actual = a * predicted + b
+                    x = np.array(mean_pred)
+                    y_arr = np.array(frac_pos)
+                    if len(x) > 0 and np.std(x) > 0:
+                        slope = np.corrcoef(x, y_arr)[0, 1] * (np.std(y_arr) / np.std(x))
+                        platt_a = float(slope)
+                        platt_b = float(np.mean(y_arr) - platt_a * np.mean(x))
+
             calibration_info = {
                 "method": "platt_scaling",
                 "brier_score_original": round(float(brier_orig), 6),
                 "brier_score_calibrated": round(float(brier_cal), 6),
                 "improvement": round(float(brier_orig - brier_cal), 6),
+                "platt_a": round(float(platt_a), 6),
+                "platt_b": round(float(platt_b), 6),
                 "reliability_bins": {
                     "predicted": [round(float(p), 4) for p in mean_pred.tolist()],
                     "actual": [round(float(f), 4) for f in frac_pos.tolist()],
                 },
             }
+            print(f"      Platt coefficients: A={platt_a:.4f}, B={platt_b:.4f}")
             print(f"      Brier: {brier_orig:.4f} → {brier_cal:.4f} "
                   f"({'✅ amélioré' if calibration_info['improvement'] > 0 else 'ℹ️ déjà calibré'})")
         except Exception as e:

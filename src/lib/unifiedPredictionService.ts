@@ -20,6 +20,8 @@ import { getAdaptiveThresholds, calculateMLAdjustment, MLThresholds, FeatureVect
 import { getUnifiedMatchContext, calculateContextAdjustment, UnifiedMatchContext } from './matchContextService';
 import { formatOdds, formatNumber, formatPercent } from './formatUtils';
 import { enrichMatch, type MatchEnrichment } from './matchEnrichmentService';
+import { calibrateIsotonic, loadCalibrationMap, type CalibrationMap } from './calibrationService';
+import { alignWithMarket, type MarketAlignmentResult } from './marketAlignmentService';
 
 // ============================================
 // TYPES
@@ -84,6 +86,20 @@ export interface UnifiedPrediction {
     valueBetType: 'home' | 'draw' | 'away' | null;
     xgboostUsed?: boolean;
     xgboostScore?: number;
+    calibrated?: boolean;
+    calibrationMethod?: string;
+  };
+  
+  // CLV Market alignment
+  marketAlignment?: {
+    aligned: boolean;
+    marketSignal: 'confirming' | 'contradicting' | 'neutral' | 'no_data';
+    clvHome: number;
+    clvAway: number;
+    homeAdjustment: number;
+    awayAdjustment: number;
+    steamDetected: boolean;
+    adjustmentStrength: 'none' | 'subtle' | 'moderate' | 'strong';
   };
   
   // Context factors
@@ -336,6 +352,35 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   // 8. Calculate ML adjustment (async - includes XGBoost if trained)
   const mlAdjustment = await calculateMLAdjustment(featureVector, sportType);
   
+  // 8.5. ISOTONIC REGRESSION CALIBRATION
+  // Calibrate the raw XGBoost score into a true probability
+  let calibrationMap: CalibrationMap | null = null;
+  let calibratedHomeProb = impliedHome;
+  let calibratedAwayProb = impliedAway;
+  let calibratedDrawProb = impliedDraw;
+  
+  if (mlAdjustment.xgboostUsed && mlAdjustment.xgboostScore !== undefined) {
+    try {
+      calibrationMap = await loadCalibrationMap(sportType);
+      if (calibrationMap.method !== 'none') {
+        calibratedHomeProb = calibrateIsotonic(mlAdjustment.xgboostScore, calibrationMap);
+        // Calibrate away as 1 - home (for binary), or use the complement
+        calibratedAwayProb = 1 - calibratedHomeProb;
+        calibratedDrawProb = match.sport === 'Foot' ? Math.max(0, 0.05 - Math.abs(calibratedHomeProb - calibratedAwayProb) * 0.1) : 0;
+        // Renormalize
+        const calTotal = calibratedHomeProb + calibratedDrawProb + calibratedAwayProb;
+        calibratedHomeProb /= calTotal;
+        calibratedDrawProb /= calTotal;
+        calibratedAwayProb /= calTotal;
+        console.log(`📐 Calibration: raw=${mlAdjustment.xgboostScore.toFixed(3)} → cal=${calibratedHomeProb.toFixed(3)} [${calibrationMap.method}]`);
+        sources.push('Calibration');
+      }
+    } catch {
+      // Calibration failed — use uncalibrated probabilities
+      console.debug('Calibration non disponible, utilisation probabilités brutes');
+    }
+  }
+  
   // 9. Combine probabilities: Market + Dixon-Coles + Context + ML
   let finalHomeProb: number;
   let finalDrawProb: number;
@@ -419,6 +464,34 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   } else {
     // LOW confidence - automatically marked as avoid
     confidence = 'low';
+  }
+  
+  // 11.5. CLV MARKET ALIGNMENT
+  // Adjust final probabilities based on market movements (CLV)
+  // Applied AFTER bestBet is determined so we know which side to check
+  let marketAlignment: MarketAlignmentResult | null = null;
+  try {
+    marketAlignment = await alignWithMarket(
+      match.id,
+      finalHomeProb,
+      finalAwayProb,
+      finalDrawProb,
+      bestBet
+    );
+    if (marketAlignment.aligned) {
+      finalHomeProb += marketAlignment.homeAdjustment;
+      finalAwayProb += marketAlignment.awayAdjustment;
+      // Renormalize after CLV adjustment
+      const clvTotal = finalHomeProb + finalDrawProb + finalAwayProb;
+      finalHomeProb /= clvTotal;
+      finalDrawProb /= clvTotal;
+      finalAwayProb /= clvTotal;
+      marketAlignment.reasoning.forEach(r => reasoning.push(r));
+      sources.push('CLV-Market');
+    }
+  } catch {
+    // Market alignment failed — continue without adjustment
+    console.debug('CLV market alignment non disponible');
   }
   
   // 12. Calculate Kelly stake
@@ -563,7 +636,20 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       valueBetType: isValueBet ? bestBet : null,
       xgboostUsed: mlAdjustment.xgboostUsed,
       xgboostScore: mlAdjustment.xgboostScore,
+      calibrated: calibrationMap !== null && calibrationMap.method !== 'none',
+      calibrationMethod: calibrationMap?.method,
     },
+    
+    marketAlignment: marketAlignment ? {
+      aligned: marketAlignment.aligned,
+      marketSignal: marketAlignment.marketSignal,
+      clvHome: marketAlignment.clvData?.clvHome ?? 0,
+      clvAway: marketAlignment.clvData?.clvAway ?? 0,
+      homeAdjustment: marketAlignment.homeAdjustment,
+      awayAdjustment: marketAlignment.awayAdjustment,
+      steamDetected: marketAlignment.steamDetected,
+      adjustmentStrength: marketAlignment.adjustmentStrength,
+    } : undefined,
     
     factors,
     
