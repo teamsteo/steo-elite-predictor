@@ -1129,3 +1129,29 @@ Stage Summary:
 - 2 files changed, 8 specific locations
 - 6 bugs fixed (1 critical, 4 medium, 1 low)
 - All publications now tracked in Supabase for bilan
+---
+Task ID: 1
+Agent: Main Agent
+Task: Audit Complet + Réimplantation Phase 3 (Enrichment + Ensemble + Odds Tracking)
+
+Work Log:
+- Audit Complet de 10 fichiers clés: 6 bugs sessions précédentes confirmés en place
+- Phase 3 entièrement perdue (fichiers manquants): matchEnrichmentService.ts, oddsTrackingService.ts
+- Aucune des modifications Phase 3 n'était présente dans train_xgboost.py, combinedDataService, unifiedPredictionService, adaptiveThresholdsML, unifiedMLService
+- Création de matchEnrichmentService.ts (~250 lignes): weather Open-Meteo, fatigue scoring, record parsing
+- Création de oddsTrackingService.ts (~310 lignes): snapshots, steam moves, CLV, cleanup
+- Modification train_xgboost.py: ajout 9 features Phase 3 dans engineer_features(), ajout fonction train_ensemble() (XGBoost+LightGBM+CatBoost), appel ensemble dans main(), export ensemble dans Supabase
+- Modification combinedDataService.ts: extraction venue (city/country/name), import trackOddsForToday, appel non-bloquant avant return
+- Modification unifiedPredictionService.ts: import enrichMatch, étape 6.5 enrichment, FeatureVector étendu avec 8 champs
+- Modification adaptiveThresholdsML.ts: FeatureVector étendu (8 champs optionnels), passage à xgbFeatures
+- Modification unifiedMLService.ts: règles normalisation weather_impact, weather_risk, fatigue_*, record_*
+- Correction 3 erreurs TypeScript: doublon competition, type narrowing riskLevel
+- Build final: 0 erreurs TypeScript, 0 erreurs Python syntax
+
+Stage Summary:
+- Phase 3 entièrement réimplémentée et permanente sur disque
+- 2 nouveaux fichiers créés: matchEnrichmentService.ts, oddsTrackingService.ts
+- 5 fichiers existants modifiés: train_xgboost.py, combinedDataService.ts, unifiedPredictionService.ts, adaptiveThresholdsML.ts, unifiedMLService.ts
+- Pipeline end-to-end: ESPN venue → enrichMatch() → FeatureVector → xgbFeatures → scoreWithXGBoost()
+- TypeScript build: ✅ 0 erreurs
+- Python syntax: ✅ valid

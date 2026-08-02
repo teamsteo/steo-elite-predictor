@@ -1080,6 +1080,30 @@ export function scoreWithXGBoost(
     } else if (featureName === 'edge') {
       // Edge peut être négatif ou positif — normaliser vers [0,1]
       normalizedValue = Math.max(0, Math.min(1, value + 0.5)); // shift: -0.5→0, 0→0.5, +0.5→1
+    // Phase 3: Normalization for enrichment features
+    } else if (featureName === 'weather_impact') {
+      // Weather impact ranges from -1 (extreme negative) to +1 (perfect)
+      // Shift to [0,1]: -1→0, 0→0.5, +1→1
+      normalizedValue = Math.max(0, Math.min(1, value + 0.5));
+    } else if (featureName === 'weather_risk') {
+      // Weather risk: 0=low, 0.5=medium, 1=high — already in [0,1]
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName.startsWith('fatigue_')) {
+      if (featureName === 'fatigue_diff') {
+        // Fatigue differential: -1 to +1, sigmoid normalization
+        normalizedValue = 1 / (1 + Math.exp(-value * 4));
+      } else {
+        // fatigue_home/away: 0 to 1 — already in [0,1]
+        normalizedValue = Math.max(0, Math.min(1, value));
+      }
+    } else if (featureName.startsWith('record_')) {
+      if (featureName === 'record_diff') {
+        // Record strength diff: -1 to +1, sigmoid normalization
+        normalizedValue = 1 / (1 + Math.exp(-value * 4));
+      } else {
+        // record_home_pct/away_pct: 0 to 1 — already in [0,1]
+        normalizedValue = Math.max(0, Math.min(1, value));
+      }
     } else if (featureName.includes('_diff') || featureName.includes('margin') || featureName.includes('spread')) {
       normalizedValue = 1 / (1 + Math.exp(-value * 2));
     } else {

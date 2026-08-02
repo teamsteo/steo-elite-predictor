@@ -102,6 +102,15 @@ export interface FeatureVector {
   homeWinProbability: number;
   awayWinProbability: number;
   drawProbability: number;
+  // Phase 3: Enrichment features (weather, fatigue, records)
+  weatherImpact?: number;
+  weatherRiskLevel?: number;
+  fatigueDifferential?: number;
+  homeFatigueScore?: number;
+  awayFatigueScore?: number;
+  homeWinPct?: number;
+  awayWinPct?: number;
+  recordStrengthDiff?: number;
 }
 
 // ============================================
@@ -804,6 +813,16 @@ export async function calculateMLAdjustment(
       
       // Edge as feature
       xgbFeatures.edge = features.edge || 0;
+      
+      // Phase 3: Pass enrichment features to XGBoost (only if defined)
+      if (features.weatherImpact !== undefined) xgbFeatures.weather_impact = features.weatherImpact;
+      if (features.weatherRiskLevel !== undefined) xgbFeatures.weather_risk = features.weatherRiskLevel;
+      if (features.fatigueDifferential !== undefined) xgbFeatures.fatigue_diff = features.fatigueDifferential;
+      if (features.homeFatigueScore !== undefined) xgbFeatures.fatigue_home = features.homeFatigueScore;
+      if (features.awayFatigueScore !== undefined) xgbFeatures.fatigue_away = features.awayFatigueScore;
+      if (features.homeWinPct !== undefined) xgbFeatures.record_home_pct = features.homeWinPct;
+      if (features.awayWinPct !== undefined) xgbFeatures.record_away_pct = features.awayWinPct;
+      if (features.recordStrengthDiff !== undefined) xgbFeatures.record_diff = features.recordStrengthDiff;
       
       // Score XGBoost
       const xgbResult = scoreWithXGBoost(sport, xgbFeatures, mlModel);

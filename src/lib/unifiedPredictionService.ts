@@ -19,6 +19,7 @@ import { predictMatch } from './dixonColesModel';
 import { getAdaptiveThresholds, calculateMLAdjustment, MLThresholds, FeatureVector } from './adaptiveThresholdsML';
 import { getUnifiedMatchContext, calculateContextAdjustment, UnifiedMatchContext } from './matchContextService';
 import { formatOdds, formatNumber, formatPercent } from './formatUtils';
+import { enrichMatch, type MatchEnrichment } from './matchEnrichmentService';
 
 // ============================================
 // TYPES
@@ -260,6 +261,27 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     contextAdjustment = calculateContextAdjustment(context);
   }
   
+  // 6.5. Phase 3: Data enrichment (weather, fatigue, records) — non-blocking
+  let enrichment: MatchEnrichment = {};
+  try {
+    enrichment = await enrichMatch({
+      homeTeam: match.homeTeam,
+      awayTeam: match.awayTeam,
+      date: match.oddsHome ? new Date().toISOString() : '',
+      sport: match.sport === 'Foot' ? 'football' : match.sport.toLowerCase(),
+      league: match.league,
+      venueCity: (match as any).venueCity,
+      venueCountry: (match as any).venueCountry,
+      homeRecord: (match as any).homeRecord,
+      awayRecord: (match as any).awayRecord,
+    });
+    if (enrichment.weather) sources.push('Weather');
+    if (enrichment.fatigue) sources.push('Fatigue');
+    if (enrichment.recordStrength) sources.push('Records');
+  } catch {
+    // Non-blocking: enrichment failure doesn't affect prediction
+  }
+  
   // 7. Build feature vector for ML
   // FIX #1: Calculer un edge préliminaire AVANT calculateMLAdjustment
   let preliminaryEdge = 0;
@@ -300,6 +322,15 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     homeWinProbability: preliminaryHomeProb,
     awayWinProbability: preliminaryAwayProb,
     drawProbability: preliminaryDrawProb,
+    // Phase 3: Enrichment features
+    weatherImpact: enrichment.weather?.impact,
+    weatherRiskLevel: enrichment.weather?.riskLevel === 'high' ? 1 : enrichment.weather?.riskLevel === 'medium' ? 0.5 : 0,
+    fatigueDifferential: enrichment.fatigue?.fatigueDifferential,
+    homeFatigueScore: enrichment.fatigue?.homeFatigueScore,
+    awayFatigueScore: enrichment.fatigue?.awayFatigueScore,
+    homeWinPct: enrichment.recordStrength?.homeWinPct,
+    awayWinPct: enrichment.recordStrength?.awayWinPct,
+    recordStrengthDiff: enrichment.recordStrength?.homeWinPctDiff,
   };
   
   // 8. Calculate ML adjustment (async - includes XGBoost if trained)

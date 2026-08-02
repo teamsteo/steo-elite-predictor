@@ -8,6 +8,7 @@
  */
 
 import { stealthFetch } from './stealthFetch';
+import { trackOddsForToday } from './oddsTrackingService';
 
 // Configuration The Odds API (fallback)
 // 🔑 Fallback hardcoded si la Vercel env var n'est pas configurée
@@ -481,6 +482,12 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
         const confidence = favoriteProb >= 70 ? 'high' : favoriteProb >= 55 ? 'medium' : 'low';
         const recommendation = homeProb > awayProb ? homeTeam : awayTeam;
 
+        // Venue extraction for weather enrichment (Phase 3)
+        const venue = competition?.venue;
+        const venueCity = venue?.address?.city || undefined;
+        const venueCountry = venue?.address?.country || undefined;
+        const venueName = venue?.fullName || undefined;
+
         allMatches.push({
           id: `espn_${event.id}`,
           homeTeam,
@@ -497,6 +504,10 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
           period: event.status?.period,
           homeRecord: home?.records?.[0]?.summary,
           awayRecord: away?.records?.[0]?.summary,
+          // Phase 3: Venue data for weather enrichment
+          venueCity,
+          venueCountry,
+          venueName,
           // 🎯 Cotes avec cascade (ESPN → Odds API → Estimation)
           oddsHome,
           oddsDraw,
@@ -664,6 +675,24 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
   } catch (error) {
     console.error('Erreur ESPN:', error);
   }
+  
+  // Phase 3: Non-blocking odds tracking (snapshots + steam moves + CLV)
+  trackOddsForToday(espnCache.map((m: any) => ({
+    matchId: m.id,
+    sport: m.sport,
+    homeTeam: m.homeTeam,
+    awayTeam: m.awayTeam,
+    oddsHome: m.oddsHome,
+    oddsDraw: m.oddsDraw,
+    oddsAway: m.oddsAway,
+  }))).then(tracking => {
+    if (tracking.snapshotsSaved > 0) {
+      console.log(`📊 Odds tracking: ${tracking.snapshotsSaved} snapshots saved`);
+    }
+    if (tracking.steamMoves.length > 0) {
+      console.log(`🔥 Steam moves detected: ${tracking.steamMoves.length}`);
+    }
+  }).catch(() => {});
   
   return espnCache;
 }
