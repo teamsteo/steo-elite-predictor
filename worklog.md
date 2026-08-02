@@ -26,3 +26,26 @@ Stage Summary:
 - 1 fichier modifié: train_xgboost.py (export Platt coefficients)
 - 1 migration SQL: prediction_outcomes table
 - Build: ✅ 0 erreurs TypeScript, ✅ Python valide
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Phase 4 — Préparation migration + training deployment
+
+Work Log:
+- Tentative d'exécution directe migration SQL: DNS Supabase (aumsrakioetvvqopthbs.supabase.co) retourne NXDOMAIN
+- Créé API route /api/migrate-phase4 pour vérifier les tables depuis Vercel (avec vrais env vars)
+- API route vérifie existence de prediction_outcomes, odds_history, ml_model via REST
+- Si tables manquantes: retourne le SQL à exécuter + instructions
+- Si tables existantes: insert test record pour validation
+- Créé script run-migration-and-training.sh en 3 étapes:
+  1. Vérification via API Vercel
+  2. Migration SQL dans Supabase Dashboard (si nécessaire)
+  3. Training Python (coefficients Platt)
+- Build TypeScript: 0 erreurs
+
+Stage Summary:
+- API route: src/app/api/migrate-phase4/route.ts
+- Script: scripts/run-migration-and-training.sh
+- Migration SQL: scripts/migration_phase4_calibration.sql
+- Le DNS Supabase ne résout pas depuis cet env → doit être exécuté depuis un terminal avec accès
