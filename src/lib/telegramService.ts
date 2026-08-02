@@ -21,6 +21,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
+const MAX_KAMIKAZE_PER_SPORT = 3; // Max 3 kamikazes par sport par jour
 // 🎯 CRITÈRES ALIGNÉS SUR BACKTEST XGBoost (août 2026)
 // Backtest foot: confidence ≥ 74% → 99.9% précision | ROI +34% à +43%
 // → Foot: risk ≤ 25% (win prob ≥ 75%) — dans la zone prouvée du backtest
@@ -56,6 +57,29 @@ export function isSafeOrModerate(riskPercentage?: number): boolean {
 export function isKamikaze(riskPercentage?: number): boolean {
   if (riskPercentage === undefined) return false;
   return riskPercentage >= KAMIKAZE_MIN_RISK;
+}
+
+/**
+ * Plafonner les kamikazes à MAX_KAMIKAZE_PER_SPORT par sport
+ * Conserve l'ordre de tri (cotes décroissantes, puis sport prioritaire)
+ */
+function normalizeSportKey(sport: string): string {
+  const s = (sport || '').toLowerCase();
+  if (s.includes('foot') || s === 'soccer') return 'football';
+  if (s.includes('basket') || s.includes('nba')) return 'basketball';
+  if (s.includes('hockey') || s.includes('nhl')) return 'hockey';
+  if (s.includes('baseball') || s.includes('mlb')) return 'baseball';
+  return s;
+}
+
+// Surcharge générique: fonctionne avec TelegramMatch[] ET DbPrediction[]
+export function capKamikazePerSport<T extends { sport?: string }>(picks: T[]): T[] {
+  const sportCount: Record<string, number> = {};
+  return picks.filter(p => {
+    const key = normalizeSportKey(p.sport || '');
+    sportCount[key] = (sportCount[key] || 0) + 1;
+    return sportCount[key] <= MAX_KAMIKAZE_PER_SPORT;
+  });
 }
 
 /**
@@ -1039,17 +1063,20 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     // Trier par sport (Football en premier)
     kamikazePicks.sort((a, b) => getSportPriority(a.sport) - getSportPriority(b.sport));
 
+    // 🔒 PLAFONNER à 3 kamikazes max par sport
+    const kamikazeCapped = capKamikazePerSport(kamikazePicks);
+
     message += '───────────────────────────\n';
-    message += `💣 <b>SÉLECTION KAMIKAZE</b> — ${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''}\n`;
+    message += `💣 <b>SÉLECTION KAMIKAZE</b> — ${kamikazeCapped.length} opportunité${kamikazeCapped.length > 1 ? 's' : ''}\n`;
     message += '───────────────────────────\n\n';
     message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n\n`;
 
-    for (let i = 0; i < Math.min(kamikazePicks.length, 5); i++) {
-      message += await formatMatchBlock(kamikazePicks[i], i + 1, true);
+    for (let i = 0; i < kamikazeCapped.length; i++) {
+      message += await formatMatchBlock(kamikazeCapped[i], i + 1, true);
     }
 
-    if (kamikazePicks.length > 5) {
-      message += `<i>... et ${kamikazePicks.length - 5} autres</i>\n\n`;
+    if (kamikazePicks.length > kamikazeCapped.length) {
+      message += `<i>... et ${kamikazePicks.length - kamikazeCapped.length} autres (plafond 3/sport)</i>\n\n`;
     }
 
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
@@ -1157,6 +1184,9 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     return getSportPriority(a.sport) - getSportPriority(b.sport);
   });
 
+  // 🔒 PLAFONNER à 3 kamikazes max par sport
+  const kamikazeCapped = capKamikazePerSport(kamikazePicks);
+
   let message = '';
 
   message += '╔════════════════════════╗\n';
@@ -1164,10 +1194,10 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
   message += '╚════════════════════════╝\n\n';
 
   message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
-  message += `🔥 <b>${kamikazePicks.length} opportunité${kamikazePicks.length > 1 ? 's' : ''} à gros potentiel</b>\n\n`;
+  message += `🔥 <b>${kamikazeCapped.length} opportunité${kamikazeCapped.length > 1 ? 's' : ''} à gros potentiel</b>\n\n`;
 
-  for (let i = 0; i < Math.min(kamikazePicks.length, 5); i++) {
-    const m = kamikazePicks[i];
+  for (let i = 0; i < kamikazeCapped.length; i++) {
+    const m = kamikazeCapped[i];
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
     const { time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);

@@ -1086,3 +1086,46 @@ Stage Summary:
 - 1 new API route: /api/ml/sync-xgboost
 - XGBoost training results saved to ml/last_training_result.json
 - Deployed to Vercel (commit 8ba1bfe)
+
+---
+## Session du 2026-08-02 - Kamikaze 3/sport + Supabase Save Fix
+
+### Contexte
+Utilisateur demande: (1) Limiter kamikazes à 3 max par sport par jour, (2) Vérifier que toutes les publications 7h-18h sont enregistrées dans Supabase pour le bilan.
+
+### Bugs Trouvés et Corrigés (6 total)
+
+**Fix 1: Kamikaze 3 max par sport**
+- Ajouté `MAX_KAMIKAZE_PER_SPORT = 3` dans telegramService.ts
+- Créé `capKamikazePerSport<T>()` — fonction générique (TelegramMatch[] ET DbPrediction[])
+- Appliqué dans: `publishKamikazeToTelegram`, `publishKamikazeOnlyMessage`, `telegram-kamikaze` cron
+
+**Fix 2 (CRITIQUE): Kamikazes publiés via daily-summary non sauvegardés**
+- Quand `telegram-summary` n'avait AUCUN safe/modéré, il publiait les kamikazes sur Telegram MAIS ne les sauvegardait PAS en Supabase → bilan vide
+- Corrigé: si `publishedList` est vide, on calcule et sauvegarde les kamikazes à la place
+
+**Fix 3: Value bets sauvegarde Supabase**
+- `telegram-valuebets` (GET + POST) publiait mais ne sauvegardait pas → ajouté sauvegarde
+- GET: filtre tennis + trie par sport priority comme `publishValueBetsToTelegram`
+
+**Fix 4 (audit): rebuild-bilan/cleanup utilisaient slice(0,5) au lieu de capKamikazePerSport**
+- `rebuild-bilan` (GET + POST): remplacé `slice(0, 5)` par `capKamikazePerSport`
+- `cleanup-unpublished`: même correction
+
+**Fix 5 (audit): POST telegram-summary/valuebets ne sauvegardaient pas Supabase**
+- POST `telegram-summary`: ajouté sauvegarde complète (safe/modéré + fallback kamikaze)
+- POST `telegram-valuebets`: ajouté sauvegarde value bets
+
+**Fix 6 (audit): Value bets save ne filtrait pas tennis**
+- Ajouté `!sport.includes('tennis')` dans le filtre value bets GET
+
+### Fichiers modifiés
+- `src/lib/telegramService.ts`: capKamikazePerSport (générique), publishKamikazeToTelegram, publishKamikazeOnlyMessage
+- `src/app/api/cron/route.ts`: 8 emplacements modifiés (telegram-summary GET/POST, telegram-kamikaze, telegram-valuebets GET/POST, rebuild-bilan GET/POST, cleanup-unpublished)
+
+### Compilation: ✅ tsc --noEmit clean
+
+Stage Summary:
+- 2 files changed, 8 specific locations
+- 6 bugs fixed (1 critical, 4 medium, 1 low)
+- All publications now tracked in Supabase for bilan

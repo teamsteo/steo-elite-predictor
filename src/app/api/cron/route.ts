@@ -28,7 +28,8 @@ import {
   publishMonthlyResultsToTelegram,
   isSafeOrModerate,
   isKamikaze,
-  selectTopDailyPredictions
+  selectTopDailyPredictions,
+  capKamikazePerSport
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
@@ -1810,13 +1811,14 @@ export async function GET(request: NextRequest) {
             const sorted = [...bySport[sport]].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
             sorted.forEach(p => publishedIds.add(p.match_id));
           }
-          // Kamikaze: garder max 5 (inchangé)
+          // Kamikaze: max 3 par sport (aligné sur publishKamikazeToTelegram)
           const kamikazeSorted = [...kamikaze].sort((a, b) => {
             const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
             const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
             return oddsB - oddsA;
           });
-          kamikazeSorted.slice(0, 5).forEach(p => publishedIds.add(p.match_id));
+          const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
+          kamikazeCapped.forEach(p => publishedIds.add(p.match_id));
           const toDelete = allDatePreds.filter(p => !publishedIds.has(p.match_id));
           let deletedCount = 0;
           for (const p of toDelete) {
@@ -1974,51 +1976,80 @@ export async function GET(request: NextRequest) {
           
           // 💾 Sauvegarder en Supabase exactement ce qui est publié sur Telegram
           // → Le bilan comptera les MÊMES pronostics que ceux vus par les utilisateurs
+          let toSave: any[] = publishedList;
           try {
             const todayISO = new Date().toISOString().split('T')[0];
-            console.log(`📊 Sauvegarde Supabase: ${publishedList.length} pronostics publiés sur Telegram`);
             
-            const dbPredictions = publishedList.map((p: any) => {
-              const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-              const dateStr = (p.date || '').split('T')[0] || todayISO;
-              const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
-              const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
-              const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
-              return {
-                match_id: matchId,
-                home_team: p.homeTeam,
-                away_team: p.awayTeam,
-                league: p.league || 'Unknown',
-                sport: (p.sport || 'football').toLowerCase(),
-                match_date: p.date || new Date().toISOString(),
-                odds_home: p.oddsHome || 1.0,
-                odds_draw: p.oddsDraw || null,
-                odds_away: p.oddsAway || 1.0,
-                predicted_result: p.predictedResult || 'home',
-                confidence: p.confidence || 'medium',
-                risk_percentage: p.riskPercentage || 50,
-                status: 'pending' as const,
-              };
-            });
-            const saved = await SupabaseStore.addPredictions(dbPredictions);
-            console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${publishedList.length} publiés)`);
+            // 🔥 Si aucun safe/modéré → les kamikazes seront publiés à la place
+            // Il faut les sauvegarder pour le bilan
+            if (publishedList.length === 0 && predictions.length > 0) {
+              // Même logique que publishKamikazeToTelegram + publishKamikazeOnlyMessage
+              const nonTennis = predictions.filter((p: any) => {
+                const sport = (p.sport || '').toLowerCase();
+                return !['tennis'].includes(sport);
+              });
+              const kamikazePicks = nonTennis
+                .filter((p: any) => isKamikaze(p.riskPercentage))
+                .sort((a: any, b: any) => {
+                  const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+                  const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+                  if (oddsB !== oddsA) return oddsB - oddsA;
+                  return 0;
+                });
+              toSave = capKamikazePerSport(kamikazePicks);
+              console.log(`💣 Mode kamikaze: ${toSave.length} kamikazes à sauvegarder en Supabase (sur ${kamikazePicks.length} totaux)`);
+            }
+            
+            console.log(`📊 Sauvegarde Supabase: ${toSave.length} pronostics publiés sur Telegram`);
+            
+            if (toSave.length > 0) {
+              const dbPredictions = toSave.map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = (p.date || '').split('T')[0] || todayISO;
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                return {
+                  match_id: matchId,
+                  home_team: p.homeTeam,
+                  away_team: p.awayTeam,
+                  league: p.league || 'Unknown',
+                  sport: (p.sport || 'football').toLowerCase(),
+                  match_date: p.date || new Date().toISOString(),
+                  odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null,
+                  odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.predictedResult || 'home',
+                  confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage || 50,
+                  status: 'pending' as const,
+                };
+              });
+              const saved = await SupabaseStore.addPredictions(dbPredictions);
+              console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${toSave.length} publiés)`);
+            } else {
+              console.log('⚠️ Aucun pronostic à sauvegarder (liste vide)');
+            }
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
           }
           
           const telegramResult = await publishDailySummaryToTelegram(predictions);
+          const isKamikazeMode = publishedList.length === 0 && predictions.length > 0;
           result = { 
             telegram: { 
               success: telegramResult, 
               total: matches.length,
               mlAnalyzed: upcomingWithOdds.length,
-              published: publishedList.length,
+              published: isKamikazeMode ? toSave.length : publishedList.length,
               totalEligible,
-              excluded: predictions.length - publishedList.length,
-              source: 'unified-ml',
+              excluded: predictions.length - (isKamikazeMode ? toSave.length : publishedList.length),
+              source: isKamikazeMode ? 'kamikaze-fallback' : 'unified-ml',
               version: CRON_VERSION,
               message: telegramResult 
-                ? `Résumé ML publié: ${publishedList.length}/10 pronostics`
+                ? isKamikazeMode 
+                  ? `💣 Kamikaze publié: ${toSave.length} pronostics (aucun safe/modéré)`
+                  : `Résumé ML publié: ${publishedList.length}/10 pronostics`
                 : 'Erreur publication Telegram'
             } 
           };
@@ -2172,6 +2203,61 @@ export async function GET(request: NextRequest) {
             }));
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
+          
+          // 💾 Sauvegarder les value bets PUBLIÉS en Supabase pour le bilan
+          // Les value bets sont un sous-ensemble des safe/modéré → déjà sauvegardés via telegram-summary
+          // Mais si appelé séparément, il faut aussi les sauvegarder
+          try {
+            const vbFiltered = predictions.filter((p: any) => {
+              const sport = (p.sport || '').toLowerCase();
+              // 🎾 Exclure tennis + filtres value bet standard
+              return !sport.includes('tennis') && 
+                p.valueBetDetected && 
+                p.confidence !== 'low' && 
+                isSafeOrModerate(p.riskPercentage);
+            })
+            // Trier par sport priority (football en premier) comme publishValueBetsToTelegram
+            .sort((a: any, b: any) => {
+              const sportA = (a.sport || '').toLowerCase();
+              const sportB = (b.sport || '').toLowerCase();
+              const priorityMap: Record<string, number> = { football: 1, soccer: 1, basket: 2, basketball: 2, nba: 2, hockey: 3, nhl: 3, baseball: 4, mlb: 4 };
+              const pA = priorityMap[sportA] ?? 99;
+              const pB = priorityMap[sportB] ?? 99;
+              return pA - pB;
+            })
+            .slice(0, 5);
+            
+            if (vbFiltered.length > 0) {
+              const todayISO = new Date().toISOString().split('T')[0];
+              const dbPredictions = vbFiltered.map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = (p.date || '').split('T')[0] || todayISO;
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                return {
+                  match_id: matchId,
+                  home_team: p.homeTeam,
+                  away_team: p.awayTeam,
+                  league: p.league || 'Unknown',
+                  sport: (p.sport || 'football').toLowerCase(),
+                  match_date: p.date || new Date().toISOString(),
+                  odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null,
+                  odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.predictedResult || 'home',
+                  confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage || 50,
+                  status: 'pending' as const,
+                };
+              });
+              const saved = await SupabaseStore.addPredictions(dbPredictions);
+              console.log(`💾 ${saved} value bets sauvegardés en Supabase (sur ${vbFiltered.length} publiés)`);
+            }
+          } catch (saveErr: any) {
+            console.log('⚠️ Erreur sauvegarde value bets Supabase:', saveErr.message);
+          }
+          
           const valueBetsCount = predictions.filter(p => 
             p.valueBetDetected && 
             p.confidence !== 'low' && 
@@ -2228,16 +2314,17 @@ export async function GET(request: NextRequest) {
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS sur Telegram
-          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par cote desc + max 5
+          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par cote desc + max 3/sport
           try {
-            const kamikazeFiltered = predictions
-              .filter(p => isKamikaze(p.riskPercentage))
-              .sort((a: any, b: any) => {
-                const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
-                const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
-                return oddsB - oddsA; // tri par cote décroissante (identique à publishKamikazeToTelegram)
-              })
-              .slice(0, 5); // max 5 (identique à publishKamikazeToTelegram)
+            const kamikazeFiltered = capKamikazePerSport(
+              predictions
+                .filter((p: any) => isKamikaze(p.riskPercentage))
+                .sort((a: any, b: any) => {
+                  const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+                  const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+                  return oddsB - oddsA; // tri par cote décroissante (identique à publishKamikazeToTelegram)
+                })
+            );
             
             const dbPredictions = kamikazeFiltered.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
@@ -2800,13 +2887,14 @@ export async function POST(request: NextRequest) {
             const isKamikazeGroup = key.includes('__other') || preds.every(p => (p.risk_percentage ?? 100) > 50);
             
             if (isKamikazeGroup) {
-              // Kamikaze: tri par cote desc, max 5
+              // Kamikaze: tri par cote desc, max 3 par sport
               const sorted = [...preds].sort((a, b) => {
                 const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
                 const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
                 return oddsB - oddsA;
               });
-              sorted.slice(0, 5).forEach(p => toKeep.add(p.match_id));
+              const capped = capKamikazePerSport(sorted);
+              capped.forEach(p => toKeep.add(p.match_id));
             } else {
               // Safe/modéré: tri par risque croissant, TOUT conserver (plus de limite)
               const sorted = [...preds].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
@@ -2890,13 +2978,14 @@ export async function POST(request: NextRequest) {
             sorted.forEach(p => publishedIds.add(p.match_id));
           }
 
-          // Kamikaze: trier par cote desc, max 5
+          // Kamikaze: trier par cote desc, max 3 par sport (aligné sur publishKamikazeToTelegram)
           const kamikazeSorted = [...kamikaze].sort((a, b) => {
             const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
             const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
             return oddsB - oddsA;
           });
-          kamikazeSorted.slice(0, 5).forEach(p => publishedIds.add(p.match_id));
+          const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
+          kamikazeCapped.forEach(p => publishedIds.add(p.match_id));
 
           // Supprimer les prédictions qui n'auraient PAS été publiées
           const toDelete = allDatePreds.filter(p => !publishedIds.has(p.match_id));
@@ -2971,17 +3060,55 @@ export async function POST(request: NextRequest) {
             oddsDraw: m.oddsDraw,
           }));
 
-          const filteredCount = predictions.filter(p => isSafeOrModerate(p.riskPercentage)).length;
+          const { selected: publishedList } = selectTopDailyPredictions(predictions);
+
+          // 💾 Sauvegarder en Supabase (POST = même logique que GET)
+          let toSavePost: any[] = publishedList;
+          if (publishedList.length === 0 && predictions.length > 0) {
+            const nonTennis = predictions.filter((p: any) => !['tennis'].includes((p.sport || '').toLowerCase()));
+            const kamikazePicks = nonTennis
+              .filter((p: any) => isKamikaze(p.riskPercentage))
+              .sort((a: any, b: any) => {
+                const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+                const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+                return oddsB - oddsA;
+              });
+            toSavePost = capKamikazePerSport(kamikazePicks);
+          }
+          try {
+            if (toSavePost.length > 0) {
+              const todayISO = new Date().toISOString().split('T')[0];
+              const dbPredictions = toSavePost.map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = (p.date || '').split('T')[0] || todayISO;
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                return {
+                  match_id: matchId, home_team: p.homeTeam, away_team: p.awayTeam,
+                  league: p.league || 'Unknown', sport: (p.sport || 'football').toLowerCase(),
+                  match_date: p.date || new Date().toISOString(), odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null, odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.predictedResult || 'home', confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage || 50, status: 'pending' as const,
+                };
+              });
+              const saved = await SupabaseStore.addPredictions(dbPredictions);
+              console.log(`💾 [POST] ${saved} pronostics sauvegardés en Supabase`);
+            }
+          } catch (saveErr: any) {
+            console.log('⚠️ [POST] Erreur sauvegarde Supabase:', saveErr.message);
+          }
 
           const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = {
             telegram: {
               success: telegramResult,
               total: predictions.length,
-              published: filteredCount,
-              excluded: predictions.length - filteredCount,
+              published: toSavePost.length,
+              excluded: predictions.length - toSavePost.length,
               message: telegramResult
-                ? `Résumé publié: ${filteredCount} pronostics safe/modéré sur Telegram`
+                ? `Résumé publié: ${toSavePost.length} pronostics sur Telegram`
                 : 'Erreur publication Telegram'
             }
           };
@@ -3013,6 +3140,37 @@ export async function POST(request: NextRequest) {
           }));
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
+          
+          // 💾 Sauvegarder les value bets PUBLIÉS en Supabase (POST = même logique que GET)
+          try {
+            const vbFiltered = predictions.filter((p: any) => {
+              const sport = (p.sport || '').toLowerCase();
+              return !sport.includes('tennis') && p.valueBetDetected && p.confidence !== 'low' && isSafeOrModerate(p.riskPercentage);
+            }).slice(0, 5);
+            if (vbFiltered.length > 0) {
+              const todayISO = new Date().toISOString().split('T')[0];
+              const dbPredictions = vbFiltered.map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = (p.date || '').split('T')[0] || todayISO;
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                return {
+                  match_id: matchId, home_team: p.homeTeam, away_team: p.awayTeam,
+                  league: p.league || 'Unknown', sport: (p.sport || 'football').toLowerCase(),
+                  match_date: p.date || new Date().toISOString(), odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null, odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.predictedResult || 'home', confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage || 50, status: 'pending' as const,
+                };
+              });
+              await SupabaseStore.addPredictions(dbPredictions);
+              console.log(`💾 [POST] ${vbFiltered.length} value bets sauvegardés en Supabase`);
+            }
+          } catch (saveErr: any) {
+            console.log('⚠️ [POST] Erreur sauvegarde value bets:', saveErr.message);
+          }
+          
           const valueBetsCount = predictions.filter(p =>
             p.valueBetDetected &&
             p.confidence !== 'low' &&
