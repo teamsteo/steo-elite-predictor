@@ -83,6 +83,19 @@ export function capKamikazePerSport<T extends { sport?: string }>(picks: T[]): T
 }
 
 /**
+ * Trie les kamikazes : cotes décroissantes, puis sport prioritaire (football en premier).
+ * Fonction centralisée utilisée partout pour garantir la cohérence save vs publish.
+ */
+export function sortKamikazePicks<T extends { sport?: string; oddsHome?: number; oddsAway?: number }>(picks: T[]): T[] {
+  return [...picks].sort((a, b) => {
+    const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
+    const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
+    if (oddsB !== oddsA) return oddsB - oddsA;
+    return getSportPriority(a.sport || '') - getSportPriority(b.sport || '');
+  });
+}
+
+/**
  * Retourne le label du niveau de risque
  */
 export function getRiskLabel(riskPercentage?: number): string {
@@ -1060,11 +1073,11 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
   message += `    🟡 Modéré (risque 31-50%)\n\n`;
 
   if (kamikazePicks.length > 0) {
-    // Trier par sport (Football en premier)
-    kamikazePicks.sort((a, b) => getSportPriority(a.sport) - getSportPriority(b.sport));
+    // Trie centralisé : cotes décroissantes, puis football en premier
+    const kamikazeSorted = sortKamikazePicks(kamikazePicks);
 
     // 🔒 PLAFONNER à 3 kamikazes max par sport
-    const kamikazeCapped = capKamikazePerSport(kamikazePicks);
+    const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
 
     message += '───────────────────────────\n';
     message += `💣 <b>SÉLECTION KAMIKAZE</b> — ${kamikazeCapped.length} opportunité${kamikazeCapped.length > 1 ? 's' : ''}\n`;
@@ -1176,16 +1189,11 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     return false;
   }
 
-  // Trier par cote décroissante, puis football en premier
-  kamikazePicks.sort((a, b) => {
-    const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
-    const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
-    if (oddsB !== oddsA) return oddsB - oddsA;
-    return getSportPriority(a.sport) - getSportPriority(b.sport);
-  });
+  // Trie centralisé : cotes décroissantes, puis football en premier
+  const kamikazeSorted = sortKamikazePicks(kamikazePicks);
 
   // 🔒 PLAFONNER à 3 kamikazes max par sport
-  const kamikazeCapped = capKamikazePerSport(kamikazePicks);
+  const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
 
   let message = '';
 
@@ -2437,4 +2445,6 @@ export default {
   isSafeOrModerate,
   isKamikaze,
   selectTopDailyPredictions,
+  capKamikazePerSport,
+  sortKamikazePicks,
 };

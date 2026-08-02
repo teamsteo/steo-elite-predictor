@@ -305,29 +305,46 @@ export const SupabaseStore = {
   },
 
   /**
-   * Récupère les prédictions pour une date spécifique (filtré côté Supabase).
-   * Plus efficace que getAllPredictions + filtre JS.
+   * Récupère les prédictions pour une date spécifique.
+   * ⚠️ FIX: Utilise une plage large (day-1 à day+2) + filtrage JS côté date-only.
+   * Les dates ESPN sont en UTC avec suffixe 'Z' (ex: '2026-08-01T23:00:00Z').
+   * La comparaison textuelle '2026-08-01T23:59:59' vs '2026-08-01T23:00:00Z'
+   * échoue car 'Z' > '9' en ASCII → match jamais trouvé.
    */
   async getPredictionsByDate(dateISO: string): Promise<DbPrediction[]> {
     const supabase = getSupabase();
     if (!supabase) return [];
     
     try {
-      const startOfDay = `${dateISO}T00:00:00`;
-      const endOfDay = `${dateISO}T23:59:59`;
-      
+      // Plage large : jour-1 à jour+2 pour couvrir les fuseaux horaires
+      const targetDate = new Date(dateISO + 'T12:00:00Z');
+      const dayBefore = new Date(targetDate);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      const dayAfter = new Date(targetDate);
+      dayAfter.setDate(dayAfter.getDate() + 2);
+
+      const startRange = dayBefore.toISOString(); // YYYY-MM-DDTHH:mm:ss.sssZ
+      const endRange = dayAfter.toISOString();
+
       const { data, error } = await supabase
         .from('predictions')
         .select('*')
-        .gte('match_date', startOfDay)
-        .lte('match_date', endOfDay)
+        .gte('match_date', startRange)
+        .lt('match_date', endRange)
         .order('match_date', { ascending: true });
       
       if (error) {
         console.error('Erreur getPredictionsByDate:', error);
         return [];
       }
-      return (data as DbPrediction[]) || [];
+
+      // Filtrage côté JS : comparaison date-only (YYYY-MM-DD)
+      const filtered = (data as DbPrediction[]).filter(p => {
+        const datePart = (p.match_date || '').split('T')[0];
+        return datePart === dateISO;
+      });
+
+      return filtered || [];
     } catch {
       return [];
     }
@@ -473,25 +490,40 @@ export const SupabaseStore = {
     const supabase = getSupabase();
     if (!supabase) return 0;
     try {
-      // Supprimer sur la date + le lendemain (matchs de nuit US en UTC)
-      const dates = [dateISO];
-      const nextDay = new Date(dateISO + 'T12:00:00Z');
-      nextDay.setDate(nextDay.getDate() + 1);
-      dates.push(nextDay.toISOString().split('T')[0]);
+      // ⚠️ FIX: Même logique que getPredictionsByDate — plage large + filtrage JS
+      // Les dates ESPN avec 'Z' font échouer la comparaison textuelle
+      const targetDate = new Date(dateISO + 'T12:00:00Z');
+      const dayBefore = new Date(targetDate);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      const dayAfter = new Date(targetDate);
+      dayAfter.setDate(dayAfter.getDate() + 2);
+
+      const startRange = dayBefore.toISOString();
+      const endRange = dayAfter.toISOString();
+
+      // Récupérer les IDs à supprimer via filtrage JS (Supabase delete ne filtre pas en JS)
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('id, match_date')
+        .gte('match_date', startRange)
+        .lt('match_date', endRange);
       
-      let totalDeleted = 0;
-      for (const d of dates) {
-        const startOfDay = `${d}T00:00:00`;
-        const endOfDay = `${d}T23:59:59`;
-        const { data, error } = await supabase
-          .from('predictions')
-          .delete()
-          .gte('match_date', startOfDay)
-          .lte('match_date', endOfDay)
-          .select('id');
-        if (!error && data) totalDeleted += data.length;
-      }
-      return totalDeleted;
+      if (error || !data) return 0;
+
+      // Filtrage côté JS : ne supprimer que les matchs de la date exacte
+      const toDeleteIds = data
+        .filter(p => (p.match_date || '').split('T')[0] === dateISO)
+        .map(p => p.id)
+        .filter(Boolean);
+
+      if (toDeleteIds.length === 0) return 0;
+
+      const { error: deleteError } = await supabase
+        .from('predictions')
+        .delete()
+        .in('id', toDeleteIds);
+
+      return deleteError ? 0 : toDeleteIds.length;
     } catch {
       return 0;
     }

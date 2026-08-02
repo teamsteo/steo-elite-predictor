@@ -29,7 +29,8 @@ import {
   isSafeOrModerate,
   isKamikaze,
   selectTopDailyPredictions,
-  capKamikazePerSport
+  capKamikazePerSport,
+  sortKamikazePicks
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
@@ -1989,14 +1990,8 @@ export async function GET(request: NextRequest) {
                 return !['tennis'].includes(sport);
               });
               const kamikazePicks = nonTennis
-                .filter((p: any) => isKamikaze(p.riskPercentage))
-                .sort((a: any, b: any) => {
-                  const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
-                  const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
-                  if (oddsB !== oddsA) return oddsB - oddsA;
-                  return 0;
-                });
-              toSave = capKamikazePerSport(kamikazePicks);
+                .filter((p: any) => isKamikaze(p.riskPercentage));
+              toSave = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
               console.log(`💣 Mode kamikaze: ${toSave.length} kamikazes à sauvegarder en Supabase (sur ${kamikazePicks.length} totaux)`);
             }
             
@@ -2317,13 +2312,9 @@ export async function GET(request: NextRequest) {
           // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par cote desc + max 3/sport
           try {
             const kamikazeFiltered = capKamikazePerSport(
-              predictions
-                .filter((p: any) => isKamikaze(p.riskPercentage))
-                .sort((a: any, b: any) => {
-                  const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
-                  const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
-                  return oddsB - oddsA; // tri par cote décroissante (identique à publishKamikazeToTelegram)
-                })
+              sortKamikazePicks(
+                predictions.filter((p: any) => isKamikaze(p.riskPercentage))
+              )
             );
             
             const dbPredictions = kamikazeFiltered.map((p: any) => {
@@ -3011,6 +3002,85 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'telegram-kamikaze':
+        // [POST] Publier les pronostics Kamikaze (haut risque) sur Telegram
+        try {
+          console.log('📡 [POST] Récupération des matchs pour kamikaze depuis ESPN (force refresh)...');
+          const matches = await getMatchesWithRealOdds(true);
+          
+          let predictions: any[] = matches.map((m: any) => ({
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            sport: m.sport,
+            league: m.league,
+            date: m.date,
+            displayDate: m.displayDate,
+            dateTag: m.dateTag,
+            recommendation: m.recommendations?.[0]?.label,
+            predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+            confidence: m.confidence,
+            valueBetDetected: m.valueBets?.length > 0,
+            valueBetType: m.valueBets?.[0]?.type,
+            riskPercentage: m.riskPercentage,
+            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+            oddsHome: m.oddsHome,
+            oddsAway: m.oddsAway,
+            oddsDraw: m.oddsDraw,
+          }));
+          
+          const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
+          
+          // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS (même logique que GET)
+          try {
+            const kamikazeFiltered = capKamikazePerSport(
+              sortKamikazePicks(
+                predictions.filter((p: any) => isKamikaze(p.riskPercentage))
+              )
+            );
+            
+            const dbPredictions = kamikazeFiltered.map((p: any) => {
+              const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+              const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
+              const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+              const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+              const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+              return {
+                match_id: matchId,
+                home_team: p.homeTeam,
+                away_team: p.awayTeam,
+                league: p.league || 'Unknown',
+                sport: (p.sport || 'football').toLowerCase(),
+                match_date: p.date || new Date().toISOString(),
+                odds_home: p.oddsHome || 1.0,
+                odds_draw: p.oddsDraw || null,
+                odds_away: p.oddsAway || 1.0,
+                predicted_result: p.predictedResult || 'home',
+                confidence: p.confidence || 'medium',
+                risk_percentage: p.riskPercentage || 50,
+                status: 'pending' as const,
+              };
+            });
+            const saved = await SupabaseStore.addPredictions(dbPredictions);
+            console.log(`💾 [POST] ${saved} pronostics kamikaze sauvegardés en Supabase (sur ${kamikazeCount} totaux)`);
+          } catch (e: any) {
+            console.log('⚠️ [POST] Erreur sauvegarde kamikaze:', e.message);
+          }
+          
+          const telegramResult = await publishKamikazeToTelegram(predictions);
+          result = { 
+            telegram: { 
+              success: telegramResult, 
+              total: kamikazeCount,
+              message: telegramResult 
+                ? `💣 [POST] ${kamikazeCount} pronostic(s) Kamikaze publié(s)`
+                : 'Erreur ou aucun pronostic Kamikaze'
+            } 
+          };
+        } catch (e: any) {
+          result = { telegram: { success: false, error: e.message } };
+        }
+        break;
+
       case 'telegram-results':
         try {
           // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
@@ -3067,13 +3137,8 @@ export async function POST(request: NextRequest) {
           if (publishedList.length === 0 && predictions.length > 0) {
             const nonTennis = predictions.filter((p: any) => !['tennis'].includes((p.sport || '').toLowerCase()));
             const kamikazePicks = nonTennis
-              .filter((p: any) => isKamikaze(p.riskPercentage))
-              .sort((a: any, b: any) => {
-                const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
-                const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
-                return oddsB - oddsA;
-              });
-            toSavePost = capKamikazePerSport(kamikazePicks);
+              .filter((p: any) => isKamikaze(p.riskPercentage));
+            toSavePost = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
           }
           try {
             if (toSavePost.length > 0) {
