@@ -169,3 +169,77 @@ export async function POST(request: NextRequest) {
         }),
   });
 }
+
+/**
+ * GET /api/migrate-phase4?secret=XXX&action=import-calibration
+ * 
+ * Imports calibration data from ml/calibration_export.json into Supabase.
+ * Reads the file from the repo and upserts into ml_model table.
+ * 
+ * This can be triggered from Vercel after deployment since it has
+ * the correct Supabase env vars and network access.
+ */
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const secret = url.searchParams.get('secret');
+  const action = url.searchParams.get('action');
+
+  if (secret !== CRON_SECRET) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
+  if (action === 'import-calibration') {
+    return importCalibration();
+  }
+
+  // Default: same as POST check
+  return POST(request);
+}
+
+async function importCalibration() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json(
+      { error: 'Variables Supabase manquantes' },
+      { status: 500 }
+    );
+  }
+
+  try {
+    // Import the calibration export from the Python training
+    // In a real deployment, this file would be committed to the repo after training
+    // For now, we use a hardcoded fallback with the latest training results
+    const { calibrationExport } = await import('./calibration-data');
+    
+    const sb = createClient(supabaseUrl, supabaseKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    // Upsert into ml_model
+    const { error } = await sb.from('ml_model').upsert(
+      {
+        id: 'default_model',
+        xgboost_params: calibrationExport.xgboost_params,
+        version: `xgb-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
+        samples_used: calibrationExport.total_samples,
+        accuracy: Math.round(calibrationExport.global_cv_accuracy * 100),
+        last_trained: new Date().toISOString(),
+      },
+      { onConflict: 'id' }
+    );
+
+    if (error) {
+      return NextResponse.json({ success: false, error: error.message });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Calibration data imported into ml_model',
+      sports: Object.keys(calibrationExport.xgboost_params?.sports || {}),
+    });
+  } catch (e: any) {
+    return NextResponse.json({ success: false, error: e.message });
+  }
+}

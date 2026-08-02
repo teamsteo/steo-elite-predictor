@@ -1,23 +1,71 @@
 {
-  "timestamp": "2026-08-02T22:24:39.442564+00:00",
-  "global_cv_accuracy": 0.550825,
-  "total_samples": 9480,
+  "trained": true,
   "sports": {
     "football": {
-      "sport": "football",
       "cv_accuracy": 0.7694,
-      "cv_std": 0.0194,
-      "cv_scores": [
-        0.7996,
-        0.7427,
-        0.781,
-        0.7591,
-        0.7646
-      ],
-      "edge_vs_random": 0.23,
-      "random_baseline": 0.3333333333333333,
       "best_confidence_threshold": 0.76,
-      "best_precision": 0.9979,
+      "top_features": [
+        [
+          "log_odds_ratio",
+          0.1311
+        ],
+        [
+          "odds_ratio",
+          0.0915
+        ],
+        [
+          "xg_home",
+          0.0738
+        ],
+        [
+          "xg_diff",
+          0.0721
+        ],
+        [
+          "prob_home",
+          0.0579
+        ],
+        [
+          "xg_away",
+          0.054
+        ],
+        [
+          "favorite_strength",
+          0.0454
+        ],
+        [
+          "odds_home",
+          0.0377
+        ],
+        [
+          "match_tension",
+          0.0299
+        ],
+        [
+          "xg_total",
+          0.0233
+        ],
+        [
+          "odds_draw",
+          0.022
+        ],
+        [
+          "underdog_match",
+          0.0215
+        ],
+        [
+          "favorite_confidence",
+          0.0203
+        ],
+        [
+          "league_ligue_1",
+          0.0181
+        ],
+        [
+          "league_serie_a",
+          0.0178
+        ]
+      ],
       "feature_importance": {
         "log_odds_ratio": 0.1311,
         "odds_ratio": 0.0915,
@@ -85,70 +133,7 @@
         "referee_card_variance": 0.0,
         "referee_foul_card_ratio": 0.0
       },
-      "top_features": [
-        [
-          "log_odds_ratio",
-          0.1311
-        ],
-        [
-          "odds_ratio",
-          0.0915
-        ],
-        [
-          "xg_home",
-          0.0738
-        ],
-        [
-          "xg_diff",
-          0.0721
-        ],
-        [
-          "prob_home",
-          0.0579
-        ],
-        [
-          "xg_away",
-          0.054
-        ],
-        [
-          "favorite_strength",
-          0.0454
-        ],
-        [
-          "odds_home",
-          0.0377
-        ],
-        [
-          "match_tension",
-          0.0299
-        ],
-        [
-          "xg_total",
-          0.0233
-        ],
-        [
-          "odds_draw",
-          0.022
-        ],
-        [
-          "underdog_match",
-          0.0215
-        ],
-        [
-          "favorite_confidence",
-          0.0203
-        ],
-        [
-          "league_ligue_1",
-          0.0181
-        ],
-        [
-          "league_serie_a",
-          0.0178
-        ]
-      ],
       "samples": 2741,
-      "pos_rate": 0.467,
       "version": "xgb-20260802",
       "trained_at": "2026-08-02T22:24:22.160205+00:00",
       "calibration": {
@@ -184,61 +169,6 @@
             0.9924
           ]
         }
-      },
-      "league_performance": {
-        "Serie A": {
-          "samples": 730,
-          "accuracy": 0.8466,
-          "roi_simulated": 33.42,
-          "recommendation": "strong"
-        },
-        "Ligue 1": {
-          "samples": 596,
-          "accuracy": 0.8775,
-          "roi_simulated": 35.91,
-          "recommendation": "strong"
-        },
-        "La Liga": {
-          "samples": 532,
-          "accuracy": 0.8759,
-          "roi_simulated": 36.47,
-          "recommendation": "strong"
-        },
-        "Bundesliga": {
-          "samples": 439,
-          "accuracy": 0.8793,
-          "roi_simulated": 32.8,
-          "recommendation": "strong"
-        },
-        "Champions League": {
-          "samples": 228,
-          "accuracy": 0.9649,
-          "roi_simulated": 34.21,
-          "recommendation": "strong"
-        },
-        "Premier League": {
-          "samples": 216,
-          "accuracy": 0.9815,
-          "roi_simulated": 41.67,
-          "recommendation": "strong"
-        }
-      },
-      "custom_loss": {
-        "method": "native_custom_objective_asymmetric",
-        "penalty_weight": 0.5,
-        "false_confident_orig": 7,
-        "false_confident_custom": 51,
-        "false_confident_extreme_orig": 2,
-        "false_confident_extreme_custom": 0,
-        "false_confident_reduction_pct": -628.6,
-        "false_confident_extreme_reduction_pct": 100.0,
-        "brier_orig": 0.040735,
-        "brier_custom": 0.208146,
-        "accuracy_orig": 0.9792,
-        "accuracy_custom": 0.5812,
-        "mean_confidence_orig": 0.8602,
-        "mean_confidence_custom": 0.6112,
-        "adopted": false
       },
       "backtesting": {
         "scenarios": {
@@ -314,65 +244,6 @@
         },
         "interpretation": "ROI r\u00e9siste au slippage"
       },
-      "monte_carlo": {
-        "method": "poisson_simulation",
-        "sport": "football",
-        "n_simulations": 10000,
-        "lambda_home": 0.947,
-        "lambda_away": 0.952,
-        "lambda_source": "xG",
-        "prob_home_win": 33.7,
-        "prob_draw": 32.0,
-        "prob_away_win": 34.4,
-        "expected_total_score": 1.92,
-        "std_total_score": 1.38,
-        "over_threshold_label": "Over 2.5 goals",
-        "over_threshold_value": 2.5,
-        "over_threshold_pct": 29.9,
-        "btts_pct": 38.2,
-        "top_scores": [
-          [
-            "0-0",
-            14.5
-          ],
-          [
-            "1-0",
-            14.2
-          ],
-          [
-            "1-1",
-            13.8
-          ],
-          [
-            "0-1",
-            13.8
-          ],
-          [
-            "0-2",
-            7.0
-          ],
-          [
-            "1-2",
-            6.7
-          ],
-          [
-            "2-0",
-            6.7
-          ],
-          [
-            "2-1",
-            6.4
-          ],
-          [
-            "2-2",
-            3.2
-          ],
-          [
-            "0-3",
-            2.2
-          ]
-        ]
-      },
       "ensemble": {
         "ensemble_used": false,
         "ensemble_cv": 0.7718,
@@ -386,20 +257,70 @@
       }
     },
     "basketball": {
-      "sport": "basketball",
       "cv_accuracy": 0.4656,
-      "cv_std": 0.0333,
-      "cv_scores": [
-        0.4634,
-        0.4878,
-        0.4634,
-        0.4074,
-        0.5062
-      ],
-      "edge_vs_random": 0.33,
-      "random_baseline": 0.5,
       "best_confidence_threshold": 0.7,
-      "best_precision": 1.0,
+      "top_features": [
+        [
+          "prob_home",
+          0.0926
+        ],
+        [
+          "match_tension",
+          0.0807
+        ],
+        [
+          "month",
+          0.0804
+        ],
+        [
+          "odds_away",
+          0.0765
+        ],
+        [
+          "is_weekend",
+          0.0738
+        ],
+        [
+          "favorite_strength",
+          0.0734
+        ],
+        [
+          "overround",
+          0.0718
+        ],
+        [
+          "log_odds_ratio",
+          0.0708
+        ],
+        [
+          "day_of_week",
+          0.0702
+        ],
+        [
+          "odds_home",
+          0.07
+        ],
+        [
+          "prob_away",
+          0.0693
+        ],
+        [
+          "odds_ratio",
+          0.0692
+        ],
+        [
+          "favorite_confidence",
+          0.0663
+        ],
+        [
+          "odds_confidence",
+          0.035
+        ],
+        [
+          "odds_draw",
+          0.0
+        ]
+      ],
       "feature_importance": {
         "prob_home": 0.0926,
         "match_tension": 0.0807,
@@ -467,70 +388,7 @@
         "referee_card_variance": 0.0,
         "referee_foul_card_ratio": 0.0
       },
-      "top_features": [
-        [
-          "prob_home",
-          0.0926
-        ],
-        [
-          "match_tension",
-          0.0807
-        ],
-        [
-          "month",
-          0.0804
-        ],
-        [
-          "odds_away",
-          0.0765
-        ],
-        [
-          "is_weekend",
-          0.0738
-        ],
-        [
-          "favorite_strength",
-          0.0734
-        ],
-        [
-          "overround",
-          0.0718
-        ],
-        [
-          "log_odds_ratio",
-          0.0708
-        ],
-        [
-          "day_of_week",
-          0.0702
-        ],
-        [
-          "odds_home",
-          0.07
-        ],
-        [
-          "prob_away",
-          0.0693
-        ],
-        [
-          "odds_ratio",
-          0.0692
-        ],
-        [
-          "favorite_confidence",
-          0.0663
-        ],
-        [
-          "odds_confidence",
-          0.035
-        ],
-        [
-          "odds_draw",
-          0.0
-        ]
-      ],
       "samples": 408,
-      "pos_rate": 0.4779,
       "version": "xgb-20260802",
       "trained_at": "2026-08-02T22:24:29.807147+00:00",
       "calibration": {
@@ -566,31 +424,6 @@
             0.9872
           ]
         }
-      },
-      "league_performance": {
-        "NBA": {
-          "samples": 408,
-          "accuracy": 0.826,
-          "roi_simulated": 30.39,
-          "recommendation": "strong"
-        }
-      },
-      "custom_loss": {
-        "method": "native_custom_objective_asymmetric",
-        "penalty_weight": 0.5,
-        "false_confident_orig": 1,
-        "false_confident_custom": 0,
-        "false_confident_extreme_orig": 0,
-        "false_confident_extreme_custom": 0,
-        "false_confident_reduction_pct": 100.0,
-        "false_confident_extreme_reduction_pct": 100.0,
-        "brier_orig": 0.086001,
-        "brier_custom": 0.203732,
-        "accuracy_orig": 0.9485,
-        "accuracy_custom": 0.5343,
-        "mean_confidence_orig": 0.7436,
-        "mean_confidence_custom": 0.6155,
-        "adopted": false
       },
       "backtesting": {
         "scenarios": {
@@ -666,65 +499,6 @@
         },
         "interpretation": "ROI r\u00e9siste au slippage"
       },
-      "monte_carlo": {
-        "method": "poisson_simulation",
-        "sport": "basketball",
-        "n_simulations": 10000,
-        "lambda_home": 115.735,
-        "lambda_away": 114.179,
-        "lambda_source": "scores_avg",
-        "prob_home_win": 52.7,
-        "prob_draw": 0.0,
-        "prob_away_win": 44.7,
-        "expected_total_score": 229.98,
-        "std_total_score": 15.07,
-        "over_threshold_label": "Over 220.5 pts",
-        "over_threshold_value": 220.5,
-        "over_threshold_pct": 73.3,
-        "btts_pct": 100.0,
-        "top_scores": [
-          [
-            "113-110",
-            0.3
-          ],
-          [
-            "116-113",
-            0.2
-          ],
-          [
-            "118-115",
-            0.2
-          ],
-          [
-            "116-110",
-            0.2
-          ],
-          [
-            "114-112",
-            0.2
-          ],
-          [
-            "110-112",
-            0.2
-          ],
-          [
-            "113-114",
-            0.2
-          ],
-          [
-            "121-113",
-            0.2
-          ],
-          [
-            "114-118",
-            0.2
-          ],
-          [
-            "116-111",
-            0.2
-          ]
-        ]
-      },
       "ensemble": {
         "ensemble_used": false,
         "ensemble_cv": 0.4566,
@@ -738,20 +512,70 @@
       }
     },
     "hockey": {
-      "sport": "hockey",
       "cv_accuracy": 0.4729,
-      "cv_std": 0.0137,
-      "cv_scores": [
-        0.4786,
-        0.4643,
-        0.4571,
-        0.4964,
-        0.4679
-      ],
-      "edge_vs_random": 0.11,
-      "random_baseline": 0.5,
       "best_confidence_threshold": 0.6,
-      "best_precision": 0.6,
+      "top_features": [
+        [
+          "day_of_week",
+          0.3714
+        ],
+        [
+          "month",
+          0.3643
+        ],
+        [
+          "is_weekend",
+          0.2643
+        ],
+        [
+          "odds_home",
+          0.0
+        ],
+        [
+          "odds_away",
+          0.0
+        ],
+        [
+          "odds_draw",
+          0.0
+        ],
+        [
+          "prob_home",
+          0.0
+        ],
+        [
+          "prob_away",
+          0.0
+        ],
+        [
+          "prob_draw",
+          0.0
+        ],
+        [
+          "overround",
+          0.0
+        ],
+        [
+          "odds_ratio",
+          0.0
+        ],
+        [
+          "log_odds_ratio",
+          0.0
+        ],
+        [
+          "is_home_favorite",
+          0.0
+        ],
+        [
+          "favorite_strength",
+          0.0
+        ],
+        [
+          "xg_home",
+          0.0
+        ]
+      ],
       "feature_importance": {
         "day_of_week": 0.3714,
         "month": 0.3643,
@@ -819,70 +643,7 @@
         "referee_foul_card_ratio": 0.0,
         "match_tension": 0.0
       },
-      "top_features": [
-        [
-          "day_of_week",
-          0.3714
-        ],
-        [
-          "month",
-          0.3643
-        ],
-        [
-          "is_weekend",
-          0.2643
-        ],
-        [
-          "odds_home",
-          0.0
-        ],
-        [
-          "odds_away",
-          0.0
-        ],
-        [
-          "odds_draw",
-          0.0
-        ],
-        [
-          "prob_home",
-          0.0
-        ],
-        [
-          "prob_away",
-          0.0
-        ],
-        [
-          "prob_draw",
-          0.0
-        ],
-        [
-          "overround",
-          0.0
-        ],
-        [
-          "odds_ratio",
-          0.0
-        ],
-        [
-          "log_odds_ratio",
-          0.0
-        ],
-        [
-          "is_home_favorite",
-          0.0
-        ],
-        [
-          "favorite_strength",
-          0.0
-        ],
-        [
-          "xg_home",
-          0.0
-        ]
-      ],
       "samples": 1400,
-      "pos_rate": 0.5229,
       "version": "xgb-20260802",
       "trained_at": "2026-08-02T22:24:33.266614+00:00",
       "calibration": {
@@ -908,31 +669,6 @@
             0.6
           ]
         }
-      },
-      "league_performance": {
-        "NHL": {
-          "samples": 1400,
-          "accuracy": 0.4814,
-          "roi_simulated": 0.43,
-          "recommendation": "normal"
-        }
-      },
-      "custom_loss": {
-        "method": "native_custom_objective_asymmetric",
-        "penalty_weight": 0.5,
-        "false_confident_orig": 0,
-        "false_confident_custom": 0,
-        "false_confident_extreme_orig": 0,
-        "false_confident_extreme_custom": 0,
-        "false_confident_reduction_pct": 100.0,
-        "false_confident_extreme_reduction_pct": 100.0,
-        "brier_orig": 0.24659,
-        "brier_custom": 0.25906,
-        "accuracy_orig": 0.5471,
-        "accuracy_custom": 0.5229,
-        "mean_confidence_orig": 0.5477,
-        "mean_confidence_custom": 0.6261,
-        "adopted": false
       },
       "backtesting": {
         "scenarios": {
@@ -1007,65 +743,6 @@
         },
         "interpretation": "ROI r\u00e9siste au slippage"
       },
-      "monte_carlo": {
-        "method": "poisson_simulation",
-        "sport": "hockey",
-        "n_simulations": 10000,
-        "lambda_home": 3.246,
-        "lambda_away": 3.064,
-        "lambda_source": "scores_avg",
-        "prob_home_win": 44.2,
-        "prob_draw": 16.2,
-        "prob_away_win": 39.6,
-        "expected_total_score": 6.34,
-        "std_total_score": 2.53,
-        "over_threshold_label": "Over 5.5 goals",
-        "over_threshold_value": 5.5,
-        "over_threshold_pct": 60.9,
-        "btts_pct": 91.4,
-        "top_scores": [
-          [
-            "3-3",
-            4.8
-          ],
-          [
-            "3-2",
-            4.5
-          ],
-          [
-            "2-2",
-            4.4
-          ],
-          [
-            "2-3",
-            4.3
-          ],
-          [
-            "4-2",
-            4.1
-          ],
-          [
-            "4-3",
-            4.0
-          ],
-          [
-            "2-4",
-            3.6
-          ],
-          [
-            "4-4",
-            3.5
-          ],
-          [
-            "3-4",
-            3.5
-          ],
-          [
-            "3-1",
-            3.0
-          ]
-        ]
-      },
       "ensemble": {
         "ensemble_used": false,
         "ensemble_cv": 0.4764,
@@ -1079,20 +756,70 @@
       }
     },
     "baseball": {
-      "sport": "baseball",
       "cv_accuracy": 0.4954,
-      "cv_std": 0.02,
-      "cv_scores": [
-        0.5076,
-        0.5284,
-        0.4858,
-        0.4817,
-        0.4736
-      ],
-      "edge_vs_random": 0.16,
-      "random_baseline": 0.5,
       "best_confidence_threshold": 0.66,
-      "best_precision": 0.75,
+      "top_features": [
+        [
+          "day_of_week",
+          0.3844
+        ],
+        [
+          "month",
+          0.3771
+        ],
+        [
+          "is_weekend",
+          0.2385
+        ],
+        [
+          "odds_home",
+          0.0
+        ],
+        [
+          "odds_away",
+          0.0
+        ],
+        [
+          "odds_draw",
+          0.0
+        ],
+        [
+          "prob_home",
+          0.0
+        ],
+        [
+          "prob_away",
+          0.0
+        ],
+        [
+          "prob_draw",
+          0.0
+        ],
+        [
+          "overround",
+          0.0
+        ],
+        [
+          "odds_ratio",
+          0.0
+        ],
+        [
+          "log_odds_ratio",
+          0.0
+        ],
+        [
+          "is_home_favorite",
+          0.0
+        ],
+        [
+          "favorite_strength",
+          0.0
+        ],
+        [
+          "xg_home",
+          0.0
+        ]
+      ],
       "feature_importance": {
         "day_of_week": 0.3844,
         "month": 0.3771,
@@ -1160,70 +887,7 @@
         "referee_foul_card_ratio": 0.0,
         "match_tension": 0.0
       },
-      "top_features": [
-        [
-          "day_of_week",
-          0.3844
-        ],
-        [
-          "month",
-          0.3771
-        ],
-        [
-          "is_weekend",
-          0.2385
-        ],
-        [
-          "odds_home",
-          0.0
-        ],
-        [
-          "odds_away",
-          0.0
-        ],
-        [
-          "odds_draw",
-          0.0
-        ],
-        [
-          "prob_home",
-          0.0
-        ],
-        [
-          "prob_away",
-          0.0
-        ],
-        [
-          "prob_draw",
-          0.0
-        ],
-        [
-          "overround",
-          0.0
-        ],
-        [
-          "odds_ratio",
-          0.0
-        ],
-        [
-          "log_odds_ratio",
-          0.0
-        ],
-        [
-          "is_home_favorite",
-          0.0
-        ],
-        [
-          "favorite_strength",
-          0.0
-        ],
-        [
-          "xg_home",
-          0.0
-        ]
-      ],
       "samples": 4931,
-      "pos_rate": 0.5163,
       "version": "xgb-20260802",
       "trained_at": "2026-08-02T22:24:37.517446+00:00",
       "calibration": {
@@ -1247,31 +911,6 @@
             0.6205
           ]
         }
-      },
-      "league_performance": {
-        "MLB": {
-          "samples": 4931,
-          "accuracy": 0.4841,
-          "roi_simulated": 0.04,
-          "recommendation": "normal"
-        }
-      },
-      "custom_loss": {
-        "method": "native_custom_objective_asymmetric",
-        "penalty_weight": 0.5,
-        "false_confident_orig": 1,
-        "false_confident_custom": 4,
-        "false_confident_extreme_orig": 0,
-        "false_confident_extreme_custom": 0,
-        "false_confident_reduction_pct": -300.0,
-        "false_confident_extreme_reduction_pct": 100.0,
-        "brier_orig": 0.247646,
-        "brier_custom": 0.260866,
-        "accuracy_orig": 0.5378,
-        "accuracy_custom": 0.5163,
-        "mean_confidence_orig": 0.5382,
-        "mean_confidence_custom": 0.6251,
-        "adopted": false
       },
       "backtesting": {
         "scenarios": {
@@ -1339,65 +978,6 @@
         "best_confidence_bucket": null,
         "interpretation": "ROI r\u00e9siste au slippage"
       },
-      "monte_carlo": {
-        "method": "poisson_simulation",
-        "sport": "baseball",
-        "n_simulations": 10000,
-        "lambda_home": 4.548,
-        "lambda_away": 4.558,
-        "lambda_source": "scores_avg",
-        "prob_home_win": 43.4,
-        "prob_draw": 13.5,
-        "prob_away_win": 43.0,
-        "expected_total_score": 9.12,
-        "std_total_score": 3.07,
-        "over_threshold_label": "Over 8.5 runs",
-        "over_threshold_value": 8.5,
-        "over_threshold_pct": 55.7,
-        "btts_pct": 97.6,
-        "top_scores": [
-          [
-            "4-4",
-            3.5
-          ],
-          [
-            "4-5",
-            3.1
-          ],
-          [
-            "5-4",
-            3.0
-          ],
-          [
-            "3-3",
-            3.0
-          ],
-          [
-            "4-3",
-            3.0
-          ],
-          [
-            "3-4",
-            2.9
-          ],
-          [
-            "3-5",
-            2.9
-          ],
-          [
-            "5-5",
-            2.8
-          ],
-          [
-            "5-3",
-            2.6
-          ],
-          [
-            "6-4",
-            2.6
-          ]
-        ]
-      },
       "ensemble": {
         "ensemble_used": false,
         "ensemble_cv": 0.4937,
@@ -1410,5 +990,8 @@
         }
       }
     }
-  }
+  },
+  "global_cv_accuracy": 0.550825,
+  "total_samples": 9480,
+  "training_timestamp": "2026-08-02T22:24:39.442564+00:00"
 }

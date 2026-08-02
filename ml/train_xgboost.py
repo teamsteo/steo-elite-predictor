@@ -1867,7 +1867,18 @@ def main():
     if not args.csv_only:
         try:
             sb = get_supabase()
-            print("✅ Connexion Supabase établie")
+            # Health check: verify DNS + connectivity before proceeding
+            try:
+                sb.table("predictions").select("id", count="exact").limit(1).execute()
+                print("✅ Connexion Supabase établie")
+            except Exception as e:
+                if "Name or service not known" in str(e) or "resolve" in str(e).lower():
+                    print("⚠️ Supabase DNS inaccessible — mode CSV uniquement")
+                    sb = None
+                else:
+                    print(f"⚠️ Supabase query échouée: {e}")
+                    print("   Mode dégradé: données CSV uniquement")
+                    sb = None
         except Exception as e:
             print(f"⚠️ Erreur connexion Supabase: {e}")
             print("   Mode dégradé: données CSV uniquement")
