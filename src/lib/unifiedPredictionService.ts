@@ -367,11 +367,12 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
         // Calibrate away as 1 - home (for binary), or use the complement
         calibratedAwayProb = 1 - calibratedHomeProb;
         calibratedDrawProb = match.sport === 'Foot' ? Math.max(0, 0.05 - Math.abs(calibratedHomeProb - calibratedAwayProb) * 0.1) : 0;
-        // Renormalize
+        // Renormalize (V-HIGH-3 FIX: guard division by zero)
         const calTotal = calibratedHomeProb + calibratedDrawProb + calibratedAwayProb;
-        calibratedHomeProb /= calTotal;
-        calibratedDrawProb /= calTotal;
-        calibratedAwayProb /= calTotal;
+        const calEps = 1e-8;
+        calibratedHomeProb /= Math.max(calEps, calTotal);
+        calibratedDrawProb /= Math.max(calEps, calTotal);
+        calibratedAwayProb /= Math.max(calEps, calTotal);
         console.log(`📐 Calibration: raw=${mlAdjustment.xgboostScore.toFixed(3)} → cal=${calibratedHomeProb.toFixed(3)} [${calibrationMap.method}]`);
         sources.push('Calibration');
       }
@@ -412,11 +413,12 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     finalDrawProb = oddsDraw ? impliedDraw : 0;
   }
   
-  // Normalize
+  // Normalize (V-HIGH-3 FIX: guard against division by zero)
+  const EPS = 1e-8;
   const totalProb = finalHomeProb + finalDrawProb + finalAwayProb;
-  finalHomeProb /= totalProb;
-  finalDrawProb /= totalProb;
-  finalAwayProb /= totalProb;
+  finalHomeProb /= Math.max(EPS, totalProb);
+  finalDrawProb /= Math.max(EPS, totalProb);
+  finalAwayProb /= Math.max(EPS, totalProb);
   
   // 10. Calculate edge (FIX C2: model prob vs market implied prob — can be positive)
   const homeEdge = finalHomeProb - impliedHome;
@@ -481,11 +483,11 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     if (marketAlignment.aligned) {
       finalHomeProb += marketAlignment.homeAdjustment;
       finalAwayProb += marketAlignment.awayAdjustment;
-      // Renormalize after CLV adjustment
+      // Renormalize after CLV adjustment (V-HIGH-4 FIX: guard division by zero)
       const clvTotal = finalHomeProb + finalDrawProb + finalAwayProb;
-      finalHomeProb /= clvTotal;
-      finalDrawProb /= clvTotal;
-      finalAwayProb /= clvTotal;
+      finalHomeProb /= Math.max(EPS, clvTotal);
+      finalDrawProb /= Math.max(EPS, clvTotal);
+      finalAwayProb /= Math.max(EPS, clvTotal);
       marketAlignment.reasoning.forEach(r => reasoning.push(r));
       sources.push('CLV-Market');
     }

@@ -99,13 +99,21 @@ export async function alignWithMarket(
     steamDetected: false,
     steamMove: null,
     marketSignal: 'no_data',
-    reasoning: ['📊 Pas de données CLV disponibles pour ce match'],
+    reasoning: ['Pas de donnees CLV disponibles pour ce match'],
     adjustmentStrength: 'none',
   };
 
+  // V-MED-8 FIX: Validate inputs
+  if (!matchId || typeof matchId !== 'string' || matchId.length > 255) {
+    return { ...noAlignment, reasoning: ['Invalid matchId'] };
+  }
+  const safeHomeProb = Math.max(0, Math.min(1, modelHomeProb || 0));
+  const safeAwayProb = Math.max(0, Math.min(1, modelAwayProb || 0));
+  const safeDrawProb = Math.max(0, Math.min(1, modelDrawProb || 0));
+
   // Feature flag: allow disabling
   if (!cfg.enabled) {
-    return { ...noAlignment, reasoning: ['📊 Alignement marché désactivé'] };
+    return { ...noAlignment, reasoning: ['Alignement marche desactive'] };
   }
 
   try {
@@ -251,10 +259,14 @@ export async function batchAlignWithMarket(
   }>,
   config?: Partial<MarketAlignmentConfig>
 ): Promise<Map<string, MarketAlignmentResult>> {
+  // V-MED-9 FIX: Limit batch size to prevent resource exhaustion
+  const MAX_BATCH = 50;
+  const safePredictions = predictions.slice(0, MAX_BATCH);
+  
   const results = new Map<string, MarketAlignmentResult>();
   
   // Process in parallel (each calls calculateLiveCLV which uses its own cache)
-  const promises = predictions.map(async (pred) => {
+  const promises = safePredictions.map(async (pred) => {
     const result = await alignWithMarket(
       pred.matchId,
       pred.homeProb,

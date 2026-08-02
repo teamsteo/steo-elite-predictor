@@ -1291,6 +1291,10 @@ def train_sport_model(
                 # sklearn stores as calibrated.calibrated_classifiers_[0].a_, b_
                 platt_a = float(calibrated.calibrated_classifiers_[0].a_[0])
                 platt_b = float(calibrated.calibrated_classifiers_[0].b_[0])
+                # V-MED-10 FIX: Validate coefficients are finite
+                if not (np.isfinite(platt_a) and np.isfinite(platt_b)):
+                    print("      WARNING: Non-finite Platt coefficients, using fallback")
+                    platt_a, platt_b = 0.0, 0.0
             except (AttributeError, IndexError):
                 # Fallback: extract from calibration curve slope
                 if len(mean_pred) >= 2:
@@ -1301,6 +1305,9 @@ def train_sport_model(
                         slope = np.corrcoef(x, y_arr)[0, 1] * (np.std(y_arr) / np.std(x))
                         platt_a = float(slope)
                         platt_b = float(np.mean(y_arr) - platt_a * np.mean(x))
+                        # V-MED-10 FIX: Validate fallback coefficients
+                        if not (np.isfinite(platt_a) and np.isfinite(platt_b)):
+                            platt_a, platt_b = 0.0, 0.0
 
             calibration_info = {
                 "method": "platt_scaling",

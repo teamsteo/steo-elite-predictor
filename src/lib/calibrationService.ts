@@ -15,12 +15,22 @@
  * Also tracks predictions vs outcomes for live Brier score computation.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient as SBClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-type SupabaseClient = any;
+// V-CRIT-1 FIX: Singleton client — avoid leaking connections
+let _sbClient: SBClient | null = null;
+function getSupabaseClient(): SBClient | null {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  if (!_sbClient) {
+    _sbClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+  }
+  return _sbClient;
+}
 
 // ============================================
 // TYPES
@@ -60,6 +70,17 @@ export interface PredictionOutcome {
 
 const calibrationCache = new Map<string, { map: CalibrationMap; loadedAt: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const CACHE_MAX_ENTRIES = 50; // V-MED-1 FIX: Bound cache size to prevent unbounded memory
+
+function evictStaleEntries(): void {
+  if (calibrationCache.size <= CACHE_MAX_ENTRIES) return;
+  // Evict oldest entries first
+  const entries = [...calibrationCache.entries()].sort((a, b) => a[1].loadedAt - b[1].loadedAt);
+  const toRemove = entries.slice(0, entries.length - CACHE_MAX_ENTRIES);
+  for (const [key] of toRemove) {
+    calibrationCache.delete(key);
+  }
+}
 
 // ============================================
 // ISOTONIC REGRESSION — Piecewise Constant Interpolation
@@ -82,8 +103,10 @@ const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
  */
 export function calibrateIsotonic(rawScore: number, calibrationMap: CalibrationMap): number {
   if (!calibrationMap || calibrationMap.method === 'none' || !calibrationMap.bins?.length) {
-    return rawScore; // Identity: no calibration
+    return safeNum(rawScore, 0.5); // V-HIGH-1: Validate input
   }
+  const score = safeNum(rawScore, 0.5); // V-HIGH-1: Clamp to safe range [0,1]
+  const clampedScore = Math.max(0, Math.min(1, score));
 
   // Platt scaling path
   if (calibrationMap.method === 'platt' && calibrationMap.plattA !== undefined && calibrationMap.plattB !== undefined) {
@@ -93,7 +116,7 @@ export function calibrateIsotonic(rawScore: number, calibrationMap: CalibrationM
   // Isotonic regression path
   const bins = [...calibrationMap.bins].sort((a, b) => a.predicted - b.predicted);
 
-  if (bins.length === 0) return rawScore;
+  if (bins.length === 0) return clampedScore;
   if (bins.length === 1) {
     // Single bin: just use the actual rate
     return clampProb(bins[0].actual);
@@ -102,15 +125,15 @@ export function calibrateIsotonic(rawScore: number, calibrationMap: CalibrationM
   // Enforce monotonicity: adjust bins to be non-decreasing in actual
   const monoBins = enforceMonotonicity(bins);
 
-  // Find the bin where rawScore falls
+  // Find the bin where clampedScore falls
   // Piecewise constant: each bin covers [bin.predicted, next_bin.predicted)
-  if (rawScore <= monoBins[0].predicted) {
+  if (clampedScore <= monoBins[0].predicted) {
     // Below first bin: extrapolate from first bin
     return clampProb(monoBins[0].actual);
   }
 
   for (let i = 0; i < monoBins.length - 1; i++) {
-    if (rawScore >= monoBins[i].predicted && rawScore < monoBins[i + 1].predicted) {
+    if (clampedScore >= monoBins[i].predicted && clampedScore < monoBins[i + 1].predicted) {
       return clampProb(monoBins[i].actual);
     }
   }
@@ -122,8 +145,17 @@ export function calibrateIsotonic(rawScore: number, calibrationMap: CalibrationM
 /**
  * Apply Platt scaling: P_calibrated = 1 / (1 + exp(-(A * score + B)))
  */
+// V-HIGH-1 FIX: Validate numeric inputs are safe finite numbers
+function safeNum(n: number, fallback: number = 0): number {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return fallback;
+  return n;
+}
+
 export function applyPlattScaling(rawScore: number, a: number, b: number): number {
-  const linear = a * rawScore + b;
+  const score = safeNum(rawScore, 0.5);
+  const coeffA = safeNum(a, 1);
+  const coeffB = safeNum(b, 0);
+  const linear = coeffA * score + coeffB;
   // Clamp linear term to prevent overflow
   const clampedLinear = Math.max(-20, Math.min(20, linear));
   return 1 / (1 + Math.exp(-clampedLinear));
@@ -176,6 +208,10 @@ function clampProb(p: number): number {
  * Uses in-memory cache (10 min TTL) to avoid repeated DB queries.
  */
 export async function loadCalibrationMap(sport: string): Promise<CalibrationMap> {
+  // V-HIGH-1: Validate sport parameter — whitelist allowed chars
+  if (!sport || typeof sport !== 'string' || !/^[a-zA-Z0-9_-]{1,50}$/.test(sport)) {
+    return defaultCalibrationMap();
+  }
   const sportLower = sport.toLowerCase();
   
   // Check cache
@@ -185,13 +221,10 @@ export async function loadCalibrationMap(sport: string): Promise<CalibrationMap>
   }
 
   try {
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
+    const sb = getSupabaseClient(); // V-CRIT-1 FIX: Singleton
+    if (!sb) {
       return defaultCalibrationMap();
     }
-
-    const sb: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
 
     const { data, error } = await sb
       .from('ml_model')
@@ -226,7 +259,8 @@ export async function loadCalibrationMap(sport: string): Promise<CalibrationMap>
       plattB: sportParams.calibration.platt_b,
     };
 
-    // Cache it
+    // Cache it (with eviction guard)
+    evictStaleEntries(); // V-MED-1 FIX
     calibrationCache.set(sportLower, { map: calibration, loadedAt: Date.now() });
 
     return calibration;
@@ -312,25 +346,29 @@ export function calculateBrierScoreByBucket(
  */
 export async function trackPredictionOutcome(outcome: Omit<PredictionOutcome, 'id'>): Promise<boolean> {
   try {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return false;
+    // V-HIGH-1: Validate inputs
+    if (!outcome.matchId || typeof outcome.matchId !== 'string' || outcome.matchId.length > 255) return false;
+    if (!outcome.sport || typeof outcome.sport !== 'string' || outcome.sport.length > 50) return false;
+    if (typeof outcome.predictedProb !== 'number' || !Number.isFinite(outcome.predictedProb)) return false;
+    if (typeof outcome.calibratedProb !== 'number' || !Number.isFinite(outcome.calibratedProb)) return false;
+    if (outcome.actualOutcome !== 0 && outcome.actualOutcome !== 1) return false;
 
-    const sb: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const sb = getSupabaseClient(); // V-CRIT-1 FIX: Singleton
+    if (!sb) return false;
 
     const { error } = await sb.from('prediction_outcomes').insert({
-      match_id: outcome.matchId,
-      sport: outcome.sport,
-      predicted_prob: Math.round(outcome.predictedProb * 10000) / 10000,
-      calibrated_prob: Math.round(outcome.calibratedProb * 10000) / 10000,
+      match_id: outcome.matchId.slice(0, 255),
+      sport: outcome.sport.slice(0, 50),
+      predicted_prob: Math.round(Math.max(0, Math.min(1, outcome.predictedProb)) * 10000) / 10000,
+      calibrated_prob: Math.round(Math.max(0, Math.min(1, outcome.calibratedProb)) * 10000) / 10000,
       actual_outcome: outcome.actualOutcome,
-      confidence: outcome.confidence,
-      recorded_at: outcome.recordedAt,
+      confidence: (outcome.confidence || 'medium').slice(0, 20),
+      recorded_at: outcome.recordedAt || new Date().toISOString(),
     });
 
     if (error) {
-      // Table might not exist — try to create it lazily
-      console.debug('prediction_outcomes table error:', error.message);
+      // V-MED-2 FIX: Log error type only, not message contents
+      console.debug('prediction_outcomes insert failed:', error.code || 'unknown');
       return false;
     }
 
@@ -348,14 +386,14 @@ export async function fetchRecentOutcomes(
   daysAgo: number = 30
 ): Promise<PredictionOutcome[]> {
   try {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return [];
+    // V-HIGH-1: Validate daysAgo — cap to prevent excessive queries
+    const safeDaysAgo = Math.max(1, Math.min(365, Math.floor(safeNum(daysAgo, 30))));
 
-    const sb: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
+    const sb = getSupabaseClient(); // V-CRIT-1 FIX: Singleton
+    if (!sb) return [];
 
     const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - daysAgo);
+    cutoff.setDate(cutoff.getDate() - safeDaysAgo);
     const cutoffISO = cutoff.toISOString();
 
     let query = sb
@@ -366,23 +404,31 @@ export async function fetchRecentOutcomes(
       .limit(500);
 
     if (sport) {
-      query = query.eq('sport', sport);
+      // V-HIGH-1: Validate sport parameter
+      if (/^[a-zA-Z0-9_-]{1,50}$/.test(sport)) {
+        query = query.eq('sport', sport.toLowerCase());
+      }
     }
 
     const { data, error } = await query;
 
     if (error || !data) return [];
 
-    return data.map((row: any) => ({
-      id: row.id,
-      matchId: row.match_id,
-      sport: row.sport,
-      predictedProb: row.predicted_prob,
-      calibratedProb: row.calibrated_prob ?? row.predicted_prob,
-      actualOutcome: row.actual_outcome,
-      confidence: row.confidence,
-      recordedAt: row.recorded_at,
-    }));
+    // V-HIGH-1: Validate each row before mapping
+    return data
+      .filter((row: any) => 
+        row && typeof row.predicted_prob === 'number' && Number.isFinite(row.predicted_prob)
+      )
+      .map((row: any) => ({
+        id: row.id,
+        matchId: String(row.match_id || '').slice(0, 255),
+        sport: String(row.sport || '').slice(0, 50),
+        predictedProb: Math.max(0, Math.min(1, row.predicted_prob)),
+        calibratedProb: Math.max(0, Math.min(1, row.calibrated_prob ?? row.predicted_prob)),
+        actualOutcome: row.actual_outcome === 1 ? 1 : 0,
+        confidence: String(row.confidence || 'medium').slice(0, 20),
+        recordedAt: String(row.recorded_at || ''),
+      }));
   } catch {
     return [];
   }

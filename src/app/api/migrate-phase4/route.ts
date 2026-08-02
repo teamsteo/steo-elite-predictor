@@ -16,7 +16,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+// V-CRIT-2 FIX: No hardcoded fallback — CRON_SECRET is required
+const CRON_SECRET = process.env.CRON_SECRET;
+
+// V-CRIT-3 FIX: Timing-safe comparison for secrets
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function authenticateRequest(request: NextRequest): boolean {
+  if (!CRON_SECRET) {
+    console.error('CRON_SECRET environment variable is not set');
+    return false;
+  }
+  const url = new URL(request.url);
+  const secret = url.searchParams.get('secret') || '';
+  return timingSafeEqual(secret, CRON_SECRET);
+}
 
 const MIGRATION_SQL = `-- ============================================
 -- MIGRATION: Phase 4 — Calibration & Market Alignment
@@ -32,12 +53,15 @@ CREATE TABLE IF NOT EXISTS prediction_outcomes (
     actual_outcome SMALLINT NOT NULL,
     confidence VARCHAR(20),
     recorded_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT valid_outcome CHECK (actual_outcome IN (0, 1))
+    CONSTRAINT valid_outcome CHECK (actual_outcome IN (0, 1)),
+    CONSTRAINT valid_predicted CHECK (predicted_prob >= 0 AND predicted_prob <= 1),
+    CONSTRAINT valid_calibrated CHECK (calibrated_prob IS NULL OR (calibrated_prob >= 0 AND calibrated_prob <= 1))
 );
 
 CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_sport ON prediction_outcomes(sport);
 CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_recorded ON prediction_outcomes(recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_outcomes_match ON prediction_outcomes(match_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prediction_outcomes_match_unique ON prediction_outcomes(match_id, sport) WHERE actual_outcome IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS odds_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,22 +83,21 @@ CREATE INDEX IF NOT EXISTS idx_odds_history_recorded ON odds_history(recorded_at
 ALTER TABLE prediction_outcomes ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-    CREATE POLICY "Service role can manage prediction_outcomes"
-        ON prediction_outcomes FOR ALL TO SERVICE_ROLE USING (true);
+    CREATE POLICY "Service role full access prediction_outcomes"
+        ON prediction_outcomes FOR ALL TO SERVICE_ROLE USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
+ALTER TABLE odds_history ENABLE ROW LEVEL SECURITY;
+
 DO $$ BEGIN
-    CREATE POLICY "Anon can read prediction_outcomes"
-        ON prediction_outcomes FOR SELECT TO ANON USING (true);
+    CREATE POLICY "Service role full access odds_history"
+        ON odds_history FOR ALL TO SERVICE_ROLE USING (true) WITH CHECK (true);
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;`;
 
 export async function POST(request: NextRequest) {
-  const url = new URL(request.url);
-  const secret = url.searchParams.get('secret');
-
-  if (secret !== CRON_SECRET) {
+  if (!authenticateRequest(request)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
@@ -180,12 +203,17 @@ export async function POST(request: NextRequest) {
  * the correct Supabase env vars and network access.
  */
 export async function GET(request: NextRequest) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   const url = new URL(request.url);
-  const secret = url.searchParams.get('secret');
   const action = url.searchParams.get('action');
 
-  if (secret !== CRON_SECRET) {
-    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  // V-MED-5 FIX: Whitelist allowed actions
+  const ALLOWED_ACTIONS = ['import-calibration', 'status'] as const;
+  if (action && !ALLOWED_ACTIONS.includes(action as any)) {
+    return NextResponse.json({ error: 'Action non reconnue', allowed: ALLOWED_ACTIONS }, { status: 400 });
   }
 
   if (action === 'import-calibration') {
@@ -208,11 +236,26 @@ async function importCalibration() {
   }
 
   try {
-    // Import the calibration export from the Python training
-    // In a real deployment, this file would be committed to the repo after training
-    // For now, we use a hardcoded fallback with the latest training results
-    const { calibrationExport } = await import('./calibration-data');
+    // V-MED-4 FIX: Import calibration data safely with fallback
+    let calibrationExport: any = null;
+    try {
+      const mod = await import('./calibration-data');
+      calibrationExport = mod.calibrationExport;
+    } catch {
+      return NextResponse.json({
+        success: false,
+        error: 'Fichier calibration-data.ts non trouvé. Lancez le training Python d\'abord.',
+        hint: 'cd ml && python3 train_xgboost.py'
+      });
+    }
     
+    if (!calibrationExport?.xgboost_params) {
+      return NextResponse.json({
+        success: false,
+        error: 'calibrationExport.xgboost_params manquant'
+      });
+    }
+
     const sb = createClient(supabaseUrl, supabaseKey, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
@@ -224,7 +267,7 @@ async function importCalibration() {
         xgboost_params: calibrationExport.xgboost_params,
         version: `xgb-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
         samples_used: calibrationExport.total_samples,
-        accuracy: Math.round(calibrationExport.global_cv_accuracy * 100),
+        accuracy: Math.round((calibrationExport.global_cv_accuracy || 0) * 100),
         last_trained: new Date().toISOString(),
       },
       { onConflict: 'id' }
@@ -240,6 +283,7 @@ async function importCalibration() {
       sports: Object.keys(calibrationExport.xgboost_params?.sports || {}),
     });
   } catch (e: any) {
-    return NextResponse.json({ success: false, error: e.message });
+    // V-MED-2 FIX: Don't expose raw error messages
+    return NextResponse.json({ success: false, error: 'Import échoué', code: 'IMPORT_ERROR' });
   }
 }
