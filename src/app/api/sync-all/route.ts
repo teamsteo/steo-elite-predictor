@@ -9,7 +9,16 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const GITHUB_REPO = 'steohidy/my-project';
 const GITHUB_BRANCH = 'master';
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 // Charger un fichier depuis GitHub
 async function loadFromGitHub(path: string): Promise<any> {
@@ -74,7 +83,7 @@ async function saveToGitHub(path: string, data: any, message: string): Promise<{
       return { success: false, error };
     }
   } catch (e: any) {
-    return { success: false, error: e.message };
+    return { success: false, error: 'Erreur interne' };
   }
 }
 
@@ -83,7 +92,7 @@ export async function POST(request: NextRequest) {
   const url = new URL(request.url);
   const secret = url.searchParams.get('secret');
 
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
@@ -295,7 +304,7 @@ export async function POST(request: NextRequest) {
     console.error('❌ Erreur:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne'
     }, { status: 500 });
   }
 }
@@ -305,7 +314,7 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const secret = url.searchParams.get('secret');
 
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
@@ -332,6 +341,6 @@ export async function GET(request: NextRequest) {
       needsSync: completed.length === 0 && statsHistory?.dailyStats?.length > 0
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
   }
 }

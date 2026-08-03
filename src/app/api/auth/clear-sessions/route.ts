@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { loadUsersData, saveUsersData } from '@/lib/userPersistence';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'secretsteo-elitecron2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +19,7 @@ export async function POST(request: NextRequest) {
     const username = searchParams.get('username');
     
     // Vérifier le secret
-    if (secret !== CRON_SECRET) {
+    if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     

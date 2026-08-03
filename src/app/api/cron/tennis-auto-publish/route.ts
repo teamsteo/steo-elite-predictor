@@ -10,7 +10,16 @@
 import { NextResponse } from 'next/server';
 
 // Secret pour sécuriser les appels CRON
-const CRON_SECRET = process.env.CRON_SECRET || 'secretsteo-elitecron2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 interface PublishResult {
   success: boolean;
@@ -25,8 +34,7 @@ export async function GET(request: Request) {
   const secret = searchParams.get('secret');
   const mode = searchParams.get('mode') || 'summary';
   
-  // Vérification du secret
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   

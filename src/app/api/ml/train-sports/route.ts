@@ -14,9 +14,28 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { saveNewPattern, updatePatternStats, loadMLPatterns, getMLStats } from '@/lib/ml-memory-service';
 
+// CRON authentication
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function authenticateRequest(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const secret = url.searchParams.get('secret') || '';
+  return timingSafeEqual(secret, CRON_SECRET);
+}
+
 // Configuration Supabase
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function getSupabase() {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;
@@ -227,6 +246,10 @@ function detectHockeyPatterns(matches: MatchResult[]): PatternDiscovery[] {
  * GET - Entraîne le modèle ML avec les résultats sportifs
  */
 export async function GET(request: NextRequest) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   const searchParams = request.nextUrl.searchParams;
   const sport = searchParams.get('sport') || 'all';
   
@@ -257,7 +280,7 @@ export async function GET(request: NextRequest) {
       console.error('Erreur récupération matchs:', error);
       return NextResponse.json({
         success: false,
-        error: 'Erreur récupération matchs: ' + error.message
+        error: 'Erreur interne'
       }, { status: 500 });
     }
     
@@ -364,7 +387,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: 'Erreur lors de l\'entraînement ML',
-      details: String(error)
+      details: 'Erreur interne'
     }, { status: 500 });
   }
 }

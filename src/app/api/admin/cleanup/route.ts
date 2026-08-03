@@ -12,7 +12,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import SupabaseStore from '@/lib/db-supabase';
 
-const ADMIN_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const ADMIN_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -20,7 +29,7 @@ export async function GET(request: NextRequest) {
   const dryRun = url.searchParams.get('dryRun') !== 'false'; // Par défaut, dry run
   
   // Vérification du secret
-  if (secret !== ADMIN_SECRET) {
+  if (!ADMIN_SECRET || !secret || !timingSafeEqual(secret, ADMIN_SECRET)) {
     return NextResponse.json(
       { error: 'Non autorisé' },
       { status: 401 }
@@ -121,7 +130,7 @@ export async function POST(request: NextRequest) {
   const secret = url.searchParams.get('secret');
   
   // Vérification du secret
-  if (secret !== ADMIN_SECRET) {
+  if (!ADMIN_SECRET || !secret || !timingSafeEqual(secret, ADMIN_SECRET)) {
     return NextResponse.json(
       { error: 'Non autorisé' },
       { status: 401 }

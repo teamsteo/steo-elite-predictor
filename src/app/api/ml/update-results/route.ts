@@ -9,9 +9,28 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// CRON authentication
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function authenticateRequest(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const secret = url.searchParams.get('secret') || '';
+  return timingSafeEqual(secret, CRON_SECRET);
+}
+
 // Configuration Supabase
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function getSupabase() {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;
@@ -283,7 +302,11 @@ function updateMlPickResult(pick: MlPick, actualWinner: string | null): 'won' | 
 /**
  * GET - Mettre à jour les résultats des pronostics
  */
-export async function GET() {
+export async function GET(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   try {
     console.log('🔄 Mise à jour des résultats ML (Supabase)...');
 
@@ -444,6 +467,10 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
  * POST - Ajouter un nouveau pronostic
  */
 export async function POST(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   try {
     const supabase = getSupabase();
     

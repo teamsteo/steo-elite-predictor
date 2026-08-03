@@ -6,7 +6,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 // Ancienne base (source) - utilise les variables d'environnement
 const OLD_SUPABASE_URL = process.env.OLD_SUPABASE_URL || '';
@@ -27,7 +36,7 @@ async function migrateTable(oldClient: any, newClient: any, tableName: string, b
     
     if (error) {
       console.log(`   ❌ Erreur lecture: ${error.message}`);
-      return { count: total, error: error.message };
+      return { count: total, error: 'Erreur interne' };
     }
     
     if (!data || data.length === 0) {
@@ -64,7 +73,7 @@ export async function GET(request: NextRequest) {
   const secret = url.searchParams.get('secret');
   const table = url.searchParams.get('table') || 'all';
   
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
@@ -123,7 +132,7 @@ export async function GET(request: NextRequest) {
     console.error('❌ Erreur migration:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne'
     }, { status: 500 });
   }
 }

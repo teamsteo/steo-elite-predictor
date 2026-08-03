@@ -5,7 +5,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 // Ancienne base (utilise les variables d'environnement)
 const OLD_SUPABASE_URL = process.env.OLD_SUPABASE_URL || '';
@@ -15,7 +24,7 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const secret = url.searchParams.get('secret');
   
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 

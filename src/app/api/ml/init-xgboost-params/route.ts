@@ -10,8 +10,27 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+// CRON authentication
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+function authenticateRequest(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const secret = url.searchParams.get('secret') || '';
+  return timingSafeEqual(secret, CRON_SECRET);
+}
+
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // XGBoost params: football (trained) + basketball/hockey/baseball (heuristic weighted)
 const XGBOOST_PARAMS = {
@@ -120,7 +139,11 @@ const XGBOOST_PARAMS = {
   training_timestamp: new Date().toISOString(),
 };
 
-export async function POST() {
+export async function POST(request: Request) {
+  if (!authenticateRequest(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -140,7 +163,7 @@ export async function POST() {
     if (error) {
       console.error('❌ Init XGBoost params error:', error.message);
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: 'Erreur interne' },
         { status: 500 }
       );
     }
@@ -168,7 +191,7 @@ export async function POST() {
   } catch (e: any) {
     console.error('❌ Init XGBoost params exception:', e);
     return NextResponse.json(
-      { success: false, error: e.message },
+      { success: false, error: 'Erreur interne' },
       { status: 500 }
     );
   }
@@ -185,7 +208,7 @@ export async function GET() {
 
     if (error) {
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: 'Erreur interne' },
         { status: 500 }
       );
     }
@@ -193,7 +216,7 @@ export async function GET() {
     return NextResponse.json({ success: true, data });
   } catch (e: any) {
     return NextResponse.json(
-      { success: false, error: e.message },
+      { success: false, error: 'Erreur interne' },
       { status: 500 }
     );
   }

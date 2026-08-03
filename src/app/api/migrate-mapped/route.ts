@@ -5,7 +5,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 // Ancienne base (utilise les variables d'environnement)
 const OLD_URL = process.env.OLD_SUPABASE_URL || '';
@@ -90,7 +99,7 @@ export async function GET(request: NextRequest) {
   const secret = url.searchParams.get('secret');
   const table = url.searchParams.get('table') || 'ml_patterns';
   
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
@@ -110,7 +119,7 @@ export async function GET(request: NextRequest) {
     const { data, error } = await oldClient.from(table).select('*');
     
     if (error) {
-      return NextResponse.json({ step: 'lecture', error: error.message }, { status: 500 });
+      return NextResponse.json({ step: 'lecture', error: 'Erreur interne' }, { status: 500 });
     }
     
     if (!data || data.length === 0) {
@@ -157,6 +166,6 @@ export async function GET(request: NextRequest) {
     });
     
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Erreur interne' }, { status: 500 });
   }
 }

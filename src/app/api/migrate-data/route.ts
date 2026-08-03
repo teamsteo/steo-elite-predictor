@@ -1,12 +1,21 @@
 /**
  * API Migration - Charge les données JSON depuis GitHub vers Supabase
- * Usage: /api/migrate-data?secret=steo-elite-cron-2026
+ * Usage: /api/migrate-data?secret=<CRON_SECRET from env>
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import SupabaseStore from '@/lib/db-supabase';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 const GITHUB_REPO = 'steohidy/my-project';
 const GITHUB_BRANCH = 'master';
 
@@ -60,7 +69,7 @@ export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const secret = url.searchParams.get('secret');
   
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 

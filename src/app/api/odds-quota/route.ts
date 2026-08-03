@@ -6,13 +6,21 @@
 import { NextResponse } from 'next/server';
 import { getQuotaStatus } from '@/lib/oddsQuotaManager';
 
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const secret = searchParams.get('secret');
   
-  // Sécurité simple
-  const expectedSecret = process.env.CRON_SECRET || 'steo-elite-cron-2026';
-  if (secret !== expectedSecret && secret !== 'secretsteo-elitecron2026') {
+  const CRON_SECRET = process.env.CRON_SECRET;
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
   

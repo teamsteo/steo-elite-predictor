@@ -36,7 +36,16 @@ import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataS
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
 
 // Secret pour sécuriser le cron
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 const CRON_VERSION = 'v14'; // Max 10 pronostics + cotes réelles uniquement + tennis EXCLU + bilan cohérent
 
 /**
@@ -1370,7 +1379,7 @@ export async function GET(request: NextRequest) {
   
   const providedSecret = authHeader?.replace('Bearer ', '') || urlSecret;
   
-  if (providedSecret !== CRON_SECRET) {
+  if (!CRON_SECRET || !providedSecret || !timingSafeEqual(providedSecret, CRON_SECRET)) {
     return NextResponse.json(
       { error: 'Non autorisé' },
       { status: 401 }

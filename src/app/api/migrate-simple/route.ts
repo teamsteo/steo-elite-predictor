@@ -4,14 +4,23 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const secret = url.searchParams.get('secret');
   const table = url.searchParams.get('table') || 'ml_patterns';
   
-  if (secret !== CRON_SECRET) {
+  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
@@ -36,7 +45,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await oldClient.from(table).select('*');
   
   if (error) {
-    return NextResponse.json({ step: 'lecture', error: error.message, table }, { status: 500 });
+    return NextResponse.json({ step: 'lecture', error: 'Erreur interne', table }, { status: 500 });
   }
   
   if (!data || data.length === 0) {
@@ -47,7 +56,7 @@ export async function GET(request: NextRequest) {
   const { error: insertError } = await newClient.from(table).upsert(data, { onConflict: 'id' });
   
   if (insertError) {
-    return NextResponse.json({ step: 'insertion', error: insertError.message, count: data.length }, { status: 500 });
+    return NextResponse.json({ step: 'insertion', error: 'Erreur interne', count: data.length }, { status: 500 });
   }
   
   return NextResponse.json({ success: true, table, migrated: data.length });

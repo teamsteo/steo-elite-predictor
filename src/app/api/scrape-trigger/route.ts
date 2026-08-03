@@ -13,8 +13,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 // Secret généré pour sécuriser l'API de scraping
-// À configurer dans Vercel: SCRAPE_SECRET=47c1beb9093062cb0564a47737897aca9e3850ffe73cb8db56e6b03a92060651
-const SCRAPE_SECRET = process.env.SCRAPE_SECRET || '47c1beb9093062cb0564a47737897aca9e3850ffe73cb8db56e6b03a92060651';
+// SCRAPE_SECRET must be set via environment variable
+const SCRAPE_SECRET = process.env.SCRAPE_SECRET;
 
 // Configuration ESPN
 const ESPN_FOOTBALL_LEAGUES = [
@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
     console.error('❌ Erreur scraping:', error);
     return NextResponse.json({
       success: false,
-      error: error.message,
+      error: 'Erreur interne',
       timestamp: new Date().toISOString(),
     }, { status: 500 });
   }
