@@ -38,19 +38,21 @@ function contentHash(text: string): string {
 /**
  * Vérifie si une publication est un doublon (même type, même jour, même contenu)
  * Retourne true si c'est un doublon (à ne PAS publier)
+ * @param slotSuffix  Suffixe optionnel pour distinguer MATIN/SOIR
  */
-export function isDuplicate(publicationType: string, messageContent: string): boolean {
+export function isDuplicate(publicationType: string, messageContent: string, slotSuffix?: string): boolean {
   const today = getTodayStr();
   const hash = contentHash(messageContent);
-  const last = lastPublication[publicationType];
+  const key = slotSuffix ? `${publicationType}-${slotSuffix}` : publicationType;
+  const last = lastPublication[key];
 
   if (last && last.date === today && last.hash === hash) {
-    console.warn(`⚠️ Doublon Telegram détecté pour "${publicationType}" — publication ignorée`);
+    console.warn(`⚠️ Doublon Telegram détecté pour "${key}" — publication ignorée`);
     return true;
   }
 
   // Enregistrer cette publication
-  lastPublication[publicationType] = { date: today, hash };
+  lastPublication[key] = { date: today, hash };
   return false;
 }
 
@@ -1095,6 +1097,12 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
   message += '🔬 = Dixon-Coles (stats classement)  ·  📊 = Poisson (cotes)\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
+  // Dedup: eviter d'envoyer le meme resume 2 fois
+  if (isDuplicate('summary', message, slotLabel)) {
+    console.log('Resume ' + slotLabel + ' deja publie - skip');
+    return false;
+  }
+
   return sendTelegramMessageLong(message);
 }
 
@@ -1157,6 +1165,12 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
     message += `Aucun pronostic à publier aujourd'hui.\n`;
     message += `Revenez demain pour les prochains matchs!\n`;
+  }
+
+  // Dedup: eviter d'envoyer le meme kamikaze-only 2 fois
+  if (isDuplicate('kamikaze-only', message)) {
+    console.log('Kamikaze-only deja publie - skip');
+    return false;
   }
 
   return sendTelegramMessageLong(message);
@@ -1223,6 +1237,12 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
       message += `💎 Type: ${m.valueBetType}\n`;
     }
     message += '\n';
+  }
+
+  // Dedup: eviter d'envoyer les memes value bets 2 fois
+  if (isDuplicate('valuebets', message)) {
+    console.log('Value bets deja publies - skip');
+    return false;
   }
 
   return sendTelegramMessageLong(message);
@@ -1309,6 +1329,12 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
   message += `⚠️ <b>ATTENTION</b>\n`;
   message += `Ces pronostics sont très risqués.\n`;
   message += `Ne pariez que ce que vous pouvez perdre.\n`;
+
+  // Dedup: eviter d'envoyer les memes kamikazes 2 fois
+  if (isDuplicate('kamikaze', message)) {
+    console.log('Kamikaze deja publie - skip');
+    return false;
+  }
 
   return sendTelegramMessageLong(message);
 }
@@ -2034,6 +2060,12 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
   // Envoyer le message
+
+  // Dedup: eviter bilans en double
+  if (isDuplicate('results', message)) {
+    return false;
+  }
+
   const sent = await sendTelegramMessageLong(message);
 
   // Envoyer un sticker en fonction du bilan
@@ -2199,6 +2231,12 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
     message += '💣 Bilan kamikaze · Haut risque uniquement\n';
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+
+    // Dedup: eviter bilans kamikaze en double
+    if (isDuplicate('kamikaze-bilan', message)) {
+      return false;
+    }
 
     return await sendTelegramMessageLong(message);
   } catch (e) {
@@ -2480,6 +2518,13 @@ export async function publishComboToTelegram(combo: any): Promise<boolean> {
   message += '🤖 Combo généré par IA · Parlay intelligent\n';
   message += '⚠️ Les combinés multiplient les cotes MAIS aussi le risque\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+
+  // Dedup: eviter combos en double
+  const comboKey = `combo-${combo.comboId || Date.now()}`;
+  if (isDuplicate(comboKey, message)) {
+    return false;
+  }
 
   return await sendTelegramMessageLong(message);
 }

@@ -34,18 +34,10 @@ import {
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET;
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
-}
 const CRON_VERSION = 'v14'; // Max 10 pronostics + cotes réelles uniquement + tennis EXCLU + bilan cohérent
 
 /**
@@ -2578,81 +2570,6 @@ export async function GET(request: NextRequest) {
         } catch (e: any) { result = { rebuildDate: { success: false, error: 'Erreur interne' } }; }
         break;
 
-      case 'insert-july8':
-        // Insertion manuelle des 12 pronostics publiés le 8 juillet avec résultats ESPN vérifiés
-        try {
-          const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-          const predictions = [
-            { home: "New York Mets", away: "Kansas City Royals", pred: "home", oddsH: 1.55, oddsA: 2.49, risk: 35, time: "23:35" },
-            { home: "St. Louis Cardinals", away: "Milwaukee Brewers", pred: "away", oddsH: 2.28, oddsA: 1.65, risk: 39, time: "23:40" },
-            { home: "Cincinnati Reds", away: "Philadelphia Phillies", pred: "home", oddsH: 1.69, oddsA: 2.19, risk: 41, time: "23:40" },
-            { home: "Detroit Tigers", away: "Athletics", pred: "home", oddsH: 1.73, oddsA: 2.14, risk: 42, time: "22:40" },
-            { home: "Baltimore Orioles", away: "Chicago Cubs", pred: "home", oddsH: 1.76, oddsA: 2.08, risk: 43, time: "22:35" },
-            { home: "Miami Marlins", away: "Seattle Mariners", pred: "away", oddsH: 2.08, oddsA: 1.76, risk: 43, time: "22:40" },
-            { home: "Washington Nationals", away: "Houston Astros", pred: "home", oddsH: 1.74, oddsA: 2.13, risk: 43, time: "22:40" },
-            { home: "San Francisco Giants", away: "Toronto Blue Jays", pred: "away", oddsH: 2.04, oddsA: 1.80, risk: 44, time: "19:45" },
-            { home: "Pittsburgh Pirates", away: "Atlanta Braves", pred: "home", oddsH: 1.83, oddsA: 1.99, risk: 46, time: "22:40" },
-            { home: "Minnesota Twins", away: "Cleveland Guardians", pred: "home", oddsH: 1.83, oddsA: 1.99, risk: 46, time: "22:40" },
-            { home: "Chicago White Sox", away: "Boston Red Sox", pred: "home", oddsH: 1.89, oddsA: 1.93, risk: 47, time: "23:10" },
-            { home: "Tampa Bay Rays", away: "New York Yankees", pred: "home", oddsH: 1.85, oddsA: 1.98, risk: 46, time: "22:40" },
-          ];
-          // Résultats ESPN vérifiés
-          const results: Record<string, {hs: number; as: number; winner: string}> = {
-            "new-york-mets-kansas-city-royals": { hs: 6, as: 2, winner: "home" },
-            "st-louis-cardinals-milwaukee-brewers": { hs: 5, as: 1, winner: "home" },
-            "cincinnati-reds-philadelphia-phillies": { hs: 11, as: 5, winner: "home" },
-            "detroit-tigers-athletics": { hs: 6, as: 1, winner: "home" },
-            "baltimore-orioles-chicago-cubs": { hs: 7, as: 9, winner: "away" },
-            "miami-marlins-seattle-mariners": { hs: 2, as: 0, winner: "home" },
-            "washington-nationals-houston-astros": { hs: 8, as: 2, winner: "home" },
-            "san-francisco-giants-toronto-blue-jays": { hs: 0, as: 10, winner: "away" },
-            "pittsburgh-pirates-atlanta-braves": { hs: 0, as: 3, winner: "away" },
-            "minnesota-twins-cleveland-guardians": { hs: 6, as: 5, winner: "home" },
-            "chicago-white-sox-boston-red-sox": { hs: 0, as: 5, winner: "away" },
-            "tampa-bay-rays-new-york-yankees": { hs: 3, as: 0, winner: "home" },
-          };
-
-          let inserted = 0;
-          const records: Record<string, any>[] = [];
-          for (const p of predictions) {
-            const timeSuffix = p.time ? `-${p.time.replace(':', '')}` : '';
-            const matchId = `${cleanTeam(p.home)}-${cleanTeam(p.away)}-mlb-2026-07-08${timeSuffix}`;
-            const r = results[matchId] || results[`${cleanTeam(p.home)}-${cleanTeam(p.away)}`];
-            const isWin = r && p.pred === r.winner;
-            const dbPred = {
-              match_id: matchId,
-              home_team: p.home,
-              away_team: p.away,
-              league: 'MLB',
-              sport: 'other', // TODO: changer en 'baseball' quand l'enum Supabase sera mis à jour
-              match_date: `2026-07-08T${p.time}:00Z`,
-              odds_home: p.oddsH,
-              odds_draw: null,
-              odds_away: p.oddsA,
-              predicted_result: p.pred,
-              confidence: 'medium',
-              risk_percentage: p.risk,
-              status: 'completed',
-              home_score: r?.hs ?? null,
-              away_score: r?.as ?? null,
-              actual_result: r?.winner || null,
-              result_match: r ? isWin : null,
-            };
-            records.push(dbPred);
-          }
-          // Insert en masse via insertRaw (bypass normalizeSport)
-          if (records.length > 0) {
-            const insertResult = await SupabaseStore.insertRaw(records);
-            inserted = insertResult.count || 0;
-            if (!insertResult.success) {
-              result = { insertJuly8: { error: insertResult.error, records: records.length } };
-              break;
-            }
-          }
-          result = { insertJuly8: { inserted, total: predictions.length, message: `${inserted}/${predictions.length} pronostics insérés avec résultats vérifiés` } };
-        } catch (e: any) { result = { insertJuly8: { success: false, error: 'Erreur interne' } }; }
-        break;
-
       case 'announce':
         // Envoyer un message d'annonce sur Telegram
         try {
@@ -2697,9 +2614,23 @@ export async function GET(request: NextRequest) {
  * POST - Permet de déclencher manuellement (admin)
  */
 export async function POST(request: NextRequest) {
+  // SECURITY FIX: POST must also verify auth (Vercel Cron uses Bearer header)
+  const authHeader = request.headers.get('authorization');
   const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
   const action = url.searchParams.get('action') || 'verify';
+  
+  const providedSecret = authHeader?.replace('Bearer ', '') || urlSecret;
+  
+  if (!CRON_SECRET || !providedSecret || !timingSafeEqual(providedSecret, CRON_SECRET)) {
+    return NextResponse.json(
+      { error: 'Non autorisé' },
+      { status: 401 }
+    );
+  }
+
   const startTime = Date.now();
+  console.log(`🔄 [POST] Début du cron job - Action: ${action}`);
 
   // Ping Supabase pour éviter la mise en pause (plan gratuit)
   const pingResult = await pingSupabase();
@@ -3141,48 +3072,20 @@ export async function POST(request: NextRequest) {
 
           const { selected: publishedList } = selectTopDailyPredictions(predictions);
 
-          // 💾 Sauvegarder en Supabase (POST = même logique que GET)
-          let toSavePost: any[] = publishedList;
-          if (publishedList.length === 0 && predictions.length > 0) {
-            const nonTennis = predictions.filter((p: any) => !['tennis'].includes((p.sport || '').toLowerCase()));
-            const kamikazePicks = nonTennis
-              .filter((p: any) => isKamikaze(p.riskPercentage));
-            toSavePost = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
-          }
-          try {
-            if (toSavePost.length > 0) {
-              const todayISO = new Date().toISOString().split('T')[0];
-              const dbPredictions = toSavePost.map((p: any) => {
-                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-                const dateStr = (p.date || '').split('T')[0] || todayISO;
-                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
-                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
-                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
-                return {
-                  match_id: matchId, home_team: p.homeTeam, away_team: p.awayTeam,
-                  league: p.league || 'Unknown', sport: (p.sport || 'football').toLowerCase(),
-                  match_date: p.date || new Date().toISOString(), odds_home: p.oddsHome || 1.0,
-                  odds_draw: p.oddsDraw || null, odds_away: p.oddsAway || 1.0,
-                  predicted_result: p.predictedResult || 'home', confidence: p.confidence || 'medium',
-                  risk_percentage: p.riskPercentage || 50, status: 'pending' as const,
-                };
-              });
-              const saved = await SupabaseStore.addPredictions(dbPredictions);
-              console.log(`💾 [POST] ${saved} pronostics sauvegardés en Supabase`);
-            }
-          } catch (saveErr: any) {
-            console.log('⚠️ [POST] Erreur sauvegarde Supabase:', saveErr.message);
-          }
+          // ⚠️ Pas de sauvegarde Supabase ici — le cron GET (07:00/18:00) s'en charge.
+          // Le POST est pour les déclenchements manuels (admin) qui ne doivent pas
+          // créer des doublons dans la table predictions.
+          // La déduplication Telegram (isDuplicate) évite les messages en double.
 
           const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = {
             telegram: {
               success: telegramResult,
               total: predictions.length,
-              published: toSavePost.length,
-              excluded: predictions.length - toSavePost.length,
+              published: publishedList.length,
+              excluded: predictions.length - publishedList.length,
               message: telegramResult
-                ? `Résumé publié: ${toSavePost.length} pronostics sur Telegram`
+                ? `Résumé publié: ${publishedList.length} pronostics sur Telegram`
                 : 'Erreur publication Telegram'
             }
           };

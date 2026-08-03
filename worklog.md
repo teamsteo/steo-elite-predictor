@@ -1,180 +1,79 @@
----
-Task ID: 1
-Agent: Main Agent
-Task: Phase 4 Pipeline — Isotonic Regression + CLV Market Alignment + Brier Score
+# Audit Worklog — Cron/Telegram/ML Pipeline
 
-Work Log:
-- Explored full codebase: unifiedMLService.ts, adaptiveThresholdsML.ts, oddsTrackingService.ts, unifiedPredictionService.ts, train_xgboost.py
-- Identified 6 critical gaps: no runtime calibration, CLV not fed back, no calibration table, no isotonic regression, features not stored, ml_model not in schema
-- Created `src/lib/calibrationService.ts` (~470 lines): Isotonic Regression with PAVA, Platt scaling, Brier score computation, live calibration reports, Supabase integration with 10-min cache
-- Created `src/lib/marketAlignmentService.ts` (~250 lines): CLV-weighted probability adjustment, steam detection, market signal classification (confirming/contradicting/neutral), batch alignment support
-- Integrated both services into `unifiedPredictionService.ts`:
-  - Step 8.5: Isotonic Calibration after XGBoost scoring
-  - Step 11.5: CLV Market Alignment after bestBet determination
-  - Added `calibrated`/`calibrationMethod` to mlPrediction output
-  - Added `marketAlignment` object to UnifiedPrediction interface
-  - CLV reasoning lines added to prediction output
-- Updated `train_xgboost.py`: Export Platt A/B coefficients (platt_a, platt_b) from CalibratedClassifierCV for TypeScript runtime use
-- Created `scripts/migration_phase4_calibration.sql`: prediction_outcomes table + odds_history DDL + RLS policies
-- TypeScript build: 0 errors
-- Python syntax: valid
-
-Stage Summary:
-- Pipeline complet implémenté: XGBoost → Calibration (Platt/Isotonic) → CLV Market Alignment → Brier Score
-- 2 nouveaux services: calibrationService.ts, marketAlignmentService.ts
-- 1 fichier modifié: unifiedPredictionService.ts (étapes 8.5 + 11.5)
-- 1 fichier modifié: train_xgboost.py (export Platt coefficients)
-- 1 migration SQL: prediction_outcomes table
-- Build: ✅ 0 erreurs TypeScript, ✅ Python valide
+## Date: $(date -u +%Y-%m-%d)
 
 ---
-Task ID: 2
-Agent: Main Agent
-Task: Phase 4 — Préparation migration + training deployment
 
-Work Log:
-- Tentative d'exécution directe migration SQL: DNS Supabase ([VOTRE_URL_SUPABASE]) retourne NXDOMAIN
-- Créé API route /api/migrate-phase4 pour vérifier les tables depuis Vercel (avec vrais env vars)
-- API route vérifie existence de prediction_outcomes, odds_history, ml_model via REST
-- Si tables manquantes: retourne le SQL à exécuter + instructions
-- Si tables existantes: insert test record pour validation
-- Créé script run-migration-and-training.sh en 3 étapes:
-  1. Vérification via API Vercel
-  2. Migration SQL dans Supabase Dashboard (si nécessaire)
-  3. Training Python (coefficients Platt)
-- Build TypeScript: 0 erreurs
+## Priority 1: Security Fixes
 
-Stage Summary:
-- API route: src/app/api/migrate-phase4/route.ts
-- Script: scripts/run-migration-and-training.sh
-- Migration SQL: scripts/migration_phase4_calibration.sql
-- Le DNS Supabase ne résout pas depuis cet env → doit être exécuté depuis un terminal avec accès
+### 1.1 telegram/test/route.ts — MISSING AUTH + error.message LEAK
+- **Issue**: No auth check on GET /api/telegram/test. Anyone could trigger Telegram messages, wasting API quota.
+- **Issue**: `error.message` leaked to user in catch block (line 66).
+- **Fix**: Added `timingSafeEqual` import from `@/lib/timingSafeEqual`, added auth check for both query param and Bearer header. Replaced `error.message` with generic `'Erreur interne'`.
 
----
-Task ID: 3
-Agent: Main Agent
-Task: Phase 4 — Exécution training + Export calibration
+### 1.2 cron/route.ts — LOCAL timingSafeEqual WITH LENGTH LEAK
+- **Issue**: Defined its own `timingSafeEqual` (lines 41-48) with `if (a.length !== b.length) return false;` which leaks timing information about the secret length.
+- **Fix**: Removed local function, imported from `@/lib/timingSafeEqual` (SHA-256 hash-based, constant-time).
 
-Work Log:
-- Corrigé train_xgboost.py: ajout health check DNS pour fallback propre vers CSV-only
-- Training XGBoost lancé avec succès en mode CSV-only (9480 échantillons, 4 sports)
-- Coefficients Platt générés: football A=1.0143 B=0.0203, basketball A=1.0695 B=-0.0625, hockey A=1.0297 B=-0.0179, baseball A=1.7118 B=-0.3941
-- Brier scores: football 0.041→0.017 (-59%), basketball 0.086→0.038 (-56%)
-- Calibration export JSON créé: ml/calibration_export.json
-- Script export-calibration-to-supabase.py créé pour import automatique
-- calibration-data.ts créé avec fallback hardcoded pour Vercel API import
-- API route étendue: GET /api/migrate-phase4?action=import-calibration pour import via Vercel
-- Vérifié compatibilité: applyPlattScaling() dans calibrationService.ts compatible avec les coefficients
-- Build TypeScript: 0 erreurs
+### 1.3 cron/route.ts — POST HANDLER HAD NO AUTH
+- **Issue**: The POST handler (line 2691) had NO authentication check at all. Anyone could trigger any cron action via POST.
+- **Fix**: Added identical auth check to POST handler (query param OR Bearer header, using shared timingSafeEqual).
 
-Stage Summary:
-- Training OK: 9480 samples, 4 sports, Platt coefficients valides
-- Export JSON: ml/calibration_export.json + ml/calibration_export.json
-- Vercel import: GET /api/migrate-phase4?secret=...&action=import-calibration
-- Supabase import: export-calibration-to-supabase.py (depuis terminal avec accès)
-- Pipeline complet: XGBoost → Platt(A,B) → CLV Alignment → Brier Score ✅
+### 1.4 tennis-auto-publish/route.ts — LOCAL timingSafeEqual
+- **Issue**: Same local timingSafeEqual with length leak bug (lines 15-21).
+- **Fix**: Replaced with import from `@/lib/timingSafeEqual`.
 
----
-Task ID: 5
-Agent: Security Hardening Agent
-Task: Add CRON_SECRET authentication to 9 specific unprotected write endpoints in pronostics-app/src/app/api/
-- Audited 9 API route files for missing auth on write (POST/PUT/DELETE) handlers
-- Added `CRON_SECRET` + `verifyRequestAuth()` auth pattern to all 9 files
-- Added auth guard at TOP of each unprotected write handler (before body parsing)
-- Fixed `error.message` information leaks in 4 files (seed, batch-ml, cron ×4, cron GET)
-- Verified: zero `error.message` leaks remain in all 9 target files
+## Priority 2: Dead Code Removal
 
-Files Modified:
-1. **pronostiqueur-pro/route.ts** — CRITICAL: Added auth to POST (protects `reset` action that wipes ALL pro predictions)
-2. **seed/route.ts** — Added auth to POST (protects `clear_all` that wipes all data). Fixed 2× `error.message` leaks.
-3. **predictions/route.ts** — Added auth to POST (prevents data injection)
-4. **bankroll/route.ts** — Added auth to POST + PUT (protects financial operations: deposits, withdrawals, bets)
-5. **batch-ml/route.ts** — Added auth to POST (protects `reset_ml`, `clear_cache`, `train`). Fixed 2× `error.message` leaks.
-6. **cron/route.ts** — CRITICAL GAP: POST had NO auth while GET did. Added `verifyRequestAuth()` + auth guard. Fixed 5× `error.message` leaks (2 in API handlers + 3 in internal functions exposed via `...result`). Updated console.error tag to `[SECURITY]`.
-7. **results/route.ts** — Added auth at TOP of POST (previously only `clear_all` was protected via ADMIN_TOKEN; now all actions `save_predictions`, `check_results`, `cleanup` are also protected)
-8. **odds-cache/route.ts** — Added auth to POST (prevents unauthorized API quota consumption via `forceRefresh`)
-9. **matches/route.ts** — Added auth to POST (prevents unauthorized cache clear)
+### 2.1 cron/route.ts — `insert-july8` one-time hack
+- **Issue**: Lines 2581-2653 contained a one-time data insertion for July 8 MLB predictions. This was a manual operation that should not remain in production code. It also referenced `sport: 'other'` (not 'baseball').
+- **Fix**: Removed the entire `case 'insert-july8'` block (73 lines).
 
-Auth Pattern Used:
-```typescript
-const CRON_SECRET = process.env.CRON_SECRET;
-if (!CRON_SECRET) {
-  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
-}
-function verifyRequestAuth(request: Request): boolean {
-  if (!CRON_SECRET) return false;
-  const url = new URL(request.url);
-  const urlSecret = url.searchParams.get('secret');
-  const authHeader = request.headers.get('authorization');
-  if (urlSecret === CRON_SECRET) return true;
-  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
-  return false;
-}
-```
-Guard in each write handler: `if (!verifyRequestAuth(request)) return 401`
+## Priority 3: Deduplication (CRITICAL)
 
-Error Leak Fixes:
-- seed/route.ts GET: `error.message` → `Erreur interne serveur` + code `SEED_INFO_ERROR`
-- seed/route.ts POST: `error.message` → `Erreur interne serveur` + code `SEED_ERROR`
-- batch-ml/route.ts GET: `details: error.message` → `code: 'BATCH_ML_STATUS_ERROR'`
-- batch-ml/route.ts POST: `details: error.message` → `code: 'BATCH_ML_ERROR'`
-- cron/route.ts GET: `error: error.message` → `error: 'Erreur interne serveur'` + code `CRON_GET_ERROR`
-- cron/route.ts POST: `error: error.message` → `error: 'Erreur interne serveur'` + code `CRON_POST_ERROR`
-- cron/route.ts verifyAndUpdatePredictions: `errors.push(error.message)` → `errors.push('Erreur lors de la vérification des résultats')`
-- cron/route.ts runPrecalc: `errors.push(error.message)` → `errors.push('Erreur lors du pré-calcul')`
-- cron/route.ts trainMLModel: `errors.push(error.message)` → `errors.push('Erreur lors de l\'entraînement ML')`
+### 3.1 isDuplicate() function was DEAD CODE
+- **Issue**: The `isDuplicate()` function in telegramService.ts existed but was NEVER CALLED by any publish function. This meant duplicate Telegram messages could be sent if cron jobs ran multiple times or were triggered manually.
+- **Fix**: Activated isDuplicate() in ALL 7 publish functions:
+  - `publishDailySummaryToTelegram` — key: `summary-{MATIN|SOIR}` (slot-aware)
+  - `publishKamikazeOnlyMessage` — key: `kamikaze-only`
+  - `publishValueBetsToTelegram` — key: `valuebets`
+  - `publishKamikazeToTelegram` — key: `kamikaze`
+  - `publishDailyResultsToTelegram` — key: `results`
+  - `publishKamikazeBilanToTelegram` — key: `kamikaze-bilan`
+  - `publishComboToTelegram` — key: `combo-{comboId}`
 
-Stage Summary:
-- 9 files hardened with CRON_SECRET auth on all write endpoints
-- 10 `error.message` information leaks fixed across 4 files
-- GET handlers left untouched (no auth added)
-- No TypeScript compilation performed (auth additions are syntactically valid)
-- CRITICAL fixes: pronostiqueur-pro reset, seed clear_all, cron POST gap
+### 3.2 isDuplicate() improved for MATIN/SOIR distinction
+- **Issue**: `telegram-summary` runs at 07:00 (MATIN) and 18:00 (SOIR) — the original isDuplicate would treat them as duplicates since they use the same type key.
+- **Fix**: Added optional `slotSuffix` parameter. The summary function passes `slotLabel` (MATIN/SOIR) so both publications are allowed.
 
----
-Task ID: 4
-Agent: Security Hardening Agent
-Task: Add CRON_SECRET authentication to all unprotected write endpoints in src/app/api/
+## Priority 4: ML Pipeline Fixes
 
-Work Log:
-- Audited 14 API route files for unprotected write endpoints (POST/PUT/DELETE)
-- Added CRON_SECRET + verifyRequestAuth() helper to all 14 files
-- Added auth guard at the TOP of every unprotected write handler (before body parsing)
-- Fixed error.message / String(error) information leaks in error responses across 8 files
-- Left GET handlers untouched (read-only)
-- Left DELETE in save-today-predictions/route.ts untouched (already has ADMIN_TOKEN check)
-- TypeScript build: 0 errors
+### 4.1 unifiedMLService.ts — ANON KEY FALLBACK
+- **Issue**: `SUPABASE_KEY` used `NEXT_PUBLIC_SUPABASE_ANON_KEY` as fallback. The anon key is meant for client-side use and lacks admin privileges needed for server-side ML operations (reading/writing ML patterns table).
+- **Fix**: Removed anon key fallback. Now requires `SUPABASE_SERVICE_ROLE_KEY`.
 
-Files Modified (14 total, 20 write handlers protected):
+### 4.2 ml-memory-service.ts — ANON KEY FALLBACK
+- **Issue**: Same anon key fallback issue.
+- **Fix**: Same fix — requires `SUPABASE_SERVICE_ROLE_KEY` only.
 
-1. **seed/route.ts** — POST (cleanup + clear_all). Fixed: duplicate auth block removed, 2x error.message → generic error + code.
-2. **predictions/route.ts** — POST (add prediction) + DELETE (cleanup old predictions). Changed DELETE signature to accept `request: Request`.
-3. **bankroll/route.ts** — POST (add transaction/reset) + PUT (update after result).
-4. **save-today-predictions/route.ts** — POST (save predictions). DELETE left untouched (ADMIN_TOKEN).
-5. **discord/publish/route.ts** — POST (publish custom predictions). Fixed: 2x String(error) → generic error + code.
-6. **ml/train/route.ts** — POST (train model with candles). Fixed: 2x `details: String(error)` → generic error + code.
-7. **batch-ml/route.ts** — POST (precalc/train/stats/force_update/reset_ml/clear_cache). Fixed: 2x `details: error.message` → generic error + code.
-8. **tennis-enhanced/route.ts** — POST (update_result/get_metrics/get_history).
-9. **alerts/route.ts** — POST (create alert) + PUT (update alert) + DELETE (delete alert). Fixed: `details: String(error)` → generic error + code.
-10. **system/alerts/route.ts** — POST (manual alert). Fixed: error.message in GET + POST + 2 internal health checks.
-11. **odds-cache/route.ts** — POST (force refresh). Changed POST signature to accept `request: Request`.
-12. **espn-status/route.ts** — POST (refresh cache). Fixed: String(error) → generic error + code.
-13. **real-odds/route.ts** — POST (force refresh). Fixed: String(error) leak in error response.
-14. **matches/route.ts** — POST (clear cache).
+### 4.3 dailyPredictionService.ts — fs/path ON VERCEL READ-ONLY FS
+- **Issue**: Uses `fs.writeFileSync` and `fs.mkdirSync` which will fail silently on Vercel (read-only filesystem after build).
+- **Fix**: Added documentation comment explaining the limitation. Note: this service is NOT used by the main cron pipeline (cron/route.ts uses getMatchesWithRealOdds + unifiedPredictionService directly).
 
-Error Leak Fixes Summary:
-- seed/route.ts: 2 fixes
-- discord/publish/route.ts: 2 fixes
-- ml/train/route.ts: 2 fixes
-- batch-ml/route.ts: 2 fixes
-- alerts/route.ts: 1 fix
-- system/alerts/route.ts: 4 fixes (GET + POST + 2 internal health checks)
-- espn-status/route.ts: 1 fix (GET)
-- real-odds/route.ts: 1 fix (GET)
+## Priority 5: Logic Consistency
 
-Stage Summary:
-- 14 fichiers modifiés, 20 write handlers protégés
-- Auth pattern: CRON_SECRET via ?secret= query param ou Authorization: Bearer header
-- Si CRON_SECRET non configuré, tous les write endpoints retournent 401
-- 15 information leaks corrigés (error.message / String(error) / details)
-- Build: ✅ 0 erreurs TypeScript
+### 5.1 POST telegram-summary — DOUBLE SUPABASE SAVE
+- **Issue**: Both GET (cron 07:00/18:00) and POST (manual admin) telegram-summary handlers saved predictions to Supabase. If both ran on the same day, duplicate match_ids would be inserted.
+- **Fix**: Removed Supabase save from POST handler. The cron GET handler already saves. Added comment explaining why. The Telegram dedup (isDuplicate) prevents duplicate messages.
+
+## Files Modified
+- `src/app/api/telegram/test/route.ts` — auth + error leak fix
+- `src/app/api/cron/route.ts` — timingSafeEqual import, POST auth, remove insert-july8, remove POST double-save
+- `src/app/api/cron/tennis-auto-publish/route.ts` — timingSafeEqual import
+- `src/lib/telegramService.ts` — isDuplicate improved, activated in 7 functions
+- `src/lib/unifiedMLService.ts` — remove anon key fallback
+- `src/lib/ml-memory-service.ts` — remove anon key fallback
+- `src/lib/dailyPredictionService.ts` — document fs/path limitation
+
+## Verification
+- `npx tsc --noEmit` — passes with 0 errors

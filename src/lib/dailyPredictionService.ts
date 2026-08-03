@@ -43,6 +43,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+
+// ⚠️ LIMITATION: This service uses fs/path for file I/O.
+// On Vercel, the filesystem is READ-ONLY after build.
+// This service is only called by /api/cron/generate-daily (which runs via a Vercel Cron),
+// and the generate-daily route is currently the only consumer.
+// If deployed on Vercel, the write calls (writeFileSync, mkdirSync) will silently fail.
+// The main cron pipeline (cron/route.ts) does NOT use this service — it uses
+// getMatchesWithRealOdds() + unifiedPredictionService directly.
 import { getUnifiedPrediction, type UnifiedPredictionInput } from './unifiedPredictionService';
 
 // ============================================
