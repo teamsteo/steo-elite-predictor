@@ -48,10 +48,6 @@
       "schedule": "30 5 * * *"
     },
     {
-      "path": "/api/cron?action=telegram-kamikaze-bilan",
-      "schedule": "0 6 * * *"
-    },
-    {
       "path": "/api/cron/generate-daily",
       "schedule": "30 5 * * *"
     },

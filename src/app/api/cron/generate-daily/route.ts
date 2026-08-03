@@ -17,11 +17,12 @@ const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function GET(request: Request) {
   try {
-    // Vérifier le secret (SECURITY FIX: fail if secret is missing, not skip)
+    // Vérifier le secret (query param OU Authorization header)
     const { searchParams } = new URL(request.url);
-    const secret = searchParams.get('secret');
+    const urlSecret = searchParams.get('secret') || '';
+    const authHeader = request.headers.get('authorization') || '';
     
-    if (!CRON_SECRET || !timingSafeEqual(secret || '', CRON_SECRET)) {
+    if (!CRON_SECRET || (!timingSafeEqual(urlSecret, CRON_SECRET) && !timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`))) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }

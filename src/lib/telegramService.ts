@@ -17,6 +17,43 @@ import SupabaseStore, { type DbPrediction } from './db-supabase';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Déduplication : track la dernière publication par type pour éviter les doublons
+const lastPublication: Record<string, { date: string; hash: string }> = {};
+
+function getTodayStr(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+/** Calcule un hash simple du contenu pour détecter les doublons */
+function contentHash(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit int
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Vérifie si une publication est un doublon (même type, même jour, même contenu)
+ * Retourne true si c'est un doublon (à ne PAS publier)
+ */
+export function isDuplicate(publicationType: string, messageContent: string): boolean {
+  const today = getTodayStr();
+  const hash = contentHash(messageContent);
+  const last = lastPublication[publicationType];
+
+  if (last && last.date === today && last.hash === hash) {
+    console.warn(`⚠️ Doublon Telegram détecté pour "${publicationType}" — publication ignorée`);
+    return true;
+  }
+
+  // Enregistrer cette publication
+  lastPublication[publicationType] = { date: today, hash };
+  return false;
+}
+
 // Seuils de risque
 const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
@@ -313,39 +350,58 @@ function formatDateTime(dateStr: string, displayDate?: string): { date: string; 
 export async function sendTelegramMessage(text: string, options?: {
   parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
   disable_notification?: boolean;
+  retryCount?: number;
 }): Promise<boolean> {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
     console.warn('⚠️ Telegram non configuré');
     return false;
   }
 
-  try {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: options?.parse_mode || 'HTML',
-        disable_notification: options?.disable_notification || false,
-      }),
-    });
+  const maxRetries = options?.retryCount ?? 2;
 
-    const data = await response.json();
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: options?.parse_mode || 'HTML',
+          disable_notification: options?.disable_notification || false,
+        }),
+      });
 
-    if (!data.ok) {
-      console.error('❌ Erreur Telegram:', data.description);
+      // Rate limit (429) → retry avec backoff
+      if (response.status === 429 && attempt < maxRetries) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+        console.warn(`⚠️ Telegram rate limit, retry dans ${retryAfter}s (tentative ${attempt + 1}/${maxRetries})`);
+        await new Promise(r => setTimeout(r, Math.min(retryAfter, 30) * 1000));
+        continue;
+      }
+
+      const data = await response.json();
+
+      if (!data.ok) {
+        console.error('❌ Erreur Telegram:', data.description);
+        return false;
+      }
+
+      console.log('✅ Message envoyé sur Telegram');
+      return true;
+    } catch (error) {
+      if (attempt < maxRetries) {
+        console.warn(`⚠️ Erreur envoi Telegram (tentative ${attempt + 1}/${maxRetries}), retry...`);
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      console.error('❌ Erreur envoi Telegram (échec après ${maxRetries} tentatives):', error);
       return false;
     }
-
-    console.log('✅ Message envoyé sur Telegram');
-    return true;
-  } catch (error) {
-    console.error('❌ Erreur envoi Telegram:', error);
-    return false;
   }
+  return false;
 }
 
 // Split un message Telegram si > 4096 chars
