@@ -10,6 +10,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
+
 // Configuration
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -101,12 +116,12 @@ async function checkSupabaseHealth(): Promise<{ healthy: boolean; message: strin
       .select('*', { count: 'exact', head: true });
     
     if (error) {
-      return { healthy: false, message: `Erreur Supabase: ${error.message}` };
+      return { healthy: false, message: 'Erreur de connexion Supabase' };
     }
     
     return { healthy: true, message: `${count} matchs en base` };
   } catch (error: any) {
-    return { healthy: false, message: `Exception: ${error.message}` };
+    return { healthy: false, message: 'Exception lors de la vérification Supabase' };
   }
 }
 
@@ -129,7 +144,7 @@ async function checkESPNHealth(): Promise<{ healthy: boolean; message: string }>
     
     return { healthy: true, message: `${eventsCount} événements disponibles` };
   } catch (error: any) {
-    return { healthy: false, message: `Exception: ${error.message}` };
+    return { healthy: false, message: 'Exception lors de la vérification ESPN' };
   }
 }
 
@@ -236,7 +251,8 @@ export async function GET(request: NextRequest) {
       success: false,
       timestamp,
       status: 'error',
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'SYSTEM_HEALTH_CHECK_FAILED'
     }, { status: 500 });
   }
 }
@@ -245,6 +261,9 @@ export async function GET(request: NextRequest) {
  * POST - Déclencher une alerte manuelle
  */
 export async function POST(request: NextRequest) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { type, service, message, details } = body;
@@ -274,7 +293,8 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'SYSTEM_ALERT_FAILED'
     }, { status: 500 });
   }
 }

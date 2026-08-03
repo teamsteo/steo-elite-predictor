@@ -1,6 +1,21 @@
 import { NextResponse } from 'next/server';
 import { fetchAllESPNOdds, getESPNOddsStats, ESPNOddMatch } from '@/lib/espnOddsService';
 
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
+
 /**
  * API pour récupérer les cotes en temps réel
  * 
@@ -167,9 +182,10 @@ export async function GET() {
     return NextResponse.json({
       success: false,
       message: 'Erreur lors de la récupération des cotes',
+      code: 'REAL_ODDS_FAILED',
       apiStatus: [
-        { provider: 'ESPN (DraftKings)', enabled: false, error: String(error) },
-        { provider: 'The Odds API', enabled: false, error: 'Non testé' },
+        { provider: 'ESPN (DraftKings)', enabled: false },
+        { provider: 'The Odds API', enabled: false },
       ],
       matches: [],
       source: 'error',
@@ -180,7 +196,10 @@ export async function GET() {
 /**
  * POST - Forcer le rafraîchissement
  */
-export async function POST() {
+export async function POST(request: Request) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   const { forceRefreshESPN } = await import('@/lib/espnOddsService');
   await forceRefreshESPN();
   return GET();

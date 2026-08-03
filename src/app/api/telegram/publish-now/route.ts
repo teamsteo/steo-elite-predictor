@@ -225,7 +225,8 @@ export async function GET(request: Request) {
     console.error('❌ Erreur publication Telegram:', error);
     return NextResponse.json({
       success: false,
-      error: error.message,
+      error: 'Erreur interne serveur',
+      code: 'TELEGRAM_PUBLISH_FAILED',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }

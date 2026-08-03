@@ -360,7 +360,8 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
       
       return NextResponse.json({
         success: false,
-        error: 'Erreur récupération pronostics: ' + fetchError.message
+        error: 'Erreur lors de la récupération des pronostics',
+        code: 'ML_FETCH_FAILED'
       }, { status: 500 });
     }
 
@@ -457,8 +458,8 @@ CREATE INDEX idx_ml_picks_date ON ml_picks(date);
     console.error('Erreur mise à jour ML:', error);
     return NextResponse.json({
       success: false,
-      message: 'Erreur lors de la mise à jour',
-      error: String(error)
+      error: 'Erreur lors de la mise à jour',
+      code: 'ML_UPDATE_RESULTS_FAILED'
     }, { status: 500 });
   }
 }
@@ -525,7 +526,8 @@ export async function POST(request: Request) {
     if (error) {
       return NextResponse.json({
         success: false,
-        error: 'Erreur création pronostic: ' + error.message
+        error: 'Erreur lors de la création du pronostic',
+        code: 'PRONOSTIC_CREATE_FAILED'
       }, { status: 500 });
     }
 

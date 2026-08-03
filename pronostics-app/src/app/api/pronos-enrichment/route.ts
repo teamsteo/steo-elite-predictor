@@ -78,7 +78,8 @@ export async function GET(request: NextRequest) {
     console.error('Erreur enrichissement pronos:', error);
     return NextResponse.json({
       success: false,
-      error: error.message || 'Erreur lors de l\'enrichissement'
+      error: 'Erreur lors de l\'enrichissement',
+      code: 'PRONOS_ENRICHMENT_GET_ERR'
     }, { status: 500 });
   }
 }
@@ -148,7 +149,8 @@ export async function POST(request: NextRequest) {
     console.error('Erreur batch enrichment:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'PRONOS_ENRICHMENT_POST_ERR'
     }, { status: 500 });
   }
 }

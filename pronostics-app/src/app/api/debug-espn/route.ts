@@ -55,7 +55,8 @@ export async function GET() {
     } catch (error: any) {
       results.tests.push({
         name: endpoint.name,
-        error: error.message,
+        error: 'Erreur interne serveur',
+        code: 'DEBUG_ESPN_FETCH_ERR',
       });
     }
   }
@@ -82,8 +83,8 @@ export async function GET() {
     };
   } catch (error: any) {
     results.combinedDataService = {
-      error: error.message,
-      stack: error.stack?.split('\n').slice(0, 3),
+      error: 'Erreur interne serveur',
+      code: 'DEBUG_ESPN_SERVICE_ERR',
     };
   }
 

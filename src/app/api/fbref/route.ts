@@ -90,7 +90,7 @@ export async function GET(request: Request) {
     console.error('Erreur API FBref:', error);
     return NextResponse.json({ 
       error: 'Erreur lors de la récupération des données FBref',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      code: 'FBREF_FETCH_FAILED'
     }, { status: 500 });
   }
 }

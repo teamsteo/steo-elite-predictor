@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 
 // Configuration
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY;
+if (!ODDS_API_KEY) {
+  console.error('THE_ODDS_API_KEY non configuré');
+}
 const BASE_URL = 'https://api.the-odds-api.com/v4';
 
 // Cache en mémoire global

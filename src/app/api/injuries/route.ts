@@ -153,7 +153,7 @@ export async function GET(request: Request) {
     console.error('Erreur API injuries:', error);
     return NextResponse.json({ 
       error: 'Erreur lors de la récupération des blessures',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      code: 'INJURIES_FETCH_FAILED',
       solution: 'Réessayez ultérieurement ou utilisez les données estimées',
     }, { status: 500 });
   }

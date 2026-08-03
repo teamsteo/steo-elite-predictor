@@ -5,6 +5,21 @@ import {
 } from '@/lib/discordService';
 import { getMatchesWithRealOdds } from '@/lib/combinedDataService';
 
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
+
 /**
  * GET /api/discord/publish - Publie le résumé quotidien sur Discord
  */
@@ -137,7 +152,8 @@ export async function GET(request: Request) {
     console.error('Erreur Discord publish:', error);
     return NextResponse.json({
       success: false,
-      error: String(error),
+      error: 'Erreur serveur',
+      code: 'DISCORD_GET_FAILED'
     }, { status: 500 });
   }
 }
@@ -146,6 +162,9 @@ export async function GET(request: Request) {
  * POST /api/discord/publish - Publie des pronostics personnalisés
  */
 export async function POST(request: Request) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { predictions } = body;
@@ -174,7 +193,8 @@ export async function POST(request: Request) {
     console.error('Erreur Discord POST:', error);
     return NextResponse.json({
       success: false,
-      error: String(error),
+      error: 'Erreur serveur',
+      code: 'DISCORD_POST_FAILED'
     }, { status: 500 });
   }
 }

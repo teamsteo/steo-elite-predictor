@@ -24,7 +24,10 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const PREDICTIONS_FILE = path.join(DATA_DIR, 'tennis-predictions.json');
 const LAST_RUN_FILE = path.join(DATA_DIR, 'cron-last-run.json');
 
-const CRON_SECRET = process.env.CRON_SECRET || 'tennis-ml-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('CRON_SECRET non configuré pour tennis-predictions');
+}
 
 // ============================================
 // HELPER FUNCTIONS
@@ -90,7 +93,8 @@ async function handleDailyPublish(): Promise<{ success: boolean; published: numb
     return {
       success: false,
       published: 0,
-      message: `Error: ${error.message}`,
+      message: 'Erreur interne serveur',
+      code: 'TENNIS_PRED_DAILY_ERR',
     };
   }
 }

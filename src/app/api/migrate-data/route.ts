@@ -154,7 +154,8 @@ export async function GET(request: NextRequest) {
     console.error('❌ Erreur migration:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'MIGRATION_FAILED'
     }, { status: 500 });
   }
 }

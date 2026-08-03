@@ -53,7 +53,10 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const PREDICTIONS_FILE = path.join(DATA_DIR, 'tennis-predictions.json');
 const LAST_RUN_FILE = path.join(DATA_DIR, 'tennis-cron-last-run.json');
 
-const CRON_SECRET = process.env.CRON_SECRET || 'tennis-ml-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('CRON_SECRET non configuré pour tennis-auto-publish');
+}
 
 // Seuils de confiance stricts
 const CONFIDENCE_THRESHOLDS = {
@@ -358,7 +361,8 @@ async function handleDailyPublish(): Promise<CronResult> {
     const result: CronResult = {
       success: false,
       action: 'daily',
-      message: `Error: ${error.message}`,
+      message: 'Erreur interne serveur',
+      code: 'TENNIS_CRON_DAILY_ERR',
       duration: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     };
@@ -400,7 +404,8 @@ async function handleValueBets(): Promise<CronResult> {
     return {
       success: false,
       action: 'valuebets',
-      message: `Error: ${error.message}`,
+      message: 'Erreur interne serveur',
+      code: 'TENNIS_CRON_VALUEBETS_ERR',
       duration: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     };
@@ -443,7 +448,8 @@ async function handleBacktest(): Promise<CronResult> {
     return {
       success: false,
       action: 'backtest',
-      message: `Error: ${error.message}`,
+      message: 'Erreur interne serveur',
+      code: 'TENNIS_CRON_BACKTEST_ERR',
       duration: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     };
@@ -488,7 +494,8 @@ async function handleLearn(): Promise<CronResult> {
     return {
       success: false,
       action: 'learn',
-      message: `Error: ${error.message}`,
+      message: 'Erreur interne serveur',
+      code: 'TENNIS_CRON_LEARN_ERR',
       duration: Date.now() - startTime,
       timestamp: new Date().toISOString(),
     };

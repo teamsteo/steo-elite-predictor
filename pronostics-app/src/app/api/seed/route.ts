@@ -3,6 +3,24 @@ import PredictionStore from '@/lib/store';
 import fs from 'fs';
 import path from 'path';
 
+// ============================================
+// AUTHENTIFICATION
+// ============================================
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
+
 const DATA_FILE = path.join(process.cwd(), 'data', 'predictions.json');
 
 /**
@@ -23,7 +41,8 @@ export async function GET() {
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'SEED_INFO_ERROR'
     }, { status: 500 });
   }
 }
@@ -32,6 +51,10 @@ export async function GET() {
  * POST - Actions de maintenance
  */
 export async function POST(request: Request) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { action } = body;
@@ -64,7 +87,8 @@ export async function POST(request: Request) {
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'SEED_ERROR'
     }, { status: 500 });
   }
 }

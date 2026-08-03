@@ -190,7 +190,8 @@ export async function POST(request: NextRequest) {
     console.error('❌ Erreur migration:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'SUPABASE_MIGRATION_FAILED'
     }, { status: 500 });
   }
 }

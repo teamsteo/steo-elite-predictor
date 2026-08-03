@@ -2,6 +2,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
+
 interface Alert {
   id: string;
   type: 'news' | 'event' | 'price' | 'correlation';
@@ -111,13 +126,16 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Alerts API error:', error);
     return NextResponse.json(
-      { error: 'Internal server error', details: String(error) },
+      { error: 'Erreur interne serveur', code: 'ALERTS_GET_FAILED' },
       { status: 500 }
     );
   }
 }
 
 export async function POST(request: NextRequest) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { type, currency, condition, threshold } = body;
@@ -157,6 +175,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   const searchParams = request.nextUrl.searchParams;
   const alertId = searchParams.get('id');
   
@@ -191,6 +212,9 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   const searchParams = request.nextUrl.searchParams;
   const alertId = searchParams.get('id');
   

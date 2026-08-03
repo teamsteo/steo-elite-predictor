@@ -116,7 +116,8 @@ export async function GET(request: NextRequest) {
     console.error('❌ Erreur cleanup:', error);
     return NextResponse.json({
       success: false,
-      error: error.message,
+      error: 'Erreur interne serveur',
+      code: 'CLEANUP_FAILED',
       results,
     }, { status: 500 });
   }

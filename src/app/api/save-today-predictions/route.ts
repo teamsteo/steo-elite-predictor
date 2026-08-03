@@ -1,11 +1,29 @@
 import { NextResponse } from 'next/server';
 import { PredictionStore } from '@/lib/store';
 
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
+
 /**
  * POST - Sauvegarder les pronostics du jour pour les stats
  * Appelé automatiquement par l'application après génération des pronostics
  */
 export async function POST(request: Request) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { predictions, sport } = body;
@@ -63,7 +81,8 @@ export async function POST(request: Request) {
     console.error('Erreur sauvegarde pronostics:', error);
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'SAVE_PREDICTIONS_FAILED'
     }, { status: 500 });
   }
 }
@@ -88,7 +107,8 @@ export async function GET() {
     });
   } catch (error: any) {
     return NextResponse.json({
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'LOAD_PREDICTIONS_FAILED'
     }, { status: 500 });
   }
 }
@@ -100,7 +120,11 @@ export async function DELETE(request: Request) {
   try {
     const url = new URL(request.url);
     const token = url.searchParams.get('token');
-    const expectedToken = process.env.ADMIN_TOKEN || 'steo-admin-2026';
+    const expectedToken = process.env.ADMIN_TOKEN;
+    if (!expectedToken) {
+      console.error('ADMIN_TOKEN non configuré');
+      return NextResponse.json({ error: 'Service non configuré' }, { status: 503 });
+    }
 
     if (token !== expectedToken) {
       return NextResponse.json({
@@ -116,7 +140,8 @@ export async function DELETE(request: Request) {
     });
   } catch (error: any) {
     return NextResponse.json({
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'DELETE_STORE_FAILED'
     }, { status: 500 });
   }
 }

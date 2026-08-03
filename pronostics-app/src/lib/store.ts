@@ -14,7 +14,10 @@ const GITHUB_BRANCH = 'master';
 const PREDICTIONS_FILE_PATH = 'data/store-predictions.json';
 
 // Secret pour la validation des données (sécurité)
-const DATA_SECRET = process.env.DATA_SECRET || 'steo-elite-secret-2026';
+const DATA_SECRET = process.env.DATA_SECRET;
+if (!DATA_SECRET) {
+  console.warn('[SECURITY] DATA_SECRET non configuré - signatures de données désactivées');
+}
 
 // Structure des données
 interface Prediction {

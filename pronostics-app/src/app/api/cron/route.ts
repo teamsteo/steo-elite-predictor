@@ -10,7 +10,20 @@ import { PredictionStore } from '@/lib/store';
 import { ExpertAdviceStore } from '@/lib/expertAdviceStore';
 
 // Secret pour sécuriser le cron
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
 
 // Interfaces
 interface MatchResult {
@@ -227,7 +240,7 @@ async function verifyAndUpdatePredictions(): Promise<{
     }
 
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur lors de la vérification des résultats');
     console.error('Erreur vérification:', error);
   }
 
@@ -255,7 +268,7 @@ async function runPrecalc(): Promise<{ success: boolean; count: number; errors: 
     
     return { success: true, count: data.totalAdvices, errors };
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur lors du pré-calcul');
     console.error('Erreur pré-calcul:', error);
     return { success: false, count: 0, errors };
   }
@@ -286,7 +299,7 @@ async function trainMLModel(): Promise<{ success: boolean; accuracy: number; err
     
     return { success: true, accuracy, errors };
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur lors de l\'entraînement ML');
     console.error('Erreur ML training:', error);
     return { success: false, accuracy: 0, errors };
   }
@@ -360,8 +373,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       action,
-      error: error.message,
-      timestamp: new Date().toISOString()
+      error: 'Erreur interne serveur',
+      code: 'CRON_GET_ERROR'
     }, { status: 500 });
   }
 }
@@ -370,6 +383,10 @@ export async function GET(request: NextRequest) {
  * POST - Permet de déclencher manuellement (admin)
  */
 export async function POST(request: NextRequest) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
+
   const url = new URL(request.url);
   const action = url.searchParams.get('action') || 'verify';
   const startTime = Date.now();
@@ -416,7 +433,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: false,
       action,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'CRON_POST_ERROR'
     }, { status: 500 });
   }
 }

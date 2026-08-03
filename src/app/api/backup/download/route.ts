@@ -10,7 +10,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Configuration
-const BACKUP_SECRET = process.env.BACKUP_SECRET || 'steo-elite-backup-2024';
+const BACKUP_SECRET = process.env.BACKUP_SECRET;
+if (!BACKUP_SECRET) {
+  console.error('BACKUP_SECRET non configuré');
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,8 +23,7 @@ export async function GET(request: NextRequest) {
   // Vérification du secret
   if (secret !== BACKUP_SECRET) {
     return NextResponse.json({
-      error: 'Non autorisé',
-      hint: 'Ajoutez ?secret=steo-elite-backup-2024 à l\'URL'
+      error: 'Non autorisé'
     }, { status: 401 });
   }
 
@@ -48,7 +50,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne lors de la génération du backup',
+      code: 'BACKUP_GEN_FAILED'
     }, { status: 500 });
   }
 }
@@ -221,7 +224,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=votre_anon_key
 
 # Sécurité (OPTIONNEL)
 SCRAPE_SECRET=votre_secret_scraping
-BACKUP_SECRET=steo-elite-backup-2024
+BACKUP_SECRET=votre_secret_backup
 
 # Alertes Discord/Slack (OPTIONNEL)
 ALERT_WEBHOOK_URL=https://discord.com/api/webhooks/xxx/yyy
@@ -281,7 +284,7 @@ Job 3 - ML Update Results:
 ## 5. VÉRIFIER L'INSTALLATION
 
 - Health check: https://votre-site.vercel.app/api/health
-- Backup: https://votre-site.vercel.app/api/backup/download?secret=steo-elite-backup-2024
+- Backup: https://votre-site.vercel.app/api/backup/download?secret=VOTRE_SECRET
 
 ## 6. STRUCTURE DES FICHIERS
 

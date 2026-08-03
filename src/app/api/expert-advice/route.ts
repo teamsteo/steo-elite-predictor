@@ -304,8 +304,8 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('❌ Erreur API expert-advice:', error);
     return NextResponse.json({ 
-      error: 'Server error',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Erreur interne serveur',
+      code: 'EXPERT_ADVICE_FAILED'
     }, { status: 500 });
   }
 }
@@ -351,8 +351,8 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     return NextResponse.json({ 
-      error: 'Erreur',
-      details: error instanceof Error ? error.message : 'Unknown'
+      error: 'Erreur interne serveur',
+      code: 'EXPERT_CUSTOM_ANALYSIS_FAILED'
     }, { status: 500 });
   }
 }

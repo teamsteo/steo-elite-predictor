@@ -98,7 +98,8 @@ export async function GET() {
     return NextResponse.json(results, { status: 200 });
 
   } catch (error: any) {
-    results.error = error.message;
+    results.error = 'Erreur interne serveur';
+    results.code = 'DEBUG_EUROPA_ERR';
     return NextResponse.json(results, { status: 500 });
   }
 }

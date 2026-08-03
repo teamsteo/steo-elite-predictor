@@ -705,7 +705,11 @@ export async function POST(request: Request) {
     if (action === 'clear_all') {
       // Vérification de sécurité - nécessite un token
       const adminToken = body.token;
-      const expectedToken = process.env.ADMIN_TOKEN || 'steo-admin-2026';
+      const expectedToken = process.env.ADMIN_TOKEN;
+      if (!expectedToken) {
+        console.error('ADMIN_TOKEN non configuré');
+        return NextResponse.json({ error: 'Service non configuré' }, { status: 503 });
+      }
       
       if (adminToken !== expectedToken) {
         return NextResponse.json({ 

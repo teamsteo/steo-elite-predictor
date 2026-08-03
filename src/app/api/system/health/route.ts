@@ -51,7 +51,7 @@ export async function GET() {
       results.summary.unhealthyAPIs++;
     }
   } catch (e: any) {
-    results.apis.push({ name: 'ESPN NBA', healthy: false, responseTime: 0, error: e.message });
+    results.apis.push({ name: 'ESPN NBA', healthy: false, responseTime: 0, error: 'Indisponible' });
     results.summary.unhealthyAPIs++;
   }
 
@@ -71,7 +71,7 @@ export async function GET() {
       results.summary.unhealthyAPIs++;
     }
   } catch (e: any) {
-    results.apis.push({ name: 'ESPN Football', healthy: false, responseTime: 0, error: e.message });
+    results.apis.push({ name: 'ESPN Football', healthy: false, responseTime: 0, error: 'Indisponible' });
     results.summary.unhealthyAPIs++;
   }
 
@@ -102,7 +102,7 @@ export async function GET() {
       healthy: false,
       predictionCount: 0,
       lastUpdate: 'N/A',
-      error: e.message
+      error: 'Indisponible'
     };
     results.summary.unhealthyAPIs++;
     results.alerts.push({

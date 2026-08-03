@@ -52,12 +52,12 @@ export async function GET(request: NextRequest) {
           .select('*', { count: 'exact', head: true });
         
         if (error) {
-          counts[table] = { error: error.message };
+          counts[table] = { error: 'Erreur de vérification', code: 'DB_CHECK_FAILED' };
         } else {
           counts[table] = { count };
         }
       } catch (e: any) {
-        counts[table] = { error: e.message };
+        counts[table] = { error: 'Erreur de vérification', code: 'DB_CHECK_FAILED' };
       }
     }
     
@@ -71,13 +71,14 @@ export async function GET(request: NextRequest) {
       oldBase: OLD_SUPABASE_URL,
       counts,
       samplePatterns: patterns || [],
-      patternsError: patternsError?.message
+      patternsError: patternsError ? 'Erreur de vérification' : undefined
     });
     
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'OLD_DB_CHECK_FAILED'
     }, { status: 500 });
   }
 }

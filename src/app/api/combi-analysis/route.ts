@@ -580,7 +580,8 @@ export async function POST(request: NextRequest) {
     console.error('Erreur analyse match:', error);
     return NextResponse.json({
       success: false,
-      error: error.message || 'Erreur lors de l\'analyse'
+      error: 'Erreur interne serveur',
+      code: 'COMBI_ANALYSIS_FAILED'
     }, { status: 500 });
   }
 }

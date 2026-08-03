@@ -120,25 +120,25 @@ export async function POST(request: NextRequest) {
   // Check prediction_outcomes
   try {
     const { error } = await sb.from('prediction_outcomes').select('id').limit(1);
-    checks.push({ table: 'prediction_outcomes', exists: !error, error: error?.message });
+    checks.push({ table: 'prediction_outcomes', exists: !error, error: error ? 'Erreur vérification base de données' : undefined });
   } catch (e: any) {
-    checks.push({ table: 'prediction_outcomes', exists: false, error: e.message });
+    checks.push({ table: 'prediction_outcomes', exists: false, error: 'Erreur vérification base de données' });
   }
 
   // Check odds_history
   try {
     const { error } = await sb.from('odds_history').select('id').limit(1);
-    checks.push({ table: 'odds_history', exists: !error, error: error?.message });
+    checks.push({ table: 'odds_history', exists: !error, error: error ? 'Erreur vérification base de données' : undefined });
   } catch (e: any) {
-    checks.push({ table: 'odds_history', exists: false, error: e.message });
+    checks.push({ table: 'odds_history', exists: false, error: 'Erreur vérification base de données' });
   }
 
   // Check ml_model (for calibration storage)
   try {
     const { error } = await sb.from('ml_model').select('id').limit(1);
-    checks.push({ table: 'ml_model', exists: !error, error: error?.message });
+    checks.push({ table: 'ml_model', exists: !error, error: error ? 'Erreur vérification base de données' : undefined });
   } catch (e: any) {
-    checks.push({ table: 'ml_model', exists: false, error: e.message });
+    checks.push({ table: 'ml_model', exists: false, error: 'Erreur vérification base de données' });
   }
 
   const missingTables = checks.filter(c => !c.exists).map(c => c.table);

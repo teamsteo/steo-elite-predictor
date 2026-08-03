@@ -107,7 +107,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({
       success: false,
-      error: error.message
+      error: 'Erreur interne serveur',
+      code: 'ML_ANALYZE_FAILED'
     }, { status: 500 });
   }
 }

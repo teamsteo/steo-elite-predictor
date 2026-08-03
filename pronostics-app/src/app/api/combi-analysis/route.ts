@@ -622,7 +622,8 @@ export async function POST(request: NextRequest) {
     console.error('Erreur analyse match:', error);
     return NextResponse.json({
       success: false,
-      error: error.message || 'Erreur lors de l\'analyse'
+      error: 'Erreur lors de l\'analyse',
+      code: 'COMBI_ANALYSIS_ERR'
     }, { status: 500 });
   }
 }

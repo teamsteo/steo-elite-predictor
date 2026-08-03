@@ -72,7 +72,7 @@ async function pingSupabase(): Promise<{
   } catch (e: any) {
     return {
       success: false,
-      message: `❌ Erreur ping: ${e.message}`
+      message: 'Erreur ping Supabase'
     };
   }
 }
@@ -414,7 +414,7 @@ async function verifyNBAResults(): Promise<{
     }
 
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur interne');
     console.error('Erreur vérification NBA:', error);
   }
 
@@ -500,7 +500,7 @@ async function verifyFootballResults(): Promise<{
     }
 
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur interne');
     console.error('Erreur vérification Football:', error);
   }
 
@@ -769,7 +769,7 @@ async function verifyMLBResults(): Promise<{
       }
     }
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur interne');
     console.error('Erreur vérification MLB:', error);
   }
 
@@ -1153,7 +1153,7 @@ async function verifyTennisResults(): Promise<{
       }
     }
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur interne');
     console.error('Erreur vérification Tennis:', error);
   }
 
@@ -1225,7 +1225,7 @@ async function runPrecalc(): Promise<{ success: boolean; count: number; errors: 
     
     return { success: true, count: data.totalAdvices, errors };
   } catch (error: any) {
-    errors.push(error.message);
+    errors.push('Erreur interne');
     console.error('Erreur pré-calcul:', error);
     return { success: false, count: 0, errors };
   }
@@ -1271,7 +1271,7 @@ async function trainMLModel(): Promise<{
       patternsSaved: 0,
       patternsUpdated: 0,
       improvements: [],
-      errors: [error.message] 
+      errors: ['Erreur interne'] 
     };
   }
 }
@@ -1362,8 +1362,8 @@ async function fullSyncFromStatsHistory(): Promise<{
     console.error('❌ Erreur sync Supabase:', error);
     return {
       success: false,
-      message: error.message,
-      errors: [error.message]
+      message: 'Erreur interne',
+      errors: ['Erreur interne']
     };
   }
 }
@@ -1445,7 +1445,7 @@ export async function GET(request: NextRequest) {
           const mlUpdateData = await mlUpdateResponse.json();
           result = { mlUpdate: mlUpdateData };
         } catch (e: any) {
-          result = { mlUpdate: { success: false, error: e.message } };
+          result = { mlUpdate: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -1455,7 +1455,7 @@ export async function GET(request: NextRequest) {
           const statsResult = await forceUpdateStats();
           result = { statsUpdate: statsResult };
         } catch (e: any) {
-          result = { statsUpdate: { success: false, error: e.message } };
+          result = { statsUpdate: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -1465,7 +1465,7 @@ export async function GET(request: NextRequest) {
           const syncResult = await fullSyncFromStatsHistory();
           result = { syncAll: syncResult };
         } catch (e: any) {
-          result = { syncAll: { success: false, error: e.message } };
+          result = { syncAll: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -1512,7 +1512,7 @@ export async function GET(request: NextRequest) {
           const fundamentalResult = await updateFundamentalsForToday();
           result = { fundamentals: fundamentalResult };
         } catch (e: any) {
-          result = { fundamentals: { success: false, error: e.message } };
+          result = { fundamentals: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -1522,7 +1522,7 @@ export async function GET(request: NextRequest) {
           const mlTrainResult = await trainMLModel();
           result = { mlTraining: mlTrainResult };
         } catch (e: any) {
-          result = { mlTraining: { success: false, error: e.message } };
+          result = { mlTraining: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -1532,7 +1532,7 @@ export async function GET(request: NextRequest) {
           const backtestResult = await runBacktest(30);
           result = { backtest: backtestResult };
         } catch (e: any) {
-          result = { backtest: { success: false, error: e.message } };
+          result = { backtest: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -1542,7 +1542,7 @@ export async function GET(request: NextRequest) {
           const mlStats = await getUnifiedMLStats();
           result = { mlStats };
         } catch (e: any) {
-          result = { mlStats: { success: false, error: e.message } };
+          result = { mlStats: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -1668,7 +1668,7 @@ export async function GET(request: NextRequest) {
             result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, datePreds: datePreds.length, zombieFound: zombiePreds.length, debug: debugInfo } };
           }
         } catch (e: any) {
-          result = { resetDate: { success: false, error: e.message } };
+          result = { resetDate: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -1696,7 +1696,7 @@ export async function GET(request: NextRequest) {
           const verifyResult = await verifyAllResults();
           result = { resetMLB: { resetCount, ...verifyResult } };
         } catch (e: any) {
-          result = { resetMLB: { success: false, error: e.message } };
+          result = { resetMLB: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -1782,7 +1782,7 @@ export async function GET(request: NextRequest) {
           
           result = { fixSport: { date: fixDate, total: allFixPreds.length, fixed: fixedCount, deletedDupes } };
         } catch (e: any) {
-          result = { fixSport: { success: false, error: e.message } };
+          result = { fixSport: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -1835,7 +1835,7 @@ export async function GET(request: NextRequest) {
             if (p.id) { const success = await SupabaseStore.deletePrediction(p.id); if (success) deletedCount++; }
           }
           result = { rebuild: { date: rebuildDate, totalFound: allDatePreds.length, published: publishedIds.size, deleted: deletedCount, message: `${deletedCount} supprimées, ${publishedIds.size} conservées pour ${rebuildDate}` } };
-        } catch (e: any) { result = { rebuild: { success: false, error: e.message } }; }
+        } catch (e: any) { result = { rebuild: { success: false, error: 'Erreur interne' } }; }
         break;
         
       case 'telegram-summary':
@@ -2058,7 +2058,7 @@ export async function GET(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2175,7 +2175,7 @@ export async function GET(request: NextRequest) {
             },
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2279,7 +2279,7 @@ export async function GET(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2367,7 +2367,7 @@ export async function GET(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2444,11 +2444,11 @@ export async function GET(request: NextRequest) {
         } catch (e: any) {
           // ⚠️ Dernier recours: même si tout crash, essayer d'envoyer un message d'erreur
           try {
-            const errMsg = `⚠️ <b>ERREUR BILAN</b>\n\n${e.message}\n\n📅 Le cron tourne mais une erreur est survenue.`;
+            const errMsg = `⚠️ <b>ERREUR BILAN</b>\n\n📅 Le cron tourne mais une erreur est survenue.`;
             const { sendTelegramMessage } = await import('@/lib/telegramService');
             await sendTelegramMessage(errMsg);
           } catch { /* silent */ }
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2466,7 +2466,7 @@ export async function GET(request: NextRequest) {
             }
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2484,7 +2484,7 @@ export async function GET(request: NextRequest) {
             }
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2520,7 +2520,7 @@ export async function GET(request: NextRequest) {
             if (success) resetCount++;
           }
           result = { reset: { date: resetDate, total: allPreds.length, reset: resetCount, alreadyPending, message: `${resetCount} réinitialisées, ${alreadyPending} déjà en attente` } };
-        } catch (e: any) { result = { reset: { error: e.message } }; }
+        } catch (e: any) { result = { reset: { success: false, error: 'Erreur interne' } }; }
         break;
 
       case 'fix-data':
@@ -2546,7 +2546,7 @@ export async function GET(request: NextRequest) {
           }
           
           result = { fixData: { sportFixed: fixResult.updated, dupesDeleted, message: `${fixResult.updated} sports corrigés, ${dupesDeleted} doublons supprimés` } };
-        } catch (e: any) { result = { fixData: { error: e.message } }; }
+        } catch (e: any) { result = { fixData: { success: false, error: 'Erreur interne' } }; }
         break;
 
       case 'rebuild-date':
@@ -2575,7 +2575,7 @@ export async function GET(request: NextRequest) {
               message: `${deletedCount} prédictions supprimées pour ${rebuildTargetDate}, ${fixResult.updated} sports corrigés globalement` 
             } 
           };
-        } catch (e: any) { result = { rebuildDate: { error: e.message } }; }
+        } catch (e: any) { result = { rebuildDate: { success: false, error: 'Erreur interne' } }; }
         break;
 
       case 'insert-july8':
@@ -2650,7 +2650,7 @@ export async function GET(request: NextRequest) {
             }
           }
           result = { insertJuly8: { inserted, total: predictions.length, message: `${inserted}/${predictions.length} pronostics insérés avec résultats vérifiés` } };
-        } catch (e: any) { result = { insertJuly8: { error: e.message } }; }
+        } catch (e: any) { result = { insertJuly8: { success: false, error: 'Erreur interne' } }; }
         break;
 
       case 'announce':
@@ -2659,7 +2659,7 @@ export async function GET(request: NextRequest) {
           const msg = url.searchParams.get('msg') || 'Mise à jour déployée';
           const sent = await (await import('@/lib/telegramService')).sendTelegramMessage(msg);
           result = { announce: { success: sent, message: sent ? 'Annonce publiée' : 'Erreur envoi' } };
-        } catch (e: any) { result = { announce: { error: e.message } }; }
+        } catch (e: any) { result = { announce: { success: false, error: 'Erreur interne' } }; }
         break;
 
       default:
@@ -2687,7 +2687,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       action,
-      error: error.message,
+      error: 'Erreur interne',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }
@@ -2757,7 +2757,7 @@ export async function POST(request: NextRequest) {
           const statsResult = await forceUpdateStats();
           result = { statsUpdate: statsResult };
         } catch (e: any) {
-          result = { statsUpdate: { success: false, error: e.message } };
+          result = { statsUpdate: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2767,7 +2767,7 @@ export async function POST(request: NextRequest) {
           const mlSyncResult = await syncPredictionsToML();
           result = { mlSync: mlSyncResult };
         } catch (e: any) {
-          result = { mlSync: { success: false, error: e.message } };
+          result = { mlSync: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2777,7 +2777,7 @@ export async function POST(request: NextRequest) {
           const syncResult = await fullSyncFromStatsHistory();
           result = { syncAll: syncResult };
         } catch (e: any) {
-          result = { syncAll: { success: false, error: e.message } };
+          result = { syncAll: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2792,7 +2792,7 @@ export async function POST(request: NextRequest) {
           const mlTrainResult = await trainMLModel();
           result = { mlTraining: mlTrainResult };
         } catch (e: any) {
-          result = { mlTraining: { success: false, error: e.message } };
+          result = { mlTraining: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2802,7 +2802,7 @@ export async function POST(request: NextRequest) {
           const backtestResult = await runBacktest(30);
           result = { backtest: backtestResult };
         } catch (e: any) {
-          result = { backtest: { success: false, error: e.message } };
+          result = { backtest: { success: false, error: 'Erreur interne' } };
         }
         break;
         
@@ -2812,7 +2812,7 @@ export async function POST(request: NextRequest) {
           const mlStats = await getUnifiedMLStats();
           result = { mlStats };
         } catch (e: any) {
-          result = { mlStats: { success: false, error: e.message } };
+          result = { mlStats: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2838,7 +2838,7 @@ export async function POST(request: NextRequest) {
           }
           result = { resetDate: { date: resetDate, resetCount, totalChecked: allPreds.length, zombieFound: zombiePreds.length } };
         } catch (e: any) {
-          result = { resetDate: { success: false, error: e.message } };
+          result = { resetDate: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2861,7 +2861,7 @@ export async function POST(request: NextRequest) {
           const verifyResult = await verifyAllResults();
           result = { resetMLB: { resetCount, ...verifyResult } };
         } catch (e: any) {
-          result = { resetMLB: { success: false, error: e.message } };
+          result = { resetMLB: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -2921,7 +2921,7 @@ export async function POST(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { cleanup: { success: false, error: e.message } };
+          result = { cleanup: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3007,7 +3007,7 @@ export async function POST(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { rebuild: { success: false, error: e.message } };
+          result = { rebuild: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3086,7 +3086,7 @@ export async function POST(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3114,7 +3114,7 @@ export async function POST(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3187,7 +3187,7 @@ export async function POST(request: NextRequest) {
             }
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3261,7 +3261,7 @@ export async function POST(request: NextRequest) {
             }
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3366,7 +3366,7 @@ export async function POST(request: NextRequest) {
             },
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: e.message } };
+          result = { telegram: { success: false, error: 'Erreur interne' } };
         }
         break;
 
@@ -3392,7 +3392,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: false,
       action,
-      error: error.message
+      error: 'Erreur interne'
     }, { status: 500 });
   }
 }

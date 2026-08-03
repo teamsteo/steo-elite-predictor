@@ -30,13 +30,13 @@ export async function GET() {
       const latency = Date.now() - supabaseStart;
       
       if (error) {
-        checks.supabase = { status: 'error', message: error.message, latency };
+        checks.supabase = { status: 'error', message: 'Indisponible', latency };
       } else {
         checks.supabase = { status: 'ok', message: `${count} matchs`, latency };
       }
     }
   } catch (e: any) {
-    checks.supabase = { status: 'error', message: e.message, latency: Date.now() - supabaseStart };
+    checks.supabase = { status: 'error', message: 'Indisponible', latency: Date.now() - supabaseStart };
   }
 
   // 2. Vérifier ESPN
@@ -55,7 +55,7 @@ export async function GET() {
       checks.espn = { status: 'error', message: `HTTP ${response.status}`, latency };
     }
   } catch (e: any) {
-    checks.espn = { status: 'error', message: e.message, latency: Date.now() - espnStart };
+    checks.espn = { status: 'error', message: 'Indisponible', latency: Date.now() - espnStart };
   }
 
   // 3. Vérifier la mémoire

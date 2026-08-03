@@ -5,6 +5,21 @@ import {
   forceUpdate, 
   clearBatchCache 
 } from '@/lib/batchPreCalculation';
+
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré - endpoints write désactivés');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret');
+  const authHeader = request.headers.get('authorization');
+  if (urlSecret === CRON_SECRET) return true;
+  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  return false;
+}
 import { trainModel, getAdaptiveThresholds, getModelStatus, resetModel } from '@/lib/adaptiveThresholdsML';
 import { calculateStats, getStats } from '@/lib/predictionTracker';
 
@@ -46,13 +61,16 @@ export async function GET() {
   } catch (error) {
     console.error('Erreur API batch/ml:', error);
     return NextResponse.json({ 
-      error: 'Erreur lors de la récupération des statuts',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Erreur interne serveur',
+      code: 'BATCH_ML_GET_FAILED'
     }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
   
@@ -124,8 +142,8 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Erreur action batch/ml:', error);
     return NextResponse.json({ 
-      error: 'Erreur lors de l\'exécution',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'Erreur interne serveur',
+      code: 'BATCH_ML_ACTION_FAILED'
     }, { status: 500 });
   }
 }
