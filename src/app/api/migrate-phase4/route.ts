@@ -274,7 +274,8 @@ async function importCalibration() {
     );
 
     if (error) {
-      return NextResponse.json({ success: false, error: error.message });
+      // V-MED-2 FIX: Don't expose raw Supabase error messages to client
+      return NextResponse.json({ success: false, error: 'Echec upsert ml_model', code: error.code || 'UPSERT_ERROR' });
     }
 
     return NextResponse.json({

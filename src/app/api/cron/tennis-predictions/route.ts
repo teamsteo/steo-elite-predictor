@@ -14,11 +14,11 @@ const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function GET(request: Request) {
   try {
-    // Vérifier le secret si configuré
+    // Vérifier le secret (SECURITY FIX: fail if secret is missing, not skip)
     const { searchParams } = new URL(request.url);
     const secret = searchParams.get('secret');
     
-    if (CRON_SECRET && secret !== CRON_SECRET) {
+    if (!CRON_SECRET || secret !== CRON_SECRET) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
