@@ -38,7 +38,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=[nouvelle clé anon]
 SUPABASE_SERVICE_ROLE_KEY=[nouvelle clé service_role]
 AUTH_SECRET=[générer: openssl rand -base64 32]
 NEXTAUTH_URL=[URL du site Vercel]
-CRON_SECRET=steo-elite-cron-2026
+CRON_SECRET=[VOTRE_CRON_SECRET]
 ```
 
 ## ÉTAPE 5: Migrer les données (Optionnel)
@@ -94,5 +94,5 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=[nouvelle clé anon]
 SUPABASE_SERVICE_ROLE_KEY=[nouvelle clé service_role]
 AUTH_SECRET=[générer nouvelle clé]
 NEXTAUTH_URL=https://[votre-site].vercel.app
-CRON_SECRET=steo-elite-cron-2026
+CRON_SECRET=[VOTRE_CRON_SECRET]
 ```

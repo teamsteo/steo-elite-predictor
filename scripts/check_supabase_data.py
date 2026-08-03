@@ -1,9 +1,16 @@
 """Quick check: what data exists in Supabase predictions table"""
 import os
+import sys
 from supabase import create_client
 
-SUPABASE_URL = "https://aumsrakioetvvqopthbs.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bXNyYWtpb2V0dnZxb3B0aGJzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzc1NTAyNiwiZXhwIjoyMDg5MzMxMDI2fQ.cHkaxhUKCs5hpVLriZN9IHfoRfFuyvMNKOobP5cja14"
+SUPABASE_URL = os.environ.get('NEXT_PUBLIC_SUPABASE_URL') or os.environ.get('SUPABASE_URL')
+if not SUPABASE_URL:
+    print('Erreur: SUPABASE_URL non configuré')
+    sys.exit(1)
+SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_ROLE_KEY')
+if not SUPABASE_KEY:
+    print('Erreur: SUPABASE_SERVICE_ROLE_KEY non configuré')
+    sys.exit(1)
 
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 

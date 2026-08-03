@@ -1377,7 +1377,7 @@ Agent: Main Assistant
 Task: Intégration The Odds API + Gestion Quota + Documentation
 
 Work Log:
-- Test de la clé The Odds API (fcf0d3cbc8958a44007b0520751f8431) - FONCTIONNE
+- Test de la clé The Odds API ([VOTRE_CLE_API_THE_ODDS]) - FONCTIONNE
 - Création de oddsApiManager.ts avec gestion intelligente du quota (500/mois, 15/jour)
 - Création de combinedDataService.ts pour fusionner ESPN + Odds API
 - Mise à jour de l'API matches pour utiliser les vraies cotes
@@ -1665,11 +1665,11 @@ npm run tennis:daily
 npm run tennis:learn
 
 # Appel API direct
-curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=daily"
-curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=valuebets"
-curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=learn"
-curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=backtest"
-curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=status"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=[VOTRE_CRON_SECRET]&action=daily"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=[VOTRE_CRON_SECRET]&action=valuebets"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=[VOTRE_CRON_SECRET]&action=learn"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=[VOTRE_CRON_SECRET]&action=backtest"
+curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=[VOTRE_CRON_SECRET]&action=status"
 ```
 
 ### Variables d'Environnement Requises
@@ -1677,7 +1677,7 @@ curl "http://localhost:3000/api/cron/tennis-auto-publish?secret=steo-elite-cron-
 ```
 TELEGRAM_BOT_TOKEN=xxx    # Bot Telegram pour publications
 TELEGRAM_CHAT_ID=xxx      # Channel/Chat ID pour publications
-CRON_SECRET=steo-elite-cron-2026  # Secret pour authentification CRON
+CRON_SECRET=[VOTRE_CRON_SECRET]  # Secret pour authentification CRON
 GITHUB_TOKEN=ghp_xxx      # Token GitHub pour persistance
 ```
 

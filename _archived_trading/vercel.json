@@ -15,11 +15,11 @@
   ],
   "crons": [
     {
-      "path": "/api/cron?secret=steo-elite-cron-2026&action=precalc",
+      "path": "/api/cron?secret=[REDACTED]&action=precalc",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify",
+      "path": "/api/cron?secret=[REDACTED]&action=verify",
       "schedule": "0 7 * * *"
     }
   ]

@@ -13,7 +13,7 @@
 
 ### Base de Données (Supabase)
 ```
-URL: https://aumsrakioetvvqopthbs.supabase.co
+URL: [VOTRE_URL_SUPABASE]
 Region: eu-west-1
 Tables principales:
 ├── ml_patterns (17 patterns ML validés)
@@ -28,10 +28,10 @@ Tables principales:
 
 ### Variables d'Environnement Requises
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://aumsrakioetvvqopthbs.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+NEXT_PUBLIC_SUPABASE_URL=[VOTRE_URL_SUPABASE]
+SUPABASE_SERVICE_ROLE_KEY=[VOTRE_CLE_SUPABASE]
 GITHUB_TOKEN=ghp_...
-CRON_SECRET=steo-elite-cron-2026
+CRON_SECRET=[VOTRE_CRON_SECRET]
 THE_ODDS_API_KEY=...
 ```
 
@@ -248,7 +248,7 @@ fetchMLBMatches(): Promise<Match[]>
 ### Erreurs Courantes
 1. **`oddsDraw.toFixed is not a function`**: Toujours vérifier `oddsDraw != null && typeof oddsDraw === 'number'`
 2. **Build Vercel**: Utiliser `bun run build` (pas npm)
-3. **Crons**: Nécessitent `secret=steo-elite-cron-2026` dans l'URL
+3. **Crons**: Nécessitent `secret=[VOTRE_CRON_SECRET]` dans l'URL
 
 ### Commandes Utiles
 ```bash
@@ -270,7 +270,7 @@ curl http://localhost:3000/api/matches?sport=all
 ## 📞 CONTACTS & LIENS
 
 - **Vercel Dashboard**: https://vercel.com/steohidys-projects
-- **Supabase Dashboard**: https://supabase.com/dashboard/project/aumsrakioetvvqopthbs
+- **Supabase Dashboard**: https://supabase.com/dashboard/project/[VOTRE_PROJET]
 - **GitHub Repo**: https://github.com/steohidy/my-project
 
 ---

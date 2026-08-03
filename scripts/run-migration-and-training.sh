@@ -12,7 +12,7 @@
 #   ./scripts/run-migration-and-training.sh <APP_URL> [SECRET]
 #
 #   APP_URL = URL de votre app Vercel (ex: https://steo-elite.vercel.app)
-#   SECRET  = CRON_SECRET (défaut: steo-elite-cron-2026)
+#   SECRET  = CRON_SECRET (obligatoire)
 #
 # Exemples:
 #   ./scripts/run-migration-and-training.sh https://steo-elite.vercel.app
@@ -22,7 +22,11 @@
 set -euo pipefail
 
 APP_URL="${1:-}"
-SECRET="${2:-steo-elite-cron-2026}"
+SECRET="${2}"
+if [ -z "$SECRET" ]; then
+  echo "Usage: $0 <url> <secret>"
+  exit 1
+fi
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
@@ -35,7 +39,7 @@ if [ -z "$APP_URL" ]; then
   echo "  ./scripts/run-migration-and-training.sh <APP_URL> [SECRET]"
   echo ""
   echo "  APP_URL = URL de votre app Vercel"
-  echo "  SECRET  = CRON_SECRET (défaut: steo-elite-cron-2026)"
+  echo "  SECRET  = CRON_SECRET (obligatoire)"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""

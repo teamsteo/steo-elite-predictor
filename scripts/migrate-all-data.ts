@@ -7,12 +7,28 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Ancienne base de données (source)
-const OLD_SUPABASE_URL = 'https://aumsrakioetvvqopthbs.supabase.co';
-const OLD_SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bXNyYWtpb2V0dnZxb3B0aGJzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzc1NTAyNiwiZXhwIjoyMDg5MzMxMDI2fQ.cHkaxhUKCs5hpVLriZN9IHfoRfFuyvMNKOobP5cja14';
+const OLD_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+if (!OLD_SUPABASE_URL) {
+  console.error('Erreur: SUPABASE_URL non configuré');
+  process.exit(1);
+}
+const OLD_SUPABASE_SERVICE_KEY = process.env.OLD_SUPABASE_SERVICE_ROLE_KEY;
+if (!OLD_SUPABASE_SERVICE_KEY) {
+  console.error('Erreur: OLD_SUPABASE_SERVICE_ROLE_KEY non configuré');
+  process.exit(1);
+}
 
 // Nouvelle base de données (destination)
-const NEW_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://jlqfcyphqpqzmerqzncr.supabase.co';
-const NEW_SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpscWZjeXBocXBxem1lcnF6bmNyIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MDkzMDY2NSwiZXhwIjoyMDU2NTA2NjY1fQ.JQb6NV7oG2Z0Nr9rPRmX2eUfWCdKVOyPZLLOUJrI-PU';
+const NEW_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+if (!NEW_SUPABASE_URL) {
+  console.error('Erreur: SUPABASE_URL non configuré');
+  process.exit(1);
+}
+const NEW_SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!NEW_SUPABASE_SERVICE_KEY) {
+  console.error('Erreur: SUPABASE_SERVICE_ROLE_KEY non configuré');
+  process.exit(1);
+}
 
 async function migrateData() {
   console.log('🚀 Début de la migration complète des données...\n');

@@ -1,5 +1,9 @@
-const SITE_URL = 'https://my-project-zeta-five-85.vercel.app';
-const SECRET = 'secretsteo-elitecron2026';
+const SITE_URL = process.env.SITE_URL || 'https://my-project-zeta-five-85.vercel.app';
+const SECRET = process.env.CRON_SECRET;
+if (!SECRET) {
+  console.error('CRON_SECRET non configuré');
+  process.exit(1);
+}
 
 async function deepCheck() {
   // Try the cron's telegram-summary to see what data the ML pipeline produces NOW

@@ -33,7 +33,7 @@ Agent: Main Agent
 Task: Phase 4 — Préparation migration + training deployment
 
 Work Log:
-- Tentative d'exécution directe migration SQL: DNS Supabase (aumsrakioetvvqopthbs.supabase.co) retourne NXDOMAIN
+- Tentative d'exécution directe migration SQL: DNS Supabase ([VOTRE_URL_SUPABASE]) retourne NXDOMAIN
 - Créé API route /api/migrate-phase4 pour vérifier les tables depuis Vercel (avec vrais env vars)
 - API route vérifie existence de prediction_outcomes, odds_history, ml_model via REST
 - Si tables manquantes: retourne le SQL à exécuter + instructions

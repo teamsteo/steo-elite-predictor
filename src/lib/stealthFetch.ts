@@ -73,7 +73,7 @@ const RATE_LIMITS: Record<string, number> = {
   // Délai minimum entre 2 requêtes vers le même domaine (ms)
   'site.api.espn.com': 300,        // ESPN: assez permissif mais ne pas abuser
   'api.the-odds-api.com': 2000,    // Odds API: quota strict (500/mois)
-  'aumsrakioetvvqopthbs.supabase.co': 100, // Supabase: permissif
+  '[VOTRE_URL_SUPABASE]': 100, // Supabase: permissif
 };
 
 const DEFAULT_RATE_LIMIT = 500; // 500ms par défaut entre requêtes

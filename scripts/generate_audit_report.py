@@ -258,7 +258,7 @@ story.append(Paragraph(
     "des backups complets du projet.", sBody))
 
 story.append(Paragraph(
-    "Le fallback de CRON_SECRET est defini comme 'steo-elite-cron-2026' dans 19 fichiers routes. Bien que "
+    "Le fallback de CRON_SECRET est defini comme '[REDACTED]' dans 19 fichiers routes. Bien que "
     "la variable d'environnement CRON_SECRET soit attendue en production, le fallback hardcode signifie que "
     "si la variable est absente (oubli de configuration, redeploiement incomplet), l'endpoint reste protege "
     "par un secret predicable et publiquement visible dans le code source. De meme, BACKUP_SECRET utilise "

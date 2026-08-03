@@ -25,7 +25,7 @@ NEXTAUTH_URL=https://[VOTRE-NOUVEAU-SITE].vercel.app
 # ===========================================
 # 🟡 OPTIONNEL - CRON
 # ===========================================
-CRON_SECRET=steo-elite-cron-2026
+CRON_SECRET=[VOTRE_SECRET_CRON_32_CHARS]
 
 # ===========================================
 # 🟡 OPTIONNEL - APIs SPORTIVES

@@ -1,9 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  'https://aumsrakioetvvqopthbs.supabase.co',
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bXNyYWtpb2V0dnZxb3B0aGJzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5NjI2MTcsImV4cCI6MjA1ODUzODYxN30.qBQJ-3W8fPDJz1Y9nPq4wMxf-LCqLrE8k-xL5ejKPyM'
-);
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+if (!SUPABASE_URL) {
+  console.error('Erreur: SUPABASE_URL non configuré');
+  process.exit(1);
+}
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+if (!SUPABASE_KEY) {
+  console.error('Erreur: SUPABASE_ANON_KEY non configuré');
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 console.log('═══════════════════════════════════════════════════════════════');
 console.log('         🎯 ANALYSE ACCUMULATEUR MULTI-SPORTS');

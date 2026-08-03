@@ -1,8 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
 
-// URL de la base utilisée dans mes scripts
-const URL_USED = 'https://aumsrakioetvvqopthbs.supabase.co';
-const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF1bXNyYWtpb2V0dnZxb3B0aGJzIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Mzc1NTAyNiwiZXhwIjoyMDg5MzMxMDI2fQ.cHkaxhUKCs5hpVLriZN9IHfoRfFuyvMNKOobP5cja14';
+const URL_USED = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+if (!URL_USED) {
+  console.error('Erreur: SUPABASE_URL non configuré');
+  process.exit(1);
+}
+const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!KEY) {
+  console.error('Erreur: SUPABASE_SERVICE_ROLE_KEY non configuré');
+  process.exit(1);
+}
 
 const supabase = createClient(URL_USED, KEY);
 

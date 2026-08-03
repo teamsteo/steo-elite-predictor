@@ -3,7 +3,7 @@
 ## ✅ Modifications Effectuées
 
 ### 1. Intégration The Odds API
-- **Clé API configurée**: `fcf0d3cbc8958a44007b0520751f8431`
+- **Clé API configurée**: `[VOTRE_CLE_API_THE_ODDS]`
 - **Quota**: 500 requêtes/mois
 - **Gestion intelligente**: 
   - Cache 2 heures
@@ -46,7 +46,7 @@ git push origin master
 
 3. **Vérifier les variables d'environnement sur Vercel**:
 ```
-THE_ODDS_API_KEY=fcf0d3cbc8958a44007b0520751f8431
+THE_ODDS_API_KEY=[VOTRE_CLE_API_THE_ODDS]
 ```
 
 ---

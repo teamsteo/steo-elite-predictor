@@ -14,7 +14,7 @@ import { PredictionStore } from '@/lib/store';
 import { ExpertAdviceStore } from '@/lib/expertAdviceStore';
 
 // Secret pour sécuriser le cron
-const CRON_SECRET = process.env.CRON_SECRET || 'steo-elite-cron-2026';
+const CRON_SECRET = process.env.CRON_SECRET || '[REDACTED]';
 
 // Interfaces
 interface MatchResult {
