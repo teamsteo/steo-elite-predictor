@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PredictionStore } from '@/lib/store';
 import { ExpertAdviceStore } from '@/lib/expertAdviceStore';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -18,10 +19,10 @@ if (!CRON_SECRET) {
 function verifyRequestAuth(request: Request): boolean {
   if (!CRON_SECRET) return false;
   const url = new URL(request.url);
-  const urlSecret = url.searchParams.get('secret');
-  const authHeader = request.headers.get('authorization');
-  if (urlSecret === CRON_SECRET) return true;
-  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  const urlSecret = url.searchParams.get('secret') || '';
+  const authHeader = request.headers.get('authorization') || '';
+  if (timingSafeEqual(urlSecret, CRON_SECRET)) return true;
+  if (timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) return true;
   return false;
 }
 
@@ -317,7 +318,7 @@ export async function GET(request: NextRequest) {
   
   const providedSecret = authHeader?.replace('Bearer ', '') || urlSecret;
   
-  if (providedSecret !== CRON_SECRET) {
+  if (!CRON_SECRET || !timingSafeEqual(providedSecret || '', CRON_SECRET)) {
     return NextResponse.json(
       { error: 'Non autorisé' },
       { status: 401 }

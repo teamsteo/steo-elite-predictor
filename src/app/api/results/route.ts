@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import PredictionStore from '@/lib/store';
 import * as fs from 'fs';
 import * as path from 'path';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Configuration GitHub
 const GITHUB_REPO = 'steohidy/my-project';
@@ -711,7 +712,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Service non configuré' }, { status: 503 });
       }
       
-      if (adminToken !== expectedToken) {
+      if (!timingSafeEqual(adminToken || '', expectedToken)) {
         return NextResponse.json({ 
           error: 'Token administrateur requis' 
         }, { status: 403 });

@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Market data API error:', error);
     return NextResponse.json(
-      { error: 'Internal server error', details: String(error) },
+      { error: 'Internal server error', code: 'MARKET_FETCH_FAILED' },
       { status: 500 }
     );
   }

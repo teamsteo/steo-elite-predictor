@@ -8,6 +8,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Vérification du secret pour sécuriser le cron
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const secret = searchParams.get('secret');
     
-    if (!CRON_SECRET || secret !== CRON_SECRET) {
+    if (!CRON_SECRET || !timingSafeEqual(secret || '', CRON_SECRET)) {
       return NextResponse.json(
         { error: 'Unauthorized' },
         { status: 401 }
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('❌ Erreur cron tennis:', error);
     return NextResponse.json(
-      { error: 'Erreur serveur', message: String(error) },
+      { error: 'Erreur serveur', message: 'Erreur interne', code: 'TENNIS_PRED_ERROR' },
       { status: 500 }
     );
   }

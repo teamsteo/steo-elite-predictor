@@ -12,7 +12,10 @@
  */
 
 // Configuration
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
+if (!ODDS_API_KEY) {
+  console.warn('[OddsApiManager] ⚠️ THE_ODDS_API_KEY / ODDS_API_KEY is not set. Odds API calls will be skipped.');
+}
 const BASE_URL = 'https://api.the-odds-api.com/v4';
 
 // Quota mensuel
@@ -170,6 +173,11 @@ async function makeApiRequest(endpoint: string): Promise<{
  */
 export async function fetchAndCacheOdds(): Promise<CacheData> {
   const cache = getCache();
+  
+  if (!ODDS_API_KEY) {
+    console.log('[OddsApiManager] ⚠️ API key not configured, returning cached data');
+    return cache;
+  }
   
   // Vérifier si le cache est valide
   if (isCacheValid(cache) && cache.matches.length > 0) {

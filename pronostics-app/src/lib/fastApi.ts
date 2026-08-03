@@ -15,7 +15,10 @@ const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
 // The Odds API Key
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
+if (!ODDS_API_KEY) {
+  console.warn('[FastApi] ⚠️ THE_ODDS_API_KEY / ODDS_API_KEY is not set. Odds API calls will be skipped.');
+}
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Timeout très court pour Vercel
@@ -576,6 +579,11 @@ async function fastEuropeanMatches(): Promise<any[]> {
   
   if (isCacheValid(cacheKey)) {
     return cache.get(cacheKey)!.data;
+  }
+  
+  if (!ODDS_API_KEY) {
+    console.log('[FastApi] ⚠️ Odds API key not configured, skipping European matches');
+    return [];
   }
   
   try {

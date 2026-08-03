@@ -20,79 +20,79 @@
   ],
   "crons": [
     {
-      "path": "/api/admin/cleanup?secret=secretsteo-elitecron2026&dryRun=false",
+      "path": "/api/admin/cleanup?dryRun=false",
       "schedule": "0 10 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=verify-evening",
+      "path": "/api/cron?action=verify-evening",
       "schedule": "30 2 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=verify-morning",
+      "path": "/api/cron?action=verify-morning",
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=verify-night",
+      "path": "/api/cron?action=verify-night",
       "schedule": "0 5 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=train-ml",
+      "path": "/api/cron?action=train-ml",
       "schedule": "15 5 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=backtest",
+      "path": "/api/cron?action=backtest",
       "schedule": "30 5 * * 0"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-results",
+      "path": "/api/cron?action=telegram-results",
       "schedule": "30 5 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-kamikaze-bilan",
+      "path": "/api/cron?action=telegram-kamikaze-bilan",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/generate-daily?secret=secretsteo-elitecron2026",
+      "path": "/api/cron/generate-daily",
       "schedule": "30 5 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=update-fundamentals",
+      "path": "/api/cron?action=update-fundamentals",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
+      "path": "/api/cron?action=telegram-summary",
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=summary",
+      "path": "/api/cron/tennis-auto-publish?mode=summary",
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=secretsteo-elitecron2026&mode=results",
+      "path": "/api/cron/tennis-auto-publish?mode=results",
       "schedule": "0 11 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-kamikaze",
+      "path": "/api/cron?action=telegram-kamikaze",
       "schedule": "0 13 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-summary",
+      "path": "/api/cron?action=telegram-summary",
       "schedule": "0 18 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-monthly",
+      "path": "/api/cron?action=telegram-monthly",
       "schedule": "0 4 1 * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-combo",
+      "path": "/api/cron?action=telegram-combo",
       "schedule": "30 7 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-combo",
+      "path": "/api/cron?action=telegram-combo",
       "schedule": "30 12 * * *"
     },
     {
-      "path": "/api/cron?secret=secretsteo-elitecron2026&action=telegram-combo",
+      "path": "/api/cron?action=telegram-combo",
       "schedule": "0 17 * * *"
     }
   ]

@@ -47,7 +47,8 @@ export async function GET(request: Request) {
     console.error('[BacktestAPI] Erreur:', error);
     return NextResponse.json({
       success: false,
-      error: String(error),
+      error: 'Erreur interne serveur',
+      code: 'TENNIS_BACKTEST_ERROR',
       timestamp: new Date().toISOString(),
     }, { status: 500 });
   }

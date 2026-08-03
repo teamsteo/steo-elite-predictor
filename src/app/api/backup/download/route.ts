@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Configuration
 const BACKUP_SECRET = process.env.BACKUP_SECRET;
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   const format = searchParams.get('format') || 'json'; // json ou files
 
   // Vérification du secret
-  if (secret !== BACKUP_SECRET) {
+  if (!BACKUP_SECRET || !timingSafeEqual(secret || '', BACKUP_SECRET)) {
     return NextResponse.json({
       error: 'Non autorisé'
     }, { status: 401 });

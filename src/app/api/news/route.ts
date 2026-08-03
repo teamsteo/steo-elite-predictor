@@ -387,7 +387,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Economic news API error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch economic news', details: String(error) },
+      { error: 'Failed to fetch economic news', code: 'NEWS_FETCH_FAILED' },
       { status: 500 }
     );
   }

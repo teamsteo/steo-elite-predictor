@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Secret généré pour sécuriser l'API de scraping
 // SCRAPE_SECRET must be set via environment variable
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
   const secret = searchParams.get('secret');
   
   // Vérification du secret uniquement — User-Agent bypass supprimé (SECURITY FIX)
-  const hasValidSecret = SCRAPE_SECRET && secret === SCRAPE_SECRET;
+  const hasValidSecret = SCRAPE_SECRET && timingSafeEqual(secret || '', SCRAPE_SECRET);
   
   if (!hasValidSecret) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });

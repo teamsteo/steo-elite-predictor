@@ -35,7 +35,10 @@ export interface QuotaStatus {
 // CONFIGURATION
 // ============================================
 
-const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
+if (!ODDS_API_KEY) {
+  console.warn('[OddsQuota] ⚠️ THE_ODDS_API_KEY / ODDS_API_KEY is not set. Odds API calls will be skipped.');
+}
 const ODDS_API_BASE = 'https://api.the-odds-api.com/v4';
 
 // Cache valide 12 heures (les cotes ne changent pas beaucoup)

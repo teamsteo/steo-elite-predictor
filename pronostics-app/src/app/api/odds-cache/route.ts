@@ -6,6 +6,7 @@ import {
   getMatchesFromCache,
   getPublicStats,
 } from '@/lib/oddsApiManager';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // ============================================
 // AUTHENTIFICATION
@@ -18,10 +19,10 @@ if (!CRON_SECRET) {
 function verifyRequestAuth(request: Request): boolean {
   if (!CRON_SECRET) return false;
   const url = new URL(request.url);
-  const urlSecret = url.searchParams.get('secret');
-  const authHeader = request.headers.get('authorization');
-  if (urlSecret === CRON_SECRET) return true;
-  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
+  const urlSecret = url.searchParams.get('secret') || '';
+  const authHeader = request.headers.get('authorization') || '';
+  if (timingSafeEqual(urlSecret, CRON_SECRET)) return true;
+  if (timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) return true;
   return false;
 }
 

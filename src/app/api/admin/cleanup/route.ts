@@ -11,17 +11,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import SupabaseStore from '@/lib/db-supabase';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 const ADMIN_SECRET = process.env.CRON_SECRET;
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
-}
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);

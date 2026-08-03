@@ -207,7 +207,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Signals API error:', error);
     return NextResponse.json(
-      { error: 'Internal server error', details: String(error) },
+      { error: 'Internal server error', code: 'SIGNALS_FETCH_FAILED' },
       { status: 500 }
     );
   }

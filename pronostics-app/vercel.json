@@ -20,31 +20,31 @@
   ],
   "crons": [
     {
-      "path": "/api/cron?secret=steo-elite-cron-2026&action=precalc",
+      "path": "/api/cron?action=precalc",
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron?secret=steo-elite-cron-2026&action=verify",
+      "path": "/api/cron?action=verify",
       "schedule": "0 7 * * *"
     },
     {
-      "path": "/api/cron-ml?action=auto&secret=steo-elite-cron-2026",
+      "path": "/api/cron-ml?action=auto",
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=daily",
+      "path": "/api/cron/tennis-auto-publish?action=daily",
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=valuebets",
+      "path": "/api/cron/tennis-auto-publish?action=valuebets",
       "schedule": "0 */4 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=learn",
+      "path": "/api/cron/tennis-auto-publish?action=learn",
       "schedule": "0 20 * * *"
     },
     {
-      "path": "/api/cron/tennis-auto-publish?secret=steo-elite-cron-2026&action=backtest",
+      "path": "/api/cron/tennis-auto-publish?action=backtest",
       "schedule": "0 9 * * 0"
     }
   ]

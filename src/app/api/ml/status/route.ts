@@ -86,7 +86,8 @@ export async function GET() {
     console.error('Erreur ML status:', error);
     return NextResponse.json({
       success: false,
-      error: String(error),
+      error: 'Erreur interne serveur',
+      code: 'ML_STATUS_ERROR',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }

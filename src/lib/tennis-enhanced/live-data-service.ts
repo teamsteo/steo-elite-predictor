@@ -351,10 +351,10 @@ export async function fetchUpcomingMatches(): Promise<UpcomingMatch[]> {
     return upcomingMatchesCache.matches;
   }
   
-  const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY || 'fcf0d3cbc8958a44007b0520751f8431';
+  const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
   
   if (!apiKey) {
-    console.log('[TennisLiveData] ⚠️ THE_ODDS_API_KEY non configurée');
+    console.warn('[TennisLiveData] ⚠️ THE_ODDS_API_KEY / ODDS_API_KEY is not set. Odds API calls will be skipped.');
     return [];
   }
   

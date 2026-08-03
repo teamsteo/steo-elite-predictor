@@ -454,7 +454,8 @@ export async function GET(request: Request) {
     console.error('Erreur API challenges:', error);
     return NextResponse.json({
       success: false,
-      error: String(error),
+      error: 'Erreur interne serveur',
+      code: 'CHALLENGES_FETCH_FAILED',
       challenges: [],
       summary: {
         totalScanned: 0,
@@ -495,6 +496,6 @@ export async function POST(request: Request) {
     
   } catch (error) {
     console.error('Erreur POST challenges:', error);
-    return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Erreur interne serveur', code: 'CHALLENGES_ERROR' }, { status: 500 });
   }
 }

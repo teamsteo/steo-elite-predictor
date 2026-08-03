@@ -1,4 +1,20 @@
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
+
+const CRON_SECRET = process.env.CRON_SECRET;
+if (!CRON_SECRET) {
+  console.error('[SECURITY] CRON_SECRET non configuré');
+}
+
+function verifyRequestAuth(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const url = new URL(request.url);
+  const urlSecret = url.searchParams.get('secret') || '';
+  const authHeader = request.headers.get('authorization') || '';
+  if (timingSafeEqual(urlSecret, CRON_SECRET)) return true;
+  if (timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) return true;
+  return false;
+}
 
 // Configuration
 const ODDS_API_KEY = process.env.THE_ODDS_API_KEY;
@@ -253,7 +269,10 @@ export async function GET() {
 /**
  * POST - Forcer le rafraîchissement
  */
-export async function POST() {
+export async function POST(request: Request) {
+  if (!verifyRequestAuth(request)) {
+    return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+  }
   const cache = getCache();
   
   // Vider le cache pour forcer le rechargement

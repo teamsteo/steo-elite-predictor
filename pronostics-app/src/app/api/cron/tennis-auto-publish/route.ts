@@ -44,6 +44,7 @@ import {
 import { runBacktest } from '@/lib/tennis-backtesting';
 import * as fs from 'fs';
 import * as path from 'path';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // ============================================
 // CONFIGURATION
@@ -115,11 +116,12 @@ interface CronResult {
 // ============================================
 
 function verifyAuth(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
-  const urlSecret = new URL(request.url).searchParams.get('secret');
+  if (!CRON_SECRET) return false;
+  const authHeader = request.headers.get('authorization') || '';
+  const urlSecret = new URL(request.url).searchParams.get('secret') || '';
   
-  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
-  if (urlSecret === CRON_SECRET) return true;
+  if (timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) return true;
+  if (timingSafeEqual(urlSecret, CRON_SECRET)) return true;
   
   return false;
 }

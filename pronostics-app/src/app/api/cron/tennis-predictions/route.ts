@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { publishTopPredictions, publishValueBetAlert } from '@/lib/tennis-telegram-publisher';
 import * as fs from 'fs';
 import * as path from 'path';
+import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // ============================================
 // CONFIGURATION
@@ -34,11 +35,12 @@ if (!CRON_SECRET) {
 // ============================================
 
 function verifyAuth(request: NextRequest): boolean {
-  const authHeader = request.headers.get('authorization');
-  const urlSecret = new URL(request.url).searchParams.get('secret');
+  if (!CRON_SECRET) return false;
+  const authHeader = request.headers.get('authorization') || '';
+  const urlSecret = new URL(request.url).searchParams.get('secret') || '';
   
-  if (authHeader === `Bearer ${CRON_SECRET}`) return true;
-  if (urlSecret === CRON_SECRET) return true;
+  if (timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) return true;
+  if (timingSafeEqual(urlSecret, CRON_SECRET)) return true;
   
   return false;
 }
