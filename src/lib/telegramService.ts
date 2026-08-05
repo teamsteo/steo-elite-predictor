@@ -2105,7 +2105,21 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
         allDayPredictions.push(p);
       }
     }
-    if (allDayPredictions.length === 0) return false;
+    
+    // 🔍 LOG DIAGNOSTIC: aider à comprendre pourquoi le bilan est vide
+    console.log(`💣 [BILAN KAMIKAZE] Date: ${targetDate} + ${nextDay}`);
+    console.log(`💣 [BILAN KAMIKAZE] Trouvé: ${dayPreds.length} (jour) + ${nextDayPreds.length} (lendemain) = ${allDayPredictions.length} total (après dédup)`);
+    if (allDayPredictions.length > 0) {
+      const riskBreakdown = allDayPredictions
+        .filter(p => !p.is_combo)
+        .map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status }));
+      console.log(`💣 [BILAN KAMIKAZE] Détails risk:`, JSON.stringify(riskBreakdown.slice(0, 10)));
+    }
+    
+    if (allDayPredictions.length === 0) {
+      console.log('💣 [BILAN KAMIKAZE] Aucune prédiction trouvée pour cette date');
+      return false;
+    }
 
     // ⚠️ UNIQUEMENT les kamikazes (risk_percentage > 50)
     // 🎾 EXCLURE le tennis des pronostics Telegram
@@ -2116,7 +2130,13 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
       if (sport === 'tennis') return false;
       return true;
     });
-    if (kamikazePredictions.length === 0) return false;
+    
+    console.log(`💣 [BILAN KAMIKAZE] Kamikazes filtrés: ${kamikazePredictions.length} (risk > 50, non-combo, non-tennis)`);
+    
+    if (kamikazePredictions.length === 0) {
+      console.log('💣 [BILAN KAMIKAZE] Aucun kamikaze trouvé — toutes les prédictions ont risk <= 50');
+      return false;
+    }
 
     // Calculer les stats
     let wins = 0;

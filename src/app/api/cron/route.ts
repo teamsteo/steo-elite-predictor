@@ -2025,14 +2025,56 @@ export async function GET(request: NextRequest) {
                   odds_away: p.oddsAway || 1.0,
                   predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
-                  risk_percentage: p.riskPercentage || 50,
+                  risk_percentage: p.riskPercentage ?? 50,
                   status: 'pending' as const,
                 };
               });
+              console.log(`💾 Sauvegarde summary: ${toSave.length} pronostics, risk breakdown: ${JSON.stringify(toSave.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport })))}`);
               const saved = await SupabaseStore.addPredictions(dbPredictions);
               console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${toSave.length} publiés)`);
             } else {
               console.log('⚠️ Aucun pronostic à sauvegarder (liste vide)');
+            }
+            
+            // 💣 SAUVEGARDER AUSSI les kamikazes séparément (même si safe/modéré existent)
+            // Le cron telegram-kamikaze à 13h UTC peut ne rien trouver (matchs US terminés)
+            // → sauvegarder les kamikazes ici garantit qu'ils seront dans le bilan
+            if (publishedList.length > 0) {
+              const nonTennis = predictions.filter((p: any) => {
+                const sport = (p.sport || '').toLowerCase();
+                return !['tennis'].includes(sport);
+              });
+              const kamikazePicks = nonTennis.filter((p: any) => isKamikaze(p.riskPercentage));
+              const kamikazeToSave = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
+              
+              if (kamikazeToSave.length > 0) {
+                const kamikazeDbPredictions = kamikazeToSave.map((p: any) => {
+                  const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                  const dateStr = (p.date || '').split('T')[0] || todayISO;
+                  const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                  const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                  const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                  return {
+                    match_id: matchId,
+                    home_team: p.homeTeam,
+                    away_team: p.awayTeam,
+                    league: p.league || 'Unknown',
+                    sport: (p.sport || 'football').toLowerCase(),
+                    match_date: p.date || new Date().toISOString(),
+                    odds_home: p.oddsHome || 1.0,
+                    odds_draw: p.oddsDraw || null,
+                    odds_away: p.oddsAway || 1.0,
+                    predicted_result: p.predictedResult || 'home',
+                    confidence: p.confidence || 'medium',
+                    risk_percentage: p.riskPercentage ?? 50,
+                    status: 'pending' as const,
+                  };
+                });
+                const kSaved = await SupabaseStore.addPredictions(kamikazeDbPredictions);
+                console.log(`💣 [SUMMARY] ${kSaved} kamikazes sauvegardés en plus (total kamikazes: ${kamikazeToSave.length})`);
+              } else {
+                console.log('📊 [SUMMARY] Aucun kamikaze à sauvegarder en plus (tous les matchs sont safe/modéré)');
+              }
             }
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
@@ -2345,12 +2387,16 @@ export async function GET(request: NextRequest) {
                   odds_away: p.oddsAway || 1.0,
                   predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
-                  risk_percentage: p.riskPercentage || 50,
+                  risk_percentage: p.riskPercentage ?? 50,
                   status: 'pending' as const,
                 };
               });
+            console.log(`💣 Sauvegarde kamikaze GET: ${kamikazeFiltered.length} kamikazes, risk breakdown: ${JSON.stringify(kamikazeFiltered.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, t: p.homeTeam })))}`);
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 ${saved} pronostics kamikaze PUBLIÉS sauvegardés dans Supabase (sur ${kamikazeCount} kamikazes totaux)`);
+            if (saved === 0 && kamikazeFiltered.length > 0) {
+              console.error('💣 [ALERTE] Sauvegarde kamikaze GET ÉCHOUÉE — 0 enregistrement sauvegardé malgré ${kamikazeFiltered.length} kamikazes!');
+            }
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde kamikaze Supabase:', e.message);
           }
@@ -3004,12 +3050,16 @@ export async function POST(request: NextRequest) {
                 odds_away: p.oddsAway || 1.0,
                 predicted_result: p.predictedResult || 'home',
                 confidence: p.confidence || 'medium',
-                risk_percentage: p.riskPercentage || 50,
+                risk_percentage: p.riskPercentage ?? 50,
                 status: 'pending' as const,
               };
             });
+            console.log(`💣 Sauvegarde kamikaze POST: ${kamikazeFiltered.length} kamikazes, risk: ${JSON.stringify(kamikazeFiltered.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, t: p.homeTeam })))}`);
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 [POST] ${saved} pronostics kamikaze sauvegardés en Supabase (sur ${kamikazeCount} totaux)`);
+            if (saved === 0 && kamikazeFiltered.length > 0) {
+              console.error('💣 [ALERTE] Sauvegarde kamikaze POST ÉCHOUÉE — 0 enregistrement!');
+            }
           } catch (e: any) {
             console.log('⚠️ [POST] Erreur sauvegarde kamikaze:', e.message);
           }

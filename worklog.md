@@ -77,3 +77,50 @@
 
 ## Verification
 - `npx tsc --noEmit` — passes with 0 errors
+
+---
+
+## Priority 6: Kamikaze Bilan Bug Fix
+
+### 6.1 DIAGNOSTIC — Kamikaze bilan always shows "aucun match"
+
+**Root Cause Analysis:**
+The `publishKamikazeBilanToTelegram()` function queries Supabase for predictions with `risk_percentage > 50` from the previous day. Despite daily kamikaze publications on Telegram, the bilan always returned no matches.
+
+**Investigation findings:**
+1. The cron `telegram-summary` at 07:00 UTC saves ONLY safe/moderate predictions (risk ≤ 25-30%). Kamikazes are saved ONLY when `publishedList.length === 0` (fallback mode).
+2. The cron `telegram-kamikaze` at 13:00 UTC saves kamikazes. BUT at 13:00 UTC in August, most US matches (MLB, NBA) are already finished, and European football hasn't started yet. ESPN returns very few non-finished matches at this hour.
+3. Result: Kamikazes are published on Telegram (the 13:00 cron finds some matches) but NOT saved to Supabase (or saved with wrong match_date).
+4. The bilan at 05:30 UTC queries Supabase → finds only safe/moderate predictions → no kamikazes → returns false.
+5. Secondary bug: `p.riskPercentage || 50` fallback could incorrectly set risk to 50 (non-kamikaze) when riskPercentage is 0 or NaN.
+
+### 6.2 FIX 1 — Save kamikazes in telegram-summary (cron/route.ts)
+- Added kamikaze save logic in the `telegram-summary` GET handler (lines 2039-2078)
+- When `publishedList.length > 0` (normal mode with safe/moderate), ALSO save kamikazes separately
+- This ensures kamikazes are saved at 07:00 UTC when ESPN data is fresh (MLB night games still available)
+- Uses same `isKamikaze()` + `capKamikazePerSport()` + `sortKamikazePicks()` filters
+
+### 6.3 FIX 2 — Replace `|| 50` with `?? 50` (cron/route.ts)
+- Changed `risk_percentage: p.riskPercentage || 50` to `risk_percentage: p.riskPercentage ?? 50`
+- In 3 locations: summary save, kamikaze GET save, kamikaze POST save
+- `??` only triggers on null/undefined, not on 0 or NaN
+- Prevents incorrect risk fallback that would mark kamikazes as non-kamikazes
+
+### 6.4 FIX 3 — Add diagnostic logs (telegramService.ts)
+- Added detailed logging in `publishKamikazeBilanToTelegram()`:
+  - Target date and nextDay
+  - Number of predictions found per date
+  - Risk breakdown for all non-combo predictions
+  - Number of kamikazes after filtering
+  - Clear messages when no predictions or no kamikazes found
+- Added diagnostic logs in kamikaze save logic (cron/route.ts):
+  - Number of kamikazes to save
+  - Risk breakdown of first 5 kamikazes
+  - Alert when save returns 0 despite having kamikazes
+
+### 6.5 Files Modified
+- `src/lib/telegramService.ts` — diagnostic logs in publishKamikazeBilanToTelegram
+- `src/app/api/cron/route.ts` — kamikaze save in summary, ?? 50 fix, diagnostic logs
+
+### 6.6 Verification
+- `npx tsc --noEmit` — passes with 0 errors
