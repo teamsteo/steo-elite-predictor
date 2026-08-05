@@ -63,17 +63,22 @@ export async function GET(request: Request) {
     console.log(`📡 ${upcomingWithOdds.length} matchs éligibles pour analyse ML (sur ${matches.length} total)`);
 
     // Mapper vers le format UnifiedPredictionInput
-    const mlInputs: UnifiedPredictionInput[] = upcomingWithOdds.map((m: any) => ({
-      id: m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      homeTeam: m.homeTeam,
-      awayTeam: m.awayTeam,
-      sport: m.sport === 'Basketball' ? 'NBA' as const :
-             m.sport === 'Hockey' ? 'NHL' as const : 'Foot' as const,
-      league: m.league || 'Unknown',
-      oddsHome: m.oddsHome,
-      oddsDraw: m.oddsDraw || null,
-      oddsAway: m.oddsAway,
-    }));
+    // 📅 Conserver la date ESPN originale pour la sauvegarde Supabase
+    const dateLookup = new Map<string, string>();
+    const mlInputs: UnifiedPredictionInput[] = upcomingWithOdds.map((m: any) => {
+      if (m.date) dateLookup.set(`${m.homeTeam}|${m.awayTeam}`, m.date);
+      return {
+        id: m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        sport: m.sport === 'Basketball' ? 'NBA' as const :
+               m.sport === 'Hockey' ? 'NHL' as const : 'Foot' as const,
+        league: m.league || 'Unknown',
+        oddsHome: m.oddsHome,
+        oddsDraw: m.oddsDraw || null,
+        oddsAway: m.oddsAway,
+      };
+    });
 
     // 🧠 Exécuter le pipeline ML unifié (produit factors.matchImportance.contextSummary)
     let unifiedPreds: any[] = [];
@@ -108,7 +113,8 @@ export async function GET(request: Request) {
             awayTeam: p.awayTeam,
             sport: p.sport === 'NBA' ? 'Basketball' : p.sport === 'NHL' ? 'Hockey' : 'Football',
             league: p.league,
-            date: undefined,
+            // 📅 Date ESPN originale (lookup par équipes) — CRITIQUE pour le bilan
+            date: dateLookup.get(`${p.homeTeam}|${p.awayTeam}`) || undefined,
             displayDate: '',
             dateTag: "aujourd'hui",
             recommendation: isHome ? p.homeTeam : isAway ? p.awayTeam : 'Match Nul',

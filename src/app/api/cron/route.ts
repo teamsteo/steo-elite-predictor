@@ -1856,18 +1856,24 @@ export async function GET(request: NextRequest) {
           console.log(`📡 ${upcomingWithOdds.length} matchs éligibles pour analyse ML (sur ${matches.length} total)`);
           
           // Mapper vers le format UnifiedPredictionInput
-          const mlInputs: UnifiedPredictionInput[] = upcomingWithOdds.map((m: any) => ({
-            id: m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-            homeTeam: m.homeTeam,
-            awayTeam: m.awayTeam,
-            sport: m.sport === 'Basketball' ? 'NBA' as const : 
-                   m.sport === 'Hockey' ? 'NHL' as const : 
-                   m.sport === 'Baseball' ? 'MLB' as const : 'Foot' as const,
-            league: m.league || 'Unknown',
-            oddsHome: m.oddsHome,
-            oddsDraw: m.oddsDraw || null,
-            oddsAway: m.oddsAway,
-          }));
+          // 📅 Conserver la date ESPN originale pour la sauvegarde Supabase
+          const dateLookup = new Map<string, string>();
+          const mlInputs: UnifiedPredictionInput[] = upcomingWithOdds.map((m: any) => {
+            const mid = m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+            if (m.date) dateLookup.set(`${m.homeTeam}|${m.awayTeam}`, m.date);
+            return {
+              id: mid,
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: m.sport === 'Basketball' ? 'NBA' as const : 
+                     m.sport === 'Hockey' ? 'NHL' as const : 
+                     m.sport === 'Baseball' ? 'MLB' as const : 'Foot' as const,
+              league: m.league || 'Unknown',
+              oddsHome: m.oddsHome,
+              oddsDraw: m.oddsDraw || null,
+              oddsAway: m.oddsAway,
+            };
+          });
           
           // 🧠 Exécuter le pipeline ML unifié
           let unifiedPreds: any[] = [];
@@ -1903,7 +1909,9 @@ export async function GET(request: NextRequest) {
                   awayTeam: p.awayTeam,
                   sport: p.sport === 'NBA' ? 'Basketball' : p.sport === 'NHL' ? 'Hockey' : p.sport === 'MLB' ? 'Baseball' : 'Football',
                   league: p.league,
-                  date: undefined, // Pas de date dans unified, on utilise l'original
+                  // 📅 Date ESPN originale (lookup par équipes) — CRITIQUE pour la sauvegarde Supabase
+                  // Le bilan cherche les prédictions par date de match, pas par date de publication
+                  date: dateLookup.get(`${p.homeTeam}|${p.awayTeam}`) || undefined,
                   displayDate: '',
                   dateTag: "aujourd'hui",
                   recommendation: isHome ? p.homeTeam : isAway ? p.awayTeam : 'Match Nul',
