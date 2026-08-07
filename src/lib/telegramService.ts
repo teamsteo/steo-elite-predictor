@@ -77,6 +77,7 @@ const MIN_WIN_PROBABILITY = 70; // Aligné sur backtest: ≥74% précision, seui
 // → Baseball/Hockey limités à 3 (valuebets safe uniquement)
 // 🎾 Tennis EXCLU des pronostics Telegram (pas de pipeline ML fiable)
 const MAX_NON_PRIORITY_PER_SPORT = 3; // Max 3 rencontres par sport non prioritaire
+const MAX_DISPLAY_PER_SPORT = 4; // Max 4 par sport dans l'affichage ET la sauvegarde (cohérence bilan)
 const PRIORITY_SPORTS = ['football']; // Seul le football est prioritaire (backtest positif)
 const NON_PRIORITY_SPORTS = ['basketball', 'baseball', 'hockey', 'other'];
 const EXCLUDED_TELEGRAM_SPORTS = ['tennis']; // Sports exclus des pronostics Telegram
@@ -985,6 +986,8 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
 
   // 7) 🏆 PLAFONNER les sports non prioritaires à 3 max
   // Seul le football est prioritaire (meilleur rendement backtest +32% ROI)
+  // 7b) 📱 PLAFONNER TOUS les sports à MAX_DISPLAY_PER_SPORT (4)
+  // → Cohérence : ce qui est sauvegardé = ce qui est affiché sur Telegram
   const sportCount: Record<string, number> = {};
   const capped = selected.filter(p => {
     const sport = (p.sport || 'other').toLowerCase();
@@ -993,11 +996,12 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
       : sport === 'nhl' ? 'hockey'
       : sport === 'mlb' ? 'baseball'
       : sport;
+    sportCount[normalized] = (sportCount[normalized] || 0) + 1;
+    // Non-priority: max 3 | Priority (football): max 4 | All: max 4
     if (NON_PRIORITY_SPORTS.includes(normalized)) {
-      sportCount[normalized] = (sportCount[normalized] || 0) + 1;
       return sportCount[normalized] <= MAX_NON_PRIORITY_PER_SPORT;
     }
-    return true;
+    return sportCount[normalized] <= MAX_DISPLAY_PER_SPORT;
   });
   
   return { selected: capped, totalEligible: sorted.length, excludedEstimated, excludedRisk, excludedByLimit };

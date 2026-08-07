@@ -41,6 +41,20 @@ const CRON_SECRET = process.env.CRON_SECRET;
 const CRON_VERSION = 'v14'; // Max 10 pronostics + cotes réelles uniquement + tennis EXCLU + bilan cohérent
 
 /**
+ * Normalise le type de prédiction en 'home' | 'away' | 'draw'
+ * Les recommendations ML peuvent inclure des types étendus (home_or_draw, over_2.5, etc.)
+ * qui ne sont pas des prédictions de résultat directes → on les mappe au résultat le plus probable
+ */
+function normalizePredictionType(type?: string): 'home' | 'away' | 'draw' {
+  if (!type) return 'home';
+  if (type === 'home' || type === 'home_or_draw') return 'home';
+  if (type === 'away' || type === 'away_or_draw') return 'away';
+  if (type === 'draw') return 'draw';
+  // Types étendus (over_2.5, under_2.5, btts_yes, btts_no) → par défaut 'home'
+  return 'home';
+}
+
+/**
  * Ping la base Supabase (Historique ML) pour la garder active
  * Plan gratuit = pause après 7 jours d'inactivité
  */
@@ -3151,6 +3165,7 @@ export async function POST(request: NextRequest) {
             date: m.date,
             displayDate: m.displayDate,
             recommendation: m.recommendations?.[0]?.label,
+            predictedResult: normalizePredictionType(m.recommendations?.[0]?.type), // ← type = 'home'|'away'|'draw' normalisé
             confidence: m.confidence,
             valueBetDetected: m.valueBets?.length > 0,
             riskPercentage: m.riskPercentage,
@@ -3183,7 +3198,7 @@ export async function POST(request: NextRequest) {
                   odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null,
                   odds_away: p.oddsAway || 1.0,
-                  predicted_result: p.recommendation === (p.homeTeam || '') ? 'home' : p.recommendation === (p.awayTeam || '') ? 'away' : 'home',
+                  predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage ?? 50,
                   status: 'pending' as const,
