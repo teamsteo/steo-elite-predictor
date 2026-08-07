@@ -2019,7 +2019,7 @@ export async function GET(request: NextRequest) {
                   away_team: p.awayTeam,
                   league: p.league || 'Unknown',
                   sport: (p.sport || 'football').toLowerCase(),
-                  match_date: p.date || new Date().toISOString(),
+                  match_date: p.date || `${todayISO}T12:00:00Z`,
                   odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null,
                   odds_away: p.oddsAway || 1.0,
@@ -2069,7 +2069,7 @@ export async function GET(request: NextRequest) {
                     away_team: p.awayTeam,
                     league: p.league || 'Unknown',
                     sport: (p.sport || 'football').toLowerCase(),
-                    match_date: p.date || new Date().toISOString(),
+                    match_date: p.date || `${todayISO}T12:00:00Z`,
                     odds_home: p.oddsHome || 1.0,
                     odds_draw: p.oddsDraw || null,
                     odds_away: p.oddsAway || 1.0,
@@ -2296,7 +2296,7 @@ export async function GET(request: NextRequest) {
                   away_team: p.awayTeam,
                   league: p.league || 'Unknown',
                   sport: (p.sport || 'football').toLowerCase(),
-                  match_date: p.date || new Date().toISOString(),
+                  match_date: p.date || `${todayISO}T12:00:00Z`,
                   odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null,
                   odds_away: p.oddsAway || 1.0,
@@ -2379,18 +2379,18 @@ export async function GET(request: NextRequest) {
             
             const dbPredictions = kamikazeFiltered.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-                const dateStr = p.date?.split('T')[0] || new Date().toISOString().split('T')[0];
-                // Extraire l'heure du match pour éviter les collisions
+                const dateStr = (p.date || '').split('T')[0] || new Date().toISOString().split('T')[0];
+                const todayISO = dateStr;
                 const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
                 const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
-                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${todayISO}${timeSuffix}`;
                 return {
                   match_id: matchId,
                   home_team: p.homeTeam,
                   away_team: p.awayTeam,
                   league: p.league || 'Unknown',
                   sport: (p.sport || 'football').toLowerCase(),
-                  match_date: p.date || new Date().toISOString(),
+                  match_date: p.date || `${todayISO}T12:00:00Z`,
                   odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null,
                   odds_away: p.oddsAway || 1.0,
@@ -2445,21 +2445,35 @@ export async function GET(request: NextRequest) {
           
           // Récupérer la date cible (hier par défaut, ou date passée en param)
           const targetDate = url.searchParams.get('date');
+          const bilanDateISO = targetDate || (() => {
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            return yesterday.toISOString().split('T')[0];
+          })();
+          
+          // 🔍 Vérifier d'abord si des prédictions existent en Supabase pour cette date
+          // → pour distinguer "vraiment aucun pronostic" de "pronostics existent mais bilan pas encore vérifiable"
+          const nextDayForCheck = (() => {
+            const d = new Date(bilanDateISO + 'T12:00:00Z');
+            d.setDate(d.getDate() + 1);
+            return d.toISOString().split('T')[0];
+          })();
+          const [predsCheck, predsNextCheck] = await Promise.all([
+            SupabaseStore.getPredictionsByDate(bilanDateISO),
+            SupabaseStore.getPredictionsByDate(nextDayForCheck),
+          ]);
+          const totalPredsExist = predsCheck.length + predsNextCheck.length;
+          console.log(`📊 [BILAN CHECK] ${totalPredsExist} pronostics trouvés en Supabase pour ${bilanDateISO}+${nextDayForCheck}`);
+          
           const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
           
           // Publier aussi le bilan kamikaze séparément
           const kamikazeBilanDate = targetDate || undefined;
           const kamikazeResult = await publishKamikazeBilanToTelegram(kamikazeBilanDate);
           
-          // 🔔 Si aucun bilan n'a été publié (période creuse, pas de pronostics),
-          // envoyer un message informatif sur Telegram pour confirmer que le cron tourne
+          // 🔔 Si aucun bilan n'a été publié
           if (!telegramResult && !kamikazeResult) {
-            const bilanDate = targetDate || (() => {
-              const yesterday = new Date();
-              yesterday.setDate(yesterday.getDate() - 1);
-              return yesterday.toISOString().split('T')[0];
-            })();
-            const dateObj = new Date(bilanDate + 'T12:00:00');
+            const dateObj = new Date(bilanDateISO + 'T12:00:00');
             const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
             const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
             const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
@@ -2471,8 +2485,17 @@ export async function GET(request: NextRequest) {
             noDataMsg += '╚═════════════════════════════╝\n\n';
             noDataMsg += `📅 <b>${dateLabel}</b>\n\n`;
             noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-            noDataMsg += '⏳ <b>Aucun pronostic à vérifier</b>\n\n';
-            noDataMsg += `🔍 Vérification: ${verifyResult.verified} matchs vérifiés, ${verifyResult.updated} mis à jour\n`;
+            
+            if (totalPredsExist > 0) {
+              // Pronostics existent mais résultats pas encore disponibles ou dédup
+              const pendingCount = [...predsCheck, ...predsNextCheck].filter(p => p.status === 'pending').length;
+              noDataMsg += `⏳ <b>${totalPredsExist} pronostic${totalPredsExist > 1 ? 's' : ''} enregistré${totalPredsExist > 1 ? 's' : ''}</b> — ${pendingCount} en attente de résultat\n\n`;
+              noDataMsg += `🔍 Vérification: ${verifyResult.verified} matchs vérifiés, ${verifyResult.updated} mis à jour\n`;
+            } else {
+              // Vraiment aucun pronostic pour cette date
+              noDataMsg += '⏳ <b>Aucun pronostic à vérifier</b>\n\n';
+              noDataMsg += `🔍 Vérification: ${verifyResult.verified} matchs vérifiés, ${verifyResult.updated} mis à jour\n`;
+            }
             if (verifyResult.errors.length > 0) {
               noDataMsg += `⚠️ Erreurs vérification: ${verifyResult.errors.slice(0, 3).join(', ')}\n`;
             }
@@ -3139,10 +3162,39 @@ export async function POST(request: NextRequest) {
 
           const { selected: publishedList } = selectTopDailyPredictions(predictions);
 
-          // ⚠️ Pas de sauvegarde Supabase ici — le cron GET (07:00/18:00) s'en charge.
-          // Le POST est pour les déclenchements manuels (admin) qui ne doivent pas
-          // créer des doublons dans la table predictions.
-          // La déduplication Telegram (isDuplicate) évite les messages en double.
+          // 💾 [POST] Sauvegarder en Supabase — upsert évite les doublons (onConflict: match_id)
+          // Avant : le POST ne sauvegardait PAS → les pronostics publiés manuellement n'étaient jamais dans le bilan
+          try {
+            const todayISO = new Date().toISOString().split('T')[0];
+            if (publishedList.length > 0) {
+              const dbPredictions = publishedList.map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = (p.date || '').split('T')[0] || todayISO;
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                return {
+                  match_id: matchId,
+                  home_team: p.homeTeam,
+                  away_team: p.awayTeam,
+                  league: p.league || 'Unknown',
+                  sport: (p.sport || 'football').toLowerCase(),
+                  match_date: p.date || `${todayISO}T12:00:00Z`,
+                  odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null,
+                  odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.recommendation === (p.homeTeam || '') ? 'home' : p.recommendation === (p.awayTeam || '') ? 'away' : 'home',
+                  confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage ?? 50,
+                  status: 'pending' as const,
+                };
+              });
+              const saved = await SupabaseStore.addPredictions(dbPredictions);
+              console.log(`💾 [POST summary] ${saved} pronostics sauvegardés en Supabase (sur ${publishedList.length} publiés)`);
+            }
+          } catch (saveErr: any) {
+            console.log('⚠️ [POST summary] Erreur sauvegarde Supabase:', saveErr.message);
+          }
 
           const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = {
@@ -3151,6 +3203,7 @@ export async function POST(request: NextRequest) {
               total: predictions.length,
               published: publishedList.length,
               excluded: predictions.length - publishedList.length,
+              saved: publishedList.length,
               message: telegramResult
                 ? `Résumé publié: ${publishedList.length} pronostics sur Telegram`
                 : 'Erreur publication Telegram'
@@ -3202,7 +3255,7 @@ export async function POST(request: NextRequest) {
                 return {
                   match_id: matchId, home_team: p.homeTeam, away_team: p.awayTeam,
                   league: p.league || 'Unknown', sport: (p.sport || 'football').toLowerCase(),
-                  match_date: p.date || new Date().toISOString(), odds_home: p.oddsHome || 1.0,
+                  match_date: p.date || `${todayISO}T12:00:00Z`, odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null, odds_away: p.oddsAway || 1.0,
                   predicted_result: p.predictedResult || 'home', confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage || 50, status: 'pending' as const,
