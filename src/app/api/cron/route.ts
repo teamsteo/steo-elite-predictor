@@ -2029,9 +2029,18 @@ export async function GET(request: NextRequest) {
                   status: 'pending' as const,
                 };
               });
-              console.log(`💾 Sauvegarde summary: ${toSave.length} pronostics, risk breakdown: ${JSON.stringify(toSave.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport })))}`);
+              console.log(`💾 Sauvegarde summary: ${toSave.length} pronostics, risk breakdown: ${JSON.stringify(toSave.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, d: (p.date || '').split('T')[0], t: p.homeTeam })))}`);
               const saved = await SupabaseStore.addPredictions(dbPredictions);
               console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${toSave.length} publiés)`);
+              if (saved === 0 && toSave.length > 0) {
+                console.error('❌ [ALERTE] Sauvegarde summary ÉCHOUÉE — 0 enregistré sur ${toSave.length}!');
+                // Loguer les match_ids et match_dates pour diagnostic
+                for (const db of dbPredictions.slice(0, 3)) {
+                  console.error(`   ❌ match_id=${db.match_id}, match_date=${db.match_date}, sport=${db.sport}, risk=${db.risk_percentage}`);
+                }
+              } else if (saved > 0) {
+                console.log(`💾 [DETAIL] match_ids sauvegardés: ${dbPredictions.slice(0, 3).map((d: any) => `${d.match_id?.slice(0, 50)}→${d.match_date}`).join(' | ')}`);
+              }
             } else {
               console.log('⚠️ Aucun pronostic à sauvegarder (liste vide)');
             }

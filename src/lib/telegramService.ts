@@ -1545,6 +1545,14 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     SupabaseStore.getPredictionsByDate(targetDate),
     SupabaseStore.getPredictionsByDate(nextDay),
   ]);
+  
+  // 🔍 LOG DIAGNOSTIC: comprendre pourquoi le bilan est vide
+  console.log(`📊 [BILAN NORMAL] Date: ${targetDate} + ${nextDay}`);
+  console.log(`📊 [BILAN NORMAL] Trouvé: ${dayPreds.length} (jour) + ${nextDayPreds.length} (lendemain)`);
+  if (dayPreds.length > 0 || nextDayPreds.length > 0) {
+    const all = [...dayPreds, ...nextDayPreds];
+    console.log(`📊 [BILAN NORMAL] Détails: ${JSON.stringify(all.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, date: (p.match_date || '').split('T')[0] })))}`);
+  }
 
   // Fusionner en dédupliquant par match_id (priorité au jour principal)
   const seen = new Set<string>();

@@ -338,12 +338,19 @@ export const SupabaseStore = {
         return [];
       }
 
+      // 🔍 LOG: voir ce que Supabase retourne AVANT filtrage JS
+      const rawData = data as DbPrediction[];
+      if (rawData.length > 0) {
+        console.log(`🔍 [DB] getPredictionsByDate("${dateISO}"): Supabase retourne ${rawData.length} lignes (plage ${startRange} → ${endRange}), dates: ${JSON.stringify(rawData.map(p => (p.match_date || '').split('T')[0]))}`);
+      }
+
       // Filtrage côté JS : comparaison date-only (YYYY-MM-DD)
-      const filtered = (data as DbPrediction[]).filter(p => {
+      const filtered = rawData.filter(p => {
         const datePart = (p.match_date || '').split('T')[0];
         return datePart === dateISO;
       });
 
+      console.log(`🔍 [DB] getPredictionsByDate("${dateISO}"): ${filtered.length} après filtrage JS (date === "${dateISO}")`);
       return filtered || [];
     } catch {
       return [];
