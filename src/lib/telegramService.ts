@@ -1506,6 +1506,9 @@ interface DailyResultSummary {
   streaks: Record<string, { type: 'win' | 'loss' | 'none'; count: number }>;
   bySport: Record<string, { total: number; wins: number; losses: number; winRate: number; pending: number; roi: number; profitUnits: number }>;
   combos: ComboResultSummary[];
+  // Value bet vs safe comparison
+  valueBetStats?: { total: number; wins: number; losses: number; winRate: number; roi: number; profitUnits: number; avgEdge: number };
+  safeStats?: { total: number; wins: number; losses: number; winRate: number; roi: number; profitUnits: number };
   details: Array<{
     homeTeam: string;
     awayTeam: string;
@@ -1583,6 +1586,8 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     streaks: {},
     bySport: {},
     combos: [],
+    valueBetStats: { total: 0, wins: 0, losses: 0, winRate: 0, roi: 0, profitUnits: 0, avgEdge: 0 },
+    safeStats: { total: 0, wins: 0, losses: 0, winRate: 0, roi: 0, profitUnits: 0 },
     details: [],
   };
 
@@ -1657,6 +1662,10 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     let totalStakes = 0;
     let totalProfit = 0;
 
+    // 💎 Value bet vs safe accumulators
+    const vbStats = { total: 0, wins: 0, losses: 0, profitUnits: 0, stakes: 0, edgeSum: 0, edgeCount: 0 };
+    const safeStats = { total: 0, wins: 0, losses: 0, profitUnits: 0, stakes: 0 };
+
     // 📊 BILAN : PAS de plafond par sport — on comptabilise TOUT ce qui est publié
     // Le plafond ne s'applique qu'à la SÉLECTION (selectTopDailyPredictions)
 
@@ -1718,6 +1727,26 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
             summary.bySport[sport].losses++;
           }
           totalStakes += 1;
+
+          // 💎 Accumulate value bet vs safe stats for completed predictions
+          const isVB = (p as any).is_value_bet === true;
+          if (isVB) {
+            vbStats.total++;
+            vbStats.stakes++;
+            if (p.result_match === true) vbStats.wins++;
+            if (p.result_match === false) vbStats.losses++;
+            vbStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false ? -1 : 0);
+            if ((p as any).edge_value !== null && (p as any).edge_value !== undefined) {
+              vbStats.edgeSum += (p as any).edge_value;
+              vbStats.edgeCount++;
+            }
+          } else {
+            safeStats.total++;
+            safeStats.stakes++;
+            if (p.result_match === true) safeStats.wins++;
+            if (p.result_match === false) safeStats.losses++;
+            safeStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false ? -1 : 0);
+          }
         }
 
         // ❌ Plus de suivi des buts dans le bilan — uniquement le résultat de la prédiction
@@ -1759,6 +1788,25 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       s.roi = verified > 0 ? Math.round((s.profitUnits / verified) * 100) : 0;
       s.profitUnits = Math.round(s.profitUnits * 100) / 100;
     }
+
+    // 💎 Finalize value bet vs safe stats
+    summary.valueBetStats = {
+      total: vbStats.total,
+      wins: vbStats.wins,
+      losses: vbStats.losses,
+      winRate: vbStats.total > 0 ? Math.round((vbStats.wins / vbStats.total) * 100) : 0,
+      roi: vbStats.stakes > 0 ? Math.round((vbStats.profitUnits / vbStats.stakes) * 100) : 0,
+      profitUnits: Math.round(vbStats.profitUnits * 100) / 100,
+      avgEdge: vbStats.edgeCount > 0 ? Math.round((vbStats.edgeSum / vbStats.edgeCount) * 10) / 10 : 0,
+    };
+    summary.safeStats = {
+      total: safeStats.total,
+      wins: safeStats.wins,
+      losses: safeStats.losses,
+      winRate: safeStats.total > 0 ? Math.round((safeStats.wins / safeStats.total) * 100) : 0,
+      roi: safeStats.stakes > 0 ? Math.round((safeStats.profitUnits / safeStats.stakes) * 100) : 0,
+      profitUnits: Math.round(safeStats.profitUnits * 100) / 100,
+    };
 
     // Calcul des séries (streaks) par sport — requête optimisée Supabase (status=completed + result_match non null)
     try {
@@ -1981,6 +2029,57 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     message += `    ${roiEmoji} ROI: <b>${roiSign}${summary.roi}%</b> (${profitSign}${summary.profitUnits.toFixed(2)}u)\n`;
   }
   message += '\n';
+
+  // =============================================
+  // 💎 VALUE BET vs SAFE COMPARISON
+  // =============================================
+  if (summary.valueBetStats && summary.safeStats && 
+      (summary.valueBetStats.total > 0 || summary.safeStats.total > 0)) {
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '💎 <b>VALUE BET vs SAFE</b>\n\n';
+
+    if (summary.valueBetStats.total > 0) {
+      const vb = summary.valueBetStats;
+      const vbEmoji = vb.roi >= 0 ? '💰' : '📉';
+      const vbRoiSign = vb.roi >= 0 ? '+' : '';
+      const vbProfitSign = vb.profitUnits >= 0 ? '+' : '';
+      message += `💎 <b>Value Bets</b> (${vb.total} pronostics)\n`;
+      message += `    ✅ ${vb.wins}/${vb.wins + vb.losses} corrects · <b>${vb.winRate}%</b>\n`;
+      message += `    ${vbEmoji} ROI: <b>${vbRoiSign}${vb.roi}%</b> (${vbProfitSign}${vb.profitUnits.toFixed(2)}u)\n`;
+      if (vb.avgEdge > 0) {
+        message += `    📊 Edge moyen: <b>${vb.avgEdge}%</b>\n`;
+      }
+      message += '\n';
+    }
+
+    if (summary.safeStats.total > 0) {
+      const s = summary.safeStats;
+      const sEmoji = s.roi >= 0 ? '💰' : '📉';
+      const sRoiSign = s.roi >= 0 ? '+' : '';
+      const sProfitSign = s.profitUnits >= 0 ? '+' : '';
+      message += `🛡️ <b>Safes (non-VB)</b> (${s.total} pronostics)\n`;
+      message += `    ✅ ${s.wins}/${s.wins + s.losses} corrects · <b>${s.winRate}%</b>\n`;
+      message += `    ${sEmoji} ROI: <b>${sRoiSign}${s.roi}%</b> (${sProfitSign}${s.profitUnits.toFixed(2)}u)\n`;
+      message += '\n';
+    }
+
+    // Quick verdict: which is performing better
+    if (summary.valueBetStats.total >= 3 && summary.safeStats.total >= 3) {
+      const vbROI = summary.valueBetStats.roi;
+      const sROI = summary.safeStats.roi;
+      const diff = vbROI - sROI;
+      if (Math.abs(diff) >= 5) {
+        message += `📋 <b>Verdict:</b> `;
+        if (diff > 0) {
+          message += `Value bets +${diff}pp de ROI vs safes — le modèle repère bien les erreurs du marché`;
+        } else {
+          message += `Safes +${Math.abs(diff)}pp de ROI vs value bets — les value bets n'apportent pas encore d'avantage`;
+        }
+        message += '\n';
+      }
+    }
+    message += '\n';
+  }
 
   // =============================================
   // 🤖 BILAN DES COMBOS (PARLEYS)

@@ -2040,10 +2040,12 @@ export async function GET(request: NextRequest) {
                   predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage ?? 50,
+                  is_value_bet: p.valueBetDetected === true,
+                  edge_value: p._mlEdge || (p.valueBetDetected ? (p.edge || 0) : 0),
                   status: 'pending' as const,
                 };
               });
-              console.log(`💾 Sauvegarde summary: ${toSave.length} pronostics, risk breakdown: ${JSON.stringify(toSave.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, d: (p.date || '').split('T')[0], t: p.homeTeam })))}`);
+              console.log(`💾 Sauvegarde summary: ${toSave.length} pronostics, risk breakdown: ${JSON.stringify(toSave.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, d: (p.date || '').split('T')[0], t: p.homeTeam, vb: p.valueBetDetected })))}`);
               const saved = await SupabaseStore.addPredictions(dbPredictions);
               console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${toSave.length} publiés)`);
               if (saved === 0 && toSave.length > 0) {
@@ -2090,6 +2092,8 @@ export async function GET(request: NextRequest) {
                     predicted_result: p.predictedResult || 'home',
                     confidence: p.confidence || 'medium',
                     risk_percentage: p.riskPercentage ?? 50,
+                    is_value_bet: p.valueBetDetected === true,
+                    edge_value: p._mlEdge || 0,
                     status: 'pending' as const,
                   };
                 });
@@ -2222,6 +2226,8 @@ export async function GET(request: NextRequest) {
                 combo_id: combo.comboId,
                 combo_name: combo.name,
                 is_combo: true,
+                is_value_bet: true, // Combo legs are always value bets
+                edge_value: leg.edge || 0,
                 status: 'pending' as const,
               };
             });
@@ -2338,6 +2344,8 @@ export async function GET(request: NextRequest) {
                   predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage || 50,
+                  is_value_bet: true, // Value bets section — always true
+                  edge_value: p._mlEdge || p.edge || 0,
                   status: 'pending' as const,
                 };
               });
@@ -2432,10 +2440,12 @@ export async function GET(request: NextRequest) {
                   predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage ?? 50,
+                  is_value_bet: p.valueBetDetected === true,
+                  edge_value: p._mlEdge || 0,
                   status: 'pending' as const,
                 };
               });
-            console.log(`💣 Sauvegarde kamikaze GET: ${kamikazeFiltered.length} kamikazes, risk breakdown: ${JSON.stringify(kamikazeFiltered.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, t: p.homeTeam })))}`);
+            console.log(`💣 Sauvegarde kamikaze GET: ${kamikazeFiltered.length} kamikazes, risk breakdown: ${JSON.stringify(kamikazeFiltered.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, t: p.homeTeam, vb: p.valueBetDetected })))}`);
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 ${saved} pronostics kamikaze PUBLIÉS sauvegardés dans Supabase (sur ${kamikazeCount} kamikazes totaux)`);
             if (saved === 0 && kamikazeFiltered.length > 0) {
@@ -3111,17 +3121,19 @@ export async function POST(request: NextRequest) {
                 away_team: p.awayTeam,
                 league: p.league || 'Unknown',
                 sport: (p.sport || 'football').toLowerCase(),
-                match_date: p.date || new Date().toISOString(),
+                match_date: p.date || `${dateStr}T12:00:00Z`,
                 odds_home: p.oddsHome || 1.0,
                 odds_draw: p.oddsDraw || null,
                 odds_away: p.oddsAway || 1.0,
                 predicted_result: p.predictedResult || 'home',
                 confidence: p.confidence || 'medium',
                 risk_percentage: p.riskPercentage ?? 50,
+                is_value_bet: p.valueBetDetected === true,
+                edge_value: p._mlEdge || 0,
                 status: 'pending' as const,
               };
             });
-            console.log(`💣 Sauvegarde kamikaze POST: ${kamikazeFiltered.length} kamikazes, risk: ${JSON.stringify(kamikazeFiltered.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, t: p.homeTeam })))}`);
+            console.log(`💣 Sauvegarde kamikaze POST: ${kamikazeFiltered.length} kamikazes, risk: ${JSON.stringify(kamikazeFiltered.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, t: p.homeTeam, vb: p.valueBetDetected })))}`);
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 [POST] ${saved} pronostics kamikaze sauvegardés en Supabase (sur ${kamikazeCount} totaux)`);
             if (saved === 0 && kamikazeFiltered.length > 0) {
@@ -3222,11 +3234,13 @@ export async function POST(request: NextRequest) {
                   predicted_result: p.predictedResult || 'home',
                   confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage ?? 50,
+                  is_value_bet: p.valueBetDetected === true,
+                  edge_value: p._mlEdge || (p.valueBetDetected ? (p.edge || 0) : 0),
                   status: 'pending' as const,
                 };
               });
               const saved = await SupabaseStore.addPredictions(dbPredictions);
-              console.log(`💾 [POST summary] ${saved} pronostics sauvegardés en Supabase (sur ${publishedList.length} publiés)`);
+              console.log(`💾 [POST summary] ${saved} pronostics sauvegardés en Supabase (sur ${publishedList.length} publiés, VB: ${publishedList.filter((p: any) => p.valueBetDetected).length})`);
             }
           } catch (saveErr: any) {
             console.log('⚠️ [POST summary] Erreur sauvegarde Supabase:', saveErr.message);
@@ -3306,7 +3320,8 @@ export async function POST(request: NextRequest) {
                   match_date: p.date || `${todayISO}T12:00:00Z`, odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null, odds_away: p.oddsAway || 1.0,
                   predicted_result: p.predictedResult || 'home', confidence: p.confidence || 'medium',
-                  risk_percentage: p.riskPercentage || 50, status: 'pending' as const,
+                  risk_percentage: p.riskPercentage || 50, is_value_bet: true,
+                  edge_value: p._mlEdge || p.edge || 0, status: 'pending' as const,
                 };
               });
               await SupabaseStore.addPredictions(dbPredictions);
@@ -3424,6 +3439,8 @@ export async function POST(request: NextRequest) {
                 combo_id: combo.comboId,
                 combo_name: combo.name,
                 is_combo: true,
+                is_value_bet: true, // Combo legs are always value bets
+                edge_value: leg.edge || 0,
                 status: 'pending' as const,
               };
             });

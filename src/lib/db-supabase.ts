@@ -77,6 +77,10 @@ export interface DbPrediction {
   combo_name?: string;
   is_combo?: boolean;
   
+  // Value bet tracking
+  is_value_bet?: boolean;
+  edge_value?: number; // % edge (model prob - market implied prob)
+  
   created_at?: string;
   checked_at?: string;
 }
@@ -668,6 +672,144 @@ export const SupabaseStore = {
     }
   },
   
+  // ============================================
+  // STATISTIQUES VALUE BET vs SAFE
+  // ============================================
+  
+  async getStatsByValueBet(days?: number): Promise<{
+    valueBet: { total: number; wins: number; losses: number; winRate: number; roi: number; profitUnits: number; avgEdge: number };
+    safe: { total: number; wins: number; losses: number; winRate: number; roi: number; profitUnits: number };
+    kamikaze: { total: number; wins: number; losses: number; winRate: number; roi: number; profitUnits: number };
+    combo: { total: number; wins: number; losses: number; winRate: number; roi: number; profitUnits: number };
+    period: string;
+  }> {
+    const supabase = getSupabase();
+    const defaultResult = {
+      valueBet: { total: 0, wins: 0, losses: 0, winRate: 0, roi: 0, profitUnits: 0, avgEdge: 0 },
+      safe: { total: 0, wins: 0, losses: 0, winRate: 0, roi: 0, profitUnits: 0 },
+      kamikaze: { total: 0, wins: 0, losses: 0, winRate: 0, roi: 0, profitUnits: 0 },
+      combo: { total: 0, wins: 0, losses: 0, winRate: 0, roi: 0, profitUnits: 0 },
+      period: days ? `last_${days}_days` : 'all_time',
+    };
+
+    if (!supabase) return defaultResult;
+
+    try {
+      // Fetch completed predictions with is_value_bet column
+      let query = supabase
+        .from('predictions')
+        .select('is_value_bet, edge_value, is_combo, risk_percentage, result_match, predicted_result, odds_home, odds_draw, odds_away, match_date')
+        .eq('status', 'completed')
+        .not('result_match', 'is', null);
+
+      // Optionally filter by date range
+      if (days && days > 0) {
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - days);
+        const fromISO = fromDate.toISOString().split('T')[0];
+        query = query.gte('match_date', fromISO + 'T00:00:00Z');
+      }
+
+      const { data, error } = await query;
+      if (error || !data) return defaultResult;
+
+      // Stats accumulators
+      const vb = { total: 0, wins: 0, losses: 0, profitUnits: 0, edgeSum: 0, edgeCount: 0, stakes: 0 };
+      const safe = { total: 0, wins: 0, losses: 0, profitUnits: 0, stakes: 0 };
+      const kami = { total: 0, wins: 0, losses: 0, profitUnits: 0, stakes: 0 };
+      const combo = { total: 0, wins: 0, losses: 0, profitUnits: 0, stakes: 0 };
+
+      for (const p of data) {
+        const isVB = p.is_value_bet === true;
+        const isCombo = p.is_combo === true;
+        const isKami = p.risk_percentage > 50;
+        const won = p.result_match === true;
+        const lost = p.result_match === false;
+
+        // Find bet odds
+        let betOdds = 1.0;
+        if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
+        else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
+        else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
+
+        // Profit calculation (1 unit stake per bet)
+        const profit = won ? (betOdds - 1) : (lost ? -1 : 0);
+
+        // Route to correct bucket
+        // Priority: combo > value bet > kamikaze > safe
+        if (isCombo) {
+          combo.total++;
+          combo.stakes++;
+          if (won) combo.wins++;
+          if (lost) combo.losses++;
+          combo.profitUnits += profit;
+        } else if (isVB) {
+          vb.total++;
+          vb.stakes++;
+          if (won) vb.wins++;
+          if (lost) vb.losses++;
+          vb.profitUnits += profit;
+          if (p.edge_value !== null && p.edge_value !== undefined) {
+            vb.edgeSum += p.edge_value;
+            vb.edgeCount++;
+          }
+        } else if (isKami) {
+          kami.total++;
+          kami.stakes++;
+          if (won) kami.wins++;
+          if (lost) kami.losses++;
+          kami.profitUnits += profit;
+        } else {
+          // Safe/moderate (risk <= 50, not value bet, not combo)
+          safe.total++;
+          safe.stakes++;
+          if (won) safe.wins++;
+          if (lost) safe.losses++;
+          safe.profitUnits += profit;
+        }
+      }
+
+      return {
+        valueBet: {
+          total: vb.total,
+          wins: vb.wins,
+          losses: vb.losses,
+          winRate: vb.total > 0 ? Math.round((vb.wins / vb.total) * 100) : 0,
+          roi: vb.stakes > 0 ? Math.round((vb.profitUnits / vb.stakes) * 100) : 0,
+          profitUnits: Math.round(vb.profitUnits * 100) / 100,
+          avgEdge: vb.edgeCount > 0 ? Math.round((vb.edgeSum / vb.edgeCount) * 10) / 10 : 0,
+        },
+        safe: {
+          total: safe.total,
+          wins: safe.wins,
+          losses: safe.losses,
+          winRate: safe.total > 0 ? Math.round((safe.wins / safe.total) * 100) : 0,
+          roi: safe.stakes > 0 ? Math.round((safe.profitUnits / safe.stakes) * 100) : 0,
+          profitUnits: Math.round(safe.profitUnits * 100) / 100,
+        },
+        kamikaze: {
+          total: kami.total,
+          wins: kami.wins,
+          losses: kami.losses,
+          winRate: kami.total > 0 ? Math.round((kami.wins / kami.total) * 100) : 0,
+          roi: kami.stakes > 0 ? Math.round((kami.profitUnits / kami.stakes) * 100) : 0,
+          profitUnits: Math.round(kami.profitUnits * 100) / 100,
+        },
+        combo: {
+          total: combo.total,
+          wins: combo.wins,
+          losses: combo.losses,
+          winRate: combo.total > 0 ? Math.round((combo.wins / combo.total) * 100) : 0,
+          roi: combo.stakes > 0 ? Math.round((combo.profitUnits / combo.stakes) * 100) : 0,
+          profitUnits: Math.round(combo.profitUnits * 100) / 100,
+        },
+        period: days ? `last_${days}_days` : 'all_time',
+      };
+    } catch {
+      return defaultResult;
+    }
+  },
+
   // ============================================
   // MIGRATION
   // ============================================
