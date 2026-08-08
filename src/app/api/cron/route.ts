@@ -2261,25 +2261,36 @@ export async function GET(request: NextRequest) {
           const matches = await getMatchesWithRealOdds();
           
           let predictions: any[] = matches
-            .map((m: any) => ({
-              homeTeam: m.homeTeam,
-              awayTeam: m.awayTeam,
-              sport: m.sport,
-              league: m.league,
-              date: m.date,
-              displayDate: m.displayDate,
-              dateTag: m.dateTag,
-              recommendation: m.recommendations?.[0]?.label,
-              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-              confidence: m.confidence,
-              valueBetDetected: m.valueBets?.length > 0,
-              valueBetType: m.valueBets?.[0]?.type,
-              riskPercentage: m.riskPercentage,
-              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-              oddsHome: m.oddsHome,
-              oddsAway: m.oddsAway,
-              oddsDraw: m.oddsDraw,
-            }));
+            .map((m: any) => {
+              // 💎 Détecter value bet inline (même logique que combo)
+              const drawProb = m.oddsDraw && m.oddsDraw > 1 ? (100 / m.oddsDraw) : 0;
+              const modelProbs = {
+                home: m.winProbability || (100 - (m.riskPercentage ?? 50)),
+                draw: drawProb,
+                away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
+              };
+              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+              return {
+                homeTeam: m.homeTeam,
+                awayTeam: m.awayTeam,
+                sport: m.sport,
+                league: m.league,
+                date: m.date,
+                displayDate: m.displayDate,
+                dateTag: m.dateTag,
+                recommendation: m.recommendations?.[0]?.label,
+                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+                confidence: m.confidence,
+                valueBetDetected: vb.detected,
+                valueBetType: vb.type,
+                riskPercentage: m.riskPercentage,
+                winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+                oddsHome: m.oddsHome,
+                oddsAway: m.oddsAway,
+                oddsDraw: m.oddsDraw,
+              };
+            });
+          console.log(`💎 Value bets: ${predictions.filter(p => p.valueBetDetected).length} détectés sur ${predictions.length} matchs`);
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
           
@@ -3243,23 +3254,35 @@ export async function POST(request: NextRequest) {
         // Publier uniquement les value bets sur Telegram (UNIQUEMENT safe et modéré)
         try {
           const matches = await getMatchesWithRealOdds();
-          const predictions = matches.map((m: any) => ({
-            homeTeam: m.homeTeam,
-            awayTeam: m.awayTeam,
-            sport: m.sport,
-            league: m.league,
-            date: m.date,
-            displayDate: m.displayDate,
-            recommendation: m.recommendations?.[0]?.label,
-            confidence: m.confidence,
-            riskPercentage: m.riskPercentage,
-            winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
-            valueBetDetected: m.valueBets?.length > 0,
-            valueBetType: m.valueBets?.[0]?.type,
-            oddsHome: m.oddsHome,
-            oddsAway: m.oddsAway,
-            oddsDraw: m.oddsDraw,
-          }));
+          const predictions = matches.map((m: any) => {
+            // 💎 Détecter value bet inline
+            const drawProb = m.oddsDraw && m.oddsDraw > 1 ? (100 / m.oddsDraw) : 0;
+            const modelProbs = {
+              home: m.winProbability || (100 - (m.riskPercentage ?? 50)),
+              draw: drawProb,
+              away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
+            };
+            const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+            return {
+              homeTeam: m.homeTeam,
+              awayTeam: m.awayTeam,
+              sport: m.sport,
+              league: m.league,
+              date: m.date,
+              displayDate: m.displayDate,
+              recommendation: m.recommendations?.[0]?.label,
+              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              confidence: m.confidence,
+              riskPercentage: m.riskPercentage,
+              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
+              valueBetDetected: vb.detected,
+              valueBetType: vb.type,
+              oddsHome: m.oddsHome,
+              oddsAway: m.oddsAway,
+              oddsDraw: m.oddsDraw,
+            };
+          });
+          console.log(`💎 [POST] Value bets: ${predictions.filter(p => p.valueBetDetected).length} détectés sur ${predictions.length} matchs`);
 
           const telegramResult = await publishValueBetsToTelegram(predictions);
           

@@ -60,6 +60,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron?action=telegram-valuebets",
+      "schedule": "15 7 * * *"
+    },
+    {
       "path": "/api/cron/tennis-auto-publish?mode=summary",
       "schedule": "0 9 * * *"
     },
