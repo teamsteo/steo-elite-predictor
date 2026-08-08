@@ -124,3 +124,28 @@ The `publishKamikazeBilanToTelegram()` function queries Supabase for predictions
 
 ### 6.6 Verification
 - `npx tsc --noEmit` — passes with 0 errors
+---
+Task ID: 10
+Agent: main
+Task: Implémenter le tracking différencié Value Bets vs Safe bets
+
+Work Log:
+- Analysé le système complet: 3 implémentations de detectValueBets (generic 5%, client 3%, tennis 8%)
+- Confirmé que la montante n'existe PAS (Kelly est anti-montante: -50% après 3 pertes)
+- Ajouté is_value_bet + edge_value dans DbPrediction interface
+- Créé getStatsByValueBet(days?) dans db-supabase.ts avec 4 buckets: valueBet, safe, kamikaze, combo
+- Modifié 9 blocs de sauvegarde dans cron/route.ts (GET+POST pour summary, valuebets, combo, kamikaze)
+- Modifié fetchDailyResultsFromSupabase: accumule vbStats + safeStats pendant le traitement
+- Modifié publishDailyResultsToTelegram: section VALUE BET vs SAFE dans le bilan avec ROI comparatif + verdict auto
+- Créé endpoint /api/migrate-valuebet pour migration SQL des colonnes
+- Combo legs taggués is_value_bet=true automatiquement
+
+Stage Summary:
+- TypeScript compilation: 0 erreurs
+- Push: commit 6a87989 sur main
+- ACTION REQUISE: Exécuter SQL dans Supabase Dashboard pour créer les colonnes:
+  ALTER TABLE predictions ADD COLUMN is_value_bet BOOLEAN DEFAULT false;
+  ALTER TABLE predictions ADD COLUMN edge_value NUMERIC(8,2) DEFAULT 0;
+  CREATE INDEX idx_predictions_is_value_bet ON predictions(is_value_bet);
+- Après migration SQL, les prochains crons sauvegarderont is_value_bet + edge_value
+- Le bilan affichera la comparaison VB vs Safe avec ROI et verdict
