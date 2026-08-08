@@ -159,7 +159,7 @@ ${JSON.stringify(matchData, null, 2)}`;
     const zai = await ZAI.create();
     const response = await zai.chat.completions.create({
       messages: [
-        { role: 'assistant', content: SYSTEM_PROMPT },
+        { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userMessage },
       ],
       thinking: { type: 'disabled' },

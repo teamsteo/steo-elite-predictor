@@ -32,7 +32,7 @@ import {
   capKamikazePerSport,
   sortKamikazePicks
 } from '@/lib/telegramService';
-import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
+import { getMatchesWithRealOdds, invalidateEspnCache, detectValueBets } from '@/lib/combinedDataService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
@@ -2147,34 +2147,44 @@ export async function GET(request: NextRequest) {
             !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
           );
           
-          // Mapper vers le format ComboMatch
+          // Mapper vers le format ComboMatch + détecter les value bets inline
           const comboInputs: any[] = upcomingWithOdds
             .filter((m: any) => {
               const sport = (m.sport || '').toLowerCase();
               return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket');
             })
-            .map((m: any) => ({
-              homeTeam: m.homeTeam,
-              awayTeam: m.awayTeam,
-              sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
-              league: m.league || 'Unknown',
-              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
-              oddsHome: m.oddsHome,
-              oddsAway: m.oddsAway,
-              oddsDraw: m.oddsDraw,
-              riskPercentage: m.riskPercentage ?? 50,
-              valueBetDetected: m.valueBets?.length > 0 || m.valueBetDetected,
-              valueBetType: m.valueBets?.[0]?.type || m.valueBetType || null,
-              confidence: m.confidence || 'medium',
-              date: m.date,
-              _mlEdge: m._mlEdge,
-              _kellyStake: m._kellyStake,
-              _mlReasoning: m._mlReasoning,
-              _matchImportance: m._matchImportance,
-            }));
+            .map((m: any) => {
+              // 💎 Détecter value bet: comparer proba modèle vs proba impliquée (seuil 5%)
+              const drawProb = m.oddsDraw && m.oddsDraw > 1 ? (100 / m.oddsDraw) : 0;
+              const modelProbs = {
+                home: m.winProbability || (100 - (m.riskPercentage ?? 50)),
+                draw: drawProb,
+                away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
+              };
+              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+              return {
+                homeTeam: m.homeTeam,
+                awayTeam: m.awayTeam,
+                sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
+                league: m.league || 'Unknown',
+                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+                winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
+                oddsHome: m.oddsHome,
+                oddsAway: m.oddsAway,
+                oddsDraw: m.oddsDraw,
+                riskPercentage: m.riskPercentage ?? 50,
+                valueBetDetected: vb.detected,
+                valueBetType: vb.type,
+                confidence: m.confidence || 'medium',
+                date: m.date,
+                _mlEdge: vb.edge,
+                _kellyStake: m._kellyStake,
+                _mlReasoning: m._mlReasoning,
+                _matchImportance: m._matchImportance,
+              };
+            });
           
-          console.log(`🤖 Combo: ${comboInputs.length} matchs foot/basket éligibles`);
+          console.log(`🤖 Combo: ${comboInputs.length} matchs foot/basket éligibles, ${comboInputs.filter(m => m.valueBetDetected).length} value bets détectés`);
           
           if (comboInputs.length < 2) {
             result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2)' } };
@@ -2202,7 +2212,7 @@ export async function GET(request: NextRequest) {
                 away_team: leg.awayTeam,
                 league: leg.league || 'Unknown',
                 sport: (leg.sport || 'football').toLowerCase(),
-                match_date: new Date().toISOString(),
+                match_date: leg.date || `${dateStr}T12:00:00Z`,
                 odds_home: leg.predictedResult === 'home' ? leg.odds : (leg.predictedResult === 'away' ? null : null),
                 odds_draw: leg.predictedResult === 'draw' ? leg.odds : null,
                 odds_away: leg.predictedResult === 'away' ? leg.odds : (leg.predictedResult === 'home' ? null : null),
@@ -3326,26 +3336,36 @@ export async function POST(request: NextRequest) {
               const sport = (m.sport || '').toLowerCase();
               return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket');
             })
-            .map((m: any) => ({
-              homeTeam: m.homeTeam,
-              awayTeam: m.awayTeam,
-              sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
-              league: m.league || 'Unknown',
-              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
-              winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
-              oddsHome: m.oddsHome,
-              oddsAway: m.oddsAway,
-              oddsDraw: m.oddsDraw,
-              riskPercentage: m.riskPercentage ?? 50,
-              valueBetDetected: m.valueBets?.length > 0 || m.valueBetDetected,
-              valueBetType: m.valueBets?.[0]?.type || m.valueBetType || null,
-              confidence: m.confidence || 'medium',
-              date: m.date,
-              _mlEdge: m._mlEdge,
-              _kellyStake: m._kellyStake,
-              _mlReasoning: m._mlReasoning,
-              _matchImportance: m._matchImportance,
-            }));
+            .map((m: any) => {
+              // 💎 Détecter value bet inline
+              const drawProb = m.oddsDraw && m.oddsDraw > 1 ? (100 / m.oddsDraw) : 0;
+              const modelProbs = {
+                home: m.winProbability || (100 - (m.riskPercentage ?? 50)),
+                draw: drawProb,
+                away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
+              };
+              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+              return {
+                homeTeam: m.homeTeam,
+                awayTeam: m.awayTeam,
+                sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
+                league: m.league || 'Unknown',
+                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+                winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
+                oddsHome: m.oddsHome,
+                oddsAway: m.oddsAway,
+                oddsDraw: m.oddsDraw,
+                riskPercentage: m.riskPercentage ?? 50,
+                valueBetDetected: vb.detected,
+                valueBetType: vb.type,
+                confidence: m.confidence || 'medium',
+                date: m.date,
+                _mlEdge: vb.edge,
+                _kellyStake: m._kellyStake,
+                _mlReasoning: m._mlReasoning,
+                _matchImportance: m._matchImportance,
+              };
+            });
           
           if (comboInputs.length < 2) {
             result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2)' } };
@@ -3371,7 +3391,7 @@ export async function POST(request: NextRequest) {
                 away_team: leg.awayTeam,
                 league: leg.league || 'Unknown',
                 sport: (leg.sport || 'football').toLowerCase(),
-                match_date: new Date().toISOString(),
+                match_date: leg.date || `${dateStr}T12:00:00Z`,
                 odds_home: leg.predictedResult === 'home' ? leg.odds : null,
                 odds_draw: leg.predictedResult === 'draw' ? leg.odds : null,
                 odds_away: leg.predictedResult === 'away' ? leg.odds : null,
