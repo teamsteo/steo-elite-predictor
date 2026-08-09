@@ -537,15 +537,16 @@ function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string
   if (!predictedResult) return '';
   
   // Pour le football : afficher TOUJOURS les 2 pourcentages (Victoire pure + V/N)
-  // Format : "Victoire (72%) · V/N: 78%" — le parieur voit les 2 options
+  // Format : "Victoire Équipe (72%) · V/N: 78%" — le parieur voit les 2 options + le nom de l'équipe
   // Le football a TOUJOURS un nul possible, même si ESPN ne fournit pas la cote de nul
   if (isFootballMatch(sport) && oddsHome && oddsAway) {
     const probs = calcImpliedProbs(oddsHome, oddsDraw, oddsAway, sport);
     if (predictedResult === 'home' || predictedResult === 'away') {
       const isHome = predictedResult === 'home';
+      const teamName = isHome ? (homeTeam || 'Domicile') : (awayTeam || 'Extérieur');
       const purePct = isHome ? probs.home : probs.away;
       const vnPct = isHome ? probs.homeOrDraw : probs.awayOrDraw;
-      return `Victoire (${purePct}%) · V/N: ${vnPct}%`;
+      return `Victoire <b>${teamName}</b> (${purePct}%) · V/N: ${vnPct}%`;
     } else if (predictedResult === 'draw') {
       return `Match Nul (${probs.draw || 0}%)`;
     }
