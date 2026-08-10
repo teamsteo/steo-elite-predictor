@@ -93,7 +93,7 @@ interface MatchResult {
   status: 'finished';
   actualResult: 'home' | 'draw' | 'away';
   league?: string;
-  sport: 'football' | 'basketball' | 'baseball' | 'other'; // 🎾 tennis exclu des pronostics Telegram
+  sport: 'football' | 'basketball' | 'baseball' | 'hockey' | 'other'; // 🎾 tennis exclu des pronostics Telegram
   espnDate?: string; // YYYYMMDD pour matching par date (critique pour MLB/NBA)
 }
 
@@ -666,10 +666,11 @@ async function verifyMLBResults(): Promise<{
 
   try {
     // Récupérer les pronostics MLB/other pending depuis Supabase
+    // ⚠️ Hockey EXCLU — a son propre vérificateur verifyNHLResults()
     const allPending = await SupabaseStore.getPendingPredictions();
     const pending = allPending.filter(p =>
-      p.sport === 'other' || p.sport === 'hockey' || p.sport === 'baseball' ||
-      p.league?.includes('MLB') || p.league?.includes('NHL')
+      p.sport === 'other' || p.sport === 'baseball' ||
+      p.league?.includes('MLB')
     );
 
     if (pending.length === 0) {
@@ -677,7 +678,7 @@ async function verifyMLBResults(): Promise<{
       return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
     }
 
-    console.log(`📋 ${pending.length} pronostics MLB/other en attente à vérifier`);
+    console.log(`📋 ${pending.length} pronostics MLB en attente à vérifier`);
 
     // Récupérer les résultats MLB depuis ESPN (J-1 à J-4 uniquement)
     const mlbResults = await fetchMLBResultsFromESPN();
@@ -777,6 +778,166 @@ async function verifyMLBResults(): Promise<{
   } catch (error: any) {
     errors.push('Erreur interne');
     console.error('Erreur vérification MLB:', error);
+  }
+
+  return { verified, updated, won, lost, errors };
+}
+
+// ============================================
+// VÉRIFICATION NHL (ESPN → Supabase)
+// ============================================
+
+/**
+ * Récupérer les résultats NHL depuis ESPN (GRATUIT)
+ * Même logique que NBA : J-0 à J-7
+ */
+async function fetchNHLResultsFromESPN(): Promise<MatchResult[]> {
+  const results: MatchResult[] = [];
+  const dates: string[] = [];
+
+  for (let i = 0; i <= 7; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    dates.push(`${yyyy}${mm}${dd}`);
+  }
+
+  const uniqueDates = [...new Set(dates)];
+  console.log(`🏒 Recherche résultats NHL pour (dates US): ${uniqueDates.join(', ')}`);
+
+  for (const dateStr of uniqueDates) {
+    try {
+      const response = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${dateStr}`,
+        { cache: 'no-store' }
+      );
+
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      const events = data.events || [];
+
+      for (const e of events) {
+        if (e.status?.type?.completed !== true) continue;
+
+        const competition = e.competitions?.[0];
+        const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
+        const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
+
+        if (!home || !away) continue;
+
+        const homeScore = parseInt(home?.score || '0');
+        const awayScore = parseInt(away?.score || '0');
+
+        if (homeScore === 0 && awayScore === 0) continue;
+
+        const espnHomeTeam = home?.team?.displayName || home?.team?.shortDisplayName || '';
+        const espnAwayTeam = away?.team?.displayName || away?.team?.shortDisplayName || '';
+
+        if (!espnHomeTeam || !espnAwayTeam) continue;
+
+        results.push({
+          matchId: `nhl_${e.id}`,
+          homeTeam: espnHomeTeam,
+          awayTeam: espnAwayTeam,
+          homeScore,
+          awayScore,
+          status: 'finished' as const,
+          actualResult: homeScore > awayScore
+            ? 'home' as const
+            : homeScore < awayScore
+              ? 'away' as const
+              : 'draw' as const,
+          league: 'NHL',
+          sport: 'hockey' as const,
+          espnDate: dateStr,
+        });
+
+        console.log(`✅ NHL ESPN: ${espnHomeTeam}(H) ${homeScore}-${awayScore} ${espnAwayTeam}(A) [${dateStr}]`);
+      }
+    } catch (error) {
+      console.log(`⚠️ Erreur ESPN NHL ${dateStr}:`, error);
+    }
+  }
+
+  console.log(`✅ ESPN NHL: ${results.length} résultats récupérés`);
+  return results;
+}
+
+/**
+ * Vérifier les pronostics NHL (hockey) via ESPN
+ * Même structure que verifyNBAResults
+ */
+async function verifyNHLResults(): Promise<{
+  verified: number;
+  updated: number;
+  won: number;
+  lost: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let verified = 0;
+  let updated = 0;
+  let won = 0;
+  let lost = 0;
+
+  try {
+    const allPending = await SupabaseStore.getPendingPredictions();
+    const pending = allPending.filter(p =>
+      p.sport === 'hockey' || p.league?.includes('NHL')
+    );
+
+    if (pending.length === 0) {
+      console.log('📋 Aucun pronostic NHL en attente dans Supabase');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
+    console.log(`📋 ${pending.length} pronostics NHL en attente à vérifier`);
+
+    const nhlResults = await fetchNHLResultsFromESPN();
+
+    if (nhlResults.length === 0) {
+      console.log('🏒 Aucun résultat NHL trouvé sur ESPN');
+      return { verified: 0, updated: 0, won: 0, lost: 0, errors: [] };
+    }
+
+    for (const prediction of pending) {
+      verified++;
+
+      const matchEntry = nhlResults
+        .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+        .find(e => e.match.matched);
+
+      if (matchEntry) {
+        const result = matchEntry.result;
+        const inverted = matchEntry.match.inverted;
+        const predictedResult = prediction.predicted_result;
+        const actualResult = adjustResultForInversion(result.actualResult, inverted);
+        const resultMatch = predictedResult === actualResult;
+
+        const success = await SupabaseStore.completePrediction(prediction.match_id, {
+          homeScore: inverted ? result.awayScore : result.homeScore,
+          awayScore: inverted ? result.homeScore : result.awayScore,
+          actualResult,
+          resultMatch,
+          goalsMatch: undefined,
+        });
+
+        if (success) {
+          updated++;
+          if (resultMatch) won++; else lost++;
+          console.log(`✅ NHL: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${result.homeScore}-${result.awayScore})`);
+        }
+      } else {
+        console.log(`⏳ NHL: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
+      }
+    }
+
+  } catch (error: any) {
+    errors.push('Erreur interne');
+    console.error('Erreur vérification NHL:', error);
   }
 
   return { verified, updated, won, lost, errors };
@@ -1167,7 +1328,7 @@ async function verifyTennisResults(): Promise<{
 }
 
 /**
- * Vérification complète (Football + NBA + MLB)
+ * Vérification complète (Football + NBA + MLB + NHL)
  * 🎾 Tennis EXCLU des prédictions Telegram
  */
 async function verifyAllResults(): Promise<{
@@ -1179,19 +1340,20 @@ async function verifyAllResults(): Promise<{
   statsUpdate?: { success: boolean; message: string };
   mlSync?: { synced: number; mlStats: any };
 }> {
-  const [footballResult, nbaResult, mlbResult] = await Promise.all([
+  const [footballResult, nbaResult, mlbResult, nhlResult] = await Promise.all([
     verifyFootballResults(),
     verifyNBAResults(),
     verifyMLBResults(),
+    verifyNHLResults(),
     // 🎾 Tennis vérification SUPPRIMÉE — exclu des pronostics Telegram
   ]);
 
   const result = {
-    verified: footballResult.verified + nbaResult.verified + mlbResult.verified,
-    updated: footballResult.updated + nbaResult.updated + mlbResult.updated,
-    won: footballResult.won + nbaResult.won + mlbResult.won,
-    lost: footballResult.lost + nbaResult.lost + mlbResult.lost,
-    errors: [...footballResult.errors, ...nbaResult.errors, ...mlbResult.errors],
+    verified: footballResult.verified + nbaResult.verified + mlbResult.verified + nhlResult.verified,
+    updated: footballResult.updated + nbaResult.updated + mlbResult.updated + nhlResult.updated,
+    won: footballResult.won + nbaResult.won + mlbResult.won + nhlResult.won,
+    lost: footballResult.lost + nbaResult.lost + mlbResult.lost + nhlResult.lost,
+    errors: [...footballResult.errors, ...nbaResult.errors, ...mlbResult.errors, ...nhlResult.errors],
     statsUpdate: undefined as { success: boolean; message: string } | undefined,
     mlSync: undefined as { synced: number; mlStats: any } | undefined
   };

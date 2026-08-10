@@ -1,5 +1,31 @@
 # Audit Worklog — Cron/Telegram/ML Pipeline
 
+---
+Task ID: 1
+Agent: Main
+Task: Fix 3 issues — bilan multi-sport, dates manquantes, value bet cap
+
+Work Log:
+- Issue 1: Créé verifyNHLResults() + fetchNHLResultsFromESPN() dans cron/route.ts
+- Issue 1: Separé hockey de verifyMLBResults() (ne filtre plus p.sport==='hockey')
+- Issue 1: Ajouté verifyNHLResults() dans verifyAllResults() Promise.all
+- Issue 1: Ajouté 'hockey' dans l'union type MatchResult.sport
+- Issue 2: Créé computeDateTag() helper — compare date match à aujourd'hui, retourne [DEMAIN] ou [PROCHAIN]
+- Issue 2: Remplacé dateTag statique ("aujourd'hui") par computeDateTag(m.date) dans formatMatchBlock
+- Issue 2: Ajouté dateTag dynamique dans section value bets et kamikaze
+- Issue 2: Ajouté date + heure dans section combo legs
+- Issue 3: Supprimé cap Math.min(valueBets.length, 5) → tous les value bets affichés
+- Issue 3: Supprimé compteur "X/Y value bets affichés" → affiche maintenant "N opportunités détectées"
+
+Stage Summary:
+- Hockey/NHL a maintenant son propre pipeline de vérification ESPN → Supabase
+- Tous les sports (football, NBA, MLB, NHL) seront vérifiés et apparaîtront au bilan
+- Chaque pronostic affiche la date du match + tag [DEMAIN] si le match est le lendemain
+- Section value bets affiche maintenant TOUS les value bets sans plafond
+- TypeScript compile sans erreur
+
+---
+
 ## Date: $(date -u +%Y-%m-%d)
 
 ---

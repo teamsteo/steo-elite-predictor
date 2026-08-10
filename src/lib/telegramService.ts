@@ -346,6 +346,29 @@ function formatDateTime(dateStr: string, displayDate?: string): { date: string; 
   }
 }
 
+/**
+ * Calcule un tag de date dynamique ([DEMAIN], [PROCHAIN]) en comparant
+ * la date du match à la date d'aujourd'hui (timezone locale).
+ */
+function computeDateTag(matchDateStr?: string): string {
+  if (!matchDateStr) return '';
+  try {
+    const matchDate = new Date(matchDateStr);
+    if (isNaN(matchDate.getTime())) return '';
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const matchDay = new Date(matchDate.getFullYear(), matchDate.getMonth(), matchDate.getDate());
+    if (matchDay.getTime() === tomorrowStart.getTime()) {
+      return ' [DEMAIN]';
+    } else if (matchDay.getTime() > tomorrowStart.getTime()) {
+      return ' [PROCHAIN]';
+    }
+  } catch {}
+  return '';
+}
+
 // ============================================
 // ENVOI TELEGRAM
 // ============================================
@@ -738,7 +761,7 @@ async function formatMatchBlock(
   const betLabel = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
   
   // 📅 Date display: always show the date, with tag if different from today
-  const dateTag = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
+  const dateTag = computeDateTag(m.date);
   const dateLine = `📅 <b>${date}</b>${dateTag}`;
 
   let block = '';
@@ -1217,12 +1240,8 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   message += `║   💎 <b>VALUE BETS DU JOUR</b>   ║\n`;
   message += '╚════════════════════════╝\n\n';
   
-  const vbDisplayCount = Math.min(valueBets.length, 5);
-  if (valueBets.length > vbDisplayCount) {
-    message += `🔥 <b>${vbDisplayCount}/${valueBets.length} value bets affiché${vbDisplayCount > 1 ? 's' : ''}</b> (top ${vbDisplayCount} par fiabilité)\n\n`;
-  } else {
-    message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
-  }
+  const vbDisplayCount = valueBets.length;
+  message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
 
   for (let i = 0; i < vbDisplayCount; i++) {
     const m = valueBets[i];
@@ -1235,8 +1254,9 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
-    // 📅 Date toujours affichée
-    message += `📅 <b>${date}</b>\n`;
+    // 📅 Date toujours affichée + tag dynamique [DEMAIN] si applicable
+    const vbDateTag = computeDateTag(m.date);
+    message += `📅 <b>${date}</b>${vbDateTag}\n`;
     message += `${sportEmoji} ${m.sport}`;
     if (m.league) message += ` | ${m.league}`;
     message += `\n`;
@@ -1309,8 +1329,9 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
 
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
-    // 📅 Date toujours affichée
-    message += `📅 <b>${date}</b>\n`;
+    // 📅 Date toujours affichée + tag dynamique [DEMAIN] si applicable
+    const kzDateTag = computeDateTag(m.date);
+    message += `📅 <b>${date}</b>${kzDateTag}\n`;
     message += `${sportEmoji} ${m.sport}`;
     if (m.league) message += ` | ${m.league}`;
     message += `\n`;
@@ -2643,6 +2664,14 @@ export async function publishComboToTelegram(combo: any): Promise<boolean> {
     const riskEmoji = riskEmojis[leg.confidence === 'high' ? 'low' : leg.confidence === 'low' ? 'high' : 'medium'] || '🟡';
 
     message += `<b>${i + 1}.</b> ${emoji} <b>${leg.homeTeam} vs ${leg.awayTeam}</b>\n`;
+    // 📅 Date du match si disponible
+    if (leg.date) {
+      const { date: legDate, time: legTime } = formatDateTime(leg.date, leg.displayDate);
+      const legDateTag = computeDateTag(leg.date);
+      message += `    📅 <b>${legDate}</b>${legDateTag}`;
+      if (legTime) message += ` · ⏰ ${legTime}`;
+      message += `\n`;
+    }
     message += `    🏆 ${leg.league}\n`;
     message += `    🎯 <b>${leg.betLabel}</b>\n`;
     message += `    📊 Cote: <b>${leg.odds.toFixed(2)}</b> · Chance: <b>${leg.winProbability}%</b>\n`;
