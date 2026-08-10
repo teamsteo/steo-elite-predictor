@@ -1998,8 +1998,19 @@ export async function GET(request: NextRequest) {
           // 📊 Sélectionner le top 10 PUBLIÉ (même filtres que Telegram)
           const { selected: publishedList, totalEligible } = selectTopDailyPredictions(predictions);
           
-          // 💾 Sauvegarder en Supabase exactement ce qui est publié sur Telegram
-          // → Le bilan comptera les MÊMES pronostics que ceux vus par les utilisateurs
+          // 💾 Sauvegarder en Supabase TOUS les pronostics éligibles (pas seulement le top publié)
+          // → Le bilan doit refléter TOUS les sports, pas seulement ceux affichés sur Telegram
+          // publishedList = top 10 affichés ; allEligible = tous les matchs qui passent les filtres ML
+          const allEligible = predictions.filter((p: any) => {
+            const sport = (p.sport || '').toLowerCase();
+            if (['tennis'].includes(sport)) return false;
+            if (p.isEstimated) return false;
+            const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
+            if (wp < 70) return false;
+            if (p.riskPercentage > 50) return false;
+            return true;
+          });
+          
           let toSave: any[] = publishedList;
           try {
             const todayISO = new Date().toISOString().split('T')[0];
@@ -2016,6 +2027,41 @@ export async function GET(request: NextRequest) {
                 .filter((p: any) => isKamikaze(p.riskPercentage));
               toSave = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
               console.log(`💣 Mode kamikaze: ${toSave.length} kamikazes à sauvegarder en Supabase (sur ${kamikazePicks.length} totaux)`);
+            }
+            
+            // 💾 Sauvegarder TOUS les éligibles pour le bilan (tous les sports)
+            if (allEligible.length > 0) {
+              const allDbPredictions = allEligible.map((p: any) => {
+                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                const dateStr = (p.date || '').split('T')[0] || todayISO;
+                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                const isPublished = publishedList.some((pub: any) => 
+                  pub.homeTeam === p.homeTeam && pub.awayTeam === p.awayTeam && pub.league === p.league
+                );
+                return {
+                  match_id: matchId,
+                  home_team: p.homeTeam,
+                  away_team: p.awayTeam,
+                  league: p.league || 'Unknown',
+                  sport: (p.sport || 'football').toLowerCase(),
+                  match_date: p.date || `${todayISO}T12:00:00Z`,
+                  odds_home: p.oddsHome || 1.0,
+                  odds_draw: p.oddsDraw || null,
+                  odds_away: p.oddsAway || 1.0,
+                  predicted_result: p.predictedResult || 'home',
+                  confidence: p.confidence || 'medium',
+                  risk_percentage: p.riskPercentage ?? 50,
+                  is_value_bet: p.valueBetDetected === true,
+                  edge_value: p._mlEdge || (p.valueBetDetected ? (p.edge || 0) : 0),
+                  status: 'pending' as const,
+                  source: isPublished ? 'telegram_published' : 'ml_eligible',
+                };
+              });
+              console.log(`💾 Sauvegarde TOUS éligibles: ${allEligible.length} pronostics (published: ${publishedList.length}, non-publiés: ${allEligible.length - publishedList.length})`);
+              const allSaved = await SupabaseStore.addPredictions(allDbPredictions);
+              console.log(`💾 ${allSaved}/${allEligible.length} pronostics éligibles sauvegardés (bilan complet tous sports)`);
             }
             
             console.log(`📊 Sauvegarde Supabase: ${toSave.length} pronostics publiés sur Telegram`);
@@ -3210,12 +3256,19 @@ export async function POST(request: NextRequest) {
 
           const { selected: publishedList } = selectTopDailyPredictions(predictions);
 
-          // 💾 [POST] Sauvegarder en Supabase — upsert évite les doublons (onConflict: match_id)
-          // Avant : le POST ne sauvegardait PAS → les pronostics publiés manuellement n'étaient jamais dans le bilan
+          // 💾 [POST] Sauvegarder TOUS les éligibles en Supabase (pas seulement le top publié)
+          const allEligiblePOST = predictions.filter((p: any) => {
+            const sport = (p.sport || '').toLowerCase();
+            if (['tennis'].includes(sport)) return false;
+            if (p.riskPercentage > 50) return false;
+            const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
+            return wp >= 70;
+          });
+
           try {
             const todayISO = new Date().toISOString().split('T')[0];
-            if (publishedList.length > 0) {
-              const dbPredictions = publishedList.map((p: any) => {
+            if (allEligiblePOST.length > 0) {
+              const allDbPredictions = allEligiblePOST.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
                 const dateStr = (p.date || '').split('T')[0] || todayISO;
                 const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
@@ -3235,12 +3288,13 @@ export async function POST(request: NextRequest) {
                   confidence: p.confidence || 'medium',
                   risk_percentage: p.riskPercentage ?? 50,
                   is_value_bet: p.valueBetDetected === true,
-                  edge_value: p._mlEdge || (p.valueBetDetected ? (p.edge || 0) : 0),
+                  edge_value: 0,
                   status: 'pending' as const,
+                  source: 'telegram_published',
                 };
               });
-              const saved = await SupabaseStore.addPredictions(dbPredictions);
-              console.log(`💾 [POST summary] ${saved} pronostics sauvegardés en Supabase (sur ${publishedList.length} publiés, VB: ${publishedList.filter((p: any) => p.valueBetDetected).length})`);
+              const allSaved = await SupabaseStore.addPredictions(allDbPredictions);
+              console.log(`💾 [POST summary] ${allSaved}/${allEligiblePOST.length} éligibles sauvegardés (bilan complet tous sports)`);
             }
           } catch (saveErr: any) {
             console.log('⚠️ [POST summary] Erreur sauvegarde Supabase:', saveErr.message);

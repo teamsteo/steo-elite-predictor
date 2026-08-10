@@ -729,14 +729,17 @@ async function formatMatchBlock(
   includeGoals: boolean = true
 ): Promise<string> {
   const emoji = SPORT_EMOJIS[m.sport] || '🏟️';
-  const { time } = formatDateTime(m.date, m.displayDate);
+  const { date, time } = formatDateTime(m.date, m.displayDate);
   const isFootball = isFootballMatch(m.sport);
   const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
   const risk = m.riskPercentage || 100;
   const riskEmoji = risk <= 30 ? '🟢' : risk <= 50 ? '🟡' : '🔴';
   const riskLabel = risk <= 30 ? 'Safe' : risk <= 50 ? 'Modéré' : 'Kamikaze';
   const betLabel = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
-  const dateDisplay = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
+  
+  // 📅 Date display: always show the date, with tag if different from today
+  const dateTag = m.dateTag && m.dateTag !== "aujourd'hui" ? ` [${m.dateTag.toUpperCase()}]` : '';
+  const dateLine = `📅 <b>${date}</b>${dateTag}`;
 
   let block = '';
 
@@ -744,7 +747,10 @@ async function formatMatchBlock(
   block += '───────────────────────────\n';
   // 💎 Marqueur "VALUE BET" si le match a un value bet détecté
   const valueBetBadge = m.valueBetDetected ? ' 💎 <b>VALUE BET</b>' : '';
-  block += `<b>${index}.</b> ${m.homeTeam} vs ${m.awayTeam}${dateDisplay}${valueBetBadge}\n`;
+  block += `<b>${index}.</b> ${m.homeTeam} vs ${m.awayTeam}${valueBetBadge}\n`;
+
+  // 📅 Date de la rencontre (toujours affichée pour éviter confusion lendemain)
+  block += `${dateLine}\n`;
 
   // Ligue
   if (m.league) block += `${emoji} ${m.league}\n`;
@@ -1211,12 +1217,17 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   message += `║   💎 <b>VALUE BETS DU JOUR</b>   ║\n`;
   message += '╚════════════════════════╝\n\n';
   
-  message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
+  const vbDisplayCount = Math.min(valueBets.length, 5);
+  if (valueBets.length > vbDisplayCount) {
+    message += `🔥 <b>${vbDisplayCount}/${valueBets.length} value bets affiché${vbDisplayCount > 1 ? 's' : ''}</b> (top ${vbDisplayCount} par fiabilité)\n\n`;
+  } else {
+    message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
+  }
 
-  for (let i = 0; i < Math.min(valueBets.length, 5); i++) {
+  for (let i = 0; i < vbDisplayCount; i++) {
     const m = valueBets[i];
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
-    const { time } = formatDateTime(m.date, m.displayDate);
+    const { date, time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
     const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
     const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : (m.riskPercentage || 100) <= 50 ? '🟡' : '🔴';
@@ -1224,6 +1235,8 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+    // 📅 Date toujours affichée
+    message += `📅 <b>${date}</b>\n`;
     message += `${sportEmoji} ${m.sport}`;
     if (m.league) message += ` | ${m.league}`;
     message += `\n`;
@@ -1288,7 +1301,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
   for (let i = 0; i < kamikazeCapped.length; i++) {
     const m = kamikazeCapped[i];
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
-    const { time } = formatDateTime(m.date, m.displayDate);
+    const { date, time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
     const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
     const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
@@ -1296,6 +1309,8 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
 
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
+    // 📅 Date toujours affichée
+    message += `📅 <b>${date}</b>\n`;
     message += `${sportEmoji} ${m.sport}`;
     if (m.league) message += ` | ${m.league}`;
     message += `\n`;

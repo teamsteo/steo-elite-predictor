@@ -68,8 +68,7 @@ export interface DbPrediction {
   goals_match?: boolean;
   
   source?: string;
-  ml_model_version?: string;
-  features?: any;
+  ml_model_version?: string;  features?: any;
   model_confidence?: number;
   
   // Combo (parlay) fields
