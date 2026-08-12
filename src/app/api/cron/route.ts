@@ -2520,16 +2520,15 @@ export async function GET(request: NextRequest) {
                 p.confidence !== 'low' && 
                 isSafeOrModerate(p.riskPercentage);
             })
-            // Trier par sport priority (football en premier) comme publishValueBetsToTelegram
+            // Trier par fiabilité décroissante (edge descendant, risque ascendant)
             .sort((a: any, b: any) => {
-              const sportA = (a.sport || '').toLowerCase();
-              const sportB = (b.sport || '').toLowerCase();
-              const priorityMap: Record<string, number> = { football: 1, soccer: 1, basket: 2, basketball: 2, nba: 2, hockey: 3, nhl: 3, baseball: 4, mlb: 4 };
-              const pA = priorityMap[sportA] ?? 99;
-              const pB = priorityMap[sportB] ?? 99;
-              return pA - pB;
-            });
-            // ⚠️ PLUS de slice(0, 5) — tous les value bets affichés doivent être sauvegardés pour le bilan
+              const edgeA = a._mlEdge || a.edge || 0;
+              const edgeB = b._mlEdge || b.edge || 0;
+              if (edgeB !== edgeA) return edgeB - edgeA;
+              return (a.riskPercentage || 100) - (b.riskPercentage || 100);
+            })
+            // 🔒 PLAFONNER à 5 — seuls les 5 plus fiables sont sauvegardés pour le bilan
+            .slice(0, 5);
             
             if (vbFiltered.length > 0) {
               const todayISO = new Date().toISOString().split('T')[0];

@@ -361,6 +361,41 @@ export const SupabaseStore = {
   },
 
   /**
+   * Récupère les prédictions publiées à une date donnée (par created_at, pas match_date).
+   * Le bilan journalier porte sur les publications du jour, pas sur la date du match.
+   */
+  async getPredictionsByCreatedAt(dateISO: string): Promise<DbPrediction[]> {
+    const supabase = getSupabase();
+    if (!supabase) return [];
+
+    try {
+      const startRange = `${dateISO}T00:00:00Z`;
+      const endRange = `${dateISO}T23:59:59Z`;
+
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('*')
+        .gte('created_at', startRange)
+        .lte('created_at', endRange)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error('Erreur getPredictionsByCreatedAt:', error);
+        return [];
+      }
+
+      const rawData = data as DbPrediction[];
+      if (rawData.length > 0) {
+        console.log(`🔍 [DB] getPredictionsByCreatedAt("${dateISO}"): ${rawData.length} lignes, sports: ${JSON.stringify(rawData.map(p => ({ s: p.sport, md: (p.match_date || '').split('T')[0], st: p.status })))}`);
+      }
+
+      return rawData || [];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
    * Récupère les prédictions récentes complétées (pour calcul des séries/streaks).
    * Plus efficace que getAllPredictions car filtre status + result_match non null.
    */

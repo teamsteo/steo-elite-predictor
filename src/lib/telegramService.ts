@@ -1243,8 +1243,18 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     return false;
   }
 
-  // Trier : Football en premier
-  valueBets.sort((a, b) => getSportPriority(a.sport) - getSportPriority(b.sport));
+  // Trier par fiabilité décroissante : edge le plus élevé d'abord, puis risque le plus faible
+  valueBets.sort((a, b) => {
+    // Priorité 1 : edge décroissant (meilleur edge = plus fiable)
+    const edgeA = a._mlEdge || 0;
+    const edgeB = b._mlEdge || 0;
+    if (edgeB !== edgeA) return edgeB - edgeA;
+    // Priorité 2 : risque croissant (moins risqué = plus fiable)
+    return (a.riskPercentage || 100) - (b.riskPercentage || 100);
+  });
+
+  // 🔒 PLAFONNER à 5 value bets max — les plus sûrs uniquement
+  const vbDisplayCount = Math.min(valueBets.length, 5);
 
   let message = '';
   
@@ -1252,8 +1262,11 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   message += `║   💎 <b>VALUE BETS DU JOUR</b>   ║\n`;
   message += '╚════════════════════════╝\n\n';
   
-  const vbDisplayCount = valueBets.length;
-  message += `🔥 <b>${valueBets.length} opportunité${valueBets.length > 1 ? 's' : ''} détectée${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
+  if (valueBets.length > vbDisplayCount) {
+    message += `🔥 <b>${vbDisplayCount}/${valueBets.length}</b> — top ${vbDisplayCount} par fiabilité\n\n`;
+  } else {
+    message += `🔥 <b>${valueBets.length} value bet${valueBets.length > 1 ? 's' : ''}</b>\n\n`;
+  }
 
   for (let i = 0; i < vbDisplayCount; i++) {
     const m = valueBets[i];
@@ -1584,8 +1597,8 @@ interface DailyResultSummary {
 
 /**
  * Récupère les résultats d'une date donnée depuis Supabase
- * Cherche sur la date visée + le lendemain pour inclure les matchs MLB de nuit US
- * (un match à 22h ET = 02h UTC le lendemain → match_date le lendemain)
+ * ⚠️ Filtrage par created_at (date de publication), pas match_date
+ * Le bilan journalier porte sur les publications du jour, pas sur la date du match
  */
 async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyResultSummary> {
   const targetDate = dateISO || (() => {
@@ -1594,30 +1607,30 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     return yesterday.toISOString().split('T')[0];
   })();
 
-  // Chercher sur 2 jours : la date visée + le lendemain (matchs de nuit UTC)
-  const nextDay = (() => {
+  // 🎯 Filtrer par created_at = date de publication (pas match_date)
+  // Chercher aussi la veille au cas où le cron tourne juste après minuit UTC
+  const prevDay = (() => {
     const d = new Date(targetDate + 'T12:00:00Z');
-    d.setDate(d.getDate() + 1);
+    d.setDate(d.getDate() - 1);
     return d.toISOString().split('T')[0];
   })();
 
-  const [dayPreds, nextDayPreds] = await Promise.all([
-    SupabaseStore.getPredictionsByDate(targetDate),
-    SupabaseStore.getPredictionsByDate(nextDay),
+  const [dayPreds, prevDayPreds] = await Promise.all([
+    SupabaseStore.getPredictionsByCreatedAt(targetDate),
+    SupabaseStore.getPredictionsByCreatedAt(prevDay),
   ]);
-  
-  // 🔍 LOG DIAGNOSTIC: comprendre pourquoi le bilan est vide
-  console.log(`📊 [BILAN NORMAL] Date: ${targetDate} + ${nextDay}`);
-  console.log(`📊 [BILAN NORMAL] Trouvé: ${dayPreds.length} (jour) + ${nextDayPreds.length} (lendemain)`);
-  if (dayPreds.length > 0 || nextDayPreds.length > 0) {
-    const all = [...dayPreds, ...nextDayPreds];
-    console.log(`📊 [BILAN NORMAL] Détails: ${JSON.stringify(all.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, date: (p.match_date || '').split('T')[0] })))}`);
+
+  console.log(`📊 [BILAN] created_at: ${prevDay} + ${targetDate}`);
+  console.log(`📊 [BILAN] Trouvé: ${prevDayPreds.length} (veille) + ${dayPreds.length} (jour)`);
+  if (dayPreds.length > 0 || prevDayPreds.length > 0) {
+    const all = [...prevDayPreds, ...dayPreds];
+    console.log(`📊 [BILAN] Détails: ${JSON.stringify(all.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, created: (p.created_at || '').split('T')[0], match: (p.match_date || '').split('T')[0] })))}`);
   }
 
   // Fusionner en dédupliquant par match_id (priorité au jour principal)
   const seen = new Set<string>();
   const allDayPredictions: any[] = [];
-  for (const p of [...dayPreds, ...nextDayPreds]) {
+  for (const p of [...prevDayPreds, ...dayPreds]) {
     if (!seen.has(p.match_id)) {
       seen.add(p.match_id);
       allDayPredictions.push(p);
