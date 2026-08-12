@@ -1608,34 +1608,17 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   })();
 
   // 🎯 Filtrer par created_at = date de publication (pas match_date)
-  // Chercher aussi la veille au cas où le cron tourne juste après minuit UTC
-  const prevDay = (() => {
-    const d = new Date(targetDate + 'T12:00:00Z');
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  })();
+  // Le bilan du jour J couvre les publications de la VEILLE (J-1)
+  // Ex: bilan publié le 11 août à 5h → publications du 10 août
+  const dayPreds = await SupabaseStore.getPredictionsByCreatedAt(targetDate);
 
-  const [dayPreds, prevDayPreds] = await Promise.all([
-    SupabaseStore.getPredictionsByCreatedAt(targetDate),
-    SupabaseStore.getPredictionsByCreatedAt(prevDay),
-  ]);
-
-  console.log(`📊 [BILAN] created_at: ${prevDay} + ${targetDate}`);
-  console.log(`📊 [BILAN] Trouvé: ${prevDayPreds.length} (veille) + ${dayPreds.length} (jour)`);
-  if (dayPreds.length > 0 || prevDayPreds.length > 0) {
-    const all = [...prevDayPreds, ...dayPreds];
-    console.log(`📊 [BILAN] Détails: ${JSON.stringify(all.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, created: (p.created_at || '').split('T')[0], match: (p.match_date || '').split('T')[0] })))}`);
+  console.log(`📊 [BILAN] created_at: ${targetDate} (publications de la veille)`);
+  console.log(`📊 [BILAN] Trouvé: ${dayPreds.length} pronostics publiés ce jour`);
+  if (dayPreds.length > 0) {
+    console.log(`📊 [BILAN] Détails: ${JSON.stringify(dayPreds.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, created: (p.created_at || '').split('T')[0], match: (p.match_date || '').split('T')[0] })))}`);
   }
 
-  // Fusionner en dédupliquant par match_id (priorité au jour principal)
-  const seen = new Set<string>();
-  const allDayPredictions: any[] = [];
-  for (const p of [...prevDayPreds, ...dayPreds]) {
-    if (!seen.has(p.match_id)) {
-      seen.add(p.match_id);
-      allDayPredictions.push(p);
-    }
-  }
+  const allDayPredictions = dayPreds;
 
   const emptySummary: DailyResultSummary = {
     date: targetDate,

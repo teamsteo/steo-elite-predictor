@@ -2703,19 +2703,11 @@ export async function GET(request: NextRequest) {
             return yesterday.toISOString().split('T')[0];
           })();
           
-          // 🔍 Vérifier d'abord si des prédictions existent en Supabase pour cette date
-          // → pour distinguer "vraiment aucun pronostic" de "pronostics existent mais bilan pas encore vérifiable"
-          const nextDayForCheck = (() => {
-            const d = new Date(bilanDateISO + 'T12:00:00Z');
-            d.setDate(d.getDate() + 1);
-            return d.toISOString().split('T')[0];
-          })();
-          const [predsCheck, predsNextCheck] = await Promise.all([
-            SupabaseStore.getPredictionsByDate(bilanDateISO),
-            SupabaseStore.getPredictionsByDate(nextDayForCheck),
-          ]);
-          const totalPredsExist = predsCheck.length + predsNextCheck.length;
-          console.log(`📊 [BILAN CHECK] ${totalPredsExist} pronostics trouvés en Supabase pour ${bilanDateISO}+${nextDayForCheck}`);
+          // 🔍 Vérifier d'abord si des prédictions ont été PUBLIÉES ce jour (created_at)
+          // Le bilan couvre les publications de la veille → filtrer par created_at
+          const predsCheck = await SupabaseStore.getPredictionsByCreatedAt(bilanDateISO);
+          const totalPredsExist = predsCheck.length;
+          console.log(`📊 [BILAN CHECK] ${totalPredsExist} pronostics publiés le ${bilanDateISO}`);
           
           const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
           
@@ -2739,9 +2731,9 @@ export async function GET(request: NextRequest) {
             noDataMsg += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
             
             if (totalPredsExist > 0) {
-              // Pronostics existent mais résultats pas encore disponibles ou dédup
-              const pendingCount = [...predsCheck, ...predsNextCheck].filter(p => p.status === 'pending').length;
-              noDataMsg += `⏳ <b>${totalPredsExist} pronostic${totalPredsExist > 1 ? 's' : ''} enregistré${totalPredsExist > 1 ? 's' : ''}</b> — ${pendingCount} en attente de résultat\n\n`;
+              // Pronostics publiés ce jour mais résultats pas encore disponibles
+              const pendingCount = predsCheck.filter(p => p.status === 'pending').length;
+              noDataMsg += `⏳ <b>${totalPredsExist} pronostic${totalPredsExist > 1 ? 's' : ''} publié${totalPredsExist > 1 ? 's' : ''}</b> — ${pendingCount} en attente de résultat\n\n`;
               noDataMsg += `🔍 Vérification: ${verifyResult.verified} matchs vérifiés, ${verifyResult.updated} mis à jour\n`;
             } else {
               // Vraiment aucun pronostic pour cette date
