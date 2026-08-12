@@ -2528,8 +2528,8 @@ export async function GET(request: NextRequest) {
               const pA = priorityMap[sportA] ?? 99;
               const pB = priorityMap[sportB] ?? 99;
               return pA - pB;
-            })
-            .slice(0, 5);
+            });
+            // ⚠️ PLUS de slice(0, 5) — tous les value bets affichés doivent être sauvegardés pour le bilan
             
             if (vbFiltered.length > 0) {
               const todayISO = new Date().toISOString().split('T')[0];

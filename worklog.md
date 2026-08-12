@@ -25,6 +25,29 @@ Stage Summary:
 - TypeScript compile sans erreur
 
 ---
+Task ID: 2
+Agent: Main
+Task: Fix problèmes résiduels publications (5/13 affichés, N/A, Aujourd'hui)
+
+Work Log:
+- Retiré .slice(0, 5) dans sauvegarde value bets Supabase (cron/route.ts ligne 2532)
+  → tous les value bets affichés sont maintenant sauvegardés pour le bilan
+- getBetOption() enrichi pour sports non-football : ajoute le nom de l'équipe
+  → retourne "1️⃣ Detroit Tigers" au lieu de juste "1️⃣"
+- Supprimé "N/A" dans value bets et kamikaze quand recommendation absente
+  → affiche juste "🎯 1️⃣ Detroit Tigers" sans "N/A" parasite
+- formatDateTime() réécrit : priorité à dateStr (ISO) plutôt qu'à displayDate
+  → affiche "Mardi 11 Août" au lieu de "Aujourd'hui" générique
+- Le bug "5/13 value bets affichés" persiste dans la publication vue par l'utilisateur
+  car le déploiement n'a pas encore été fait
+
+Stage Summary:
+- Code source entièrement corrigé mais PAS ENCORE DÉPLOYÉ sur Vercel
+- User doit déployer pour voir les corrections dans les prochaines publications
+- Remaining concern: match_date fallback à todayISO si p.date vide — peut causer
+  des pronostics manquants au bilan si la vraie date du match n'est pas propagée
+
+---
 
 ## Date: $(date -u +%Y-%m-%d)
 

@@ -314,6 +314,29 @@ function createProgressBar(percentage: number, length: number = 10): string {
 
 function formatDateTime(dateStr: string, displayDate?: string): { date: string; time: string } {
   try {
+    // 🎯 PRIORITÉ à dateStr (ISO) — c'est la vraie date du match
+    // displayDate est juste un label ("Aujourd'hui", "Demain") souvent trompeur
+    if (dateStr) {
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+        const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                            'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+        
+        const dayName = dayNames[date.getDay()];
+        const day = date.getDate();
+        const month = monthNames[date.getMonth()];
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        
+        return { 
+          date: `${dayName} ${day} ${month}`, 
+          time: `${hours}h${minutes}` 
+        };
+      }
+    }
+    
+    // Fallback sur displayDate si dateStr invalide
     if (displayDate) {
       const parts = displayDate.split(',');
       if (parts.length >= 2) {
@@ -322,25 +345,7 @@ function formatDateTime(dateStr: string, displayDate?: string): { date: string; 
       return { date: displayDate, time: '' };
     }
     
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) {
-      return { date: 'Date inconnue', time: '' };
-    }
-    
-    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-    const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
-                        'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-    
-    const dayName = dayNames[date.getDay()];
-    const day = date.getDate();
-    const month = monthNames[date.getMonth()];
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    
-    return { 
-      date: `${dayName} ${day} ${month}`, 
-      time: `${hours}h${minutes}` 
-    };
+    return { date: 'Date inconnue', time: '' };
   } catch {
     return { date: 'Date inconnue', time: '' };
   }
@@ -575,8 +580,15 @@ function getBetOption(predictedResult?: 'home' | 'away' | 'draw', sport?: string
     }
   }
   
-  if (predictedResult === 'home') return '1️⃣';
-  if (predictedResult === 'away') return '2️⃣';
+  // 🎯 Sports non-football : afficher le nom de l'équipe aussi (pas juste l'emoji)
+  if (predictedResult === 'home') {
+    const teamName = homeTeam || 'Domicile';
+    return `1️⃣ <b>${teamName}</b>`;
+  }
+  if (predictedResult === 'away') {
+    const teamName = awayTeam || 'Extérieur';
+    return `2️⃣ <b>${teamName}</b>`;
+  }
   
   return '';
 }
@@ -1262,7 +1274,9 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     message += `\n`;
     
     if (time) message += `⏰ ${time}  ·  `;
-    message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
+    // 🎯 Ne pas afficher 'N/A' si la recommendation est absente — le betOption contient déjà le nom de l'équipe
+    const rec = m.recommendation && m.recommendation !== 'N/A' ? ` <b>${m.recommendation}</b>` : '';
+    message += `🎯 ${betOption}${rec}\n`;
     
     if (m.oddsHome && m.oddsAway) {
       message += `📊 Cotes: 1:<b>${m.oddsHome.toFixed(2)}</b>`;
@@ -1337,7 +1351,9 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     message += `\n`;
 
     if (time) message += `⏰ ${time}  ·  `;
-    message += `🎯 ${betOption} <b>${m.recommendation || 'N/A'}</b>\n`;
+    // 🎯 Ne pas afficher 'N/A' si la recommendation est absente — le betOption contient déjà le nom de l'équipe
+    const rec = m.recommendation && m.recommendation !== 'N/A' ? ` <b>${m.recommendation}</b>` : '';
+    message += `🎯 ${betOption}${rec}\n`;
 
     if (m.oddsHome && m.oddsAway) {
       message += `📊 Cotes: 1:<b>${m.oddsHome.toFixed(2)}</b>`;
