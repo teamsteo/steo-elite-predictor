@@ -94,6 +94,10 @@
     {
       "path": "/api/cron?action=telegram-combo",
       "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron?action=mlb-palier",
+      "schedule": "0 8 * * *"
     }
   ]
 }

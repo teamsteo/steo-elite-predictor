@@ -16,6 +16,7 @@ import SupabaseStore, { type DbPrediction } from './db-supabase';
 // Configuration Telegram
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const TELEGRAM_PERSONAL_CHAT_ID = process.env.TELEGRAM_PERSONAL_CHAT_ID;
 
 // Déduplication : track la dernière publication par type pour éviter les doublons
 const lastPublication: Record<string, { date: string; hash: string }> = {};
@@ -433,6 +434,45 @@ export async function sendTelegramMessage(text: string, options?: {
     }
   }
   return false;
+}
+
+// Envoi en message privé (chat personnel, pas le canal)
+export async function sendTelegramPersonalMessage(text: string, options?: {
+  parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+  disable_notification?: boolean;
+}): Promise<boolean> {
+  const chatId = TELEGRAM_PERSONAL_CHAT_ID || TELEGRAM_CHAT_ID;
+  
+  if (!TELEGRAM_BOT_TOKEN || !chatId) {
+    console.warn('⚠️ Telegram perso non configuré (ni TELEGRAM_PERSONAL_CHAT_ID ni TELEGRAM_CHAT_ID)');
+    return false;
+  }
+
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        parse_mode: options?.parse_mode || 'HTML',
+        disable_notification: options?.disable_notification || false,
+      }),
+    });
+
+    const data = await response.json();
+    if (!data.ok) {
+      console.error('❌ Erreur Telegram perso:', data.description);
+      return false;
+    }
+
+    console.log(`✅ Message perso envoyé (chat_id: ${chatId})`);
+    return true;
+  } catch (error) {
+    console.error('❌ Erreur envoi Telegram perso:', error);
+    return false;
+  }
 }
 
 // Split un message Telegram si > 4096 chars

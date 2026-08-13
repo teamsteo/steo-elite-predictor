@@ -26,6 +26,7 @@ import {
   publishDailyResultsToTelegram,
   publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
+  sendTelegramPersonalMessage,
   isSafeOrModerate,
   isKamikaze,
   selectTopDailyPredictions,
@@ -3675,9 +3676,21 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'mlb-palier': {
+        // Analyse MLB quotidienne pour montante palier intelligent → message perso Telegram
+        try {
+          const mlbResult = await generateMLBPalierAnalysis();
+          result = mlbResult;
+        } catch (e: any) {
+          console.error('❌ Erreur MLB palier:', e);
+          result = { mlb_palier: { success: false, error: e.message } };
+        }
+        break;
+      }
+
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-combo', 'telegram-results', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-combo', 'telegram-results', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'mlb-palier'] },
           { status: 400 }
         );
     }
@@ -3700,4 +3713,246 @@ export async function POST(request: NextRequest) {
       error: 'Erreur interne'
     }, { status: 500 });
   }
+}
+
+// ============================================
+// MLB PALIER INTELLIGENT - Analyse quotidienne
+// ============================================
+
+const MLB_HFA = 0.038;
+
+function mlbAmericanToProb(oddsStr: string): number {
+  const odds = parseInt(oddsStr, 10);
+  if (odds > 0) return odds / (odds + 100);
+  return 100 / (Math.abs(odds) + 100);
+}
+
+function mlbOddsToDecimal(oddsStr: string): number {
+  const odds = parseInt(oddsStr, 10);
+  if (odds < 0) return 100 / Math.abs(odds);
+  return 1 + odds / 100;
+}
+
+interface MLBMatchAnalysis {
+  match: string;
+  time: string;
+  fav: string;
+  favOdds: string;
+  favProb: number;
+  edge: number;
+  risk: string;
+  emoji: string;
+}
+
+async function generateMLBPalierAnalysis(): Promise<{ mlb_palier: { success: boolean; matches: number; combo?: string; error?: string } }> {
+  console.log('⚾ [MLB PALIER] Début analyse quotidienne...');
+  
+  // Fetch today's MLB scoreboard from ESPN
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0].replace(/-/g, '');
+  
+  // Also fetch tomorrow in case today's odds aren't up yet
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split('T')[0].replace(/-/g, '');
+  
+  let allMatches: MLBMatchAnalysis[] = [];
+  
+  for (const dateStr of [todayStr, tomorrowStr]) {
+    try {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        console.log(`⚠️ [MLB PALIER] ESPN ${dateStr} → ${resp.status}`);
+        continue;
+      }
+      
+      const data = await resp.json();
+      const events = data.events || [];
+      const dateLabel = dateStr === todayStr ? "Aujourd'hui" : "Demain";
+      
+      console.log(`📊 [MLB PALIER] ${dateLabel} (${dateStr}): ${events.length} matchs`);
+      
+      for (const event of events) {
+        const comp = event.competitions?.[0];
+        if (!comp) continue;
+        
+        const competitors = comp.competitors || [];
+        let homeTeam = 'Unknown';
+        let awayTeam = 'Unknown';
+        
+        for (const c of competitors) {
+          const name = c.team?.displayName || 'Unknown';
+          if (c.homeAway === 'home') homeTeam = name;
+          else awayTeam = name;
+        }
+        
+        // Extract moneyline odds from DraftKings (preferred) or any provider
+        let homeOdds: string | null = null;
+        let awayOdds: string | null = null;
+        
+        const oddsItems = comp.odds || [];
+        const providers = ['DraftKings', 'Caesars', 'FanDuel'];
+        
+        for (const prov of providers) {
+          for (const o of oddsItems) {
+            if (o.provider?.name?.includes(prov)) {
+              try {
+                homeOdds = o.moneyline.home.close.odds;
+                awayOdds = o.moneyline.away.close.odds;
+                break;
+              } catch {}
+            }
+          }
+          if (homeOdds) break;
+        }
+        
+        // Fallback: any provider
+        if (!homeOdds) {
+          for (const o of oddsItems) {
+            try {
+              homeOdds = o.moneyline.home.close.odds;
+              awayOdds = o.moneyline.away.close.odds;
+              break;
+            } catch {}
+          }
+        }
+        
+        if (!homeOdds || !awayOdds) continue;
+        
+        // Calculate probabilities
+        const homeImplied = mlbAmericanToProb(homeOdds);
+        const awayImplied = mlbAmericanToProb(awayOdds);
+        const totalImplied = homeImplied + awayImplied;
+        if (totalImplied === 0) continue;
+        
+        // Fair probabilities (remove vigorish)
+        const homeFair = homeImplied / totalImplied;
+        const awayFair = awayImplied / totalImplied;
+        
+        // Model probability with HFA
+        const homeModel = Math.max(0.01, Math.min(0.99, homeFair + MLB_HFA / 2));
+        const awayModel = Math.max(0.01, Math.min(0.99, awayFair - MLB_HFA / 2));
+        
+        // Determine favorite
+        let fav: string, favOdds: string, favProb: number, favImplied: number;
+        if (homeModel > awayModel) {
+          fav = homeTeam; favOdds = homeOdds; favProb = homeModel; favImplied = homeImplied;
+        } else {
+          fav = awayTeam; favOdds = awayOdds; favProb = awayModel; favImplied = awayImplied;
+        }
+        
+        const edge = (favProb - favImplied) * 100;
+        
+        let risk: string, emoji: string;
+        if (favProb >= 0.65) { risk = 'SAFE'; emoji = '🟢'; }
+        else if (favProb >= 0.58) { risk = 'MODÉRÉ'; emoji = '🟡'; }
+        else if (favProb >= 0.53) { risk = 'ACCEPTABLE'; emoji = '🟠'; }
+        else { risk = 'DANGEREUX'; emoji = '🔴'; }
+        
+        let matchTime = '';
+        try {
+          const dt = new Date(event.date);
+          matchTime = dt.toISOString().slice(11, 16) + ' UTC';
+        } catch {}
+        
+        allMatches.push({
+          match: `${awayTeam} @ ${homeTeam}`,
+          time: matchTime,
+          fav,
+          favOdds,
+          favProb: favProb * 100,
+          edge,
+          risk,
+          emoji,
+        });
+      }
+    } catch (err: any) {
+      console.error(`❌ [MLB PALIER] Erreur fetch ${dateStr}:`, err.message);
+    }
+  }
+  
+  // Sort by safety: highest prob first, then highest edge
+  allMatches.sort((a, b) => b.favProb - a.favProb || b.edge - a.edge);
+  
+  console.log(`📊 [MLB PALIER] Total matchs analysés: ${allMatches.length}`);
+  
+  if (allMatches.length < 2) {
+    const msg = `⚠️ <b>MLB Palier Intelligent</b>\n\nAucun match MLB avec cotes disponibles aujourd'hui.\nLes cotes sont généralement publiées ~24h avant le match.\n\n🔄 Prochain essai demain matin.`;
+    await sendTelegramPersonalMessage(msg);
+    return { mlb_palier: { success: true, matches: 0 } };
+  }
+  
+  // Build Telegram message
+  let message = `🎲 <b>MLB - Analyse Palier Intelligent</b>\n`;
+  message += `📅 ${today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n`;
+  message += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  
+  // Show all matches ranked
+  message += `📊 <b>Matchs classés par fiabilité:</b>\n\n`;
+  
+  const top = allMatches.slice(0, Math.min(allMatches.length, 10));
+  for (let i = 0; i < top.length; i++) {
+    const m = top[i];
+    message += `${i + 1}. ${m.emoji} ${m.match}\n`;
+    message += `   ⏰ ${m.time}\n`;
+    message += `   → <b>${m.fav}</b> (${m.favOdds})\n`;
+    message += `   📈 ${m.favProb.toFixed(1)}% | Edge: ${m.edge >= 0 ? '+' : ''}${m.edge.toFixed(1)}% | ${m.risk}\n\n`;
+  }
+  
+  // Best combo (top 2 safest)
+  const pick1 = allMatches[0];
+  const pick2 = allMatches[1];
+  
+  const comboProb = (pick1.favProb / 100) * (pick2.favProb / 100) * 100;
+  const comboOdds = mlbOddsToDecimal(pick1.favOdds) * mlbOddsToDecimal(pick2.favOdds);
+  const comboOddsStr = comboOdds.toFixed(2);
+  
+  let palierNiveau: string;
+  if (comboProb >= 42) palierNiveau = '🟢 EXCELLENT pour montante';
+  else if (comboProb >= 35) palierNiveau = '🟡 BON pour montante';
+  else if (comboProb >= 28) palierNiveau = '🟠 ACCEPTABLE';
+  else palierNiveau = '🔴 TROP RISQUÉ';
+  
+  message += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  message += `🎯 <b>COMBO OPTIMAL DU JOUR</b>\n\n`;
+  message += `1️⃣ ${pick1.fav} (${pick1.favOdds}) → ${pick1.favProb.toFixed(1)}%\n`;
+  message += `2️⃣ ${pick2.fav} (${pick2.favOdds}) → ${pick2.favProb.toFixed(1)}%\n`;
+  message += `\n╔══════════════════════════╗\n`;
+  message += `║  Cote combo: x${comboOddsStr}\n`;
+  message += `║  Prob: ${comboProb.toFixed(1)}%\n`;
+  message += `║  Palier: ${palierNiveau}\n`;
+  message += `╚══════════════════════════╝\n`;
+  
+  // Palier simulation
+  message += `\n💰 <b>Simulation Montante</b> (mise 10,000F)\n`;
+  message += `   Mise: 10,000F\n`;
+  message += `   Gain potentiel: ${Math.round(10000 * comboOdds).toLocaleString('fr-FR')}F\n`;
+  message += `   Retrait 40%: ${Math.round(10000 * comboOdds * 0.4).toLocaleString('fr-FR')}F ✅\n`;
+  message += `   Bankroll palier suivant: ${Math.round(10000 * comboOdds * 0.6).toLocaleString('fr-FR')}F\n`;
+  
+  // Split if too long
+  if (message.length > 4096) {
+    // Send in 2 parts
+    const mid = message.lastIndexOf('\n━━', Math.floor(message.length / 2));
+    if (mid > 0) {
+      await sendTelegramPersonalMessage(message.slice(0, mid));
+      await sendTelegramPersonalMessage(message.slice(mid));
+    } else {
+      await sendTelegramPersonalMessage(message.slice(0, 4000));
+      await sendTelegramPersonalMessage(message.slice(4000));
+    }
+  } else {
+    await sendTelegramPersonalMessage(message);
+  }
+  
+  console.log(`✅ [MLB PALIER] Analyse envoyée en message perso (${allMatches.length} matchs, combo: ${comboProb.toFixed(1)}%)`);
+  
+  return {
+    mlb_palier: {
+      success: true,
+      matches: allMatches.length,
+      combo: `${pick1.fav} + ${pick2.fav} @ ${comboProb.toFixed(1)}%`,
+    }
+  };
 }

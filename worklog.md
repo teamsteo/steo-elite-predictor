@@ -198,3 +198,23 @@ Stage Summary:
   CREATE INDEX idx_predictions_is_value_bet ON predictions(is_value_bet);
 - Après migration SQL, les prochains crons sauvegarderont is_value_bet + edge_value
 - Le bilan affichera la comparaison VB vs Safe avec ROI et verdict
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Ajouter analyse MLB quotidienne auto + envoi Telegram perso
+
+Work Log:
+- Exploré config Telegram: TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID (canal only, pas de personal chat ID)
+- Ajouté TELEGRAM_PERSONAL_CHAT_ID dans telegramService.ts
+- Créé sendTelegramPersonalMessage() qui envoie au chat perso (fallback vers TELEGRAM_CHAT_ID si non défini)
+- Créé generateMLBPalierAnalysis() dans cron/route.ts: fetch ESPN MLB scoreboard, calcule prob/edge, sélectionne top combo
+- Ajouté action 'mlb-palier' dans le switch du cron route
+- Ajouté cron dans vercel.json: 0 8 * * * (08:00 UTC quotidien)
+- TypeScript compile sans erreur
+
+Stage Summary:
+- Fichiers modifiés: src/lib/telegramService.ts, src/app/api/cron/route.ts, vercel.json
+- Cron tourne à 08:00 UTC chaque jour
+- Message envoyé en DM perso (pas le canal)
+- BLOCKING: TELEGRAM_PERSONAL_CHAT_ID nécessaire comme env var Vercel
