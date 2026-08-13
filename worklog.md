@@ -238,3 +238,25 @@ Stage Summary:
 - Premier message automatique: demain 08:00 UTC
 - Contenu: analyse MLB complète + combo optimal + simulation palier → DM perso Telegram
 - User a créé TELEGRAM_PERSONAL_CHAT_ID sur Vercel ✅
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Réécrire palier pour utiliser le pipeline ML existant (pas ESPN direct)
+
+Work Log:
+- Compris que l'approche ESPN directe était mauvaise → le pipeline ML existe déjà
+- Exploré DbPrediction: risk_percentage, edge_value, confidence, odds, status, is_combo
+- Exploré selectTopDailyPredictions: filtres existants (risk caps par sport, min prob 70%, real odds only)
+- Réécrit generatePalierIntelligent() pour lire Supabase via getPredictionsByCreatedAt
+- Filtre: pending + cotes réelles + pas combo + pas avoid + confidence != low
+- Tri: risk_percentage croissant (plus sûr), puis edge_value décroissant
+- Top 5 max envoyés en DM perso
+- Combo: 2 plus sûrs, diversification sport si possible
+- Supprimé toutes les vieilles fonctions ESPN (generateMLBPalierAnalysis, generateAllSportsPalierAnalysis, helpers)
+- TypeScript compile OK, 3901 lignes (down from 4212)
+
+Stage Summary:
+- Fichier: src/app/api/cron/route.ts
+- Cron: 08:00 UTC (1h après pipeline ML à 07:00)
+- Fonction: generatePalierIntelligent() — lit Supabase, pas ESPN

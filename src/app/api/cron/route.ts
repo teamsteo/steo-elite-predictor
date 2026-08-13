@@ -3677,10 +3677,10 @@ export async function POST(request: NextRequest) {
         break;
 
       case 'mlb-palier': {
-        // Analyse ALL SPORTS quotidienne pour montante palier intelligent → message perso Telegram
+        // Palier Intelligent : lire pipeline ML existant → top 5 fiables → combo → DM perso
         try {
-          const mlbResult = await generateAllSportsPalierAnalysis();
-          result = mlbResult;
+          const palierResult = await generatePalierIntelligent();
+          result = palierResult;
         } catch (e: any) {
           console.error('❌ Erreur Palier:', e);
           result = { mlb_palier: { success: false, error: e.message } };
@@ -3716,246 +3716,166 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================
-// ALL SPORTS PALIER INTELLIGENT - Analyse quotidienne
+// PALIER INTELLIGENT — Top 5 fiables du pipeline ML → DM perso
 // ============================================
 
-interface SportMatchAnalysis {
-  match: string;
-  time: string;
-  sport: string;
-  fav: string;
-  favOdds: string;
-  favProb: number;
-  edge: number;
-  risk: string;
-  emoji: string;
-  provider: string;
-}
+async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boolean; matches: number; combo?: string; error?: string } }> {
+  console.log('🎯 [PALIER] Lecture prédictions pipeline ML...');
 
-const SPORT_CONFIGS = [
-  { sport: 'MLB', emoji: '⚾', slug: 'baseball/mlb', hfa: 0.038 },
-  { sport: 'NFL', emoji: '🏈', slug: 'football/nfl', hfa: 0.025 },
-  { sport: 'NBA', emoji: '🏀', slug: 'basketball/nba', hfa: 0.032 },
-  { sport: 'NHL', emoji: '🏒', slug: 'hockey/nhl', hfa: 0.035 },
-];
-
-async function generateAllSportsPalierAnalysis(): Promise<{ mlb_palier: { success: boolean; matches: number; combo?: string; error?: string } }> {
-  console.log('🎯 [PALIER] Début analyse ALL SPORTS quotidienne...');
-  
   const today = new Date();
-  
-  // Build date strings for today, tomorrow, day after
-  const dates: string[] = [];
-  for (let d = 0; d < 3; d++) {
-    const dt = new Date(today);
-    dt.setDate(dt.getDate() + d);
-    dates.push(dt.toISOString().split('T')[0].replace(/-/g, ''));
-  }
-  
-  let allMatches: SportMatchAnalysis[] = [];
-  
-  for (const sportCfg of SPORT_CONFIGS) {
-    for (const dateStr of dates) {
-      try {
-        const url = `https://site.api.espn.com/apis/site/v2/sports/${sportCfg.slug}/scoreboard?dates=${dateStr}`;
-        const resp = await fetch(url);
-        if (!resp.ok) continue;
-        
-        const data = await resp.json();
-        const events = data.events || [];
-        
-        console.log(`📊 [PALIER] ${sportCfg.sport} ${dateStr}: ${events.length} matchs`);
-        
-        for (const event of events) {
-          const comp = event.competitions?.[0];
-          if (!comp) continue;
-          
-          // Skip completed or in-progress matches
-          const statusType = comp.status?.type?.name || '';
-          if (statusType === 'STATUS_FULL_TIME' || statusType === 'STATUS_IN_PROGRESS' || 
-              statusType === 'STATUS_HALFTIME' || statusType === 'STATUS_END_PERIOD') {
-            continue;
-          }
-          
-          const competitors = comp.competitors || [];
-          let homeTeam = 'Unknown';
-          let awayTeam = 'Unknown';
-          
-          for (const c of competitors) {
-            const name = c.team?.displayName || 'Unknown';
-            if (c.homeAway === 'home') homeTeam = name;
-            else awayTeam = name;
-          }
-          
-          // Extract moneyline odds
-          let homeOdds: string | null = null;
-          let awayOdds: string | null = null;
-          let provider = 'Unknown';
-          
-          const oddsItems = comp.odds || [];
-          const providers = ['DraftKings', 'Caesars', 'FanDuel'];
-          
-          for (const prov of providers) {
-            for (const o of oddsItems) {
-              if (o.provider?.name?.includes(prov)) {
-                try {
-                  homeOdds = o.moneyline.home.close.odds;
-                  awayOdds = o.moneyline.away.close.odds;
-                  provider = o.provider.name;
-                  break;
-                } catch {}
-              }
-            }
-            if (homeOdds) break;
-          }
-          
-          if (!homeOdds) {
-            for (const o of oddsItems) {
-              try {
-                homeOdds = o.moneyline.home.close.odds;
-                awayOdds = o.moneyline.away.close.odds;
-                provider = o.provider?.name || 'Unknown';
-                break;
-              } catch {}
-            }
-          }
-          
-          if (!homeOdds || !awayOdds) continue;
-          
-          // Calculate probabilities
-          const homeImplied = americanToProb(homeOdds);
-          const awayImplied = americanToProb(awayOdds);
-          const totalImplied = homeImplied + awayImplied;
-          if (totalImplied === 0) continue;
-          
-          const homeFair = homeImplied / totalImplied;
-          const awayFair = awayImplied / totalImplied;
-          
-          const homeModel = Math.max(0.01, Math.min(0.99, homeFair + sportCfg.hfa / 2));
-          const awayModel = Math.max(0.01, Math.min(0.99, awayFair - sportCfg.hfa / 2));
-          
-          let fav: string, favOdds: string, favProb: number, favImplied: number;
-          if (homeModel > awayModel) {
-            fav = homeTeam; favOdds = homeOdds; favProb = homeModel; favImplied = homeImplied;
-          } else {
-            fav = awayTeam; favOdds = awayOdds; favProb = awayModel; favImplied = awayImplied;
-          }
-          
-          const edge = (favProb - favImplied) * 100;
-          
-          let risk: string, emoji: string;
-          if (favProb >= 0.68) { risk = 'SAFE'; emoji = '🟢'; }
-          else if (favProb >= 0.60) { risk = 'BON'; emoji = '🟡'; }
-          else if (favProb >= 0.54) { risk = 'MODÉRÉ'; emoji = '🟠'; }
-          else { risk = 'RISQUÉ'; emoji = '🔴'; }
-          
-          let matchTime = '';
-          try {
-            const dt = new Date(event.date);
-            matchTime = dt.toISOString().slice(11, 16) + ' UTC';
-          } catch {}
-          
-          allMatches.push({
-            match: `${awayTeam} @ ${homeTeam}`,
-            time: matchTime,
-            sport: sportCfg.sport,
-            fav,
-            favOdds,
-            favProb: favProb * 100,
-            edge,
-            risk,
-            emoji,
-            provider,
-          });
-        }
-      } catch (err: any) {
-        console.log(`⚠️ [PALIER] ${sportCfg.sport} ${dateStr}: ${err.message}`);
-      }
-    }
-  }
-  
-  // Sort by safety: highest prob first, then highest edge
-  allMatches.sort((a, b) => b.favProb - a.favProb || b.edge - a.edge);
-  
-  console.log(`📊 [PALIER] Total matchs avec cotes: ${allMatches.length}`);
-  
-  if (allMatches.length < 2) {
-    const msg = `⚠️ <b>Palier Intelligent - Analyse Quotidienne</b>\n\nAucun match avec cotes disponibles aujourd'hui.\nLes cotes arrivent ~24h avant les matchs.\n\n🔄 Prochain essai demain 08:00 UTC.`;
+  const todayISO = today.toISOString().split('T')[0];
+
+  // 1. Lire les prédictions générées aujourd'hui par le pipeline ML (07:00 UTC)
+  const dayPredictions = await SupabaseStore.getPredictionsByCreatedAt(todayISO);
+  console.log(`📊 [PALIER] ${dayPredictions.length} prédictions trouvées pour ${todayISO}`);
+
+  // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas low confidence
+  const eligible = dayPredictions.filter(p =>
+    p.status === 'pending' &&
+    p.odds_home > 0 &&
+    p.odds_away > 0 &&
+    !p.is_combo &&
+    p.predicted_result !== 'avoid' &&
+    p.confidence !== 'low'
+  );
+  console.log(`📊 [PALIER] ${eligible.length} éligibles (pending, cotes réelles, pas combo)`);
+
+  // 3. Trier par fiabilité : risk % croissant, puis edge décroissant
+  eligible.sort((a, b) => {
+    const riskA = a.risk_percentage ?? 100;
+    const riskB = b.risk_percentage ?? 100;
+    if (riskA !== riskB) return riskA - riskB;
+    return (b.edge_value || 0) - (a.edge_value || 0);
+  });
+
+  // 4. Top 5 max
+  const top5 = eligible.slice(0, 5);
+  console.log(`📊 [PALIER] Top ${top5.length} sélectionnés`);
+
+  if (top5.length < 2) {
+    const msg = `⚠️ <b>Palier Intelligent</b>\n\nPas assez de prédictions fiables aujourd'hui (${top5.length} seulement).\nLe pipeline ML tourne à 07:00 UTC.\n\n🔄 Prochain essai demain.`;
     await sendTelegramPersonalMessage(msg);
-    return { mlb_palier: { success: true, matches: 0 } };
+    return { mlb_palier: { success: true, matches: top5.length } };
   }
-  
-  // Build Telegram message
-  const sportEmoji: Record<string, string> = { MLB: '⚾', NFL: '🏈', NBA: '🏀', NHL: '🏒' };
-  
-  let message = `🎯 <b>PALIER INTELLIGENT - Tous Sports</b>\n`;
+
+  // 5. Construire le message
+  const sportEmoji: Record<string, string> = {
+    football: '⚽', basketball: '🏀', baseball: '⚾', hockey: '🏒', tennis: '🎾', other: '⚡',
+  };
+  const confLabel: Record<string, string> = {
+    very_high: '🔥', high: '✅', medium: '⚡', low: '⚠️',
+  };
+
+  let message = `🎯 <b>PALIER INTELLIGENT - Top Fiables</b>\n`;
   message += `📅 ${today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n`;
-  message += `📊 ${allMatches.length} matchs analysés\n`;
+  message += `📊 ${eligible.length} prédictions analysées → Top ${top5.length}\n`;
   message += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  
-  // Show all matches ranked
-  message += `🏆 <b>Classement par fiabilité:</b>\n\n`;
-  
-  const top = allMatches.slice(0, Math.min(allMatches.length, 12));
-  for (let i = 0; i < top.length; i++) {
-    const m = top[i];
-    const se = sportEmoji[m.sport] || '⚡';
-    message += `${i + 1}. ${m.emoji} ${se} <b>${m.match}</b>\n`;
-    message += `   ⏰ ${m.time} | ${m.sport}\n`;
-    message += `   → ${m.fav} (${m.favOdds})\n`;
-    message += `   📈 ${m.favProb.toFixed(1)}% | Edge ${m.edge >= 0 ? '+' : ''}${m.edge.toFixed(1)}% | ${m.risk}\n\n`;
+
+  for (let i = 0; i < top5.length; i++) {
+    const p = top5[i];
+    const se = sportEmoji[p.sport] || '⚡';
+    const cl = confLabel[p.confidence || 'medium'] || '⚡';
+
+    let teamPred = '';
+    let oddsPred = 0;
+    if (p.predicted_result === 'home') {
+      teamPred = p.home_team;
+      oddsPred = p.odds_home;
+    } else if (p.predicted_result === 'away') {
+      teamPred = p.away_team;
+      oddsPred = p.odds_away;
+    } else if (p.predicted_result === 'draw') {
+      teamPred = 'Match Nul';
+      oddsPred = p.odds_draw || 0;
+    } else {
+      teamPred = p.predicted_result || '?';
+      oddsPred = Math.max(p.odds_home, p.odds_away);
+    }
+
+    const risk = p.risk_percentage ?? 100;
+    const edge = p.edge_value || 0;
+
+    let riskLabel: string, riskEmoji: string;
+    if (risk <= 25) { riskLabel = 'SAFE'; riskEmoji = '🟢'; }
+    else if (risk <= 40) { riskLabel = 'FIABLE'; riskEmoji = '🟡'; }
+    else if (risk <= 50) { riskLabel = 'MODÉRÉ'; riskEmoji = '🟠'; }
+    else { riskLabel = 'RISQUÉ'; riskEmoji = '🔴'; }
+
+    let matchTime = '';
+    try {
+      const dt = new Date(p.match_date);
+      matchTime = dt.toISOString().slice(11, 16) + ' UTC';
+    } catch {}
+
+    message += `${i + 1}. ${riskEmoji} ${se} <b>${p.away_team} @ ${p.home_team}</b>\n`;
+    message += `   ⏰ ${matchTime} | ${p.league}\n`;
+    message += `   → <b>${teamPred}</b> @ ${oddsPred.toFixed(2)}\n`;
+    message += `   ${cl} Confiance: ${p.confidence || '?'} | Risque: ${risk.toFixed(0)}% | Edge: ${edge >= 0 ? '+' : ''}${edge.toFixed(1)}%\n`;
+    message += `   Niveau: ${riskLabel}\n\n`;
   }
-  
-  // Best combo (top 2 safest, prefer different sports if possible)
-  let pick1 = allMatches[0];
-  let pick2: SportMatchAnalysis | null = null;
-  
-  // Try to find second pick from a different sport
-  for (let i = 1; i < allMatches.length; i++) {
-    if (allMatches[i].sport !== pick1.sport) {
-      pick2 = allMatches[i];
+
+  // 6. Combo : 2 plus sûrs, idéalement sports différents
+  let pick1 = top5[0];
+  let pick2: typeof top5[0] | null = null;
+  for (let i = 1; i < top5.length; i++) {
+    if (top5[i].sport !== pick1.sport) {
+      pick2 = top5[i];
       break;
     }
   }
-  // If no different sport, take second safest
-  if (!pick2) pick2 = allMatches[1];
-  
-  const comboProb = (pick1.favProb / 100) * (pick2.favProb / 100) * 100;
-  const comboOdds = oddsToDecimal(pick1.favOdds) * oddsToDecimal(pick2.favOdds);
-  const comboOddsStr = comboOdds.toFixed(2);
-  
+  if (!pick2) pick2 = top5[1];
+
+  function getOdds(p: typeof pick1): number {
+    if (p.predicted_result === 'home') return p.odds_home;
+    if (p.predicted_result === 'away') return p.odds_away;
+    if (p.predicted_result === 'draw') return p.odds_draw || 1.5;
+    return Math.max(p.odds_home, p.odds_away);
+  }
+
+  function getTeam(p: typeof pick1): string {
+    if (p.predicted_result === 'home') return p.home_team;
+    if (p.predicted_result === 'away') return p.away_team;
+    if (p.predicted_result === 'draw') return 'Match Nul';
+    return p.predicted_result || '?';
+  }
+
+  const odds1 = getOdds(pick1);
+  const odds2 = getOdds(pick2);
+  const comboOdds = odds1 * odds2;
+  const comboProb = ((100 - (pick1.risk_percentage ?? 100)) / 100) * ((100 - (pick2.risk_percentage ?? 100)) / 100) * 100;
+
   let palierNiveau: string;
   if (comboProb >= 45) palierNiveau = '🟢 EXCELLENT';
-  else if (comboProb >= 38) palierNiveau = '🟡 BON';
-  else if (comboProb >= 30) palierNiveau = '🟠 ACCEPTABLE';
+  else if (comboProb >= 35) palierNiveau = '🟡 BON';
+  else if (comboProb >= 25) palierNiveau = '🟠 ACCEPTABLE';
   else palierNiveau = '🔴 TROP RISQUÉ';
-  
+
   const se1 = sportEmoji[pick1.sport] || '⚡';
   const se2 = sportEmoji[pick2.sport] || '⚡';
-  
+
   message += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  message += `🎯 <b>COMBO OPTIMAL DU JOUR</b>\n\n`;
-  message += `1️⃣ ${se1} ${pick1.fav} (${pick1.favOdds}) → ${pick1.favProb.toFixed(1)}% [${pick1.sport}]\n`;
-  message += `2️⃣ ${se2} ${pick2.fav} (${pick2.favOdds}) → ${pick2.favProb.toFixed(1)}% [${pick2.sport}]\n`;
+  message += `🎯 <b>COMBO DU JOUR</b>\n\n`;
+  message += `1️⃣ ${se1} ${getTeam(pick1)} @ ${odds1.toFixed(2)} [${pick1.league}]\n`;
+  message += `     Risque: ${(pick1.risk_percentage ?? 100).toFixed(0)}% | ${pick1.confidence}\n`;
+  message += `2️⃣ ${se2} ${getTeam(pick2)} @ ${odds2.toFixed(2)} [${pick2.league}]\n`;
+  message += `     Risque: ${(pick2.risk_percentage ?? 100).toFixed(0)}% | ${pick2.confidence}\n`;
   message += `\n╔══════════════════════════╗\n`;
-  message += `║  Cote combo: x${comboOddsStr}\n`;
+  message += `║  Cote combo: x${comboOdds.toFixed(2)}\n`;
   message += `║  Probabilité: ${comboProb.toFixed(1)}%\n`;
   message += `║  Niveau: ${palierNiveau}\n`;
   message += `╚══════════════════════════╝\n`;
-  
-  // Palier simulation
+
   const mise = 10000;
   const gain = Math.round(mise * comboOdds);
   const retrait = Math.round(gain * 0.4);
   const bankrollSuiv = gain - retrait;
-  
+
   message += `\n💰 <b>Simulation Montante</b>\n`;
   message += `   Mise: ${mise.toLocaleString('fr-FR')}F\n`;
-  message += `   Gain potentiel: ${gain.toLocaleString('fr-FR')}F\n`;
-  message += `   Retrait 40% sécurisé: ${retrait.toLocaleString('fr-FR')}F ✅\n`;
-  message += `   Bankroll palier suivant: ${bankrollSuiv.toLocaleString('fr-FR')}F\n`;
-  
-  // Split if too long
+  message += `   Gain: ${gain.toLocaleString('fr-FR')}F\n`;
+  message += `   Retrait 40%: ${retrait.toLocaleString('fr-FR')}F ✅\n`;
+  message += `   Bankroll suivant: ${bankrollSuiv.toLocaleString('fr-FR')}F\n`;
+
   if (message.length > 4096) {
     const mid = message.lastIndexOf('\n━━', Math.floor(message.length / 2));
     if (mid > 0) {
@@ -3968,265 +3888,14 @@ async function generateAllSportsPalierAnalysis(): Promise<{ mlb_palier: { succes
   } else {
     await sendTelegramPersonalMessage(message);
   }
-  
-  console.log(`✅ [PALIER] Analyse envoyée (${allMatches.length} matchs, combo: ${comboProb.toFixed(1)}%)`);
-  
+
+  console.log(`✅ [PALIER] ${top5.length} picks envoyés perso, combo: ${getTeam(pick1)} + ${getTeam(pick2)} @ ${comboProb.toFixed(1)}%`);
+
   return {
     mlb_palier: {
       success: true,
-      matches: allMatches.length,
-      combo: `${pick1.fav} (${pick1.sport}) + ${pick2.fav} (${pick2.sport}) @ ${comboProb.toFixed(1)}%`,
-    }
-  };
-}
-
-// Helper functions (used by generateAllSportsPalierAnalysis)
-function americanToProb(oddsStr: string): number {
-  const odds = parseInt(oddsStr, 10);
-  if (odds > 0) return odds / (odds + 100);
-  return 100 / (Math.abs(odds) + 100);
-}
-
-function oddsToDecimal(oddsStr: string): number {
-  const odds = parseInt(oddsStr, 10);
-  if (odds < 0) return 100 / Math.abs(odds);
-  return 1 + odds / 100;
-}
-
-const MLB_HFA = 0.038;
-
-function mlbAmericanToProb(oddsStr: string): number {
-  const odds = parseInt(oddsStr, 10);
-  if (odds > 0) return odds / (odds + 100);
-  return 100 / (Math.abs(odds) + 100);
-}
-
-function mlbOddsToDecimal(oddsStr: string): number {
-  const odds = parseInt(oddsStr, 10);
-  if (odds < 0) return 100 / Math.abs(odds);
-  return 1 + odds / 100;
-}
-
-interface MLBMatchAnalysis {
-  match: string;
-  time: string;
-  fav: string;
-  favOdds: string;
-  favProb: number;
-  edge: number;
-  risk: string;
-  emoji: string;
-}
-
-async function generateMLBPalierAnalysis(): Promise<{ mlb_palier: { success: boolean; matches: number; combo?: string; error?: string } }> {
-  console.log('⚾ [MLB PALIER] Début analyse quotidienne...');
-  
-  // Fetch today's MLB scoreboard from ESPN
-  const today = new Date();
-  const todayStr = today.toISOString().split('T')[0].replace(/-/g, '');
-  
-  // Also fetch tomorrow in case today's odds aren't up yet
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0].replace(/-/g, '');
-  
-  let allMatches: MLBMatchAnalysis[] = [];
-  
-  for (const dateStr of [todayStr, tomorrowStr]) {
-    try {
-      const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${dateStr}`;
-      const resp = await fetch(url);
-      if (!resp.ok) {
-        console.log(`⚠️ [MLB PALIER] ESPN ${dateStr} → ${resp.status}`);
-        continue;
-      }
-      
-      const data = await resp.json();
-      const events = data.events || [];
-      const dateLabel = dateStr === todayStr ? "Aujourd'hui" : "Demain";
-      
-      console.log(`📊 [MLB PALIER] ${dateLabel} (${dateStr}): ${events.length} matchs`);
-      
-      for (const event of events) {
-        const comp = event.competitions?.[0];
-        if (!comp) continue;
-        
-        const competitors = comp.competitors || [];
-        let homeTeam = 'Unknown';
-        let awayTeam = 'Unknown';
-        
-        for (const c of competitors) {
-          const name = c.team?.displayName || 'Unknown';
-          if (c.homeAway === 'home') homeTeam = name;
-          else awayTeam = name;
-        }
-        
-        // Extract moneyline odds from DraftKings (preferred) or any provider
-        let homeOdds: string | null = null;
-        let awayOdds: string | null = null;
-        
-        const oddsItems = comp.odds || [];
-        const providers = ['DraftKings', 'Caesars', 'FanDuel'];
-        
-        for (const prov of providers) {
-          for (const o of oddsItems) {
-            if (o.provider?.name?.includes(prov)) {
-              try {
-                homeOdds = o.moneyline.home.close.odds;
-                awayOdds = o.moneyline.away.close.odds;
-                break;
-              } catch {}
-            }
-          }
-          if (homeOdds) break;
-        }
-        
-        // Fallback: any provider
-        if (!homeOdds) {
-          for (const o of oddsItems) {
-            try {
-              homeOdds = o.moneyline.home.close.odds;
-              awayOdds = o.moneyline.away.close.odds;
-              break;
-            } catch {}
-          }
-        }
-        
-        if (!homeOdds || !awayOdds) continue;
-        
-        // Calculate probabilities
-        const homeImplied = mlbAmericanToProb(homeOdds);
-        const awayImplied = mlbAmericanToProb(awayOdds);
-        const totalImplied = homeImplied + awayImplied;
-        if (totalImplied === 0) continue;
-        
-        // Fair probabilities (remove vigorish)
-        const homeFair = homeImplied / totalImplied;
-        const awayFair = awayImplied / totalImplied;
-        
-        // Model probability with HFA
-        const homeModel = Math.max(0.01, Math.min(0.99, homeFair + MLB_HFA / 2));
-        const awayModel = Math.max(0.01, Math.min(0.99, awayFair - MLB_HFA / 2));
-        
-        // Determine favorite
-        let fav: string, favOdds: string, favProb: number, favImplied: number;
-        if (homeModel > awayModel) {
-          fav = homeTeam; favOdds = homeOdds; favProb = homeModel; favImplied = homeImplied;
-        } else {
-          fav = awayTeam; favOdds = awayOdds; favProb = awayModel; favImplied = awayImplied;
-        }
-        
-        const edge = (favProb - favImplied) * 100;
-        
-        let risk: string, emoji: string;
-        if (favProb >= 0.65) { risk = 'SAFE'; emoji = '🟢'; }
-        else if (favProb >= 0.58) { risk = 'MODÉRÉ'; emoji = '🟡'; }
-        else if (favProb >= 0.53) { risk = 'ACCEPTABLE'; emoji = '🟠'; }
-        else { risk = 'DANGEREUX'; emoji = '🔴'; }
-        
-        let matchTime = '';
-        try {
-          const dt = new Date(event.date);
-          matchTime = dt.toISOString().slice(11, 16) + ' UTC';
-        } catch {}
-        
-        allMatches.push({
-          match: `${awayTeam} @ ${homeTeam}`,
-          time: matchTime,
-          fav,
-          favOdds,
-          favProb: favProb * 100,
-          edge,
-          risk,
-          emoji,
-        });
-      }
-    } catch (err: any) {
-      console.error(`❌ [MLB PALIER] Erreur fetch ${dateStr}:`, err.message);
-    }
-  }
-  
-  // Sort by safety: highest prob first, then highest edge
-  allMatches.sort((a, b) => b.favProb - a.favProb || b.edge - a.edge);
-  
-  console.log(`📊 [MLB PALIER] Total matchs analysés: ${allMatches.length}`);
-  
-  if (allMatches.length < 2) {
-    const msg = `⚠️ <b>MLB Palier Intelligent</b>\n\nAucun match MLB avec cotes disponibles aujourd'hui.\nLes cotes sont généralement publiées ~24h avant le match.\n\n🔄 Prochain essai demain matin.`;
-    await sendTelegramPersonalMessage(msg);
-    return { mlb_palier: { success: true, matches: 0 } };
-  }
-  
-  // Build Telegram message
-  let message = `🎲 <b>MLB - Analyse Palier Intelligent</b>\n`;
-  message += `📅 ${today.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n`;
-  message += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-  
-  // Show all matches ranked
-  message += `📊 <b>Matchs classés par fiabilité:</b>\n\n`;
-  
-  const top = allMatches.slice(0, Math.min(allMatches.length, 10));
-  for (let i = 0; i < top.length; i++) {
-    const m = top[i];
-    message += `${i + 1}. ${m.emoji} ${m.match}\n`;
-    message += `   ⏰ ${m.time}\n`;
-    message += `   → <b>${m.fav}</b> (${m.favOdds})\n`;
-    message += `   📈 ${m.favProb.toFixed(1)}% | Edge: ${m.edge >= 0 ? '+' : ''}${m.edge.toFixed(1)}% | ${m.risk}\n\n`;
-  }
-  
-  // Best combo (top 2 safest)
-  const pick1 = allMatches[0];
-  const pick2 = allMatches[1];
-  
-  const comboProb = (pick1.favProb / 100) * (pick2.favProb / 100) * 100;
-  const comboOdds = mlbOddsToDecimal(pick1.favOdds) * mlbOddsToDecimal(pick2.favOdds);
-  const comboOddsStr = comboOdds.toFixed(2);
-  
-  let palierNiveau: string;
-  if (comboProb >= 42) palierNiveau = '🟢 EXCELLENT pour montante';
-  else if (comboProb >= 35) palierNiveau = '🟡 BON pour montante';
-  else if (comboProb >= 28) palierNiveau = '🟠 ACCEPTABLE';
-  else palierNiveau = '🔴 TROP RISQUÉ';
-  
-  message += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-  message += `🎯 <b>COMBO OPTIMAL DU JOUR</b>\n\n`;
-  message += `1️⃣ ${pick1.fav} (${pick1.favOdds}) → ${pick1.favProb.toFixed(1)}%\n`;
-  message += `2️⃣ ${pick2.fav} (${pick2.favOdds}) → ${pick2.favProb.toFixed(1)}%\n`;
-  message += `\n╔══════════════════════════╗\n`;
-  message += `║  Cote combo: x${comboOddsStr}\n`;
-  message += `║  Prob: ${comboProb.toFixed(1)}%\n`;
-  message += `║  Palier: ${palierNiveau}\n`;
-  message += `╚══════════════════════════╝\n`;
-  
-  // Palier simulation
-  message += `\n💰 <b>Simulation Montante</b> (mise 10,000F)\n`;
-  message += `   Mise: 10,000F\n`;
-  message += `   Gain potentiel: ${Math.round(10000 * comboOdds).toLocaleString('fr-FR')}F\n`;
-  message += `   Retrait 40%: ${Math.round(10000 * comboOdds * 0.4).toLocaleString('fr-FR')}F ✅\n`;
-  message += `   Bankroll palier suivant: ${Math.round(10000 * comboOdds * 0.6).toLocaleString('fr-FR')}F\n`;
-  
-  // Split if too long
-  if (message.length > 4096) {
-    // Send in 2 parts
-    const mid = message.lastIndexOf('\n━━', Math.floor(message.length / 2));
-    if (mid > 0) {
-      await sendTelegramPersonalMessage(message.slice(0, mid));
-      await sendTelegramPersonalMessage(message.slice(mid));
-    } else {
-      await sendTelegramPersonalMessage(message.slice(0, 4000));
-      await sendTelegramPersonalMessage(message.slice(4000));
-    }
-  } else {
-    await sendTelegramPersonalMessage(message);
-  }
-  
-  console.log(`✅ [MLB PALIER] Analyse envoyée en message perso (${allMatches.length} matchs, combo: ${comboProb.toFixed(1)}%)`);
-  
-  return {
-    mlb_palier: {
-      success: true,
-      matches: allMatches.length,
-      combo: `${pick1.fav} + ${pick2.fav} @ ${comboProb.toFixed(1)}%`,
+      matches: top5.length,
+      combo: `${getTeam(pick1)} (${pick1.sport}) + ${getTeam(pick2)} (${pick2.sport}) @ ${comboProb.toFixed(1)}%`,
     }
   };
 }
