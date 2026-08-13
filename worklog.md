@@ -218,3 +218,23 @@ Stage Summary:
 - Cron tourne à 08:00 UTC chaque jour
 - Message envoyé en DM perso (pas le canal)
 - BLOCKING: TELEGRAM_PERSONAL_CHAT_ID nécessaire comme env var Vercel
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Vérification post-déploiement MLB Palier
+
+Work Log:
+- Vérifié toutes les modifications de code: ✅
+  - telegramService.ts: TELEGRAM_PERSONAL_CHAT_ID + sendTelegramPersonalMessage
+  - cron/route.ts: case mlb-palier + generateMLBPalierAnalysis()
+  - vercel.json: cron 0 8 * * * (08:00 UTC)
+- TypeScript compile sans erreur
+- ESPN MLB: 15 matchs aujourd'hui, cotes pas encore publiées (normal)
+- Note: ESPN publie les cotes MLB quelques heures avant les matchs (17:00-02:00 UTC)
+
+Stage Summary:
+- Tout déployé et vérifié
+- Premier message automatique: demain 08:00 UTC
+- Contenu: analyse MLB complète + combo optimal + simulation palier → DM perso Telegram
+- User a créé TELEGRAM_PERSONAL_CHAT_ID sur Vercel ✅
