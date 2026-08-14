@@ -335,7 +335,39 @@ export interface Match {
     btts: { yes: number; no: number };
     correctScore: { home: number; away: number; prob: number }[];
     halfTime: { home: number; draw: number; away: number };
+    doubleChance?: { homeOrDraw: number; drawOrAway: number; homeOrAway: number };
+    drawNoBet?: { home: number; away: number; homeOdds: number; awayOdds: number };
+    expectedGoals?: { home: number; away: number; total: number } | null;
+    overUnder?: { over25: number; under25: number; over15: number; over35: number; over45: number };
   };
+  // Pipeline ML unifié — probabilités calculées par le modèle
+  probabilities?: { home: number; draw: number; away: number };
+  // Enjeu du match (phase saison, type compétition)
+  matchImportance?: {
+    stakeLevel: string;
+    stakeLabel: string;
+    seasonPhaseLabel: string;
+    competitionTypeLabel: string;
+    formReliable: boolean;
+    insights: string[];
+    contextSummary: string;
+  } | null;
+  // ML Analysis enrichie
+  mlAnalysis?: {
+    confidence: string;
+    edge?: number;
+    kellyStake?: number;
+    xgboostUsed?: boolean;
+    status?: string;
+  } | null;
+  // Status badge du ML
+  statusBadge?: string;
+  // Risk label du ML
+  riskLabel?: string;
+  // Facteurs contextuels
+  factors?: any;
+  // Market alignment
+  marketAlignment?: any;
   // Prédictions NBA spécifiques
   nbaPredictions?: {
     predictedWinner: 'home' | 'away';
@@ -5513,44 +5545,49 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
   const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
   const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 50 ? 'Modéré' : 'Audacieux';
   
-  // Validation des cotes - éviter NaN
+  // ═══════════════════════════════════════════════════════════
+  // PIPELINE ML UNIFIÉ — Utilise les probas ML (pas les cotes brutes)
+  // Les données viennent de getBatchPredictions() via /api/matches
+  // ═══════════════════════════════════════════════════════════
+
+  // Validation des cotes - éviter NaN (pour l'affichage uniquement)
   const validOddsHome = (match.oddsHome && match.oddsHome > 1) ? match.oddsHome : 2.0;
   const validOddsAway = (match.oddsAway && match.oddsAway > 1) ? match.oddsAway : 2.0;
   const validOddsDraw = (match.oddsDraw && match.oddsDraw > 1) ? match.oddsDraw : 3.3;
-  
-  // Calcul des probabilités implicites (avec validation)
-  const totalImplied = (1 / validOddsHome) + (1 / validOddsAway) + (validOddsDraw ? 1 / validOddsDraw : 0);
-  const homeProb = Math.round((1 / validOddsHome) / totalImplied * 100);
-  const awayProb = Math.round((1 / validOddsAway) / totalImplied * 100);
-  const drawProb = validOddsDraw ? Math.round((1 / validOddsDraw) / totalImplied * 100) : 0;
+
+  // Probabilités du pipeline ML (plus de calcul local depuis les cotes)
+  const homeProb = match.probabilities?.home ?? 40;
+  const awayProb = match.probabilities?.away ?? 35;
+  const drawProb = match.probabilities?.draw ?? 25;
   
   // Déterminer le favori et la recommandation
-  const favorite = validOddsHome < validOddsAway ? 'home' : 'away';
+  const favorite = homeProb > awayProb ? 'home' : 'away';
   const favoriteTeam = favorite === 'home' ? match.homeTeam : match.awayTeam;
-  const favoriteProb = favorite === 'home' ? homeProb : awayProb;
+  const favoriteProb = Math.max(homeProb, awayProb);
   const favoriteOdds = favorite === 'home' ? validOddsHome : validOddsAway;
   
   // ==========================================
-  // OPTIONS DE PARIS COMPLÈTES
+  // OPTIONS DE PARIS — Données ML enrichies
   // ==========================================
   
   // 1. VICTOIRE SÈCHE (1, X, 2)
-  const homeWinClean = homeProb;      // Victoire Domicile
-  const awayWinClean = awayProb;      // Victoire Extérieur
-  const drawClean = drawProb;         // Match Nul
+  const homeWinClean = homeProb;
+  const awayWinClean = awayProb;
+  const drawClean = drawProb;
   
-  // 2. DOUBLE CHANCE (1X, X2, 12)
-  const homeOrDrawProb = homeProb + drawProb;   // 1X: Domicile ou Nul
-  const awayOrDrawProb = awayProb + drawProb;   // X2: Extérieur ou Nul
-  const homeOrAwayProb = homeProb + awayProb;   // 12: Pas de nul
+  // 2. DOUBLE CHANCE (1X, X2, 12) — from advancedPredictions or computed
+  const advDC = match.advancedPredictions?.doubleChance;
+  const homeOrDrawProb = advDC?.homeOrDraw ?? (homeProb + drawProb);
+  const awayOrDrawProb = advDC?.drawOrAway ?? (drawProb + awayProb);
+  const homeOrAwayProb = advDC?.homeOrAway ?? (homeProb + awayProb);
   
-  // 3. DRAW NO BET (DNB) - Remboursé si nul
-  const totalNoDraw = homeProb + awayProb;
-  const dnbHome = totalNoDraw > 0 ? Math.round((homeProb / totalNoDraw) * 100) : 50;
-  const dnbAway = totalNoDraw > 0 ? Math.round((awayProb / totalNoDraw) * 100) : 50;
+  // 3. DRAW NO BET (DNB) — from advancedPredictions or computed
+  const advDNB = match.advancedPredictions?.drawNoBet;
+  const dnbHome = advDNB?.home ?? (homeProb + awayProb > 0 ? Math.round((homeProb / (homeProb + awayProb)) * 100) : 50);
+  const dnbAway = advDNB?.away ?? (homeProb + awayProb > 0 ? Math.round((awayProb / (homeProb + awayProb)) * 100) : 50);
   const drawNoBetOdds = {
-    home: dnbHome > 0 ? Math.round((100 / dnbHome) * 100) / 100 : 1.5,
-    away: dnbAway > 0 ? Math.round((100 / dnbAway) * 100) / 100 : 2.5
+    home: advDNB?.homeOdds ?? (dnbHome > 0 ? Math.round((100 / dnbHome) * 100) / 100 : 1.5),
+    away: advDNB?.awayOdds ?? (dnbAway > 0 ? Math.round((100 / dnbAway) * 100) / 100 : 2.5)
   };
   
   // Recommandation intelligente

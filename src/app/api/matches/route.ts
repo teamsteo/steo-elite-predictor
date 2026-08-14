@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import {
   getMatchesWithRealOdds,
-  getDataStats
+  getDataStats,
+  invalidateEspnCache,
 } from '@/lib/combinedDataService';
+import { getBatchPredictions, type UnifiedPrediction } from '@/lib/unifiedPredictionService';
+import { getModelStatus } from '@/lib/adaptiveThresholdsML';
+import {
+  getBettingRecommendations,
+  getBestBetTag,
+  type MatchDataForRecommendation,
+} from '@/lib/bettingRecommendations';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -19,294 +27,385 @@ function verifyRequestAuth(request: Request): boolean {
   if (timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) return true;
   return false;
 }
-import { loadDailyPredictions } from '@/lib/dailyPredictionService';
-import { getModelStatus } from '@/lib/adaptiveThresholdsML';
-import {
-  loadCache,
-  saveCache,
-  getCachedAnalysis,
-  cacheAnalysis,
-  getCreditStats,
-  shouldUseApiCredits,
-  type MatchAnalysis
-} from '@/lib/mlAnalysisCache';
-import { predictMatch } from '@/lib/dixonColesModel';
-// ML Patterns - CRITICAL: Use validated statistical patterns
-import { 
-  getBettingRecommendations, 
-  getBestBetTag,
-  type BettingRecommendation,
-  type MatchDataForRecommendation 
-} from '@/lib/bettingRecommendations';
 
 // In-memory cache for quick access
 let cachedData: any = null;
 let lastFetchTime = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// ============================================
+// UNIFIED MAPPER — UnifiedPrediction → Site + Telegram
+// ============================================
+
 /**
- * Calculate implied probabilities from odds
+ * Convertit UnifiedPrediction en format enrichi pour le site web ET Telegram.
+ * Un seul modèle, une seule source de vérité.
  */
-function calculateImpliedProbabilities(oddsHome: number, oddsDraw: number | null, oddsAway: number) {
-  if (!oddsHome || !oddsAway || oddsHome <= 1 || oddsAway <= 1) {
-    return { home: 33, draw: 34, away: 33 };
+function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
+  const dc = p.dixonColes;
+  const ml = p.mlPrediction;
+  const rec = p.recommendation;
+  const factors = p.factors;
+  const dq = p.dataQuality;
+  const mi = factors.matchImportance;
+  const ma = p.marketAlignment;
+
+  // Probabilités finales (ML-adjusted)
+  const homeProb = Math.round(ml.homeProb * 100);
+  const drawProb = Math.round(ml.drawProb * 100);
+  const awayProb = Math.round(ml.awayProb * 100);
+  const maxProb = Math.max(homeProb, drawProb, awayProb);
+  const riskPercentage = Math.round(100 - maxProb);
+
+  // Recommendation text
+  const recommendationText = rec.bet === 'home' ? p.homeTeam
+    : rec.bet === 'away' ? p.awayTeam
+    : rec.bet === 'draw' ? 'Match Nul' : 'À éviter';
+  const betOdds = rec.bet === 'home' ? p.odds.home
+    : rec.bet === 'away' ? p.odds.away
+    : p.odds.draw || 3.3;
+  const winProbability = rec.bet === 'home' ? homeProb
+    : rec.bet === 'away' ? awayProb
+    : drawProb;
+
+  // ── Advanced Predictions (site web) ──
+  const expectedGoals = dc?.expectedGoals?.total || 2.5;
+
+  // Over/Under
+  const over25 = dc?.over25 ? Math.round(dc.over25) : (expectedGoals > 2.5 ? 58 : 42);
+  const under25 = 100 - over25;
+  const over15 = Math.min(85, over25 + 15);
+  const over35 = Math.max(20, over25 - 20);
+  const over45 = Math.max(12, over25 - 35);
+
+  // BTTS
+  const bttsYes = dc?.btts ? Math.round(dc.btts * 100) : (expectedGoals > 2.3 ? 55 : 42);
+  const bttsNo = 100 - bttsYes;
+
+  // Score exact probable
+  const correctScores = dc?.mostLikelyScore ? [dc.mostLikelyScore] : [];
+  // Générer quelques scores alternatifs basés sur expectedGoals
+  if (dc?.expectedGoals) {
+    const hg = dc.expectedGoals.home;
+    const ag = dc.expectedGoals.away;
+    const altScores = [
+      { home: Math.round(hg), away: Math.round(ag), prob: 0 },
+      { home: Math.round(hg), away: Math.max(0, Math.round(ag) - 1), prob: 0 },
+      { home: Math.max(0, Math.round(hg) - 1), away: Math.round(ag), prob: 0 },
+    ];
+    for (const s of altScores) {
+      if (!correctScores.find((c: any) => c.home === s.home && c.away === s.away)) {
+        correctScores.push(s);
+      }
+    }
   }
 
-  const homeProb = 1 / oddsHome;
-  const awayProb = 1 / oddsAway;
-  const drawProb = oddsDraw && oddsDraw > 1 ? 1 / oddsDraw : 0.28;
+  // Half-time approximation (basé sur ratio buts mi-temps / fin)
+  const htHome = Math.round(homeProb * 0.55 + 22);
+  const htDraw = Math.round(drawProb * 1.3 + 8);
+  const htAway = 100 - htHome - htDraw;
 
-  const total = homeProb + awayProb + drawProb;
+  // Double Chance
+  const dc1X = homeProb + drawProb;
+  const dcX2 = drawProb + awayProb;
+  const dc12 = homeProb + awayProb;
 
-  return {
-    home: Math.round((homeProb / total) * 100),
-    draw: Math.round((drawProb / total) * 100),
-    away: Math.round((awayProb / total) * 100),
-  };
-}
+  // Draw No Bet
+  const dnbHome = homeProb / (homeProb + awayProb) * 100;
+  const dnbAway = awayProb / (homeProb + awayProb) * 100;
+  const dnbHomeOdds = homeProb + awayProb > 0 ? Math.round((100 / (dnbHome / 100)) * 100) / 100 : 1.5;
+  const dnbAwayOdds = homeProb + awayProb > 0 ? Math.round((100 / (dnbAway / 100)) * 100) / 100 : 1.5;
 
-/**
- * Generate default team stats from odds (fallback when no real stats available)
- */
-function generateDefaultStatsFromOdds(
-  teamName: string,
-  isFavorite: boolean,
-  odds: number
-) {
-  // Estimer les stats basées sur les cotes
-  const impliedProb = 1 / odds;
-  const strength = isFavorite ? 1.3 + (impliedProb - 0.33) : 0.8 + (impliedProb - 0.33);
-  
-  return {
-    name: teamName,
-    goalsScored: Math.round(50 * strength),
-    goalsConceded: Math.round(40 / strength),
-    matches: 30,
-    homeGoalsScored: Math.round(25 * strength * 1.15),
-    homeGoalsConceded: Math.round(20 / strength),
-    homeMatches: 15,
-    awayGoalsScored: Math.round(25 * strength),
-    awayGoalsConceded: Math.round(20 / strength * 1.1),
-    awayMatches: 15,
-    form: isFavorite ? [1, 1, 0.5, 1, 0.5] : [0.5, 0, 0.5, 1, 0] // W=1, D=0.5, L=0
-  };
-}
+  // ── ML Patterns (site web — from bettingRecommendations) ──
+  const sport = p.sport === 'Foot' ? 'football'
+    : p.sport === 'NBA' ? 'basketball'
+    : p.sport === 'NHL' ? 'hockey'
+    : p.sport === 'MLB' ? 'baseball' : 'football';
 
-/**
- * Calculate Dixon-Coles prediction if possible
- */
-function calculateDixonColesPrediction(
-  homeTeam: string,
-  awayTeam: string,
-  league: string,
-  oddsHome: number,
-  oddsDraw: number,
-  oddsAway: number
-): { homeProb: number; drawProb: number; awayProb: number; expectedGoals: number; over25: number } | null {
+  let bestTag: any = null;
+  let allPatterns: any[] = [];
   try {
-    // Déterminer le favori
-    const isHomeFavorite = oddsHome < oddsAway;
-    
-    // Générer des stats par défaut basées sur les cotes
-    const homeStats = generateDefaultStatsFromOdds(homeTeam, isHomeFavorite, oddsHome);
-    const awayStats = generateDefaultStatsFromOdds(awayTeam, !isHomeFavorite, oddsAway);
-    
-    // Utiliser le modèle Dixon-Coles
-    const prediction = predictMatch(
-      homeStats,
-      awayStats,
-      league,
-      oddsHome,
-      oddsDraw || 3.3,
-      oddsAway
-    );
-    
-    return {
-      homeProb: prediction.homeWinProb,
-      drawProb: prediction.drawProb,
-      awayProb: prediction.awayWinProb,
-      expectedGoals: prediction.expectedHomeGoals + prediction.expectedAwayGoals,
-      over25: prediction.over25
+    const matchDataForML: MatchDataForRecommendation = {
+      sport: sport as any,
+      homeTeam: p.homeTeam,
+      awayTeam: p.awayTeam,
+      league: p.league,
+      oddsHome: p.odds.home,
+      oddsDraw: p.odds.draw || undefined,
+      oddsAway: p.odds.away,
     };
-  } catch (error) {
-    console.log('Erreur Dixon-Coles:', error);
-    return null;
-  }
-}
-
-/**
- * Get sport type from league name
- */
-function getSportFromLeague(league: string): 'football' | 'basketball' | 'hockey' | 'baseball' {
-  const leagueLower = league.toLowerCase();
-  if (leagueLower.includes('nba') || leagueLower.includes('basket')) return 'basketball';
-  if (leagueLower.includes('nhl') || leagueLower.includes('hockey')) return 'hockey';
-  if (leagueLower.includes('mlb') || leagueLower.includes('baseball')) return 'baseball';
-  return 'football'; // Default
-}
-
-/**
- * Analyze a match and generate predictions with ML patterns
- */
-function analyzeMatch(match: any): MatchAnalysis {
-  // Calculer les probabilités implicites du marché
-  const marketProbs = calculateImpliedProbabilities(match.oddsHome, match.oddsDraw, match.oddsAway);
-  
-  // Calculer les probabilités Dixon-Coles si possible
-  const dcPrediction = calculateDixonColesPrediction(
-    match.homeTeam,
-    match.awayTeam,
-    match.league || 'default',
-    match.oddsHome,
-    match.oddsDraw || 3.3,
-    match.oddsAway
-  );
-  
-  // Combiner les probabilités (moyenne pondérée si Dixon-Coles disponible)
-  let probs: { home: number; draw: number; away: number };
-  let usedDixonColes = false;
-  
-  if (dcPrediction) {
-    // Moyenne pondérée: 55% Dixon-Coles, 45% marché
-    probs = {
-      home: Math.round(dcPrediction.homeProb * 0.55 + marketProbs.home * 0.45),
-      draw: Math.round(dcPrediction.drawProb * 0.55 + marketProbs.draw * 0.45),
-      away: Math.round(dcPrediction.awayProb * 0.55 + marketProbs.away * 0.45)
-    };
-    // Normaliser
-    const total = probs.home + probs.draw + probs.away;
-    probs = {
-      home: Math.round((probs.home / total) * 100),
-      draw: Math.round((probs.draw / total) * 100),
-      away: 100 - probs.home - probs.draw
-    };
-    usedDixonColes = true;
-  } else {
-    probs = marketProbs;
-  }
-  
-  // Calculate risk based on probability distribution
-  const maxProb = Math.max(probs.home, probs.away, probs.draw);
-  const riskPercentage = 100 - maxProb;
-  
-  // Determine confidence based on risk and data quality
-  let confidence: 'very_high' | 'high' | 'medium' | 'low';
-  const hasRealOdds = match.hasRealOdds;
-  
-  // Améliorer la confiance si Dixon-Coles a été utilisé
-  const confidenceBonus = usedDixonColes ? 5 : 0;
-  const adjustedRisk = riskPercentage - confidenceBonus;
-  
-  if (adjustedRisk <= 30 && hasRealOdds) {
-    confidence = 'very_high';
-  } else if (adjustedRisk <= 40 && hasRealOdds) {
-    confidence = 'high';
-  } else if (adjustedRisk <= 55) {
-    confidence = 'medium';
-  } else {
-    confidence = 'low';
-  }
-  
-  // ============================================
-  // CRITICAL: Use ML Patterns for recommendations
-  // ============================================
-  const sport = getSportFromLeague(match.league || '');
-  
-  // Build match data for ML patterns
-  const matchDataForML: MatchDataForRecommendation = {
-    sport,
-    homeTeam: match.homeTeam,
-    awayTeam: match.awayTeam,
-    league: match.league,
-    oddsHome: match.oddsHome,
-    oddsDraw: match.oddsDraw,
-    oddsAway: match.oddsAway
-  };
-  
-  // Get ML-based betting recommendations with validated patterns
-  const mlRecommendations = getBettingRecommendations(matchDataForML);
-  
-  // Get the best tag for display
-  const bestTag = getBestBetTag(matchDataForML);
-  
-  // Convert ML recommendations to standard format
-  const recommendations = mlRecommendations.map(rec => ({
-    type: rec.type === 'home_win' ? 'home' as const 
-         : rec.type === 'away_win' ? 'away' as const 
-         : rec.type === 'over' ? 'over_2.5' as const
-         : rec.type === 'under' ? 'under_2.5' as const
-         : rec.type as any,
-    label: rec.label,
-    probability: rec.confidence,
-    odds: rec.type === 'home_win' ? match.oddsHome 
-        : rec.type === 'away_win' ? match.oddsAway 
-        : 1.90,
-    value: rec.confidence - 50, // Simplified edge calculation
-    stake: Math.min(5, rec.confidence / 20), // Simplified Kelly
-    recommendation: rec.confidence >= 80 ? 'strong' as const 
-                  : rec.confidence >= 70 ? 'moderate' as const 
-                  : rec.confidence >= 60 ? 'weak' as const 
-                  : 'avoid' as const,
-    // Add ML pattern metadata
-    patternSource: rec.patternSource,
-    statistics: rec.statistics
-  }));
-  
-  // Extract value bets from ML recommendations (high confidence patterns)
-  const valueBets = mlRecommendations
-    .filter(r => r.confidence >= 70 && r.statistics?.significance !== 'marginal')
-    .map(r => ({
-      type: r.label,
-      edge: r.confidence - 50,
-      confidence: r.statistics?.significance === 'highly_significant' ? 'strong' : 'moderate',
+    bestTag = getBestBetTag(matchDataForML);
+    const mlRecs = getBettingRecommendations(matchDataForML);
+    allPatterns = mlRecs.map((r: any) => ({
+      type: r.type,
+      label: r.label,
+      confidence: r.confidence,
       patternSource: r.patternSource,
       sampleSize: r.statistics?.sampleSize,
-      successRate: r.statistics?.successRate
+      successRate: r.statistics?.successRate,
+      pValue: r.statistics?.pValue,
     }));
-  
+  } catch {}
+
+  // ── Value Bets ──
+  const valueBets = ml.valueBet ? [{
+    type: ml.valueBetType === 'home' ? `Victoire ${p.homeTeam}`
+      : ml.valueBetType === 'away' ? `Victoire ${p.awayTeam}`
+        : ml.valueBetType === 'draw' ? 'Match Nul' : recommendationText,
+    edge: Math.round(ml.edge * 100) / 100,
+    confidence: ml.confidence,
+  }] : [];
+
+  // ── Recommendations ──
+  const recommendations = [{
+    type: rec.bet,
+    label: recommendationText,
+    probability: winProbability,
+    odds: betOdds,
+    value: rec.expectedValue,
+    stake: rec.kellyStake,
+    recommendation: rec.status === 'take' ? 'strong' : rec.status === 'consider' ? 'moderate' : 'avoid',
+  }];
+
+  // ── Data Quality ──
+  const dataQuality = {
+    overall: dq.hasRealOdds ? 'real' : 'estimated',
+    overallScore: dq.score,
+    sources: dq.sources,
+    hasRealData: dq.hasRealOdds,
+    hasAdvancedStats: dq.hasAdvancedStats,
+  };
+
+  // ── Risk Label ──
+  let riskLabel: string;
+  if (riskPercentage <= 25) riskLabel = 'Sûr';
+  else if (riskPercentage <= 40) riskLabel = 'Modéré';
+  else if (riskPercentage <= 55) riskLabel = 'Audacieux';
+  else riskLabel = 'Kamikaze';
+
+  // ── Status Badge ──
+  let statusBadge: string;
+  if (ml.confidence === 'low') statusBadge = 'REJETÉ AUTO';
+  else if (rec.status === 'take') statusBadge = 'À PRENDRE';
+  else statusBadge = 'À CONSIDÉRER';
+
+  // ── Build result ──
   return {
-    matchId: match.id || `${match.homeTeam}-${match.awayTeam}-${match.date}`,
-    homeTeam: match.homeTeam,
-    awayTeam: match.awayTeam,
-    league: match.league || 'Unknown',
-    date: match.date,
-    oddsHome: match.oddsHome,
-    oddsDraw: match.oddsDraw,
-    oddsAway: match.oddsAway,
-    probabilities: probs,
+    id: p.matchId,
+    homeTeam: p.homeTeam,
+    awayTeam: p.awayTeam,
+    sport: p.sport === 'Foot' ? 'Foot'
+      : p.sport === 'NBA' ? 'Basket'
+        : p.sport === 'NHL' ? 'NHL'
+          : p.sport === 'MLB' ? 'Baseball'
+            : p.sport,
+    sportRaw: sport,
+    league: p.league || 'Unknown',
+    date: rawMatch?.date || new Date().toISOString(),
+    displayDate: rawMatch?.displayDate || '',
+    dateTag: rawMatch?.dateTag || "aujourd'hui",
+    isFinished: rawMatch?.isFinished || false,
+    isEstimated: !p.odds.hasRealOdds,
+    isLive: rawMatch?.isLive || false,
+
+    // Cotes
+    oddsHome: p.odds.home,
+    oddsAway: p.odds.away,
+    oddsDraw: p.odds.draw,
+    oddsSource: p.odds.source,
+    bookmaker: p.odds.bookmaker,
+
+    // ═══════════════════════════════════════
+    // PIPELINE ML UNIFIÉ — Même données que Telegram
+    // ═══════════════════════════════════════
+
+    // Probabilités ML
+    probabilities: { home: homeProb, draw: drawProb, away: awayProb },
     riskPercentage,
-    confidence,
+    confidence: ml.confidence,
+    riskLabel,
+
+    // Prediction
+    predictedResult: rec.bet,
+    winProbability,
+    recommendation: recommendationText,
+    expectedValue: rec.expectedValue,
+
+    // ═══════════════════════════════════════
+    // DONNÉES SITE WEB — Options de paris
+    // ═══════════════════════════════════════
+
+    insight: {
+      riskPercentage,
+      confidence: ml.confidence,
+      valueBetDetected: ml.valueBet,
+      valueBetType: ml.valueBetType || null,
+      edge: ml.edge,
+    },
+
+    // Recommendations & value bets
     recommendations,
     valueBets,
-    // NEW: ML Pattern data
+
+    // ML Patterns (site web)
     mlPatterns: {
       bestTag: bestTag ? {
         type: bestTag.type,
         label: bestTag.label,
         confidence: bestTag.confidence,
         reason: bestTag.reason,
-        statistics: bestTag.statistics
+        statistics: bestTag.statistics,
       } : null,
-      allPatterns: mlRecommendations.map(r => ({
-        type: r.type,
-        label: r.label,
-        confidence: r.confidence,
-        patternSource: r.patternSource,
-        sampleSize: r.statistics?.sampleSize,
-        successRate: r.statistics?.successRate,
-        pValue: r.statistics?.pValue
-      }))
+      allPatterns,
     },
-    analyzedAt: new Date().toISOString(),
-    dataQuality: hasRealOdds ? 'real' : 'estimated',
-    apiCreditsUsed: hasRealOdds ? 1 : 0,
+    bestTag: bestTag || null,
+    statusBadge,
+
+    // ═══════════════════════════════════════
+    // DONNÉES AVANCÉES — Football
+    // ═══════════════════════════════════════
+
+    // Goals prediction (from Dixon-Coles, PAS hardcoded)
+    goalsPrediction: {
+      total: Math.round(expectedGoals * 10) / 10,
+      over25,
+      under25,
+      over15,
+      over35,
+      over45,
+      bothTeamsScore: bttsYes,
+      prediction: over25 >= 55 ? 'Over 2.5' : 'Under 2.5',
+      // Source données
+      source: dc ? 'dixon-coles' : 'estimation',
+    },
+
+    // Advanced predictions (from Dixon-Coles)
+    advancedPredictions: {
+      btts: { yes: bttsYes, no: bttsNo },
+      correctScore: correctScores.slice(0, 5),
+      halfTime: {
+        home: Math.max(0, Math.min(100, htHome)),
+        draw: Math.max(0, Math.min(100, htDraw)),
+        away: Math.max(0, Math.min(100, htAway)),
+      },
+      doubleChance: {
+        homeOrDraw: Math.round(dc1X),
+        drawOrAway: Math.round(dcX2),
+        homeOrAway: Math.round(dc12),
+      },
+      drawNoBet: {
+        home: Math.round(dnbHome),
+        away: Math.round(dnbAway),
+        homeOdds: dnbHomeOdds,
+        awayOdds: dnbAwayOdds,
+      },
+      expectedGoals: dc?.expectedGoals || null,
+      overUnder: {
+        over25,
+        under25,
+        over15,
+        over35,
+        over45,
+      },
+    },
+
+    // Dixon-Coles raw data
+    dixonColes: dc ? {
+      homeProb: Math.round(dc.homeProb),
+      drawProb: Math.round(dc.drawProb),
+      awayProb: Math.round(dc.awayProb),
+      expectedGoals: dc.expectedGoals,
+      mostLikelyScore: dc.mostLikelyScore,
+      btts: Math.round((dc.btts || 0) * 100),
+    } : null,
+
+    // ═══════════════════════════════════════
+    // DONNÉES TELEGRAM — Enjeu & Contexte ML
+    // ═══════════════════════════════════════
+
+    // Match Importance (enjeu dynamique)
+    matchImportance: mi ? {
+      stakeLevel: mi.stakeLevel,
+      stakeScore: mi.stakeScore,
+      stakeLabel: mi.stakeLabel,
+      seasonPhase: mi.seasonPhase,
+      seasonPhaseLabel: mi.seasonPhaseLabel,
+      competitionTypeLabel: mi.competitionTypeLabel,
+      formReliable: mi.formReliable,
+      formReliability: mi.formReliability,
+      formReliabilityReason: mi.formReliabilityReason,
+      warnings: mi.warnings,
+      insights: mi.insights,
+      contextSummary: mi.contextSummary || 'RAS',
+    } : null,
+
+    // ML Enriched Metadata (même format que Telegram)
+    _mlEdge: ml.edge,
+    _mlReasoning: rec.reasoning || [],
+    _dataQuality: dq.score,
+    _kellyStake: rec.kellyStake,
+    _dixonColes: dc,
+    _sources: dq.sources,
+    _matchImportance: mi ? {
+      stakeLevel: mi.stakeLevel,
+      stakeScore: mi.stakeScore,
+      stakeLabel: mi.stakeLabel,
+      seasonPhase: mi.seasonPhase,
+      seasonPhaseLabel: mi.seasonPhaseLabel,
+      competitionTypeLabel: mi.competitionTypeLabel,
+      formReliable: mi.formReliable,
+      formReliability: mi.formReliability,
+      formReliabilityReason: mi.formReliabilityReason,
+      warnings: mi.warnings,
+      insights: mi.insights,
+      contextSummary: mi.contextSummary || 'RAS',
+    } : undefined,
+
+    // ML Analysis
+    mlAnalysis: {
+      probabilities: { home: homeProb, draw: drawProb, away: awayProb },
+      confidence: ml.confidence,
+      factors: rec.reasoning || [],
+      valueBetDetected: ml.valueBet,
+      recommendation: recommendationText,
+      edge: ml.edge,
+      kellyStake: rec.kellyStake,
+      expectedValue: rec.expectedValue,
+      riskLevel: rec.riskLevel,
+      status: rec.status,
+      statusReason: rec.statusReason,
+      xgboostUsed: ml.xgboostUsed,
+      xgboostScore: ml.xgboostScore,
+      calibrated: ml.calibrated,
+      calibrationMethod: ml.calibrationMethod,
+    },
+
+    // Context factors
+    factors: {
+      form: factors.form,
+      h2h: factors.h2h,
+      injuries: factors.injuries,
+      xg: factors.xg,
+      weather: factors.weather,
+    },
+
+    // Market alignment
+    marketAlignment: ma,
+
+    // Data quality
+    dataQuality,
+
+    // Timing
+    generatedAt: p.generatedAt,
+    processingTimeMs: p.processingTimeMs,
+    source: `ML unifié (${dq.sources.length} sources)`,
   };
 }
 
 /**
- * GET - Fetch matches with cached ML predictions
- * SOURCE UNIQUE: Utilise daily-predictions.json (généré par le cron 05:30)
- * Même source que Telegram pour cohérence
+ * GET - Fetch matches with UNIFIED ML predictions
+ * PIPELINE UNIQUE: Même modèle que Telegram (getBatchPredictions)
+ * Plus de daily-predictions.json, plus de fallback analyzeMatch()
  */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -321,259 +420,177 @@ export async function GET(request: Request) {
       return NextResponse.json(cachedData);
     }
 
-    console.log('🔄 Fetching matches...');
+    console.log('🔄 Pipeline unifié: fetch matches + ML predictions...');
 
-    // ============================================
-    // SOURCE UNIQUE: daily-predictions.json
-    // Même source que Telegram pour COHÉRENCE
-    // ============================================
-    const dailyData = loadDailyPredictions();
+    // ═══════════════════════════════════════
+    // ÉTAPE 1: Récupérer les matchs (ESPN → Odds API → Estimations)
+    // ═══════════════════════════════════════
+    if (forceRefresh) invalidateEspnCache();
+    const matches = await getMatchesWithRealOdds();
 
-    if (dailyData && dailyData.predictions.length > 0) {
-      console.log(`✅ Utilisation prédictions pré-calculées: ${dailyData.predictions.length} matchs`);
-      console.log(`   Source: ${dailyData.generatedAt}`);
-      console.log(`   Sports: ${JSON.stringify(dailyData.summary.bySport)}`);
-
-      // Convertir les prédictions au format attendu par le site web
-      const enrichedMatches = dailyData.predictions.map((p) => {
-        const matchId = p.id;
-
-        return {
-          id: matchId,
-          homeTeam: p.homeTeam,
-          awayTeam: p.awayTeam,
-          sport: p.sport === 'football' ? 'Foot' :
-                 p.sport === 'basketball' ? 'Basket' :
-                 p.sport === 'hockey' ? 'NHL' :
-                 p.sport === 'tennis' ? 'Tennis' : p.sport,
-          league: p.league || p.tournament || 'Unknown',
-          date: p.date,
-          displayDate: p.displayDate,
-
-          // Cotes
-          oddsHome: p.oddsHome,
-          oddsAway: p.oddsAway,
-          oddsDraw: p.oddsDraw,
-
-          // Probabilités
-          probabilities: {
-            home: p.predictedResult === 'home' ? p.winProbability : 100 - p.winProbability,
-            draw: p.oddsDraw ? Math.round(100 / p.oddsDraw) : 28,
-            away: p.predictedResult === 'away' ? p.winProbability : 100 - p.winProbability,
-          },
-          riskPercentage: p.riskPercentage,
-          confidence: p.confidence,
-
-          // Insight
-          insight: {
-            riskPercentage: p.riskPercentage,
-            confidence: p.confidence,
-            valueBetDetected: p.valueBet,
-            valueBetType: p.valueBetType || null,
-          },
-
-          // Recommendation
-          recommendations: [{
-            type: p.predictedResult,
-            label: p.recommendation,
-            probability: p.winProbability,
-            odds: p.predictedResult === 'home' ? p.oddsHome :
-                  p.predictedResult === 'away' ? p.oddsAway : p.oddsDraw,
-            value: p.expectedValue || 0,
-            stake: p.kellyStake || 0,
-            recommendation: p.confidence === 'very_high' || p.confidence === 'high' ? 'strong' : 'moderate',
-          }],
-          valueBets: p.valueBet ? [{
-            type: p.recommendation,
-            edge: p.expectedValue || 0,
-            confidence: p.confidence === 'high' ? 'strong' : 'moderate',
-          }] : [],
-
-          // Goals prediction (estimation)
-          goalsPrediction: {
-            total: 2.5,
-            over25: 55,
-            under25: 45,
-            over15: 75,
-            over35: 35,
-            over45: 20,
-            bothTeamsScore: 50,
-            prediction: 'Over 2.5',
-          },
-
-          // ML Analysis
-          mlAnalysis: {
-            probabilities: {
-              home: p.predictedResult === 'home' ? p.winProbability : 100 - p.winProbability,
-              draw: p.oddsDraw ? Math.round(100 / p.oddsDraw) : 28,
-              away: p.predictedResult === 'away' ? p.winProbability : 100 - p.winProbability,
-            },
-            confidence: p.confidence,
-            factors: p.reasons || [],
-            valueBetDetected: p.valueBet,
-            recommendation: p.recommendation,
-          },
-
-          // Data quality
-          dataQuality: {
-            overall: 'real',
-            overallScore: 85,
-            sources: [p.source],
-            hasRealData: true,
-          },
-
-          // Métadonnées
-          generatedAt: p.generatedAt,
-          source: p.source,
-        };
-      });
-
-      const result = {
-        matches: enrichedMatches,
+    if (matches.length === 0) {
+      console.log('⚠️ Aucun match disponible');
+      return NextResponse.json({
+        matches: [],
         timing: {
           currentHour: new Date().getUTCHours(),
           canRefresh: true,
-          nextRefreshTime: '05:30 UTC demain',
-          message: `${enrichedMatches.length} matchs (pré-calculés)`,
-          source: 'daily-predictions.json',
-          generatedAt: dailyData.generatedAt,
+          nextRefreshTime: '5 min',
+          message: 'Aucun match disponible',
         },
-        dataStats: {
-          total: enrichedMatches.length,
-          withRealOdds: enrichedMatches.filter((m: any) => m.oddsHome && m.oddsHome > 1).length,
-          highConfidence: enrichedMatches.filter((m: any) => m.confidence === 'high' || m.confidence === 'very_high').length,
-          valueBets: dailyData.summary.valueBets,
-          bySport: dailyData.summary.bySport,
-          byRisk: dailyData.summary.byRisk,
-        },
+        dataStats: { total: 0, withRealOdds: 0, highConfidence: 0, valueBets: 0, bySport: {}, byRisk: {} },
         mlStatus: getModelStatus(),
         lastUpdate: new Date().toISOString(),
-      };
-
-      // Update memory cache
-      cachedData = result;
-      lastFetchTime = now;
-
-      return NextResponse.json(result);
+      });
     }
 
-    // ============================================
-    // FALLBACK: Si pas de prédictions pré-calculées
-    // ============================================
-    console.log('⚠️ Pas de prédictions pré-calculées, fallback sur scraping temps réel...');
+    // ═══════════════════════════════════════
+    // ÉTAPE 2: Pipeline ML unifié (même que Telegram)
+    // ═══════════════════════════════════════
+    const upcomingWithOdds = matches.filter((m: any) =>
+      !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
+    );
 
-    // Get matches from data source
-    const matches = await getMatchesWithRealOdds();
-    
-    // Get cached analyses from file
-    const persistentCache = loadCache();
-    
-    // Enrich each match with ML analysis
+    // Mapper vers UnifiedPredictionInput
+    const mlInputs = upcomingWithOdds.map((m: any) => ({
+      id: m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      sport: m.sport === 'Basketball' ? 'NBA' as const
+        : m.sport === 'Hockey' ? 'NHL' as const
+          : m.sport === 'Baseball' ? 'MLB' as const
+            : 'Foot' as const,
+      league: m.league || 'Unknown',
+      oddsHome: m.oddsHome,
+      oddsDraw: m.oddsDraw || null,
+      oddsAway: m.oddsAway,
+    }));
+
+    // Exécuter le pipeline ML unifié
+    let unifiedPreds: UnifiedPrediction[] = [];
+    try {
+      unifiedPreds = await getBatchPredictions(mlInputs);
+      console.log(`🧠 Pipeline ML: ${unifiedPreds.length} prédictions calculées`);
+    } catch (mlErr: any) {
+      console.log(`⚠️ Pipeline ML échoué (${mlErr.message})`);
+    }
+
+    // ═══════════════════════════════════════
+    // ÉTAPE 3: Mapper vers le format enrichi (site + telegram)
+    // ═══════════════════════════════════════
+
+    // Build a lookup map from prediction
+    const predMap = new Map<string, UnifiedPrediction>();
+    for (const pred of unifiedPreds) {
+      predMap.set(`${pred.homeTeam}|${pred.awayTeam}`, pred);
+    }
+
+    // Enrichir TOUS les matchs (même ceux sans prédiction ML)
     const enrichedMatches = matches.map((match: any) => {
-      const matchId = match.id || `${match.homeTeam}-${match.awayTeam}-${match.date}`;
-      
-      // Check if we have a cached analysis
-      let analysis = getCachedAnalysis(matchId);
-      
-      // If no cache or expired, analyze (but don't use API credits if not needed)
-      if (!analysis) {
-        console.log(`🧠 Analyzing match: ${match.homeTeam} vs ${match.awayTeam}`);
-        analysis = analyzeMatch(match);
-        
-        // Cache the result
-        cacheAnalysis(analysis);
+      const pred = predMap.get(`${match.homeTeam}|${match.awayTeam}`);
+
+      if (pred) {
+        // Match avec pipeline ML complet
+        return mapUnifiedToEnrichedMatch(pred, match);
       }
-      
-      // Build the match object with all required fields
-      // Generate goals prediction from probabilities
-      const goalIntensity = (analysis.probabilities.home + analysis.probabilities.away) / 100;
-      const over25Prob = Math.min(70, Math.max(35, goalIntensity * 60 + 15));
-      const expectedGoals = Math.max(1.5, 2.5 * goalIntensity);
-      const bttsProb = Math.min(65, Math.max(35, goalIntensity * 50 + 10));
-      
+
+      // Match sans prédiction ML (estimé, terminé, ou sans cotes)
+      // → données basiques depuis les cotes
+      const totalImplied = (1 / (match.oddsHome || 2)) + (1 / (match.oddsAway || 2)) + (match.oddsDraw && match.oddsDraw > 1 ? 1 / match.oddsDraw : 0);
+      const homeProb = Math.round((1 / (match.oddsHome || 2)) / totalImplied * 100);
+      const drawProb = match.oddsDraw && match.oddsDraw > 1 ? Math.round((1 / match.oddsDraw) / totalImplied * 100) : 28;
+      const awayProb = 100 - homeProb - drawProb;
+      const maxProb = Math.max(homeProb, awayProb, drawProb);
+
       return {
-        ...match,
-        id: matchId,
-        // Probabilities
-        probabilities: analysis.probabilities,
-        riskPercentage: analysis.riskPercentage,
-        confidence: analysis.confidence,
-        
-        // Insight object for frontend
+        id: match.id,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        sport: match.sport || 'Foot',
+        sportRaw: 'football',
+        league: match.league || 'Unknown',
+        date: match.date,
+        displayDate: match.displayDate || '',
+        dateTag: match.dateTag || "aujourd'hui",
+        isFinished: match.isFinished || false,
+        isLive: match.isLive || false,
+        oddsHome: match.oddsHome || 0,
+        oddsAway: match.oddsAway || 0,
+        oddsDraw: match.oddsDraw || null,
+        probabilities: { home: homeProb, draw: drawProb, away: awayProb },
+        riskPercentage: 100 - maxProb,
+        confidence: maxProb >= 65 ? 'medium' : 'low',
+        riskLabel: maxProb >= 75 ? 'Sûr' : maxProb >= 60 ? 'Modéré' : 'Audaceux',
         insight: {
-          riskPercentage: analysis.riskPercentage,
-          confidence: analysis.confidence,
-          valueBetDetected: analysis.valueBets.length > 0,
-          valueBetType: analysis.valueBets[0]?.type || null,
+          riskPercentage: 100 - maxProb,
+          confidence: maxProb >= 65 ? 'medium' : 'low',
+          valueBetDetected: false,
+          valueBetType: null,
+          edge: 0,
         },
-        
-        // Betting recommendations
-        recommendations: analysis.recommendations,
-        valueBets: analysis.valueBets,
-        
-        // Goals prediction (Over/Under 2.5, BTTS)
+        recommendations: [],
+        valueBets: [],
         goalsPrediction: {
-          total: Math.round(expectedGoals * 10) / 10,
-          over25: Math.round(over25Prob),
-          under25: Math.round(100 - over25Prob),
-          over15: Math.min(85, Math.round(over25Prob + 15)),
-          over35: Math.max(25, Math.round(over25Prob - 25)),
-          over45: Math.max(15, Math.round(over25Prob - 35)),
-          bothTeamsScore: Math.round(bttsProb),
-          prediction: over25Prob >= 55 ? 'Over 2.5' : 'Under 2.5',
+          total: 2.5, over25: 55, under25: 45, over15: 75, over35: 35, over45: 20,
+          bothTeamsScore: 50, prediction: 'Over 2.5', source: 'estimation',
         },
-        
-        // Cards & Corners predictions REMOVED - No real data source available
-        // These predictions were pure estimation without actual statistics
-        // To re-enable: integrate API-Football or similar service with cards/corners data
-        
-        // ML analysis details
-        mlAnalysis: {
-          probabilities: analysis.probabilities,
-          confidence: analysis.confidence,
-          factors: [],
-          valueBetDetected: analysis.valueBets.length > 0,
-          recommendation: analysis.recommendations[0]?.label || '',
+        advancedPredictions: {
+          btts: { yes: 50, no: 50 },
+          correctScore: [],
+          halfTime: { home: 35, draw: 30, away: 35 },
+          doubleChance: { homeOrDraw: homeProb + drawProb, drawOrAway: drawProb + awayProb, homeOrAway: homeProb + awayProb },
+          drawNoBet: { home: 50, away: 50, homeOdds: 1.5, awayOdds: 1.5 },
+          expectedGoals: null,
+          overUnder: { over25: 55, under25: 45, over15: 75, over35: 35, over45: 20 },
         },
-        
-        // ML Patterns - NEW: Validated statistical patterns
-        mlPatterns: analysis.mlPatterns,
-        
-        // Best tag for quick display
-        bestTag: analysis.mlPatterns?.bestTag,
-        
-        // Data quality
         dataQuality: {
-          overall: analysis.dataQuality,
-          overallScore: analysis.dataQuality === 'real' ? 85 : 40,
-          sources: analysis.dataQuality === 'real' ? ['ESPN (DraftKings)'] : ['ESPN'],
-          hasRealData: analysis.dataQuality === 'real',
+          overall: match.isEstimated ? 'estimated' : 'real',
+          overallScore: match.isEstimated ? 40 : 70,
+          sources: match.isEstimated ? ['Estimation'] : ['ESPN'],
+          hasRealData: !match.isEstimated,
         },
+        source: 'cotes-brutes',
+        mlAnalysis: null,
+        matchImportance: null,
+        bestTag: null,
+        statusBadge: match.isEstimated ? 'DONNÉES LIMITÉES' : 'À CONSIDÉRER',
       };
     });
 
-    // Calculate stats
+    // ═══════════════════════════════════════
+    // ÉTAPE 4: Stats résumées
+    // ═══════════════════════════════════════
+    const bySport: Record<string, number> = {};
+    const byRisk: Record<string, number> = { 'Sûr': 0, 'Modéré': 0, 'Audacieux': 0, 'Kamikaze': 0 };
+    for (const m of enrichedMatches) {
+      const s = m.sport || 'Foot';
+      bySport[s] = (bySport[s] || 0) + 1;
+      const r = m.riskLabel || 'Modéré';
+      if (r in byRisk) byRisk[r]++;
+    }
+
     const dataStats = {
       total: enrichedMatches.length,
-      withRealOdds: enrichedMatches.filter((m: any) => m.dataQuality?.hasRealData).length,
+      withRealOdds: enrichedMatches.filter((m: any) => m.oddsHome > 1 && m.oddsAway > 1 && !m.isEstimated).length,
       highConfidence: enrichedMatches.filter((m: any) => m.confidence === 'high' || m.confidence === 'very_high').length,
       valueBets: enrichedMatches.filter((m: any) => m.valueBets?.length > 0).length,
+      mlAnalyzed: unifiedPreds.length,
+      bySport,
+      byRisk,
     };
 
-    const creditStats = getCreditStats();
-
-    console.log(`✅ ${enrichedMatches.length} matches loaded (${dataStats.withRealOdds} with real odds, ${dataStats.valueBets} value bets)`);
+    console.log(`✅ ${enrichedMatches.length} matchs chargés (${dataStats.withRealOdds} cotes réelles, ${dataStats.highConfidence} haute confiance, ${dataStats.valueBets} value bets)`);
 
     const result = {
       matches: enrichedMatches,
       timing: {
         currentHour: new Date().getUTCHours(),
-        canRefresh: shouldUseApiCredits(),
+        canRefresh: true,
         nextRefreshTime: '5 min',
-        message: `${enrichedMatches.length} matchs analysés`,
+        message: `${enrichedMatches.length} matchs (${dataStats.mlAnalyzed} analysés ML)`,
+        source: 'pipeline-unifié',
       },
       dataStats,
-      creditStats,
       mlStatus: getModelStatus(),
       lastUpdate: new Date().toISOString(),
     };
@@ -594,7 +611,7 @@ export async function GET(request: Request) {
         nextRefreshTime: '5 min',
         message: 'Erreur de chargement',
       },
-      dataStats: { total: 0, withRealOdds: 0, highConfidence: 0, valueBets: 0 },
+      dataStats: { total: 0, withRealOdds: 0, highConfidence: 0, valueBets: 0, bySport: {}, byRisk: {} },
       mlStatus: null,
     });
   }
@@ -609,21 +626,11 @@ export async function POST(request: Request) {
   }
   try {
     console.log('🔄 Cache clear requested');
-
-    // Clear memory cache
     cachedData = null;
     lastFetchTime = 0;
-
-    return NextResponse.json({
-      success: true,
-      message: 'Cache cleared',
-      creditStats: getCreditStats(),
-    });
+    return NextResponse.json({ success: true, message: 'Cache cleared' });
   } catch (error) {
     console.error('POST error:', error);
-    return NextResponse.json({
-      success: false,
-      error: 'Clear failed',
-    });
+    return NextResponse.json({ success: false, error: 'Clear failed' });
   }
 }
