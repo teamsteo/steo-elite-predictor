@@ -2112,6 +2112,16 @@ export async function GET(request: NextRequest) {
                   _sources: p.dataQuality?.sources || [],
                   // 🏆 Enjeu du match (phase saison, type compétition, importance)
                   _matchImportance: p.factors?.matchImportance || undefined,
+                  // 🏥 Blessures détaillées (noms, impact, count)
+                  _injuries: p.factors?.injuries || undefined,
+                  // 🌤️ Météo (condition, température, impact)
+                  _weather: p.factors?.weather || undefined,
+                  // 📊 xG différentiel (football — expected goals)
+                  _xg: p.factors?.xg || undefined,
+                  // ⚔️ Face-à-face historique
+                  _h2h: p.factors?.h2h || undefined,
+                  // 📰 Forme des équipes (points)
+                  _form: p.factors?.form || undefined,
                 };
               });
             

@@ -817,7 +817,36 @@ interface TelegramMatch {
     insights: string[];
     contextSummary?: string;
   };
-  // Contexte enrichi
+  // Contexte enrichi — blessures détaillées
+  _injuries?: {
+    home: number;
+    away: number;
+    homeImpact: number;
+    awayImpact: number;
+  };
+  // Météo
+  _weather?: {
+    condition: string;
+    temperature: number;
+    impact: string;
+  };
+  // xG différentiel (football)
+  _xg?: {
+    home: number | null;
+    away: number | null;
+  };
+  // Face-à-face historique
+  _h2h?: {
+    homeWins: number;
+    draws: number;
+    awayWins: number;
+  };
+  // Forme des équipes
+  _form?: {
+    home: number;
+    away: number;
+  };
+  // Contexte enrichi (ancien — teamNews, etc.)
   _enrichedContext?: {
     injuries?: { home: any[]; away: any[]; homeImpact: number; awayImpact: number; summary: string; keyAbsentees?: { home: string[]; away: string[] } };
     form?: string;
@@ -929,11 +958,13 @@ async function formatMatchBlock(
   }
 
   // ══════════════════════════════════════════
-  // SECTION CONTEXTE ENRICHI (enjeu, forme, blessures, news)
+  // SECTION CONTEXTE ENRICHI (enjeu, blessures, météo, xG, H2H, forme)
   // ══════════════════════════════════════════
   const contextLines: string[] = [];
+  // Track what's already in contextSummary to avoid duplicates
+  const summaryLower = (m._matchImportance?.contextSummary || '').toLowerCase();
 
-  // Enjeu du match — TOUJOURS affiché (default "RAS" si données manquantes)
+  // ── Enjeu du match — TOUJOURS affiché ──
   {
     const imp = m._matchImportance;
     const stakeEmoji: Record<string, string> = {
@@ -944,64 +975,107 @@ async function formatMatchBlock(
     const phaseLabel = imp?.seasonPhaseLabel || 'Saison régulière';
     const compLabel = imp?.competitionTypeLabel || 'Championnat';
 
-    // Ligne 1: niveau d'enjeu (toujours présente)
     contextLines.push(`${stakeEmoji[stakeLevel] || '🔵'} ENJEU: ${stakeLabel}`);
-    // Ligne 2: phase + type compétition
     contextLines.push(`📋 ${phaseLabel} · ${compLabel}`);
 
     if (imp && !imp.formReliable) {
       contextLines.push(`⚠️ ${imp.formReliabilityReason}`);
     }
 
-    // Insights (ex: "MATCH À 6 POINTS", "Course au titre")
     if (imp?.insights) {
       for (const insight of imp.insights.slice(0, 2)) {
         contextLines.push(insight);
       }
     }
+  }
 
-    // Résumé court du contexte (news + blessures + forme + météo + derby) — toujours présent
-    // Si vide/absent → "RAS"
-    const summary = imp?.contextSummary || 'RAS';
-    contextLines.push(`📝 ${summary}`);
+  // ── Blessures détaillées (depuis le pipeline unifié) ──
+  // Affiche les impacts si significatifs, sauf si déjà dans contextSummary
+  if (m._injuries) {
+    const inj = m._injuries;
+    const hasSignificantImpact =
+      (inj.homeImpact <= -3) || (inj.awayImpact <= -3) ||
+      (inj.home > 0) || (inj.away > 0);
+    if (hasSignificantImpact && !summaryLower.includes('absent') && !summaryLower.includes('bless')) {
+      const parts: string[] = [];
+      if (inj.home > 0 && inj.homeImpact <= -3) {
+        parts.push(`🏥 Dom: ${inj.home} blessé${inj.home > 1 ? 's' : ''} (impact ${inj.homeImpact >= 0 ? '+' : ''}${inj.homeImpact})`);
+      }
+      if (inj.away > 0 && inj.awayImpact <= -3) {
+        parts.push(`🏥 Ext: ${inj.away} blessé${inj.away > 1 ? 's' : ''} (impact ${inj.awayImpact >= 0 ? '+' : ''}${inj.awayImpact})`);
+      }
+      // Si un seul côté significatif, l'afficher même sans count
+      if (parts.length === 0) {
+        if (inj.homeImpact <= -3) parts.push(`🏥 Impact blessures dom: ${inj.homeImpact >= 0 ? '+' : ''}${inj.homeImpact}`);
+        if (inj.awayImpact <= -3) parts.push(`🏥 Impact blessures ext: ${inj.awayImpact >= 0 ? '+' : ''}${inj.awayImpact}`);
+      }
+      for (const p of parts.slice(0, 2)) {
+        contextLines.push(p);
+      }
+    }
+  }
+
+  // ── Météo (depuis le pipeline unifié) ──
+  if (m._weather && !summaryLower.includes(m._weather.condition.toLowerCase())) {
+    const w = m._weather;
+    const weatherEmoji = w.impact === 'extreme' || w.impact === 'significant' ? '🌧️' :
+                        w.impact === 'moderate' ? '⛅' : '☀️';
+    contextLines.push(`${weatherEmoji} ${w.condition} (${Math.round(w.temperature)}°C)`);
+  }
+
+  // ── xG différentiel (football) ──
+  if (isFootball && m._xg && (m._xg.home !== null || m._xg.away !== null)) {
+    const xgHome = m._xg.home;
+    const xgAway = m._xg.away;
+    if (xgHome !== null && xgAway !== null) {
+      const diff = xgHome - xgAway;
+      contextLines.push(`📊 xG: ${m.homeTeam} ${xgHome.toFixed(1)} vs ${m.awayTeam} ${xgAway.toFixed(1)} (${diff > 0 ? '+' : ''}${diff.toFixed(1)})`);
+    } else if (xgHome !== null) {
+      contextLines.push(`📊 xG ${m.homeTeam}: ${xgHome.toFixed(1)}`);
+    } else if (xgAway !== null) {
+      contextLines.push(`📊 xG ${m.awayTeam}: ${xgAway.toFixed(1)}`);
+    }
+  }
+
+  // ── Face-à-face historique ──
+  if (m._h2h) {
+    const h2h = m._h2h;
+    const total = h2h.homeWins + h2h.draws + h2h.awayWins;
+    if (total > 0) {
+      contextLines.push(`⚔️ H2H: ${h2h.homeWins}V-${h2h.draws}N-${h2h.awayWins}V (${total} matchs)`);
+    }
+  }
+
+  // ── Forme des équipes (points ML) ──
+  if (m._form && !summaryLower.includes('forme')) {
+    const f = m._form;
+    const formLabel = (pts: number) => pts >= 65 ? '🔥 Fort' : pts >= 50 ? '⚖️ Moyen' : '❄️ Faible';
+    contextLines.push(`📈 Forme: ${formLabel(f.home)} vs ${formLabel(f.away)}`);
+  }
+
+  // ── contextSummary — résumé dynamique (dernier, une seule ligne) ──
+  if (m._matchImportance?.contextSummary && m._matchImportance.contextSummary !== 'RAS') {
+    contextLines.push(`📝 ${m._matchImportance.contextSummary}`);
   }
   
-  // Reasoning ML — afficher les informations clés comme "mise à jour"
-  // NOTE: Forme, blessures, météo et enjeu sont déjà synthétisés dans le
-  // contextSummary ci-dessus → on évite les doublons en les filtrant ici.
+  // ── Reasoning ML — infos clés ──
   if (m._mlReasoning && m._mlReasoning.length > 0) {
     for (const r of m._mlReasoning) {
-      // Value bet
-      if (r.includes('📊 VALUE BET')) {
-        contextLines.push(r);
-      }
-      // Buts attendus
-      if (r.includes('⚽ Buts attendus')) {
-        contextLines.push(r);
-      }
-      // Avantage contextuel
-      if (r.includes('⚖️ Avantage contextuel')) {
-        contextLines.push(r);
-      }
-      // XGBoost
-      if (r.includes('🧠 XGBoost')) {
-        contextLines.push(r);
-      }
+      if (r.includes('📊 VALUE BET')) contextLines.push(r);
+      if (r.includes('⚽ Buts attendus')) contextLines.push(r);
+      if (r.includes('⚖️ Avantage contextuel')) contextLines.push(r);
+      if (r.includes('🧠 XGBoost')) contextLines.push(r);
     }
   }
   
-  // Contexte enrichi depuis les métadonnées
-  if (m._enrichedContext) {
-    const ctx = m._enrichedContext;
-    // Alertes news
-    if (ctx.newsAlerts && ctx.newsAlerts.length > 0) {
-      for (const alert of ctx.newsAlerts.slice(0, 1)) {
-        contextLines.push(`📰 ${alert}`);
-      }
+  // ── News alertes (contexte enrichi ancien) ──
+  if (m._enrichedContext?.newsAlerts && m._enrichedContext.newsAlerts.length > 0) {
+    for (const alert of m._enrichedContext.newsAlerts.slice(0, 1)) {
+      contextLines.push(`📰 ${alert}`);
     }
   }
   
-  // Kelly stake (indicateur de confiance ML)
+  // Kelly stake
   if (m._kellyStake && m._kellyStake > 0) {
     const kellyEmoji = m._kellyStake >= 3 ? '💎' : m._kellyStake >= 2 ? '✨' : '📊';
     contextLines.push(`${kellyEmoji} Kelly: ${m._kellyStake.toFixed(1)}%`);
@@ -1009,14 +1083,13 @@ async function formatMatchBlock(
   
   // Sources ML
   if (m._sources && m._sources.length > 2) {
-    const sourceCount = m._sources.length;
-    contextLines.push(`🔬 ${sourceCount} sources (ML unifié)`);
+    contextLines.push(`🔬 ${m._sources.length} sources (ML unifié)`);
   }
   
-  // Ajouter la section contexte si on a des lignes
+  // Ajouter la section contexte
   if (contextLines.length > 0) {
     block += `    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n`;
-    for (const line of contextLines.slice(0, 8)) { // Max 8 lignes de contexte
+    for (const line of contextLines.slice(0, 12)) { // Max 12 lignes (plus de place maintenant)
       block += `    ${line}\n`;
     }
   }
