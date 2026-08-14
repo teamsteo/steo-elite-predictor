@@ -6727,35 +6727,30 @@ function BankrollSection() {
     </div>
   );
 }
-
-// Section Résultats - Stats réelles avec séparation Foot/Basket et Expert Advisor
+// ═══════════════════════════════════════════════════════════════
+// Section Stats — Refonte complète avec graphiques
+// Pipeline ML unifié · Données Supabase · Visualisations pro
+// ═══════════════════════════════════════════════════════════════
 function ResultsSection() {
   const [activePeriod, setActivePeriod] = useState<'yesterday' | 'week' | 'month'>('yesterday');
-  const [activeSport, setActiveSport] = useState<'all' | 'football' | 'basketball'>('all');
+  const [activeSport, setActiveSport] = useState<'all' | 'football' | 'basketball' | 'hockey'>('all');
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [chartTab, setChartTab] = useState<'overview' | 'sport' | 'bettype' | 'timeline'>('overview');
 
-  // Charger les vraies stats depuis l'API
   const fetchStats = useCallback(async () => {
     try {
       const response = await fetch('/api/results?action=stats');
       const data = await response.json();
-      
       if (data.daily || data.weekly || data.monthly || data.overall) {
         setStats({
           daily: data.daily,
           weekly: data.weekly,
           monthly: data.monthly,
           overall: data.overall,
-          // Stats par sport depuis la nouvelle structure
-          bySport: data.bySport || {
-            football: { total: 0, wins: 0, losses: 0, winRate: 0 },
-            basketball: { total: 0, wins: 0, losses: 0, winRate: 0 },
-            hockey: { total: 0, wins: 0, losses: 0, winRate: 0 }
-          },
-          // Expert Advisor stats
-          expertAdvisor: data.expertAdvisor || null
+          bySport: data.bySport || { football: { total: 0, wins: 0, losses: 0, winRate: 0 }, basketball: { total: 0, wins: 0, losses: 0, winRate: 0 }, hockey: { total: 0, wins: 0, losses: 0, winRate: 0 } },
+          expertAdvisor: data.expertAdvisor || null,
         });
       }
       setLastUpdate(new Date());
@@ -6766,862 +6761,357 @@ function ResultsSection() {
     }
   }, []);
 
-  useEffect(() => {
-    void (async () => { await fetchStats(); })();
-  }, [fetchStats]);
+  useEffect(() => { void (async () => { await fetchStats(); })(); }, [fetchStats]);
 
-  const periodKey = activePeriod === 'yesterday' ? 'daily' 
-    : activePeriod === 'week' ? 'weekly' 
-    : 'monthly';
-
+  const periodKey = activePeriod === 'yesterday' ? 'daily' : activePeriod === 'week' ? 'weekly' : 'monthly';
   const periodLabels: Record<string, { label: string; icon: string; date: string }> = {
     yesterday: { label: 'Hier', icon: '📅', date: 'Pronostics de la veille' },
     week: { label: 'Semaine', icon: '📆', date: '7 derniers jours' },
-    month: { label: 'Mois', icon: '🗓️', date: '30 derniers jours' }
+    month: { label: 'Mois', icon: '🗓️', date: '30 derniers jours' },
+  };
+  const sportLabels: Record<string, { label: string; icon: string; color: string }> = {
+    all: { label: 'Tous', icon: '📊', color: '#8b5cf6' },
+    football: { label: 'Foot', icon: '⚽', color: '#22c55e' },
+    basketball: { label: 'Basket', icon: '🏀', color: '#f97316' },
+    hockey: { label: 'Hockey', icon: '🏒', color: '#3b82f6' },
   };
 
-  const sportLabels: Record<string, { label: string; icon: string }> = {
-    all: { label: 'Tous', icon: '📊' },
-    football: { label: 'Foot', icon: '⚽' },
-    basketball: { label: 'Basket', icon: '🏀' }
-  };
+  const rateColor = (rate: number) => rate >= 60 ? '#22c55e' : rate >= 45 ? '#eab308' : '#ef4444';
 
+  const getFilteredStats = () => {
+    if (!stats || !stats[periodKey]) return null;
+    if (activeSport === 'all') return stats[periodKey];
+    if (stats.bySport && stats.bySport[activeSport]) {
+      const s = stats.bySport[activeSport];
+      return { totalPredictions: s.total || 0, completed: s.total || 0, wins: s.wins || 0, losses: s.losses || 0, winRate: s.winRate || 0 };
+    }
+    return stats[periodKey];
+  };
+  const periodStats = getFilteredStats();
+  const expertStats = stats?.expertAdvisor || stats?.overall?.expertAdvisor || null;
+
+  // ── Data for charts ──
+  const sportData = [
+    { name: 'Football', fullName: '⚽ Football', wins: stats?.bySport?.football?.wins || 0, losses: stats?.bySport?.football?.losses || 0, total: stats?.bySport?.football?.total || 0, rate: stats?.bySport?.football?.winRate || 0 },
+    { name: 'Basketball', fullName: '🏀 Basketball', wins: stats?.bySport?.basketball?.wins || 0, losses: stats?.bySport?.basketball?.losses || 0, total: stats?.bySport?.basketball?.total || 0, rate: stats?.bySport?.basketball?.winRate || 0 },
+    { name: 'Hockey', fullName: '🏒 Hockey', wins: stats?.bySport?.hockey?.wins || 0, losses: stats?.bySport?.hockey?.losses || 0, total: stats?.bySport?.hockey?.total || 0, rate: stats?.bySport?.hockey?.winRate || 0 },
+  ].filter(s => s.total > 0);
+
+  const betTypeData: { name: string; winRate: number; total: number; sport: string }[] = [];
+  if (stats?.bySport?.football?.total > 0) {
+    const d = stats.bySport.football.details || {};
+    if (d.resultats?.total > 0) betTypeData.push({ name: '1N2', winRate: d.resultats.winRate, total: d.resultats.total, sport: 'football' });
+    if (d.buts?.total > 0) betTypeData.push({ name: 'Buts O/U', winRate: d.buts.winRate, total: d.buts.total, sport: 'football' });
+    if (d.btts?.total > 0) betTypeData.push({ name: 'BTTS', winRate: d.btts.winRate, total: d.btts.total, sport: 'football' });
+  }
+  if (stats?.bySport?.basketball?.total > 0) {
+    const d = stats.bySport.basketball.details || {};
+    if (d.resultats?.total > 0) betTypeData.push({ name: 'Vainqueur', winRate: d.resultats.winRate, total: d.resultats.total, sport: 'basketball' });
+    if (d.buts?.total > 0) betTypeData.push({ name: 'Points O/U', winRate: d.buts.winRate, total: d.buts.total, sport: 'basketball' });
+  }
+  if (stats?.bySport?.hockey?.total > 0) {
+    const d = stats.bySport.hockey.details || {};
+    if (d.resultats?.total > 0) betTypeData.push({ name: 'Vainqueur NHL', winRate: d.resultats.winRate, total: d.resultats.total, sport: 'hockey' });
+    if (d.buts?.total > 0) betTypeData.push({ name: 'Buts O/U', winRate: d.buts.winRate, total: d.buts.total, sport: 'hockey' });
+  }
+
+  const timelineData = (() => {
+    const days: { date: string; shortDate: string; wins: number; losses: number; total: number; rate: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const shortDate = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
+      days.push({ date: dateStr, shortDate, wins: 0, losses: 0, total: 0, rate: 0 });
+    }
+    const preds = periodStats?.predictions || [];
+    preds.forEach((p: any) => {
+      const matchDate = (p.matchDate || p.date || '').split('T')[0];
+      const day = days.find(d => d.date === matchDate);
+      if (day) { day.total++; if (p.resultMatch === true) day.wins++; else if (p.resultMatch === false) day.losses++; }
+    });
+    days.forEach(d => { d.rate = d.total > 0 ? Math.round((d.wins / d.total) * 100) : 0; });
+    return days;
+  })();
+
+  const totalWins = sportData.reduce((a, s) => a + s.wins, 0);
+  const totalLosses = sportData.reduce((a, s) => a + s.losses, 0);
+  const totalPredictions = totalWins + totalLosses;
+  const globalRate = totalPredictions > 0 ? Math.round((totalWins / totalPredictions) * 100) : 0;
+
+  // ── LOADING ──
   if (loading) {
     return (
-      <div style={{
-        background: '#111',
-        borderRadius: '12px',
-        padding: '20px',
-        border: '1px solid #8b5cf630',
-        textAlign: 'center'
-      }}>
-        <div style={{ fontSize: '24px', marginBottom: '12px' }}>⏳</div>
+      <div style={{ background: '#0d0d0f', borderRadius: '16px', padding: '32px', border: '1px solid #8b5cf620', textAlign: 'center' }}>
+        <div style={{ fontSize: '28px', marginBottom: '12px' }}>⏳</div>
         <div style={{ color: '#888', fontSize: '13px' }}>Chargement des statistiques...</div>
       </div>
     );
   }
 
-  // Obtenir les stats selon le filtre sport
-  const getFilteredStats = () => {
-    if (!stats || !stats[periodKey]) return null;
-    
-    if (activeSport === 'all') {
-      return stats[periodKey];
-    }
-    
-    // Utiliser les stats bySport si disponibles
-    if (stats.bySport && stats.bySport[activeSport]) {
-      const sportStats = stats.bySport[activeSport];
-      return {
-        totalPredictions: sportStats.total || 0,
-        completed: sportStats.total || 0,
-        wins: sportStats.wins || 0,
-        losses: sportStats.losses || 0,
-        winRate: sportStats.winRate || 0
-      };
-    }
-    
-    // Fallback: filtrer depuis les stats globales
-    return stats[periodKey];
-  };
-
-  const periodStats = getFilteredStats();
-  
-  // Stats de l'Expert Advisor
-  const expertStats = stats?.expertAdvisor || stats?.overall?.expertAdvisor || null;
-
+  // ── EMPTY STATE ──
   if (!periodStats || periodStats.totalPredictions === 0) {
     return (
-      <div style={{
-        background: '#111',
-        borderRadius: '12px',
-        padding: '20px',
-        border: '1px solid #8b5cf630'
-      }}>
-        {/* Filtres Sport */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          gap: '4px', 
-          marginBottom: '12px',
-          flexWrap: 'wrap'
-        }}>
+      <div style={{ background: '#0d0d0f', borderRadius: '16px', padding: '20px', border: '1px solid #8b5cf620' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '12px', flexWrap: 'wrap' }}>
           {Object.entries(sportLabels).map(([key, value]) => (
-            <button
-              key={key}
-              onClick={() => setActiveSport(key as any)}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: activeSport === key ? '#f97316' : '#1a1a1a',
-                color: activeSport === key ? '#fff' : '#888',
-                cursor: 'pointer',
-                fontSize: '11px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
+            <button key={key} onClick={() => setActiveSport(key as any)} style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: activeSport === key ? value.color : '#161620', color: activeSport === key ? '#fff' : '#888', cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' }}>
               <span>{value.icon}</span> {value.label}
             </button>
           ))}
         </div>
-
-        {/* Filtres Période */}
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          gap: '6px', 
-          marginBottom: '20px',
-          flexWrap: 'wrap'
-        }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '20px', flexWrap: 'wrap' }}>
           {Object.entries(periodLabels).map(([key, value]) => (
-            <button
-              key={key}
-              onClick={() => setActivePeriod(key as any)}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '8px',
-                border: 'none',
-                background: activePeriod === key ? '#8b5cf6' : '#1a1a1a',
-                color: activePeriod === key ? '#fff' : '#888',
-                cursor: 'pointer',
-                fontSize: '13px',
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
+            <button key={key} onClick={() => setActivePeriod(key as any)} style={{ padding: '10px 18px', borderRadius: '10px', border: 'none', background: activePeriod === key ? '#8b5cf6' : '#161620', color: activePeriod === key ? '#fff' : '#888', cursor: 'pointer', fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
               <span>{value.icon}</span> {value.label}
             </button>
           ))}
         </div>
-
-        <div style={{
-          background: 'linear-gradient(135deg, #1a1a2a 0%, #2a1a3a 100%)',
-          borderRadius: '12px',
-          padding: '40px 20px',
-          textAlign: 'center',
-          border: '1px solid #8b5cf650'
-        }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px' }}>📊</div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#8b5cf6', marginBottom: '8px' }}>
-            En attente des résultats
-          </div>
-          <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
-            Les statistiques {periodLabels[activePeriod].label.toLowerCase()} {activeSport !== 'all' ? `pour le ${sportLabels[activeSport].label}` : ''} seront disponibles après vérification des matchs.
-          </div>
-          <div style={{ 
-            fontSize: '11px', 
-            color: '#666',
-            padding: '8px 12px',
-            background: '#1a1a1a',
-            borderRadius: '6px',
-            display: 'inline-block'
-          }}>
-            🕒 Vérification automatique chaque jour à 7h (heure de Paris)
-          </div>
+        <div style={{ background: 'linear-gradient(135deg, #12121f 0%, #1a1530 100%)', borderRadius: '14px', padding: '48px 20px', textAlign: 'center', border: '1px solid #8b5cf625' }}>
+          <div style={{ fontSize: '52px', marginBottom: '16px' }}>📊</div>
+          <div style={{ fontSize: '18px', fontWeight: 700, color: '#8b5cf6', marginBottom: '8px' }}>En attente des résultats</div>
+          <div style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>Les statistiques seront disponibles après vérification des matchs.</div>
+          <div style={{ fontSize: '11px', color: '#555', padding: '8px 14px', background: '#0d0d0f', borderRadius: '8px', display: 'inline-block' }}>🕒 Vérification automatique chaque jour à 7h (Paris)</div>
         </div>
       </div>
     );
   }
 
-  // Déterminer si c'est du basket pour adapter l'affichage
-  const isBasketball = activeSport === 'basketball';
-
-  // Calculer les meilleurs types de paris par sport
-  const getBestBetTypes = () => {
-    if (!stats?.bySport) return [];
-    
-    interface BetType {
-      type: string;
-      winRate: number;
-      total: number;
-      wins: number;
-    }
-    
-    interface SportBetTypes {
-      sport: string;
-      best: BetType;
-      all: BetType[];
-    }
-    
-    const result: SportBetTypes[] = [];
-    
-    // Football best bets
-    if (stats.bySport.football?.total > 0) {
-      const footDetails = stats.bySport.football.details || {};
-      const betTypes: BetType[] = [
-        { type: 'Résultats 1N2', winRate: footDetails.resultats?.winRate || stats.bySport.football.winRate || 0, total: footDetails.resultats?.total || stats.bySport.football.total || 0, wins: footDetails.resultats?.wins || stats.bySport.football.wins || 0 },
-        { type: 'Buts O/U', winRate: footDetails.buts?.winRate || 0, total: footDetails.buts?.total || 0, wins: footDetails.buts?.wins || 0 },
-        { type: 'BTTS', winRate: footDetails.btts?.winRate || 0, total: footDetails.btts?.total || 0, wins: footDetails.btts?.wins || 0 }
-      ].filter(b => b.total > 0).sort((a, b) => b.winRate - a.winRate);
-      
-      if (betTypes.length > 0) {
-        result.push({ sport: 'football', best: betTypes[0], all: betTypes });
-      }
-    }
-    
-    // Basketball best bets
-    if (stats.bySport.basketball?.total > 0) {
-      const basketDetails = stats.bySport.basketball.details || {};
-      const betTypes: BetType[] = [
-        { type: 'Vainqueur', winRate: basketDetails.resultats?.winRate || stats.bySport.basketball.winRate || 0, total: basketDetails.resultats?.total || stats.bySport.basketball.total || 0, wins: basketDetails.resultats?.wins || stats.bySport.basketball.wins || 0 },
-        { type: 'Total Points', winRate: basketDetails.buts?.winRate || 0, total: basketDetails.buts?.total || 0, wins: basketDetails.buts?.wins || 0 }
-      ].filter(b => b.total > 0).sort((a, b) => b.winRate - a.winRate);
-      
-      if (betTypes.length > 0) {
-        result.push({ sport: 'basketball', best: betTypes[0], all: betTypes });
-      }
-    }
-    
-    // Hockey best bets
-    if (stats.bySport.hockey?.total > 0) {
-      const hockeyDetails = stats.bySport.hockey.details || {};
-      const betTypes: BetType[] = [
-        { type: 'Vainqueur', winRate: hockeyDetails.resultats?.winRate || stats.bySport.hockey.winRate || 0, total: hockeyDetails.resultats?.total || stats.bySport.hockey.total || 0, wins: hockeyDetails.resultats?.wins || stats.bySport.hockey.wins || 0 },
-        { type: 'Total Buts', winRate: hockeyDetails.buts?.winRate || 0, total: hockeyDetails.buts?.total || 0, wins: hockeyDetails.buts?.wins || 0 }
-      ].filter(b => b.total > 0).sort((a, b) => b.winRate - a.winRate);
-      
-      if (betTypes.length > 0) {
-        result.push({ sport: 'hockey', best: betTypes[0], all: betTypes });
-      }
-    }
-    
-    return result;
-  };
-  
-  const bestBetTypes = getBestBetTypes();
-
+  // ── MAIN RENDER ──
   return (
-    <div style={{
-      background: '#111',
-      borderRadius: '12px',
-      padding: '20px',
-      border: '1px solid #8b5cf630'
-    }}>
-      {/* RÉSUMÉ GLOBAL - TAUX DE RÉUSSITE PAR SPORT */}
-      {stats?.bySport && (
-        <div style={{
-          background: 'linear-gradient(135deg, #1a1a2a 0%, #2a1a3a 100%)',
-          borderRadius: '12px',
-          padding: '16px',
-          marginBottom: '16px',
-          border: '1px solid #8b5cf650'
-        }}>
-          <div style={{ 
-            fontSize: '14px', 
-            fontWeight: 'bold', 
-            color: '#8b5cf6', 
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            📊 Taux de Réussite par Sport (Global)
+    <div style={{ background: '#0d0d0f', borderRadius: '16px', padding: '20px', border: '1px solid #8b5cf620' }}>
+      {/* ── KPI HEADER ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
+        {[
+          { label: 'Taux Global', value: `${globalRate}%`, icon: '🎯', color: rateColor(globalRate), sub: `${totalPredictions} pronostics` },
+          { label: 'Victoires', value: `${totalWins}`, icon: '✅', color: '#22c55e', sub: `${globalRate}% réussite` },
+          { label: 'Défaites', value: `${totalLosses}`, icon: '❌', color: '#ef4444', sub: totalPredictions > 0 ? `${Math.round(totalLosses / totalPredictions * 100)}%` : '0%' },
+          { label: 'Expert Advisor', value: expertStats ? `${expertStats.winRate}%` : 'N/A', icon: '🧠', color: expertStats ? rateColor(expertStats.winRate) : '#666', sub: expertStats ? `${expertStats.total} conseils` : 'Non dispo' },
+        ].map((kpi, i) => (
+          <div key={i} style={{ background: '#12121f', borderRadius: '12px', padding: '14px', border: `1px solid ${kpi.color}25`, textAlign: 'center' }}>
+            <div style={{ fontSize: '18px', marginBottom: '4px' }}>{kpi.icon}</div>
+            <div style={{ fontSize: '26px', fontWeight: 800, color: kpi.color, lineHeight: 1.1 }}>{kpi.value}</div>
+            <div style={{ fontSize: '10px', color: '#666', marginTop: '4px', fontWeight: 600 }}>{kpi.label}</div>
+            <div style={{ fontSize: '9px', color: '#444', marginTop: '2px' }}>{kpi.sub}</div>
           </div>
-          
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', 
-            gap: '10px' 
-          }}>
-            {/* Football */}
-            <div style={{ 
-              background: stats.bySport.football?.total > 0 ? '#22c55e15' : '#1a1a1a', 
-              borderRadius: '10px', 
-              padding: '12px',
-              border: `1px solid ${stats.bySport.football?.total > 0 ? '#22c55e40' : '#333'}`,
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '20px', marginBottom: '4px' }}>⚽</div>
-              <div style={{ 
-                fontSize: '24px', 
-                fontWeight: 'bold',
-                color: stats.bySport.football?.winRate >= 60 ? '#22c55e' : 
-                       stats.bySport.football?.winRate >= 45 ? '#eab308' : '#ef4444'
-              }}>
-                {stats.bySport.football?.winRate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                {stats.bySport.football?.wins || 0}W / {stats.bySport.football?.total || 0} matchs
-              </div>
-              <div style={{ fontSize: '10px', color: '#22c55e', fontWeight: 'bold', marginTop: '4px' }}>
-                Football
-              </div>
-            </div>
-            
-            {/* Basketball */}
-            <div style={{ 
-              background: stats.bySport.basketball?.total > 0 ? '#f9731615' : '#1a1a1a', 
-              borderRadius: '10px', 
-              padding: '12px',
-              border: `1px solid ${stats.bySport.basketball?.total > 0 ? '#f9731640' : '#333'}`,
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '20px', marginBottom: '4px' }}>🏀</div>
-              <div style={{ 
-                fontSize: '24px', 
-                fontWeight: 'bold',
-                color: stats.bySport.basketball?.winRate >= 60 ? '#22c55e' : 
-                       stats.bySport.basketball?.winRate >= 45 ? '#eab308' : '#ef4444'
-              }}>
-                {stats.bySport.basketball?.winRate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                {stats.bySport.basketball?.wins || 0}W / {stats.bySport.basketball?.total || 0} matchs
-              </div>
-              <div style={{ fontSize: '10px', color: '#f97316', fontWeight: 'bold', marginTop: '4px' }}>
-                Basketball
-              </div>
-            </div>
-            
-            {/* Hockey */}
-            <div style={{ 
-              background: stats.bySport.hockey?.total > 0 ? '#3b82f615' : '#1a1a1a', 
-              borderRadius: '10px', 
-              padding: '12px',
-              border: `1px solid ${stats.bySport.hockey?.total > 0 ? '#3b82f640' : '#333'}`,
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '20px', marginBottom: '4px' }}>🏒</div>
-              <div style={{ 
-                fontSize: '24px', 
-                fontWeight: 'bold',
-                color: stats.bySport.hockey?.winRate >= 60 ? '#22c55e' : 
-                       stats.bySport.hockey?.winRate >= 45 ? '#eab308' : 
-                       stats.bySport.hockey?.total > 0 ? '#ef4444' : '#666'
-              }}>
-                {stats.bySport.hockey?.winRate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#888', marginTop: '4px' }}>
-                {stats.bySport.hockey?.wins || 0}W / {stats.bySport.hockey?.total || 0} matchs
-              </div>
-              <div style={{ fontSize: '10px', color: '#3b82f6', fontWeight: 'bold', marginTop: '4px' }}>
-                Hockey
-              </div>
-            </div>
-          </div>
-          
-          {/* Stats globales */}
-          <div style={{ 
-            marginTop: '12px', 
-            padding: '10px', 
-            background: '#0d0d0d', 
-            borderRadius: '8px',
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '24px',
-            flexWrap: 'wrap'
-          }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>
-                {stats.overall?.totalPredictions || stats.bySport.football?.total + stats.bySport.basketball?.total + (stats.bySport.hockey?.total || 0) || 0}
-              </div>
-              <div style={{ fontSize: '10px', color: '#666' }}>Total Pronostics</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#22c55e' }}>
-                {(stats.bySport.football?.wins || 0) + (stats.bySport.basketball?.wins || 0) + (stats.bySport.hockey?.wins || 0)}
-              </div>
-              <div style={{ fontSize: '10px', color: '#666' }}>Gagnés</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>
-                {(stats.bySport.football?.losses || 0) + (stats.bySport.basketball?.losses || 0) + (stats.bySport.hockey?.losses || 0)}
-              </div>
-              <div style={{ fontSize: '10px', color: '#666' }}>Perdus</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ 
-                fontSize: '18px', 
-                fontWeight: 'bold', 
-                color: stats.overall?.winRate >= 55 ? '#22c55e' : '#eab308' 
-              }}>
-                {stats.overall?.winRate || 0}%
-              </div>
-              <div style={{ fontSize: '10px', color: '#666' }}>Taux Global</div>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* MEILLEURS TYPES DE PARIS PAR SPORT */}
-      {bestBetTypes.length > 0 && (
-        <div style={{
-          background: 'linear-gradient(135deg, #1a2a1a 0%, #1a1a1a 100%)',
-          borderRadius: '12px',
-          padding: '16px',
-          marginBottom: '16px',
-          border: '1px solid #22c55e30'
-        }}>
-          <div style={{ 
-            fontSize: '14px', 
-            fontWeight: 'bold', 
-            color: '#22c55e', 
-            marginBottom: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}>
-            🎯 Options de Paris les Plus Réussies par Sport
-          </div>
-          
-          <div style={{ display: 'grid', gap: '10px' }}>
-            {bestBetTypes.map((sportData, idx) => (
-              <div key={idx} style={{
-                background: '#0d0d0d',
-                borderRadius: '8px',
-                padding: '12px',
-                border: `1px solid ${sportData.sport === 'football' ? '#22c55e30' : sportData.sport === 'basketball' ? '#f9731630' : '#3b82f630'}`
-              }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  marginBottom: '8px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '16px' }}>
-                      {sportData.sport === 'football' ? '⚽' : sportData.sport === 'basketball' ? '🏀' : '🏒'}
-                    </span>
-                    <span style={{ 
-                      fontSize: '12px', 
-                      fontWeight: 'bold',
-                      color: sportData.sport === 'football' ? '#22c55e' : sportData.sport === 'basketball' ? '#f97316' : '#3b82f6'
-                    }}>
-                      {sportData.sport === 'football' ? 'Football' : sportData.sport === 'basketball' ? 'Basketball' : 'Hockey'}
-                    </span>
-                  </div>
-                  <div style={{
-                    background: sportData.best?.winRate >= 60 ? '#22c55e' : '#eab308',
-                    color: '#fff',
-                    padding: '4px 10px',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 'bold'
-                  }}>
-                    ⭐ {sportData.best?.type}: {sportData.best?.winRate}%
-                  </div>
-                </div>
-                
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {sportData.all?.map((bet, betIdx) => (
-                    <div key={betIdx} style={{
-                      background: bet.winRate === sportData.best?.winRate ? '#22c55e15' : '#1a1a1a',
-                      borderRadius: '6px',
-                      padding: '8px 12px',
-                      fontSize: '10px',
-                      border: `1px solid ${bet.winRate === sportData.best?.winRate ? '#22c55e40' : '#333'}`
-                    }}>
-                      <span style={{ color: '#888' }}>{bet.type}:</span>{' '}
-                      <span style={{ 
-                        fontWeight: 'bold',
-                        color: bet.winRate >= 60 ? '#22c55e' : bet.winRate >= 45 ? '#eab308' : '#ef4444'
-                      }}>
-                        {bet.winRate}%
-                      </span>
-                      <span style={{ color: '#666' }}> ({bet.wins}/{bet.total})</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Filtres Sport */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        gap: '4px', 
-        marginBottom: '12px',
-        flexWrap: 'wrap'
-      }}>
-        {Object.entries(sportLabels).map(([key, value]) => (
-          <button
-            key={key}
-            onClick={() => setActiveSport(key as any)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              background: activeSport === key ? '#f97316' : '#1a1a1a',
-              color: activeSport === key ? '#fff' : '#888',
-              cursor: 'pointer',
-              fontSize: '11px',
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            <span>{value.icon}</span> {value.label}
-          </button>
         ))}
       </div>
 
-      {/* Filtres Période */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        gap: '6px', 
-        marginBottom: '20px',
-        flexWrap: 'wrap'
-      }}>
-        {Object.entries(periodLabels).map(([key, value]) => (
-          <button
-            key={key}
-            onClick={() => setActivePeriod(key as any)}
-            style={{
-              padding: '10px 16px',
-              borderRadius: '8px',
-              border: 'none',
-              background: activePeriod === key ? '#8b5cf6' : '#1a1a1a',
-              color: activePeriod === key ? '#fff' : '#888',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <span>{value.icon}</span> {value.label}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ 
-        textAlign: 'center', 
-        marginBottom: '20px',
-        padding: '16px',
-        background: 'linear-gradient(135deg, #1a1a2a 0%, #2a1a3a 100%)',
-        borderRadius: '10px'
-      }}>
-        <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#8b5cf6', marginBottom: '4px' }}>
-          📈 Statistiques {sportLabels[activeSport].label} - {periodLabels[activePeriod].label}
+      {/* ── WIN RATE GAUGE ── */}
+      <div style={{ background: 'linear-gradient(135deg, #12121f 0%, #1a1530 100%)', borderRadius: '14px', padding: '24px', marginBottom: '16px', textAlign: 'center', border: '1px solid #8b5cf625', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px', borderRadius: '50%', background: `${rateColor(periodStats.winRate)}08` }} />
+        <div style={{ position: 'absolute', bottom: '-30px', left: '-30px', width: '100px', height: '100px', borderRadius: '50%', background: `${rateColor(periodStats.winRate)}06` }} />
+        <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+          Taux de Réussite {sportLabels[activeSport].label !== 'Tous' ? sportLabels[activeSport].label : 'Global'} — {periodLabels[activePeriod].label}
         </div>
-        <div style={{ fontSize: '12px', color: '#666' }}>
-          {periodLabels[activePeriod].date}
-        </div>
-      </div>
-
-      <div style={{
-        background: 'linear-gradient(135deg, #1a1a1a 0%, #2a1a3a 100%)',
-        borderRadius: '12px',
-        padding: '20px',
-        marginBottom: '20px',
-        textAlign: 'center',
-        border: '1px solid #8b5cf650'
-      }}>
-        <div style={{ fontSize: '14px', color: '#888', marginBottom: '8px' }}>🎯 Taux de Réussite {activeSport !== 'all' ? sportLabels[activeSport].label : 'Global'}</div>
-        <div style={{ 
-          fontSize: '48px', 
-          fontWeight: 'bold',
-          color: periodStats.winRate >= 65 ? '#22c55e' : periodStats.winRate >= 55 ? '#eab308' : '#ef4444'
-        }}>
+        <div style={{ fontSize: '64px', fontWeight: 900, color: rateColor(periodStats.winRate), lineHeight: 1, marginBottom: '4px' }}>
           {periodStats.winRate}%
         </div>
         <div style={{ fontSize: '13px', color: '#666', marginTop: '8px' }}>
           {periodStats.wins}/{periodStats.completed} pronostics vérifiés
         </div>
         {lastUpdate && (
-          <div style={{ fontSize: '11px', color: '#555', marginTop: '4px' }}>
+          <div style={{ fontSize: '10px', color: '#444', marginTop: '6px' }}>
             Mis à jour: {lastUpdate.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
-      </div>
-
-      {/* Stats différenciées selon le sport */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, 1fr)',
-        gap: '10px',
-        marginBottom: '16px'
-      }}>
-        {isBasketball ? (
-          // Stats Basket
-          <>
-            <div style={{ 
-              background: '#0d0d0d', 
-              borderRadius: '10px', 
-              padding: '14px',
-              border: '1px solid #f9731630'
-            }}>
-              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>🏀 Vainqueurs</div>
-              <div style={{ 
-                fontSize: '28px', 
-                fontWeight: 'bold',
-                color: periodStats.results?.rate >= 60 ? '#22c55e' : '#eab308'
-              }}>
-                {periodStats.results?.rate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#666' }}>
-                {periodStats.results?.correct || 0}/{periodStats.results?.total || 0} corrects
-              </div>
-            </div>
-
-            <div style={{ 
-              background: '#0d0d0d', 
-              borderRadius: '10px', 
-              padding: '14px',
-              border: '1px solid #3b82f630'
-            }}>
-              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>📈 Total Points O/U</div>
-              <div style={{ 
-                fontSize: '28px', 
-                fontWeight: 'bold',
-                color: periodStats.goals?.rate >= 60 ? '#22c55e' : '#eab308'
-              }}>
-                {periodStats.goals?.rate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#666' }}>
-                {periodStats.goals?.correct || 0}/{periodStats.goals?.total || 0} corrects
-              </div>
-            </div>
-          </>
-        ) : (
-          // Stats Foot avec détails
-          <>
-            <div style={{ 
-              background: '#0d0d0d', 
-              borderRadius: '10px', 
-              padding: '14px',
-              border: '1px solid #22c55e30'
-            }}>
-              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>🏆 Résultats 1N2</div>
-              <div style={{ 
-                fontSize: '28px', 
-                fontWeight: 'bold',
-                color: (stats?.bySport?.football?.details?.resultats?.winRate || periodStats.results?.rate || 0) >= 60 ? '#22c55e' : '#eab308'
-              }}>
-                {stats?.bySport?.football?.details?.resultats?.winRate || periodStats.results?.rate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#666' }}>
-                {stats?.bySport?.football?.details?.resultats?.wins || periodStats.results?.correct || 0}/{stats?.bySport?.football?.details?.resultats?.total || periodStats.results?.total || 0} corrects
-              </div>
-            </div>
-
-            <div style={{ 
-              background: '#0d0d0d', 
-              borderRadius: '10px', 
-              padding: '14px',
-              border: '1px solid #3b82f630'
-            }}>
-              <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>⚽ Buts O/U</div>
-              <div style={{ 
-                fontSize: '28px', 
-                fontWeight: 'bold',
-                color: (stats?.bySport?.football?.details?.buts?.winRate || periodStats.goals?.rate || 0) >= 60 ? '#22c55e' : '#eab308'
-              }}>
-                {stats?.bySport?.football?.details?.buts?.winRate || periodStats.goals?.rate || 0}%
-              </div>
-              <div style={{ fontSize: '11px', color: '#666' }}>
-                {stats?.bySport?.football?.details?.buts?.wins || periodStats.goals?.correct || 0}/{stats?.bySport?.football?.details?.buts?.total || periodStats.goals?.total || 0} corrects
-              </div>
-            </div>
-            
-            {/* BTTS - Les deux marquent */}
-            {(stats?.bySport?.football?.details?.btts?.total > 0) && (
-              <div style={{ 
-                background: '#0d0d0d', 
-                borderRadius: '10px', 
-                padding: '14px',
-                border: '1px solid #14b8a630',
-                gridColumn: 'span 2'
-              }}>
-                <div style={{ fontSize: '11px', color: '#888', marginBottom: '6px' }}>🎯 BTTS (Les 2 marquent)</div>
-                <div style={{ 
-                  fontSize: '28px', 
-                  fontWeight: 'bold',
-                  color: (stats?.bySport?.football?.details?.btts?.winRate || 0) >= 60 ? '#22c55e' : '#eab308'
-                }}>
-                  {stats?.bySport?.football?.details?.btts?.winRate || 0}%
-                </div>
-                <div style={{ fontSize: '11px', color: '#666' }}>
-                  {stats?.bySport?.football?.details?.btts?.wins || 0}/{stats?.bySport?.football?.details?.btts?.total || 0} corrects
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      <div style={{
-        background: '#0d0d0d',
-        borderRadius: '10px',
-        padding: '14px',
-        border: '1px solid #f9731630'
-      }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '10px'
-        }}>
-          <span style={{ fontSize: '13px', color: '#f97316', fontWeight: 'bold' }}>📊 Résumé {activeSport !== 'all' ? sportLabels[activeSport].label : ''}</span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', textAlign: 'center' }}>
-          <div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#fff' }}>
-              {periodStats.totalPredictions}
-            </div>
-            <div style={{ fontSize: '10px', color: '#666' }}>Total</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#eab308' }}>
-              {periodStats.pending}
-            </div>
-            <div style={{ fontSize: '10px', color: '#666' }}>En attente</div>
-          </div>
-          <div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#22c55e' }}>
-              {periodStats.completed}
-            </div>
-            <div style={{ fontSize: '10px', color: '#666' }}>Vérifiés</div>
-          </div>
+        <div style={{ marginTop: '16px', background: '#1a1a2a', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
+          <div style={{ width: `${periodStats.winRate}%`, height: '100%', borderRadius: '6px', background: `linear-gradient(90deg, ${rateColor(periodStats.winRate)}, ${rateColor(periodStats.winRate)}aa)`, transition: 'width 0.8s ease' }} />
         </div>
       </div>
 
-      {/* Expert Advisor Ratio - NOUVEAU */}
+      {/* ── FILTRES ── */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '10px', flexWrap: 'wrap' }}>
+        {Object.entries(sportLabels).map(([key, value]) => (
+          <button key={key} onClick={() => setActiveSport(key as any)} style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: activeSport === key ? value.color : '#161620', color: activeSport === key ? '#fff' : '#888', cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px', transition: 'all 0.2s' }}>
+            <span>{value.icon}</span> {value.label}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        {Object.entries(periodLabels).map(([key, value]) => (
+          <button key={key} onClick={() => setActivePeriod(key as any)} style={{ padding: '8px 16px', borderRadius: '8px', border: 'none', background: activePeriod === key ? '#8b5cf6' : '#161620', color: activePeriod === key ? '#fff' : '#888', cursor: 'pointer', fontSize: '12px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s' }}>
+            <span>{value.icon}</span> {value.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── CHART TABS ── */}
+      {sportData.length > 0 && (
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', background: '#12121f', borderRadius: '10px', padding: '4px' }}>
+          {[
+            { key: 'overview', label: '🏆 Vue d\'ensemble' },
+            { key: 'sport', label: '📊 Par Sport' },
+            { key: 'bettype', label: '🎯 Types de Paris' },
+            { key: 'timeline', label: '📅 Évolution' },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setChartTab(tab.key as any)} style={{ flex: 1, padding: '10px 8px', borderRadius: '8px', border: 'none', background: chartTab === tab.key ? '#8b5cf6' : 'transparent', color: chartTab === tab.key ? '#fff' : '#888', cursor: 'pointer', fontSize: '11px', fontWeight: 600, transition: 'all 0.2s', whiteSpace: 'nowrap' }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── CHART: OVERVIEW (W/L par sport) ── */}
+      {chartTab === 'overview' && sportData.length > 0 && (
+        <div style={{ background: '#12121f', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid #1a1a2a' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#8b5cf6', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            🏆 Répartition Victoires / Défaites par Sport
+          </div>
+          {sportData.map((s, i) => {
+            const pct = s.total > 0 ? (s.wins / s.total) * 100 : 0;
+            const sportColor = sportLabels[s.name.toLowerCase() === 'football' ? 'football' : s.name.toLowerCase() === 'basketball' ? 'basketball' : 'hockey']?.color || '#888';
+            return (
+              <div key={i} style={{ marginBottom: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '12px', color: '#ccc', fontWeight: 600 }}>{s.fullName}</span>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: rateColor(s.rate) }}>{s.rate}% <span style={{ color: '#666', fontWeight: 400 }}>({s.wins}W / {s.losses}L)</span></span>
+                </div>
+                <div style={{ background: '#1a1a2a', borderRadius: '6px', height: '24px', overflow: 'hidden', display: 'flex' }}>
+                  <div style={{ width: `${pct}%`, height: '100%', background: `linear-gradient(90deg, ${sportColor}, ${sportColor}aa)`, borderRadius: '6px 0 0 6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'width 0.6s ease', minWidth: pct > 0 ? '24px' : '0' }}>
+                    {pct > 15 && <span style={{ fontSize: '9px', fontWeight: 700, color: '#fff' }}>W</span>}
+                  </div>
+                  <div style={{ flex: 1, height: '100%', background: '#ef444418', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '0 6px 6px 0' }}>
+                    {(100 - pct) > 15 && <span style={{ fontSize: '9px', fontWeight: 700, color: '#ef4444' }}>L</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── CHART: SPORT ── */}
+      {chartTab === 'sport' && sportData.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+          {sportData.map((s, i) => {
+            const sportColor = sportLabels[s.name.toLowerCase() === 'football' ? 'football' : s.name.toLowerCase() === 'basketball' ? 'basketball' : 'hockey']?.color || '#888';
+            return (
+              <div key={i} style={{ background: '#12121f', borderRadius: '12px', padding: '16px', border: `1px solid ${sportColor}25` }}>
+                <div style={{ fontSize: '14px', fontWeight: 700, color: sportColor, marginBottom: '10px' }}>{s.name}</div>
+                <div style={{ fontSize: '36px', fontWeight: 900, color: rateColor(s.rate), lineHeight: 1 }}>{s.rate}%</div>
+                <div style={{ fontSize: '11px', color: '#666', marginTop: '6px' }}>{s.wins}W / {s.losses}L / {s.total} total</div>
+                <div style={{ marginTop: '10px', background: '#1a1a2a', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                  <div style={{ width: `${s.rate}%`, height: '100%', background: sportColor, borderRadius: '4px', transition: 'width 0.6s ease' }} />
+                </div>
+                {s.name === 'Football' && stats?.bySport?.football?.details && (
+                  <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+                    {([['1N2', stats.bySport.football.details.resultats], ['Buts', stats.bySport.football.details.buts], ['BTTS', stats.bySport.football.details.btts]] as [string, any][]).map(([label, d]) =>
+                      d && d.total > 0 ? (
+                        <div key={label} style={{ background: '#0d0d0f', borderRadius: '6px', padding: '6px', textAlign: 'center' }}>
+                          <div style={{ fontSize: '14px', fontWeight: 700, color: rateColor(d.winRate) }}>{d.winRate}%</div>
+                          <div style={{ fontSize: '8px', color: '#555' }}>{label}</div>
+                        </div>
+                      ) : null
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── CHART: BET TYPES ── */}
+      {chartTab === 'bettype' && betTypeData.length > 0 && (
+        <div style={{ background: '#12121f', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid #22c55e20' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#22c55e', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            🎯 Taux de Réussite par Type de Paris
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {betTypeData.sort((a, b) => b.winRate - a.winRate).map((bt, i) => {
+              const sportColor = sportLabels[bt.sport]?.color || '#888';
+              return (
+                <div key={i} style={{ background: '#0d0d0f', borderRadius: '8px', padding: '10px 12px', border: `1px solid ${sportColor}15` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '12px' }}>{sportLabels[bt.sport]?.icon}</span>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#ccc' }}>{bt.name}</span>
+                    </div>
+                    <div style={{ background: rateColor(bt.winRate), color: '#fff', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700 }}>
+                      {bt.winRate}%
+                    </div>
+                  </div>
+                  <div style={{ background: '#1a1a2a', borderRadius: '4px', height: '8px', overflow: 'hidden' }}>
+                    <div style={{ width: `${bt.winRate}%`, height: '100%', background: `linear-gradient(90deg, ${sportColor}, ${sportColor}88)`, borderRadius: '4px', transition: 'width 0.6s ease' }} />
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#555', marginTop: '4px' }}>{bt.total} pronostics vérifiés</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── CHART: TIMELINE ── */}
+      {chartTab === 'timeline' && (
+        <div style={{ background: '#12121f', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid #3b82f620' }}>
+          <div style={{ fontSize: '13px', fontWeight: 700, color: '#3b82f6', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            📅 Évolution sur 7 jours
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '6px', height: '140px', padding: '0 4px' }}>
+            {timelineData.map((d, i) => (
+              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 700, color: d.total > 0 ? rateColor(d.rate) : '#444' }}>{d.total > 0 ? `${d.rate}%` : ''}</span>
+                <div style={{ width: '100%', maxWidth: '32px', borderRadius: '6px 6px 2px 2px', background: d.total > 0 ? (d.rate >= 60 ? '#22c55e' : d.rate >= 45 ? '#eab308' : '#ef4444') : '#1a1a2a', height: `${Math.max(8, d.total > 0 ? (d.rate / 100) * 100 : 8)}%`, transition: 'height 0.4s ease', minHeight: '8px' }} />
+                <span style={{ fontSize: '9px', color: '#666', fontWeight: 500 }}>{d.shortDate}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '10px', color: '#555' }}>
+            <span>✅ Vert = {'>'}60%</span>
+            <span>🟡 Jaune = 45-60%</span>
+            <span>🔴 Rouge = {'<'}45%</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── STATS RÉSUMÉ ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+        <div style={{ background: '#12121f', borderRadius: '10px', padding: '14px', border: '1px solid #8b5cf620', textAlign: 'center' }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>{periodStats.totalPredictions}</div>
+          <div style={{ fontSize: '10px', color: '#666', fontWeight: 600 }}>Total Pronostics</div>
+        </div>
+        <div style={{ background: '#12121f', borderRadius: '10px', padding: '14px', border: '1px solid #eab30820', textAlign: 'center' }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#eab308' }}>{periodStats.pending || 0}</div>
+          <div style={{ fontSize: '10px', color: '#666', fontWeight: 600 }}>En Attente</div>
+        </div>
+        <div style={{ background: '#12121f', borderRadius: '10px', padding: '14px', border: '1px solid #22c55e20', textAlign: 'center' }}>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#22c55e' }}>{periodStats.completed}</div>
+          <div style={{ fontSize: '10px', color: '#666', fontWeight: 600 }}>Vérifiés</div>
+        </div>
+      </div>
+
+      {/* ── EXPERT ADVISOR ── */}
       {expertStats && expertStats.total > 0 && (
-        <div style={{
-          background: 'linear-gradient(135deg, #1a1a2a 0%, #14b8a615 100%)',
-          borderRadius: '10px',
-          padding: '16px',
-          marginTop: '16px',
-          border: '1px solid #14b8a640'
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '12px'
-          }}>
-            <span style={{ fontSize: '14px', color: '#14b8a6', fontWeight: 'bold' }}>🎯 Ratio Expert Advisor</span>
-            <span style={{ 
-              background: expertStats.winRate >= 65 ? '#22c55e' : expertStats.winRate >= 55 ? '#eab308' : '#ef4444',
-              color: '#fff',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              fontSize: '12px',
-              fontWeight: 'bold'
-            }}>
-              {expertStats.winRate}% réussite
-            </span>
+        <div style={{ background: 'linear-gradient(135deg, #12121f 0%, #0d2020 100%)', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid #14b8a630' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ fontSize: '14px', color: '#14b8a6', fontWeight: 700 }}>🧠 Ratio Expert Advisor</span>
+            <span style={{ background: rateColor(expertStats.winRate), color: '#fff', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 700 }}>{expertStats.winRate}%</span>
           </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', textAlign: 'center' }}>
-            <div style={{ background: '#0d0d0d', borderRadius: '8px', padding: '10px' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#14b8a6' }}>
-                {expertStats.total}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', textAlign: 'center' }}>
+            {[{ v: expertStats.total, l: 'Conseils', c: '#14b8a6' }, { v: expertStats.wins, l: 'Gagnés', c: '#22c55e' }, { v: expertStats.losses, l: 'Perdus', c: '#ef4444' }, { v: `${expertStats.highConfidence?.winRate || 0}%`, l: 'Haute Conf.', c: '#3b82f6' }].map((item, i) => (
+              <div key={i} style={{ background: '#0d0d0f', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: item.c }}>{item.v}</div>
+                <div style={{ fontSize: '9px', color: '#555', fontWeight: 600 }}>{item.l}</div>
               </div>
-              <div style={{ fontSize: '9px', color: '#666' }}>Conseils</div>
-            </div>
-            <div style={{ background: '#0d0d0d', borderRadius: '8px', padding: '10px' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#22c55e' }}>
-                {expertStats.wins}
-              </div>
-              <div style={{ fontSize: '9px', color: '#666' }}>Gagnés</div>
-            </div>
-            <div style={{ background: '#0d0d0d', borderRadius: '8px', padding: '10px' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#ef4444' }}>
-                {expertStats.losses}
-              </div>
-              <div style={{ fontSize: '9px', color: '#666' }}>Perdus</div>
-            </div>
-            <div style={{ background: '#0d0d0d', borderRadius: '8px', padding: '10px' }}>
-              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#3b82f6' }}>
-                {expertStats.highConfidence?.winRate || 0}%
-              </div>
-              <div style={{ fontSize: '9px', color: '#666' }}>Haute Conf.</div>
-            </div>
-          </div>
-          
-          {expertStats.highConfidence && expertStats.highConfidence.total > 0 && (
-            <div style={{ 
-              marginTop: '10px', 
-              padding: '10px', 
-              background: '#0d0d0d', 
-              borderRadius: '8px',
-              fontSize: '11px',
-              color: '#888'
-            }}>
-              <span style={{ color: '#14b8a6', fontWeight: 'bold' }}>💡 Conseils haute confiance:</span>{' '}
-              {expertStats.highConfidence.wins}/{expertStats.highConfidence.total} réussis 
-              ({expertStats.highConfidence.winRate}%)
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Stats par Sport - NOUVEAU */}
-      {stats?.bySport && activeSport === 'all' && (
-        <div style={{
-          marginTop: '16px',
-          background: '#0d0d0d',
-          borderRadius: '10px',
-          padding: '14px',
-          border: '1px solid #333'
-        }}>
-          <div style={{ fontSize: '13px', color: '#f97316', fontWeight: 'bold', marginBottom: '12px' }}>
-            📊 Répartition par Sport
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-            {stats.bySport.football && stats.bySport.football.total > 0 && (
-              <div style={{ background: '#1a1a1a', borderRadius: '8px', padding: '12px', textAlign: 'center', border: '1px solid #22c55e30' }}>
-                <div style={{ fontSize: '16px', marginBottom: '4px' }}>⚽</div>
-                <div style={{ fontSize: '18px', fontWeight: 'bold', color: stats.bySport.football.winRate >= 60 ? '#22c55e' : '#eab308' }}>
-                  {stats.bySport.football.winRate}%
-                </div>
-                <div style={{ fontSize: '10px', color: '#888' }}>
-                  {stats.bySport.football.wins}/{stats.bySport.football.total} Foot
-                </div>
-              </div>
-            )}
-            {stats.bySport.basketball && stats.bySport.basketball.total > 0 && (
-              <div style={{ background: '#1a1a1a', borderRadius: '8px', padding: '12px', textAlign: 'center', border: '1px solid #f9731630' }}>
-                <div style={{ fontSize: '16px', marginBottom: '4px' }}>🏀</div>
-                <div style={{ fontSize: '18px', fontWeight: 'bold', color: stats.bySport.basketball.winRate >= 60 ? '#22c55e' : '#eab308' }}>
-                  {stats.bySport.basketball.winRate}%
-                </div>
-                <div style={{ fontSize: '10px', color: '#888' }}>
-                  {stats.bySport.basketball.wins}/{stats.bySport.basketball.total} Basket
-                </div>
-              </div>
-            )}
-            {stats.bySport.hockey && stats.bySport.hockey.total > 0 && (
-              <div style={{ background: '#1a1a1a', borderRadius: '8px', padding: '12px', textAlign: 'center', border: '1px solid #3b82f630' }}>
-                <div style={{ fontSize: '16px', marginBottom: '4px' }}>🏒</div>
-                <div style={{ fontSize: '18px', fontWeight: 'bold', color: stats.bySport.hockey.winRate >= 60 ? '#22c55e' : '#eab308' }}>
-                  {stats.bySport.hockey.winRate}%
-                </div>
-                <div style={{ fontSize: '10px', color: '#888' }}>
-                  {stats.bySport.hockey.wins}/{stats.bySport.hockey.total} Hockey
-                </div>
-              </div>
-            )}
+            ))}
           </div>
         </div>
       )}
 
-      {/* Dashboard Analytics avec Graphiques - NOUVEAU */}
-      <div style={{ marginTop: '20px' }}>
+      {/* ── ANALYTICS DASHBOARD (recharts) ── */}
+      <div style={{ marginTop: '16px' }}>
         <AnalyticsDashboard />
       </div>
 
-      {/* Export Manager - NOUVEAU */}
-      <div style={{ marginTop: '16px' }}>
+      {/* ── EXPORT ── */}
+      <div style={{ marginTop: '12px' }}>
         <ExportManager stats={stats} />
       </div>
     </div>
   );
 }
+
 
 // Composant MatchCard
 function MatchCard({ match, index }: { match: Match; index: number }) {
