@@ -158,12 +158,17 @@ const LEAGUE_SEASONS: Record<string, { startMonth: number; endMonth: number; has
   'serie-a':                     { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'german-bundesliga':           { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'french-ligue-1':              { startMonth: 8, endMonth: 5, hasPlayoff: false },
+  'french-ligue-2':              { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'portuguese-liga':             { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'dutch-eredivisie':            { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'belgian-pro-league':          { startMonth: 7, endMonth: 5, hasPlayoff: false },
   'turkish-super-lig':          { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'scottish-premiership':        { startMonth: 8, endMonth: 5, hasPlayoff: false },
   'major-league-soccer':         { startMonth: 2, endMonth: 10, hasPlayoff: true, playoffStartMonth: 10 },
+  'english-championship':        { startMonth: 8, endMonth: 5, hasPlayoff: true, playoffStartMonth: 5 },
+  'spanish-segunda':             { startMonth: 8, endMonth: 5, hasPlayoff: false },
+  'italian-serie-b':             { startMonth: 8, endMonth: 5, hasPlayoff: false },
+  'german-2-bundesliga':         { startMonth: 8, endMonth: 5, hasPlayoff: true, playoffStartMonth: 5 },
   
   // Football - Coupes continentales
   'uefa-champions-league':       { startMonth: 9, endMonth: 6, hasPlayoff: false },
@@ -250,25 +255,58 @@ const COMPETITION_PATTERNS: Array<{ pattern: RegExp; type: CompetitionType; stak
 
 /** Mapping normalisé des noms de ligues ESPN → clé interne */
 const LEAGUE_NAME_MAP: Record<string, string> = {
+  // === Noms ESPN tels que renvoyés par combinedDataService ===
   'english-premier-league': 'english-premier-league',
+  'premier league': 'english-premier-league',
   'english league cup': 'domestic_cup_fa',
+  'carabao cup': 'domestic_cup_fa',
   'laliga': 'laliga',
+  'la liga': 'laliga',
   'serie-a': 'serie-a',
+  'serie a': 'serie-a',
   'german-bundesliga': 'german-bundesliga',
+  'bundesliga': 'german-bundesliga',
   'french-ligue-1': 'french-ligue-1',
+  'ligue 1': 'french-ligue-1',
+  'french-ligue-2': 'french-ligue-2',
+  'ligue 2': 'french-ligue-2',
   'liga-portugal': 'portuguese-liga',
+  'liga portugal': 'portuguese-liga',
   'belgian-pro-league': 'belgian-pro-league',
+  'jupiler pro league': 'belgian-pro-league',
   'turkish-super-lig': 'turkish-super-lig',
+  'süper lig': 'turkish-super-lig',
   'scottish-premiership': 'scottish-premiership',
   'major-league-soccer': 'major-league-soccer',
+  'english-championship': 'english-championship',
+  'championship': 'english-championship',
+  'spanish-segunda': 'spanish-segunda',
+  'italian-serie-b': 'italian-serie-b',
+  'german-2-bundesliga': 'german-2-bundesliga',
   'uefa-champions-league': 'uefa-champions-league',
+  'champions league': 'uefa-champions-league',
   'uefa-europa-league': 'uefa-europa-league',
+  'europa league': 'uefa-europa-league',
   'uefa-conference-league': 'uefa-conference-league',
+  'conference league': 'uefa-conference-league',
+  'dfb-pokal': 'domestic_cup',
+  'coupe de france': 'domestic_cup',
+  'copa del rey': 'domestic_cup',
+  'coppa italia': 'domestic_cup',
   'nba': 'nba',
   'nba summer league': 'nba-summer-league',
   'nhl': 'nhl',
   'mlb': 'mlb',
   'nfl': 'nfl',
+  // Coupes continentales / internationales
+  'nations league': 'uefa-nations',
+  'coupe du monde': 'fifa-world-cup',
+  'world cup': 'fifa-world-cup',
+  'euro': 'uefa-euro',
+  'gold cup': 'concacaf-gold-cup',
+  'copa libertadores': 'conmebol-libertadores',
+  'copa sudamericana': 'conmebol-sudamericana',
+  'mls': 'major-league-soccer',
 };
 
 // ============================================
@@ -369,6 +407,7 @@ function identifyCompetition(league: string): {
 } {
   const normalized = league.toLowerCase().trim();
   
+  // 1. D'abord chercher les patterns regex (coupes, playoffs, internationaux...)
   for (const { pattern, type, stake, label } of COMPETITION_PATTERNS) {
     if (pattern.test(normalized)) {
       return {
@@ -380,7 +419,32 @@ function identifyCompetition(league: string): {
     }
   }
   
-  // Par défaut: championnat domestique
+  // 2. Ensuite, vérifier si la ligue est mappée → déterminer le type via LEAGUE_SEASONS
+  const leagueKey = LEAGUE_NAME_MAP[normalized];
+  if (leagueKey) {
+    const season = LEAGUE_SEASONS[leagueKey];
+    if (season) {
+      // C'est une ligue connue avec un calendrier → championnat domestique
+      // Retourner le nom original de la ligue comme label (ex: "Ligue 2" pas "Championnat")
+      return {
+        competitionType: 'domestic_league',
+        competitionTypeLabel: league, // Garder le nom original (plus précis)
+        stakeFromCompetition: 'medium',
+        stakeFromLabel: league,
+      };
+    }
+    // Clé trouvée mais pas de saison → pourrait être une coupe
+    if (leagueKey.includes('cup') || leagueKey.includes('domestic_cup')) {
+      return {
+        competitionType: 'domestic_cup',
+        competitionTypeLabel: league,
+        stakeFromCompetition: 'medium',
+        stakeFromLabel: league,
+      };
+    }
+  }
+  
+  // 3. Par défaut: championnat domestique
   return {
     competitionType: 'domestic_league',
     competitionTypeLabel: 'Championnat',
