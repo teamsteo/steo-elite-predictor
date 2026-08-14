@@ -275,6 +275,7 @@ async function calculateGoalsPredictionEnriched(
 
 /**
  * Formate la prédiction de buts pour Telegram (clair et lisible)
+ * Utilisé en FALLBACK uniquement quand _dixonColes n'est pas disponible.
  */
 function formatGoalsBlock(goals: GoalsPredictionResult): string {
   const sourceIcon = goals.source === 'dixon-coles' ? '🔬' : '📊';
@@ -295,6 +296,41 @@ function formatGoalsBlock(goals: GoalsPredictionResult): string {
   if (goals.btts >= 55 || goals.btts <= 40) {
     const bttsEmoji = goals.btts >= 55 ? '✅' : '❌';
     block += `   ${bttsEmoji} BTTS: <b>${goals.btts}%</b>\n`;
+  }
+  
+  return block;
+}
+
+/**
+ * Formate les buts/BTTS directement depuis le pipeline unifié (_dixonColes).
+ * Plus de recalcul — utilise les données déjà calculées par getBatchPredictions().
+ * BTTS toujours affiché (pas de seuil 55/40), Over/Under avec recommandation.
+ */
+function formatGoalsFromUnified(dc: any): string {
+  if (!dc) return '';
+  
+  let block = '🔬 ';
+  
+  // Over/Under 2.5
+  const over25 = Math.round((dc.over25 || 0.5) * 100);
+  const under25 = 100 - over25;
+  if (over25 >= 60) {
+    block += `⬆️ <b>Over 2.5</b>: <b>${over25}%</b>\n`;
+  } else if (under25 >= 60) {
+    block += `⬇️ <b>Under 2.5</b>: <b>${under25}%</b>\n`;
+  } else {
+    block += `⚖️ +2.5: ${over25}%  ·  -2.5: ${under25}%\n`;
+  }
+  
+  // BTTS — Toujours affiché depuis le pipeline unifié (Dixon-Coles)
+  const bttsPct = Math.round((dc.btts || 0.5) * 100);
+  const bttsEmoji = bttsPct >= 55 ? '✅' : bttsPct <= 40 ? '❌' : '⚖️';
+  block += `   ${bttsEmoji} BTTS: <b>${bttsPct}%</b>\n`;
+  
+  // Score exact le plus probable
+  if (dc.mostLikelyScore) {
+    const s = dc.mostLikelyScore;
+    block += `   🎯 Score probable: <b>${s.home}-${s.away}</b> (${Math.round((s.prob || 0) * 100)}%)\n`;
   }
   
   return block;
@@ -857,17 +893,24 @@ async function formatMatchBlock(
   }
 
   // Prédiction de buts (football uniquement)
+  // PRIORITÉ: données du pipeline unifié (_dixonColes) → fallback recalcul
   if (isFootball && includeGoals && m.oddsHome && m.oddsAway && !m.isEstimated && m.league) {
-    try {
-      const goals = await calculateGoalsPredictionEnriched(
-        m.homeTeam, m.awayTeam, m.league,
-        m.oddsHome, m.oddsDraw, m.oddsAway, m.isEstimated
-      );
-      if (goals && goals.confidence !== 'low') {
-        block += formatGoalsBlock(goals);
+    if (m._dixonColes) {
+      // ✅ Pipeline unifié — données déjà calculées (BTTS + Over/Under + Score)
+      block += formatGoalsFromUnified(m._dixonColes);
+    } else {
+      // Fallback: recalcul Dixon-Coles (ancienne méthode)
+      try {
+        const goals = await calculateGoalsPredictionEnriched(
+          m.homeTeam, m.awayTeam, m.league,
+          m.oddsHome, m.oddsDraw, m.oddsAway, m.isEstimated
+        );
+        if (goals && goals.confidence !== 'low') {
+          block += formatGoalsBlock(goals);
+        }
+      } catch (e) {
+        // Silently skip goals prediction on error
       }
-    } catch (e) {
-      // Silently skip goals prediction on error
     }
   }
 
@@ -1418,17 +1461,22 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     message += `💰 Gain potentiel: <b>x${maxOdds.toFixed(2)}</b>\n`;
     
     // Buts pour le football kamikaze aussi
+    // PRIORITÉ: pipeline unifié → fallback recalcul
     if (isFootball && m.oddsHome && m.oddsAway && !m.isEstimated && m.league) {
-      try {
-        const goals = await calculateGoalsPredictionEnriched(
-          m.homeTeam, m.awayTeam, m.league,
-          m.oddsHome, m.oddsDraw, m.oddsAway, m.isEstimated
-        );
-        if (goals && goals.confidence !== 'low') {
-          message += formatGoalsBlock(goals);
+      if (m._dixonColes) {
+        message += formatGoalsFromUnified(m._dixonColes);
+      } else {
+        try {
+          const goals = await calculateGoalsPredictionEnriched(
+            m.homeTeam, m.awayTeam, m.league,
+            m.oddsHome, m.oddsDraw, m.oddsAway, m.isEstimated
+          );
+          if (goals && goals.confidence !== 'low') {
+            message += formatGoalsBlock(goals);
+          }
+        } catch (e) {
+          // Skip
         }
-      } catch (e) {
-        // Skip
       }
     }
     
