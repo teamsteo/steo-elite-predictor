@@ -340,6 +340,7 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
       { key: 'soccer/ita.1', name: 'Serie A', sport: 'Football' },
       { key: 'soccer/ger.1', name: 'Bundesliga', sport: 'Football' },
       { key: 'soccer/fra.1', name: 'Ligue 1', sport: 'Football' },
+      { key: 'soccer/fra.2', name: 'Ligue 2', sport: 'Football' },
       // Compétitions européennes
       { key: 'soccer/uefa.champions', name: 'Champions League', sport: 'Football' },
       { key: 'soccer/uefa.europa', name: 'Europa League', sport: 'Football' },

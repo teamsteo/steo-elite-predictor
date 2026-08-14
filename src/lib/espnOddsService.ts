@@ -92,6 +92,7 @@ const ESPN_LEAGUES = {
     { key: 'ger.1', name: 'Bundesliga' },
     { key: 'ita.1', name: 'Serie A' },
     { key: 'fra.1', name: 'Ligue 1' },
+    { key: 'fra.2', name: 'Ligue 2' },
     { key: 'uefa.champions', name: 'Champions League' },
     { key: 'uefa.europa', name: 'Europa League' },
     { key: 'uefa.europa.conf', name: 'Conference League' },

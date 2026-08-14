@@ -30,6 +30,7 @@ const SPORTS_CONFIG = {
       { code: 'ger.1', name: 'Bundesliga' },
       { code: 'ita.1', name: 'Serie A' },
       { code: 'fra.1', name: 'Ligue 1' },
+      { code: 'fra.2', name: 'Ligue 2' },
       { code: 'uefa.champions', name: 'Champions League' }
     ]
   },

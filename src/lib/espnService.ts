@@ -132,6 +132,7 @@ export async function fetchESPNFootballGames(): Promise<ESPNMatch[]> {
       { key: 'ger.1', name: 'Bundesliga', type: 'domestic' },
       { key: 'ita.1', name: 'Serie A', type: 'domestic' },
       { key: 'fra.1', name: 'Ligue 1', type: 'domestic' },
+      { key: 'fra.2', name: 'Ligue 2', type: 'domestic' },
       // Compétitions européennes
       { key: 'uefa.champions', name: 'Champions League', type: 'european' },
       { key: 'uefa.europa', name: 'Europa League', type: 'european' },

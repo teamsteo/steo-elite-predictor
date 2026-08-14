@@ -154,6 +154,7 @@ const ESPN_LEAGUES = [
   { id: 'ger.1', name: 'German Bundesliga', priority: 80 },
   { id: 'ita.1', name: 'Italian Serie A', priority: 80 },
   { id: 'fra.1', name: 'French Ligue 1', priority: 75 },
+  { id: 'fra.2', name: 'French Ligue 2', priority: 60 },
   { id: 'uefa.champions', name: 'UEFA Champions League', priority: 100 },
   { id: 'uefa.europa', name: 'UEFA Europa League', priority: 90 },
 ];
