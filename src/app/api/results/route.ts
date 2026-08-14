@@ -3,6 +3,7 @@ import PredictionStore from '@/lib/store';
 import * as fs from 'fs';
 import * as path from 'path';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
+import { fetchAllESPNOdds } from '@/lib/espnOddsService';
 
 // Configuration GitHub
 const GITHUB_REPO = 'steohidy/my-project';
@@ -612,83 +613,109 @@ export async function POST(request: Request) {
       });
     }
     
-    // Vérifier les résultats d'hier
+    // ══════════════════════════════════════════════════════
+    // P0 FIX: Vérification des résultats — TOUS sports via ESPN
+    // ESPN couvre football (9 ligues), NBA, NHL — gratuit, illimité
+    // ══════════════════════════════════════════════════════
     if (action === 'check_results') {
-      console.log('🔍 Vérification des résultats...');
+      console.log('🔍 Vérification des résultats (ESPN + Football-Data)...');
       
-      const realResults = await fetchYesterdayResults();
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
       
-      if (realResults.length === 0) {
-        return NextResponse.json({
-          success: true,
-          message: 'Aucun résultat disponible à vérifier',
-          checked: 0,
-          source: 'Football-Data API'
-        });
-      }
+      let totalChecked = 0;
+      let totalCorrect = 0;
+      const sources: string[] = [];
       
-      const pendingPredictions = PredictionStore.getPending();
-      
-      let checkedCount = 0;
-      let resultCorrect = 0;
-      let goalsCorrect = 0;
-      
-      for (const prediction of pendingPredictions) {
-        for (const realMatch of realResults) {
-          const { found, homeScore, awayScore } = findMatchResult(
-            realMatch, 
-            prediction.homeTeam,
-            prediction.awayTeam
-          );
+      // 1. ESPN: résultats terminés d'hier (TOUS sports — NBA, NHL, Foot)
+      try {
+        const espnMatches = await fetchAllESPNOdds();
+        const finishedESPN = espnMatches.filter((m: any) => 
+          m.status === 'finished' && m.homeScore !== undefined && m.awayScore !== undefined &&
+          m.date && m.date.startsWith(yesterdayStr)
+        );
+        
+        if (finishedESPN.length > 0) {
+          sources.push(`ESPN (${finishedESPN.length} matchs terminés)`);
           
-          if (found) {
-            const actualResult = homeScore > awayScore ? 'home' 
-              : homeScore < awayScore ? 'away' 
-              : 'draw';
-            
-            const resultMatch = prediction.predictedResult === actualResult;
-            if (resultMatch) resultCorrect++;
-            
-            let goalsMatch: boolean | undefined;
-            
-            if (prediction.predictedGoals) {
-              const totalGoals = homeScore + awayScore;
-              if (prediction.predictedGoals === 'over2.5') {
-                goalsMatch = totalGoals > 2.5;
-              } else if (prediction.predictedGoals === 'under2.5') {
-                goalsMatch = totalGoals < 2.5;
-              } else if (prediction.predictedGoals === 'btts') {
-                goalsMatch = homeScore > 0 && awayScore > 0;
+          for (const espnMatch of finishedESPN) {
+            try {
+              const actualResult = espnMatch.homeScore! > espnMatch.awayScore! ? 'home'
+                : espnMatch.homeScore! < espnMatch.awayScore! ? 'away' : 'draw';
+              
+              const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+              const matchId = `${cleanTeam(espnMatch.homeTeam)}-${cleanTeam(espnMatch.awayTeam)}`;
+              
+              // Sauvegarder le résultat dans Supabase via upsert
+              const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+              
+              if (supabaseUrl && supabaseKey) {
+                const { createClient } = await import('@supabase/supabase-js');
+                const supabase = createClient(supabaseUrl, supabaseKey);
+                
+                await supabase
+                  .from('predictions')
+                  .update({
+                    status: 'completed',
+                    actual_result: actualResult,
+                    home_score: espnMatch.homeScore,
+                    away_score: espnMatch.awayScore,
+                    verified_at: new Date().toISOString(),
+                  })
+                  .ilike('match_id', `%${matchId}%`)
+                  .eq('status', 'pending');
               }
-              if (goalsMatch) goalsCorrect++;
+              
+              totalChecked++;
+            } catch (e) {
+              // Skip individual match errors
             }
-            
-            PredictionStore.complete(prediction.matchId, {
-              homeScore,
-              awayScore,
-              actualResult,
-              resultMatch,
-              goalsMatch
-            });
-            
-            checkedCount++;
-            console.log(`✅ ${prediction.homeTeam} ${homeScore}-${awayScore} ${prediction.awayTeam} - Résultat: ${resultMatch ? '✓' : '✗'}`);
-            break;
           }
         }
+      } catch (e) {
+        console.log('⚠️ ESPN results check failed:', e);
       }
       
-      // Récupérer les stats mises à jour
-      const updatedStats = PredictionStore.getDetailedStats();
+      // 2. Football-Data.org: résultats foot (European leagues — plus détaillé)
+      try {
+        const realResults = await fetchYesterdayResults();
+        if (realResults.length > 0) {
+          sources.push(`Football-Data (${realResults.length} matchs)`);
+          
+          const pendingPredictions = PredictionStore.getPending();
+          
+          for (const prediction of pendingPredictions) {
+            for (const realMatch of realResults) {
+              const { found, homeScore, awayScore } = findMatchResult(
+                realMatch, 
+                prediction.homeTeam,
+                prediction.awayTeam
+              );
+              
+              if (found) {
+                const actualResult = homeScore > awayScore ? 'home' 
+                  : homeScore < awayScore ? 'away' 
+                  : 'draw';
+                
+                if (prediction.predictedResult === actualResult) totalCorrect++;
+                totalChecked++;
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log('⚠️ Football-Data check failed:', e);
+      }
       
       return NextResponse.json({
         success: true,
-        message: `${checkedCount} pronostics vérifiés`,
-        checked: checkedCount,
-        resultCorrect,
-        goalsCorrect,
-        source: 'Football-Data API',
-        stats: updatedStats.daily
+        message: `Vérification terminée: ${totalChecked} pronostics vérifiés via ${sources.join(' + ')}`,
+        checked: totalChecked,
+        correct: totalCorrect,
+        winRate: totalChecked > 0 ? Math.round((totalCorrect / totalChecked) * 100) : 0,
+        sources,
       });
     }
     

@@ -23,6 +23,7 @@ import { enrichMatch, type MatchEnrichment } from './matchEnrichmentService';
 import { calibrateIsotonic, loadCalibrationMap, type CalibrationMap } from './calibrationService';
 import { alignWithMarket, type MarketAlignmentResult } from './marketAlignmentService';
 import { analyzeMatchImportance } from './matchImportanceService';
+import { getMatchTeamStats } from './teamStatsService';
 
 // ============================================
 // TYPES
@@ -260,9 +261,46 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   
   if (match.sport === 'Foot') {
     try {
-      // Generate team stats from context or use defaults
-      const homeStats = generateTeamStatsFromContext(context, match.homeTeam, 'home');
-      const awayStats = generateTeamStatsFromContext(context, match.awayTeam, 'away');
+      // P0 FIX: Generate team stats — TheSportsDB real stats first, xG fallback
+      // Fetch les 2 équipes en un seul appel (cache 1h TTL)
+      let homeStats: any, awayStats: any;
+      try {
+        const realStats = await getMatchTeamStats(match.homeTeam, match.awayTeam);
+        if (realStats.homeTeam && realStats.homeTeam.played >= 5) {
+          const hForm = (realStats.homeTeam.form || '').split('').map((c: string) => c === 'W' ? 1 : c === 'D' ? 0.5 : 0);
+          homeStats = {
+            name: match.homeTeam,
+            goalsScored: realStats.homeTeam.goalsFor,
+            goalsConceded: realStats.homeTeam.goalsAgainst,
+            matches: realStats.homeTeam.played,
+            homeMatches: Math.ceil(realStats.homeTeam.played / 2),
+            awayMatches: 0,
+            form: hForm,
+          };
+          console.log(`✅ DC: stats RÉELLES ${match.homeTeam} (${realStats.homeTeam.played}M, ${realStats.homeTeam.goalsFor}GF/${realStats.homeTeam.goalsAgainst}GA)`);
+        }
+        if (realStats.awayTeam && realStats.awayTeam.played >= 5) {
+          const aForm = (realStats.awayTeam.form || '').split('').map((c: string) => c === 'W' ? 1 : c === 'D' ? 0.5 : 0);
+          awayStats = {
+            name: match.awayTeam,
+            goalsScored: realStats.awayTeam.goalsFor,
+            goalsConceded: realStats.awayTeam.goalsAgainst,
+            matches: realStats.awayTeam.played,
+            homeMatches: 0,
+            awayMatches: Math.ceil(realStats.awayTeam.played / 2),
+            form: aForm,
+          };
+          console.log(`✅ DC: stats RÉELLES ${match.awayTeam} (${realStats.awayTeam.played}M, ${realStats.awayTeam.goalsFor}GF/${realStats.awayTeam.goalsAgainst}GA)`);
+        }
+      } catch { /* TheSportsDB indisponible */ }
+      
+      // Fallback: stats xG si TheSportsDB n'a rien retourné
+      if (!homeStats) {
+        homeStats = await generateTeamStatsFromContext(context, match.homeTeam, 'home', match.league);
+      }
+      if (!awayStats) {
+        awayStats = await generateTeamStatsFromContext(context, match.awayTeam, 'away', match.league);
+      }
       
       const dcResult = predictMatch(
         homeStats,
@@ -377,7 +415,14 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   };
   
   // 8. Calculate ML adjustment (async - includes XGBoost if trained)
-  const mlAdjustment = await calculateMLAdjustment(featureVector, sportType);
+  // ⚠️ P0 FIX: XGBoost désactivé pour basketball/hockey/baseball
+  // Le modèle basketball a 46.6% CV accuracy (pire que hasard),
+  // hockey 47.3% et baseball 49.5% (Brier ~0.25 = pile ou face).
+  // Seul football (76.9%) bénéficie réellement du ML.
+  const mlEnabled = sportType === 'football';
+  const mlAdjustment = mlEnabled
+    ? await calculateMLAdjustment(featureVector, sportType)
+    : { probabilityAdjustment: 0, confidenceAdjustment: 0, recommendedBet: 'neutral' as const, xgboostUsed: false, xgboostScore: undefined };
   
   // 8.5. ISOTONIC REGRESSION CALIBRATION
   // Calibrate the raw XGBoost score into a true probability
@@ -393,7 +438,16 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
         calibratedHomeProb = calibrateIsotonic(mlAdjustment.xgboostScore, calibrationMap);
         // Calibrate away as 1 - home (for binary), or use the complement
         calibratedAwayProb = 1 - calibratedHomeProb;
-        calibratedDrawProb = match.sport === 'Foot' ? Math.max(0, 0.05 - Math.abs(calibratedHomeProb - calibratedAwayProb) * 0.1) : 0;
+        // P0 FIX: Utiliser la vraie proba nul de Dixon-Coles au lieu de la formule ad-hoc
+        // Ancien code: Math.max(0, 0.05 - |home-away| * 0.1) — beaucoup trop bas
+        // Dixon-Coles donne une vraie proba de nul basée sur les forces offensives/défensives
+        if (match.sport === 'Foot' && dixonColesResult) {
+          calibratedDrawProb = dcDrawProb * 0.6; // 60% weight from Dixon-Coles draw
+        } else if (match.sport === 'Foot') {
+          calibratedDrawProb = Math.max(0, 0.05 - Math.abs(calibratedHomeProb - calibratedAwayProb) * 0.1);
+        } else {
+          calibratedDrawProb = 0; // No draw in basketball/hockey
+        }
         // Renormalize (V-HIGH-3 FIX: guard division by zero)
         const calTotal = calibratedHomeProb + calibratedDrawProb + calibratedAwayProb;
         const calEps = 1e-8;
@@ -430,13 +484,11 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     );
     finalDrawProb = 1 - finalHomeProb - finalAwayProb;
   } else {
-    // Non-football: Market + Context + ML
-    finalHomeProb = impliedHome * 0.5 + 
-                    (impliedHome + contextAdjustment.homeAdjustment) * 0.3 +
-                    (impliedHome + mlAdjustment.probabilityAdjustment) * 0.2;
-    finalAwayProb = impliedAway * 0.5 + 
-                    (impliedAway + contextAdjustment.awayAdjustment) * 0.3 +
-                    (impliedAway - mlAdjustment.probabilityAdjustment) * 0.2;
+    // Non-football: Market + Context (NO ML — models are noise for basketball/hockey/baseball)
+    finalHomeProb = impliedHome * 0.65 + 
+                    (impliedHome + contextAdjustment.homeAdjustment) * 0.35;
+    finalAwayProb = impliedAway * 0.65 + 
+                    (impliedAway + contextAdjustment.awayAdjustment) * 0.35;
     finalDrawProb = oddsDraw ? impliedDraw : 0;
   }
   
@@ -480,7 +532,7 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   // LOW confidence bets have 0% win rate, so we make it harder to get LOW
   let confidence: 'very_high' | 'high' | 'medium' | 'low' = 'low';
   const edgeThreshold = mlThresholds.edgeThreshold || 0.05; // Raised from 0.03
-  const isValueBet = bestEdge > edgeThreshold;
+  const isValueBetRaw = bestEdge > edgeThreshold;
   const dataQualityScore = context?.unifiedAnalysis.dataQuality || 30;
   
   // Much stricter confidence requirements
@@ -531,6 +583,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   // 13. Build recommendation
   const reasoning: string[] = [];
   
+  // ⚠️ P0 FIX: Value bets interdits sur cotes estimées
+  const isValueBet = isValueBetRaw && hasRealOdds;
+  
   if (isValueBet) {
     reasoning.push(`📊 VALUE BET: ${bestBet === 'home' ? match.homeTeam : bestBet === 'away' ? match.awayTeam : 'Draw'} sous-évalué de +${Math.round(bestEdge * 100)}%`);
     reasoning.push(`🎯 Cote ${formatOdds(bestOdds)} vs probabilité ${formatPercent(bestProb)}`);
@@ -574,9 +629,12 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     }
   }
   
-  // Add XGBoost reasoning if used
+  // Add XGBoost reasoning if used (football only)
   if (mlAdjustment.xgboostUsed) {
-    reasoning.push(`🧠 XGBoost ${mlAdjustment.xgboostScore !== undefined ? `score ${Math.round(mlAdjustment.xgboostScore * 100)}/100` : 'actif'} — coefficients entraînés appliqués`);
+    reasoning.push(`🧠 XGBoost ${mlAdjustment.xgboostScore !== undefined ? `score ${Math.round(mlAdjustment.xgboostScore * 100)}/100` : 'actif'} — football uniquement, coefficients entraînés appliqués`);
+  }
+  if (!mlEnabled) {
+    reasoning.push(`📊 Mode cotes+contexte (ML désactivé — ${sportType} sans modèle fiable)`);
   }
   let riskLevel: 'low' | 'medium' | 'high' = 'low';
   if (context?.unifiedAnalysis.riskLevel === 'high' || (context?.injuries.homeImpact || 0) + (context?.injuries.awayImpact || 0) < -10) {
@@ -719,17 +777,55 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
 // ============================================
 
 /**
- * Generate team stats from context for Dixon-Coles model
+ * Generate team stats for Dixon-Coles model.
+ * P0 FIX: Priorité TheSportsDB (vraies stats GF/GA) → fallback xG context.
+ * Les stats fabriquées (xG×20, matches=20) ne sont plus le chemin principal.
  */
-function generateTeamStatsFromContext(
+async function generateTeamStatsFromContext(
   context: UnifiedMatchContext | null,
   teamName: string,
-  side: 'home' | 'away'
-): any {
+  side: 'home' | 'away',
+  league: string
+): Promise<any> {
+  // PRIORITÉ 1: Vraies stats TheSportsDB (GF/GA réels, forme réelle)
+  try {
+    // Note: getMatchTeamStats fetch les DEUX équipes d'un coup, mais on l'appelle
+    // ici par équipe. Le cache interne (1h TTL) évite les appels redondants.
+    const realStats = await getMatchTeamStats(
+      side === 'home' ? teamName : '__unused__',
+      side === 'away' ? teamName : '__unused__'
+    );
+    const teamData = side === 'home' ? realStats.homeTeam : realStats.awayTeam;
+    
+    if (teamData && teamData.played >= 5) {
+      // Stats réelles disponibles — convertir au format Dixon-Coles
+      const played = teamData.played || 20;
+      const formArray = (teamData.form || '').split('').map(c => c === 'W' ? 1 : c === 'D' ? 0.5 : 0);
+      
+      console.log(`✅ Dixon-Coles: stats RÉELLES TheSportsDB pour ${teamName} (${played} matchs, ${teamData.goalsFor} GF, ${teamData.goalsAgainst} GA)`);
+      
+      return {
+        name: teamName,
+        goalsScored: teamData.goalsFor,
+        goalsConceded: teamData.goalsAgainst,
+        matches: played,
+        homeMatches: side === 'home' ? Math.ceil(played / 2) : 0,
+        awayMatches: side === 'away' ? Math.ceil(played / 2) : 0,
+        form: formArray,
+        // Conserver les données enrichies si disponibles
+        rank: teamData.rank,
+        points: teamData.points,
+      };
+    }
+  } catch (e) {
+    // TheSportsDB indisponible → fallback xG
+    console.debug(`⚠️ TheSportsDB indisponible pour ${teamName}, fallback xG`);
+  }
+
+  // PRIORITÉ 2: Fallback xG depuis FBref (context)
   const form = side === 'home' ? context?.fbref?.homeForm : context?.fbref?.awayForm;
   const xg = side === 'home' ? context?.fbref?.homeXG : context?.fbref?.awayXG;
   
-  // Calculate per-90 values from totals
   const xGFor90 = xg && xg.matches > 0 ? xg.xG / xg.matches : 1.35;
   const xGAgainst90 = xg && xg.matches > 0 ? xg.xGA / xg.matches : 1.10;
   
