@@ -2911,9 +2911,21 @@ export async function GET(request: NextRequest) {
         } catch (e: any) { result = { announce: { success: false, error: 'Erreur interne' } }; }
         break;
 
+      case 'mlb-palier': {
+        // Palier Intelligent : lire pipeline ML existant → top 5 fiables → combo → DM perso
+        try {
+          const palierResult = await generatePalierIntelligent();
+          result = palierResult;
+        } catch (e: any) {
+          console.error('❌ Erreur Palier:', e);
+          result = { mlb_palier: { success: false, error: e.message } };
+        }
+        break;
+      }
+
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'rebuild-date'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'rebuild-date', 'mlb-palier'] },
           { status: 400 }
         );
     }

@@ -22,6 +22,7 @@ import { formatOdds, formatNumber, formatPercent } from './formatUtils';
 import { enrichMatch, type MatchEnrichment } from './matchEnrichmentService';
 import { calibrateIsotonic, loadCalibrationMap, type CalibrationMap } from './calibrationService';
 import { alignWithMarket, type MarketAlignmentResult } from './marketAlignmentService';
+import { analyzeMatchImportance } from './matchImportanceService';
 
 // ============================================
 // TYPES
@@ -217,6 +218,32 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     }
   } catch (e) {
     console.log('⚠️ Context not available:', e);
+  }
+  
+  // 3b. Fallback: calculer l'enjeu du match si le contexte n'a pas pu le faire
+  // analyzeMatchImportance est synchrone et rapide (<1ms), zéro API externe
+  let matchImportanceFallback: any = null;
+  if (!context?.matchImportance) {
+    try {
+      const sportTypeForImportance = match.sport === 'Foot' ? 'football' : 
+        match.sport === 'NBA' ? 'basketball' : 
+        match.sport === 'NHL' ? 'hockey' : 
+        match.sport === 'MLB' ? 'baseball' : 
+        match.sport === 'NFL' ? 'football' : 'football';
+      matchImportanceFallback = analyzeMatchImportance(
+        match.league,
+        sportTypeForImportance,
+        new Date()
+      );
+      // Injecter dans le contexte si disponible
+      if (context) {
+        context.matchImportance = matchImportanceFallback;
+      }
+      sources.push('MatchImportance-Fallback');
+      console.log(`🏆 MatchImportance calculé en fallback: ${matchImportanceFallback.stakeLabel} · ${matchImportanceFallback.competitionTypeLabel} · ${matchImportanceFallback.seasonPhaseLabel}`);
+    } catch (e) {
+      console.log('⚠️ MatchImportance fallback failed:', e);
+    }
   }
   
   // 4. Calculate implied probabilities from odds
@@ -587,19 +614,19 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       temperature: context.weather.current.temperature,
       impact: context.weather.impact.overall,
     } : undefined,
-    matchImportance: context?.matchImportance ? {
-      stakeLevel: context.matchImportance.stakeLevel,
-      stakeScore: context.matchImportance.stakeScore,
-      stakeLabel: context.matchImportance.stakeLabel,
-      seasonPhase: context.matchImportance.seasonPhase,
-      seasonPhaseLabel: context.matchImportance.seasonPhaseLabel,
-      competitionTypeLabel: context.matchImportance.competitionTypeLabel,
-      formReliable: context.matchImportance.formReliable,
-      formReliability: context.matchImportance.formReliability,
-      formReliabilityReason: context.matchImportance.formReliabilityReason,
-      warnings: context.matchImportance.warnings,
-      insights: context.matchImportance.insights,
-      contextSummary: context.matchImportance.contextSummary,
+    matchImportance: (context?.matchImportance || matchImportanceFallback) ? {
+      stakeLevel: (context?.matchImportance || matchImportanceFallback).stakeLevel,
+      stakeScore: (context?.matchImportance || matchImportanceFallback).stakeScore,
+      stakeLabel: (context?.matchImportance || matchImportanceFallback).stakeLabel,
+      seasonPhase: (context?.matchImportance || matchImportanceFallback).seasonPhase,
+      seasonPhaseLabel: (context?.matchImportance || matchImportanceFallback).seasonPhaseLabel,
+      competitionTypeLabel: (context?.matchImportance || matchImportanceFallback).competitionTypeLabel,
+      formReliable: (context?.matchImportance || matchImportanceFallback).formReliable,
+      formReliability: (context?.matchImportance || matchImportanceFallback).formReliability,
+      formReliabilityReason: (context?.matchImportance || matchImportanceFallback).formReliabilityReason,
+      warnings: (context?.matchImportance || matchImportanceFallback).warnings,
+      insights: (context?.matchImportance || matchImportanceFallback).insights,
+      contextSummary: (context?.matchImportance || matchImportanceFallback).contextSummary,
     } : undefined,
   };
   

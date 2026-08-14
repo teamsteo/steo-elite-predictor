@@ -260,3 +260,27 @@ Stage Summary:
 - Fichier: src/app/api/cron/route.ts
 - Cron: 08:00 UTC (1h après pipeline ML à 07:00)
 - Fonction: generatePalierIntelligent() — lit Supabase, pas ESPN
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix Palier Intelligent not sending + Integrate dynamic match importance tags
+
+Work Log:
+- Investigated why Palier Intelligent (mlb-palier cron) never delivered to Telegram DM
+- Found ROOT CAUSE: `mlb-palier` case was in POST handler only, but Vercel Cron sends GET requests
+- Added `case 'mlb-palier'` to GET handler in cron/route.ts (before default case)
+- Added 'mlb-palier' to validActions list in GET handler
+- Integrated `analyzeMatchImportance()` fallback in `unifiedPredictionService.ts`
+  - Added import of `analyzeMatchImportance` from `matchImportanceService`
+  - Added fallback calculation after context fetch (step 3b)
+  - Uses `matchImportanceFallback` variable when context is null
+  - Updated `factors.matchImportance` to use fallback when context unavailable
+- Confirmed Ligue 2 already in LEAGUE_NAME_MAP and LEAGUE_SEASONS
+- TypeScript compilation passed with no errors
+- Deployed to Vercel production successfully
+
+Stage Summary:
+- CRITICAL BUG FIXED: mlb-palier now reachable via GET (Vercel Cron compatible)
+- DYNAMIC TAGS: analyzeMatchImportance() now always runs (either via matchContextService or direct fallback)
+- Tags like "Enjeu RAS", "Saison régulière", "Championnat" will now be dynamic based on league, date, and competition type
+- Deployed to: https://my-project-zeta-five-85.vercel.app
