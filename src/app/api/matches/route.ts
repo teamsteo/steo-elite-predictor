@@ -82,8 +82,8 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
   const over35 = Math.max(20, over25 - 20);
   const over45 = Math.max(12, over25 - 35);
 
-  // BTTS
-  const bttsYes = dc?.btts ? Math.round(dc.btts * 100) : (expectedGoals > 2.3 ? 55 : 42);
+  // BTTS — dc.btts est déjà en % (0-100) depuis dixonColesModel.ts
+  const bttsYes = dc?.btts ? Math.round(dc.btts) : (expectedGoals > 2.3 ? 55 : 42);
   const bttsNo = 100 - bttsYes;
 
   // Score exact probable
@@ -319,7 +319,7 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
       awayProb: Math.round(dc.awayProb),
       expectedGoals: dc.expectedGoals,
       mostLikelyScore: dc.mostLikelyScore,
-      btts: Math.round((dc.btts || 0) * 100),
+      btts: Math.round(dc.btts || 0), // déjà en % (0-100) depuis dixonColesModel
     } : null,
 
     // ═══════════════════════════════════════

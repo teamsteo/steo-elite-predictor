@@ -311,8 +311,8 @@ function formatGoalsFromUnified(dc: any): string {
   
   let block = '🔬 ';
   
-  // Over/Under 2.5
-  const over25 = Math.round((dc.over25 || 0.5) * 100);
+  // Over/Under 2.5 — dc.over25 est déjà en % (0-100) depuis dixonColesModel
+  const over25 = Math.round(dc.over25 || 50);
   const under25 = 100 - over25;
   if (over25 >= 60) {
     block += `⬆️ <b>Over 2.5</b>: <b>${over25}%</b>\n`;
@@ -322,8 +322,8 @@ function formatGoalsFromUnified(dc: any): string {
     block += `⚖️ +2.5: ${over25}%  ·  -2.5: ${under25}%\n`;
   }
   
-  // BTTS — Toujours affiché depuis le pipeline unifié (Dixon-Coles)
-  const bttsPct = Math.round((dc.btts || 0.5) * 100);
+  // BTTS — dc.btts est déjà en % (0-100) depuis dixonColesModel
+  const bttsPct = Math.round(dc.btts || 50);
   const bttsEmoji = bttsPct >= 55 ? '✅' : bttsPct <= 40 ? '❌' : '⚖️';
   block += `   ${bttsEmoji} BTTS: <b>${bttsPct}%</b>\n`;
   
