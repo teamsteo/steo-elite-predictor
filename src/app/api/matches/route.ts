@@ -180,12 +180,11 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
     hasAdvancedStats: dq.hasAdvancedStats,
   };
 
-  // ── Risk Label ──
+  // ── Risk Label ── (aligné avec getRiskLevel : ≤40 Sûr, ≤60 Modéré, >60 Risqué)
   let riskLabel: string;
-  if (riskPercentage <= 25) riskLabel = 'Sûr';
-  else if (riskPercentage <= 40) riskLabel = 'Modéré';
-  else if (riskPercentage <= 55) riskLabel = 'Audacieux';
-  else riskLabel = 'Kamikaze';
+  if (riskPercentage <= 40) riskLabel = 'Sûr';
+  else if (riskPercentage <= 60) riskLabel = 'Modéré';
+  else riskLabel = 'Risqué';
 
   // ── Status Badge ──
   let statusBadge: string;

@@ -27,8 +27,9 @@ export function RiskIndicator({ percentage, showLabel = true, size = 'md' }: Ris
   };
 
   // Couleurs: Vert (sûr) → Orange (modéré) → Rouge (risqué)
+  // Seuils alignés avec getRiskLevel() dans riskCalculator.ts : ≤40 sûr, ≤60 modéré, >60 risqué
   const getColorClass = () => {
-    if (percentage <= 35) return 'bg-green-500/15 text-green-600 border-green-500/30 dark:text-green-400 dark:bg-green-500/20';
+    if (percentage <= 40) return 'bg-green-500/15 text-green-600 border-green-500/30 dark:text-green-400 dark:bg-green-500/20';
     if (percentage <= 60) return 'bg-orange-500/15 text-orange-600 border-orange-500/30 dark:text-orange-400 dark:bg-orange-500/20';
     return 'bg-red-500/15 text-red-600 border-red-500/30 dark:text-red-400 dark:bg-red-500/20';
   };
@@ -65,15 +66,15 @@ interface RiskGaugeProps {
 export function RiskGauge({ percentage, label }: RiskGaugeProps) {
   const level = getRiskLevel(percentage);
   
-  // Couleurs: Vert → Orange → Rouge
+  // Couleurs: Vert → Orange → Rouge (seuils alignés avec getRiskLevel)
   const getColor = () => {
-    if (percentage <= 35) return 'bg-green-500';
+    if (percentage <= 40) return 'bg-green-500';
     if (percentage <= 60) return 'bg-orange-500';
     return 'bg-red-500';
   };
 
   const getGradient = () => {
-    if (percentage <= 35) return 'from-green-500/30 to-green-500';
+    if (percentage <= 40) return 'from-green-500/30 to-green-500';
     if (percentage <= 60) return 'from-orange-500/30 to-orange-500';
     return 'from-red-500/30 to-red-500';
   };

@@ -360,11 +360,13 @@ function formatDateTime(dateStr: string, displayDate?: string): { date: string; 
         const monthNames = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
                             'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
         
-        const dayName = dayNames[date.getDay()];
-        const day = date.getDate();
-        const month = monthNames[date.getMonth()];
-        const hours = date.getHours().toString().padStart(2, '0');
-        const minutes = date.getMinutes().toString().padStart(2, '0');
+        // Utiliser les méthodes UTC pour afficher l'heure correcte
+        // (ESPN fournit des dates UTC, le canal Telegram est en UTC+0)
+        const dayName = dayNames[date.getUTCDay()];
+        const day = date.getUTCDate();
+        const month = monthNames[date.getUTCMonth()];
+        const hours = date.getUTCHours().toString().padStart(2, '0');
+        const minutes = date.getUTCMinutes().toString().padStart(2, '0');
         
         return { 
           date: `${dayName} ${day} ${month}`, 

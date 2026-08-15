@@ -3752,14 +3752,16 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
   const dayPredictions = await SupabaseStore.getPredictionsByCreatedAt(todayISO);
   console.log(`📊 [PALIER] ${dayPredictions.length} prédictions trouvées pour ${todayISO}`);
 
-  // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas low confidence
+  // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas low confidence, pas tennis
+  // Note: is_value_bet=false + edge_value>=0 garantit des cotes réelles (pas estimées)
   const eligible = dayPredictions.filter(p =>
     p.status === 'pending' &&
     p.odds_home > 0 &&
     p.odds_away > 0 &&
     !p.is_combo &&
     p.predicted_result !== 'avoid' &&
-    p.confidence !== 'low'
+    p.confidence !== 'low' &&
+    p.sport !== 'tennis'
   );
   console.log(`📊 [PALIER] ${eligible.length} éligibles (pending, cotes réelles, pas combo)`);
 

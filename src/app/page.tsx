@@ -4475,8 +4475,8 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
   // Filtrer les matchs à venir ET en cours pour les pronostics
   const activeMatches = [...upcomingMatches, ...liveMatches];
   const safes = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage <= 40);
-  const moderate = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 40 && m.insight.riskPercentage <= 50);
-  const risky = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 50);
+  const moderate = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 40 && m.insight.riskPercentage <= 60);
+  const risky = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 60);
   const valueBets = activeMatches.filter(m => m.insight?.valueBetDetected === true);
 
   // Matchs à afficher selon l'onglet
@@ -5049,8 +5049,8 @@ function TabButtonCompact({ active, onClick, icon, label, count, isLive }: { act
 // Composant NBAMatchCard - Affichage spécifique pour le basket
 function NBAMatchCard({ match, index }: { match: Match; index: number }) {
   const riskPercentage = match.insight?.riskPercentage ?? 50;
-  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
-  const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 50 ? 'Modéré' : 'Audacieux';
+  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 60 ? '#f97316' : '#ef4444';
+  const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 60 ? 'Modéré' : 'Risqué';
   
   // Données NBA - avec fallbacks si pas de nbaPredictions
   const nba = match.nbaPredictions;
@@ -5542,8 +5542,8 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
   }, [match.homeTeam, match.awayTeam]);
   
   const riskPercentage = match.insight?.riskPercentage ?? 50;
-  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
-  const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 50 ? 'Modéré' : 'Audacieux';
+  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 60 ? '#f97316' : '#ef4444';
+  const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 60 ? 'Modéré' : 'Risqué';
   
   // ═══════════════════════════════════════════════════════════
   // PIPELINE ML UNIFIÉ — Utilise les probas ML (pas les cotes brutes)

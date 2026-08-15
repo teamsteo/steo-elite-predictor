@@ -657,6 +657,7 @@ const NHL_ABBR_TO_NAME: Record<string, string> = {
   'TOR': 'Toronto Maple Leafs', 'VAN': 'Vancouver Canucks',
   'VGK': 'Vegas Golden Knights', 'WPG': 'Winnipeg Jets',
   'WSH': 'Washington Capitals',
+  'UTAH': 'Utah Hockey Club',
 };
 
 interface TheSportsDBTeamRow {
