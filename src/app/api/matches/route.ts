@@ -51,11 +51,13 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
   const ma = p.marketAlignment;
 
   // Probabilités finales (ML-adjusted)
-  const homeProb = Math.round(ml.homeProb * 100);
-  const drawProb = Math.round(ml.drawProb * 100);
-  const awayProb = Math.round(ml.awayProb * 100);
+  // P0 FIX: ml.homeProb/drawProb/awayProb sont déjà en % (ex: 55.3 = 55.3%)
+  // Ne PAS multiplier par 100 — le pipeline unifié renvoie déjà des pourcentages
+  const homeProb = Math.round(ml.homeProb);
+  const drawProb = Math.round(ml.drawProb);
+  const awayProb = Math.round(ml.awayProb);
   const maxProb = Math.max(homeProb, drawProb, awayProb);
-  const riskPercentage = Math.round(100 - maxProb);
+  const riskPercentage = Math.max(0, Math.min(100, 100 - maxProb));
 
   // Recommendation text
   const recommendationText = rec.bet === 'home' ? p.homeTeam
@@ -67,6 +69,8 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
   const winProbability = rec.bet === 'home' ? homeProb
     : rec.bet === 'away' ? awayProb
     : drawProb;
+  // Clamp pour éviter valeurs aberrantes
+  const clampedWinProb = Math.max(0, Math.min(100, winProbability));
 
   // ── Advanced Predictions (site web) ──
   const expectedGoals = dc?.expectedGoals?.total || 2.5;
@@ -152,7 +156,7 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
     type: ml.valueBetType === 'home' ? `Victoire ${p.homeTeam}`
       : ml.valueBetType === 'away' ? `Victoire ${p.awayTeam}`
         : ml.valueBetType === 'draw' ? 'Match Nul' : recommendationText,
-    edge: Math.round(ml.edge * 100) / 100,
+    edge: ml.edge, // déjà en % (ex: 5.3 = +5.3%)
     confidence: ml.confidence,
   }] : [];
 
@@ -160,7 +164,7 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
   const recommendations = [{
     type: rec.bet,
     label: recommendationText,
-    probability: winProbability,
+    probability: clampedWinProb,
     odds: betOdds,
     value: rec.expectedValue,
     stake: rec.kellyStake,
@@ -227,7 +231,7 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
 
     // Prediction
     predictedResult: rec.bet,
-    winProbability,
+    winProbability: clampedWinProb,
     recommendation: recommendationText,
     expectedValue: rec.expectedValue,
 
