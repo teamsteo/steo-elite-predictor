@@ -388,9 +388,13 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     );
   }
   
+  // dataQuality est une chaîne ('complete'|'partial'|'limited') — convertir en nombre
+  const dataQualityMap: Record<string, number> = { complete: 80, partial: 50, limited: 25 };
+  const dataQualityNum = dataQualityMap[context?.unifiedAnalysis.dataQuality || ''] || 30;
+  
   const featureVector: FeatureVector = {
     edge: Math.max(0, preliminaryEdge),
-    dataQuality: context?.unifiedAnalysis.dataQuality || 30,
+    dataQuality: dataQualityNum,
     homeInjuries: context?.injuries.home.length || 0,
     awayInjuries: context?.injuries.away.length || 0,
     homeFormScore: context?.fbref?.homeForm?.formPoints || 50,
@@ -533,7 +537,7 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   let confidence: 'very_high' | 'high' | 'medium' | 'low' = 'low';
   const edgeThreshold = mlThresholds.edgeThreshold || 0.05; // Raised from 0.03
   const isValueBetRaw = bestEdge > edgeThreshold;
-  const dataQualityScore = context?.unifiedAnalysis.dataQuality || 30;
+  const dataQualityScore = dataQualityNum;
   
   // Much stricter confidence requirements
   if (bestEdge > 0.10 && dataQualityScore >= 70) {
