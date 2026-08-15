@@ -1537,8 +1537,6 @@ export async function getCrossValidatedMatches(): Promise<{
               // Calcul des probabilités basées sur les stats réelles
               let homeWinProb = 40 + (formAdvantage * 2) + (rankAdvantage * 1.5);
               let awayWinProb = 40 - (formAdvantage * 2) - (rankAdvantage * 1.5);
-              let drawProb = 25;
-              
               // Ajustement selon le total de buts
               const avgHomeGoals = (homeStats.goalsFor / homeStats.played);
               const avgAwayGoals = (awayStats.goalsFor / awayStats.played);
@@ -1546,6 +1544,14 @@ export async function getCrossValidatedMatches(): Promise<{
               const avgAwayConceded = (awayStats.goalsAgainst / awayStats.played);
               
               const expectedTotal = (avgHomeGoals + avgAwayConceded + avgAwayGoals + avgHomeConceded) / 4;
+              
+              // P0 FIX: Draw probability based on expected goals, not hardcoded 25
+              // More total goals expected → lower draw probability
+              // Closer team strength → higher draw probability
+              const goalFactor = Math.max(0, 30 - expectedTotal * 5); // -5% per 0.5 goals above 3
+              const parityFactor = Math.max(0, Math.abs(homeWinProb - awayWinProb) < 10 ? 10 : 0); // +10% if teams close
+              const strengthParity = 10 - Math.abs(formAdvantage) * 0.5; // Closer form = higher draw
+              let drawProb = Math.max(15, Math.min(35, 20 + goalFactor * 0.3 + parityFactor + strengthParity * 0.2));
               
               // Normaliser les probabilités
               const total = homeWinProb + awayWinProb + drawProb;

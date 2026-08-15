@@ -517,7 +517,7 @@ async function analyzeNHL(
 ): Promise<UnifiedAnalysis> {
   
   // 1. Utiliser le modèle NHL avancé
-  const nhlResult = generateNHLPrediction(homeTeamAbbr, awayTeamAbbr, oddsHome, oddsAway, totalLine);
+  const nhlResult = await generateNHLPrediction(homeTeamAbbr, awayTeamAbbr, oddsHome, oddsAway, totalLine);
   
   if (!nhlResult) {
     // Fallback si données non disponibles

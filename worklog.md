@@ -284,3 +284,30 @@ Stage Summary:
 - DYNAMIC TAGS: analyzeMatchImportance() now always runs (either via matchContextService or direct fallback)
 - Tags like "Enjeu RAS", "Saison régulière", "Championnat" will now be dynamic based on league, date, and competition type
 - Deployed to: https://my-project-zeta-five-85.vercel.app
+
+---
+Task ID: A-F
+Agent: Main + 5 subagents
+Task: Correctifs P0 résiduels (A-F) — cotes estimées, value bets, NHL, draw, backtesting
+
+Work Log:
+- Fix A+F: telegramService.ts — Ajouté ⚠️ "Cotes estimées — pas de bookmaker" dans formatMatchBlock (après ligne 905)
+- Fix A+F: telegramService.ts — Exclu `isEstimated` des value bets (publishValueBetsToTelegram ligne 1400)
+- Fix A+F: telegramService.ts — Exclu `isEstimated` des kamikazes (publishKamikazeOnlyMessage ligne 1325 + publishKamikazeToTelegram ligne 1488)
+- Fix B: combinedDataService.ts — Ajouté paramètre `hasRealOdds` (default true) à detectValueBets (ligne 807) + early return si false
+- Fix B: cron/route.ts — Passé `!!m.hasRealOdds` aux 4 call sites detectValueBets (lignes 2388, 2498, 3510, 3616)
+- Fix C: nhlAdvancedModel.ts — Ajouté fetchNHLStatsFromTheSportsDB() (cache 1h TTL, 31 équipes NHL mappées) + generateNHLPrediction devient async, utilise stats réelles TheSportsDB (GF/GA/played/form) avec fallback hardcodé
+- Fix C: unified-sports-analysis.ts — Ajouté await devant generateNHLPrediction (devenu async)
+- Fix D: crossValidation.ts — Remplacé `drawProb = 25` hardcodé par formule contextuelle (goalFactor + parityFactor + strengthParity → clamp 15-35%)
+- Fix E: tennis-backtesting.ts — Ajouté split temporel 70/30 (trainMatches/testMatches), évaluation uniquement sur testMatches
+
+Stage Summary:
+- TypeScript compilation: 0 erreurs
+- 5 fichiers modifiés: telegramService.ts, combinedDataService.ts, cron/route.ts, nhlAdvancedModel.ts, crossValidation.ts, tennis-backtesting.ts, unified-sports-analysis.ts
+- Aucun coût: TheSportsDB gratuit, ESPN gratuit, Open-Meteo gratuit
+- Aucun risque de bannissement: APIs gratuites, pas de scraping
+- Tous les pronostics Telegram avec cotes estimées sont maintenant soit exclus, soit marqués ⚠️
+- Value bets impossibles sur cotes estimées (dans le pipeline ET dans les publications Telegram)
+- NHL utilise vraies stats TheSportsDB (GF/GA réels) au lieu de gamesPlayed=60 fabriqué
+- Draw proba basée sur expected goals et parité des forces au lieu de 25% hardcodé
+- Backtesting tennis sans data leakage (split 70/30 temporel)

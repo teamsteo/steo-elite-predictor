@@ -803,8 +803,13 @@ export function detectValueBets(
   oddsHome: number,
   oddsDraw: number | null,
   oddsAway: number,
-  modelProbs: { home: number; draw: number; away: number }
+  modelProbs: { home: number; draw: number; away: number },
+  hasRealOdds: boolean = true
 ): { detected: boolean; type: string | null; edge: number; explanation: string } {
+  // P0 FIX: Never detect value bets on estimated odds
+  if (!hasRealOdds) {
+    return { detected: false, type: null, edge: 0, explanation: 'Cotes estimées — pas de value bet' };
+  }
   
   const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
   

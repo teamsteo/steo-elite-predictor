@@ -2385,7 +2385,7 @@ export async function GET(request: NextRequest) {
                 draw: drawProb,
                 away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
               };
-              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
@@ -2495,7 +2495,7 @@ export async function GET(request: NextRequest) {
                 draw: drawProb,
                 away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
               };
-              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
@@ -3507,7 +3507,7 @@ export async function POST(request: NextRequest) {
               draw: drawProb,
               away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
             };
-            const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+            const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
             return {
               homeTeam: m.homeTeam,
               awayTeam: m.awayTeam,
@@ -3613,7 +3613,7 @@ export async function POST(request: NextRequest) {
                 draw: drawProb,
                 away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
               };
-              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs);
+              const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,

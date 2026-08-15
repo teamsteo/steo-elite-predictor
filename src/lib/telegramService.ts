@@ -904,6 +904,11 @@ async function formatMatchBlock(
     block += `${oddsLine}\n`;
   }
 
+  // ⚠️ P0 FIX: Alert when odds are estimated (not from bookmaker)
+  if (m.isEstimated) {
+    block += `⚠️ <i>Cotes estimées — pas de bookmaker</i>\n`;
+  }
+
   // Pronostic + heure
   let pronoLine = '';
   if (time) pronoLine += `⏰ ${time}  ·  `;
@@ -1317,7 +1322,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage));
+  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated);
 
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -1391,7 +1396,8 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   const valueBets = nonTennis.filter(p => 
     p.valueBetDetected && 
     p.confidence !== 'low' && 
-    isSafeOrModerate(p.riskPercentage)
+    isSafeOrModerate(p.riskPercentage) &&
+    !p.isEstimated
   );
 
   if (valueBets.length === 0) {
@@ -1479,7 +1485,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage));
+  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated);
 
   if (kamikazePicks.length === 0) {
     console.log('⚠️ Aucun pronostic Kamikaze à publier');

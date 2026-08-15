@@ -633,18 +633,140 @@ function detectValueBet(
   return { detected: false, type: null, edge: 0, explanation: 'Pas de value bet détectée' };
 }
 
+// ====== THESPORTSDB NHL STATS ======
+
+// Cache pour les stats NHL depuis TheSportsDB
+const nhlAPICache = new Map<string, { data: any; timestamp: number }>();
+const NHL_API_CACHE_DURATION = 3600000; // 1 heure
+
+// Mapping abbréviations NHL → noms complets TheSportsDB
+const NHL_ABBR_TO_NAME: Record<string, string> = {
+  'ANA': 'Anaheim Ducks', 'ARI': 'Arizona Coyotes',
+  'BUF': 'Buffalo Sabres', 'CAR': 'Carolina Hurricanes',
+  'CBJ': 'Columbus Blue Jackets', 'CGY': 'Calgary Flames',
+  'CHI': 'Chicago Blackhawks', 'COL': 'Colorado Avalanche',
+  'DAL': 'Dallas Stars', 'DET': 'Detroit Red Wings',
+  'EDM': 'Edmonton Oilers', 'FLA': 'Florida Panthers',
+  'LAK': 'Los Angeles Kings', 'MIN': 'Minnesota Wild',
+  'MTL': 'Montreal Canadiens', 'NJD': 'New Jersey Devils',
+  'NSH': 'Nashville Predators', 'NYI': 'New York Islanders',
+  'NYR': 'New York Rangers', 'OTT': 'Ottawa Senators',
+  'PHI': 'Philadelphia Flyers', 'PIT': 'Pittsburgh Penguins',
+  'SEA': 'Seattle Kraken', 'SJS': 'San Jose Sharks',
+  'STL': 'St. Louis Blues', 'TBL': 'Tampa Bay Lightning',
+  'TOR': 'Toronto Maple Leafs', 'VAN': 'Vancouver Canucks',
+  'VGK': 'Vegas Golden Knights', 'WPG': 'Winnipeg Jets',
+  'WSH': 'Washington Capitals',
+};
+
+interface TheSportsDBTeamRow {
+  idTeam: string;
+  strTeam: string;
+  intPlayed?: string;
+  intWin?: string;
+  intLoss?: string;
+  intDraw?: string;
+  intGoalsFor?: string;
+  intGoalsAgainst?: string;
+  intGoalDifference?: string;
+  intPoints?: string;
+  strForm?: string;
+}
+
+/**
+ * Récupère les stats NHL depuis TheSportsDB (gratuit, sans clé API)
+ */
+async function fetchNHLStatsFromTheSportsDB(
+  teamAbbr: string
+): Promise<{
+  played: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  formWins: number;
+  formLosses: number;
+  formGoalsFor: number;
+  formGoalsAgainst: number;
+} | null> {
+  const cacheKey = `nhl-${teamAbbr}`;
+  const cached = nhlAPICache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < NHL_API_CACHE_DURATION) {
+    return cached.data;
+  }
+
+  try {
+    // TheSportsDB NHL league ID = 4387, saison 2024-2025
+    const url = 'https://www.thesportsdb.com/api/v1/json/3/lookuptable.php?l=4387&s=2024-2025';
+    const response = await fetch(url, { next: { revalidate: 3600 } });
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data.table || !Array.isArray(data.table)) return null;
+
+    // Trouver l'équipe par nom
+    const fullName = NHL_ABBR_TO_NAME[teamAbbr];
+    if (!fullName) return null;
+
+    const row = (data.table as TheSportsDBTeamRow[]).find(
+      (r) => r.strTeam && r.strTeam.toLowerCase() === fullName.toLowerCase()
+    );
+
+    // Fallback: recherche partielle si pas de correspondance exacte
+    const matched = row || (data.table as TheSportsDBTeamRow[]).find(
+      (r) => r.strTeam && fullName.toLowerCase().split(' ').every(
+        (word) => word.length <= 2 || r.strTeam!.toLowerCase().includes(word.toLowerCase())
+      )
+    );
+
+    if (!matched) return null;
+
+    const played = parseInt(matched.intPlayed || '0');
+    const goalsFor = parseInt(matched.intGoalsFor || '0');
+    const goalsAgainst = parseInt(matched.intGoalsAgainst || '0');
+
+    if (played < 5) return null;
+
+    // Analyser la forme (strForm = ex "WWLWL" - 5 derniers matchs)
+    let formWins = 0, formLosses = 0;
+    const formStr = matched.strForm || '';
+    for (const ch of formStr.toUpperCase()) {
+      if (ch === 'W') formWins++;
+      else if (ch === 'L' || ch === 'D') formLosses++;
+    }
+    // Si pas de forme, estimer à partir du ratio saison
+    if (formWins === 0 && formLosses === 0) {
+      const totalWins = parseInt(matched.intWin || '0');
+      const totalLosses = parseInt(matched.intLoss || '0');
+      formWins = Math.round(totalWins / played * 5);
+      formLosses = 5 - formWins;
+    }
+
+    // Estimer buts par match pour la forme
+    const avgGF = goalsFor / played;
+    const avgGA = goalsAgainst / played;
+    const formGames = formWins + formLosses || 5;
+    const formGoalsFor = Math.round(avgGF * formGames);
+    const formGoalsAgainst = Math.round(avgGA * formGames);
+
+    const result = { played, goalsFor, goalsAgainst, formWins, formLosses, formGoalsFor, formGoalsAgainst };
+    nhlAPICache.set(cacheKey, { data: result, timestamp: Date.now() });
+    return result;
+  } catch (err) {
+    return null;
+  }
+}
+
 // ====== FONCTION PRINCIPALE ======
 
 /**
  * Génère une prédiction NHL rigoureuse
  */
-export function generateNHLPrediction(
+export async function generateNHLPrediction(
   homeTeamAbbr: string,
   awayTeamAbbr: string,
   oddsHome: number = 2.00,
   oddsAway: number = 2.00,
   totalLine: number = 6.5
-): NHLPrediction | null {
+): Promise<NHLPrediction | null> {
   
   // Récupérer les stats
   const homeData = NHL_TEAM_STATS[homeTeamAbbr];
@@ -654,21 +776,54 @@ export function generateNHLPrediction(
     console.error(`Stats manquantes pour ${homeTeamAbbr} ou ${awayTeamAbbr}`);
     return null;
   }
-  
-  // Construire les objets TeamStats complets
+
+  // ====== Tenter de récupérer les stats RÉELLES depuis TheSportsDB ======
+  let homeApiStats: Awaited<ReturnType<typeof fetchNHLStatsFromTheSportsDB>> = null;
+  let awayApiStats: Awaited<ReturnType<typeof fetchNHLStatsFromTheSportsDB>> = null;
+
+  try {
+    const [hStats, aStats] = await Promise.all([
+      fetchNHLStatsFromTheSportsDB(homeTeamAbbr),
+      fetchNHLStatsFromTheSportsDB(awayTeamAbbr),
+    ]);
+    homeApiStats = hStats;
+    awayApiStats = aStats;
+    if (homeApiStats) {
+      console.log(`✅ NHL API: ${homeTeamAbbr} - ${homeApiStats.played} MJ, ${homeApiStats.goalsFor} BP, ${homeApiStats.goalsAgainst} BE`);
+    } else {
+      console.warn(`⚠️ NHL: Stats API non disponibles pour ${homeTeamAbbr}, utilisation des valeurs par défaut`);
+    }
+    if (awayApiStats) {
+      console.log(`✅ NHL API: ${awayTeamAbbr} - ${awayApiStats.played} MJ, ${awayApiStats.goalsFor} BP, ${awayApiStats.goalsAgainst} BE`);
+    } else {
+      console.warn(`⚠️ NHL: Stats API non disponibles pour ${awayTeamAbbr}, utilisation des valeurs par défaut`);
+    }
+  } catch (err) {
+    console.warn('⚠️ NHL: Erreur récupération stats TheSportsDB, fallback sur valeurs par défaut', err);
+  }
+
+  // ====== Construire les objets TeamStats complets ======
   const homeTeam: TeamStats = {
     name: homeTeamAbbr,
     abbreviation: homeTeamAbbr,
     record: homeData.record || { wins: 0, losses: 0, otLosses: 0 },
-    goalsFor: homeData.goalsFor || 0,
-    goalsAgainst: homeData.goalsAgainst || 0,
-    gamesPlayed: 60,
+    goalsFor: homeApiStats?.goalsFor || homeData.goalsFor || 0,
+    goalsAgainst: homeApiStats?.goalsAgainst || homeData.goalsAgainst || 0,
+    gamesPlayed: homeApiStats?.played || 60,
     xGFor: homeData.xGFor || 0,
     xGAgainst: homeData.xGAgainst || 0,
     corsiForPct: homeData.corsiForPct || 50,
     fenwickForPct: homeData.fenwickForPct || 50,
     pdo: homeData.pdo || 100,
-    recentForm: { wins: 5, losses: 5, goalsFor: 15, goalsAgainst: 15, last10: '' },
+    recentForm: homeApiStats
+      ? {
+          wins: homeApiStats.formWins,
+          losses: homeApiStats.formLosses,
+          goalsFor: homeApiStats.formGoalsFor,
+          goalsAgainst: homeApiStats.formGoalsAgainst,
+          last10: '',
+        }
+      : { wins: 5, losses: 5, goalsFor: 15, goalsAgainst: 15, last10: '' },
     startingGoalie: {
       name: STARTING_GOALIES[homeTeamAbbr]?.name || 'TBD',
       savePct: STARTING_GOALIES[homeTeamAbbr]?.savePct || 0.905,
@@ -684,15 +839,23 @@ export function generateNHLPrediction(
     name: awayTeamAbbr,
     abbreviation: awayTeamAbbr,
     record: awayData.record || { wins: 0, losses: 0, otLosses: 0 },
-    goalsFor: awayData.goalsFor || 0,
-    goalsAgainst: awayData.goalsAgainst || 0,
-    gamesPlayed: 60,
+    goalsFor: awayApiStats?.goalsFor || awayData.goalsFor || 0,
+    goalsAgainst: awayApiStats?.goalsAgainst || awayData.goalsAgainst || 0,
+    gamesPlayed: awayApiStats?.played || 60,
     xGFor: awayData.xGFor || 0,
     xGAgainst: awayData.xGAgainst || 0,
     corsiForPct: awayData.corsiForPct || 50,
     fenwickForPct: awayData.fenwickForPct || 50,
     pdo: awayData.pdo || 100,
-    recentForm: { wins: 5, losses: 5, goalsFor: 15, goalsAgainst: 15, last10: '' },
+    recentForm: awayApiStats
+      ? {
+          wins: awayApiStats.formWins,
+          losses: awayApiStats.formLosses,
+          goalsFor: awayApiStats.formGoalsFor,
+          goalsAgainst: awayApiStats.formGoalsAgainst,
+          last10: '',
+        }
+      : { wins: 5, losses: 5, goalsFor: 15, goalsAgainst: 15, last10: '' },
     startingGoalie: {
       name: STARTING_GOALIES[awayTeamAbbr]?.name || 'TBD',
       savePct: STARTING_GOALIES[awayTeamAbbr]?.savePct || 0.905,

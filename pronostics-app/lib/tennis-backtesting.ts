@@ -312,6 +312,14 @@ export async function runBacktest(
   
   console.log(`\n📊 Total matches: ${allMatches.length}`);
   
+  // P0 FIX: Temporal train/test split to prevent data leakage
+  // Sort by date, use first 70% for training, last 30% for testing
+  const sortedByDate = [...allMatches].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const splitIndex = Math.floor(sortedByDate.length * 0.7);
+  const trainMatches = sortedByDate.slice(0, splitIndex);
+  const testMatches = sortedByDate.slice(splitIndex);
+  console.log(`📊 Train/test split: ${trainMatches.length} train, ${testMatches.length} test`);
+  
   // Obtenir les poids du modèle
   const weights = getLearnedWeights();
   console.log('Model weights:', weights);
@@ -339,8 +347,12 @@ export async function runBacktest(
   
   console.log('\n🎯 Simulating predictions...');
   
-  // Simuler chaque match
-  for (const match of allMatches) {
+  // Training phase: weights already loaded from getLearnedWeights()
+  // In production, these should be learned from trainMatches only
+  console.log(`⚠️ Note: weights loaded from persistent storage — ideally should be re-trained on trainMatches only`);
+  
+  // Only evaluate on test set (last 30% of dates)
+  for (const match of testMatches) {
     // Ignorer les matchs sans classement valide
     if (match.winnerRank > 500 || match.loserRank > 500) continue;
     
