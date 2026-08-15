@@ -1787,7 +1787,18 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     console.log(`📊 [BILAN] Détails: ${JSON.stringify(dayPreds.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, created: (p.created_at || '').split('T')[0], match: (p.match_date || '').split('T')[0] })))}`);
   }
 
-  const allDayPredictions = dayPreds;
+  // 🔧 EXCLURE les matchs dont la date est dans le futur (pas encore joués)
+  // Le cron SOIR publie des matchs du lendemain → ils apparaissent pending dans le bilan
+  const nowISO = new Date().toISOString().split('T')[0];
+  const allDayPredictions = dayPreds.filter(p => {
+    if (!p.match_date) return true; // pas de date → on garde
+    const matchDate = p.match_date.split('T')[0];
+    return matchDate <= nowISO; // exclure les matchs futurs
+  });
+
+  if (allDayPredictions.length < dayPreds.length) {
+    console.log(`📊 [BILAN] Exclu ${dayPreds.length - allDayPredictions.length} matchs futurs (match_date > aujourd'hui)`);
+  }
 
   const emptySummary: DailyResultSummary = {
     date: targetDate,
@@ -2204,10 +2215,15 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       message += `${emoji} <b>${name}</b> ${sportEmoji}\n`;
 
       if (verified > 0) {
-        // Ligne principale: X/Y corrects · Z%
-        message += `    ✅ ${s.wins}/${verified} corrects  ·  <b>${s.winRate}%</b>\n`;
+        // Ligne principale: X/Y vérifiés · Z% (pas de pending dans le ratio)
+        message += `    ✅ ${s.wins}/${verified} vérifiés  ·  <b>${s.winRate}%</b>\n`;
       } else {
         message += `    ⏳ ${s.pending} en attente de résultat\n`;
+      }
+
+      // Pending count (séparé des vérifiés)
+      if (hasPending && verified > 0) {
+        message += `    📋 ${s.pending} en attente\n`;
       }
 
       // ROI par sport
@@ -2231,7 +2247,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     : '⏳';
   message += `${globalEmoji} <b>RÉSULTAT GLOBAL</b>\n`;
   if (summary.totalVerified > 0) {
-    message += `    ✅ ${summary.wins}/${summary.totalVerified} corrects  ·  <b>${summary.winRate}%</b>\n`;
+    message += `    ✅ ${summary.wins}/${summary.totalVerified} vérifiés  ·  <b>${summary.winRate}%</b>\n`;
   } else {
     message += `    ⏳ Aucun résultat vérifié\n`;
   }
@@ -2262,7 +2278,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       const vbRoiSign = vb.roi >= 0 ? '+' : '';
       const vbProfitSign = vb.profitUnits >= 0 ? '+' : '';
       message += `💎 <b>Value Bets</b> (${vb.total} pronostics)\n`;
-      message += `    ✅ ${vb.wins}/${vb.wins + vb.losses} corrects · <b>${vb.winRate}%</b>\n`;
+      message += `    ✅ ${vb.wins}/${vb.wins + vb.losses} vérifiés · <b>${vb.winRate}%</b>\n`;
       message += `    ${vbEmoji} ROI: <b>${vbRoiSign}${vb.roi}%</b> (${vbProfitSign}${vb.profitUnits.toFixed(2)}u)\n`;
       if (vb.avgEdge > 0) {
         message += `    📊 Edge moyen: <b>${vb.avgEdge}%</b>\n`;
@@ -2276,7 +2292,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       const sRoiSign = s.roi >= 0 ? '+' : '';
       const sProfitSign = s.profitUnits >= 0 ? '+' : '';
       message += `🛡️ <b>Safes (non-VB)</b> (${s.total} pronostics)\n`;
-      message += `    ✅ ${s.wins}/${s.wins + s.losses} corrects · <b>${s.winRate}%</b>\n`;
+      message += `    ✅ ${s.wins}/${s.wins + s.losses} vérifiés · <b>${s.winRate}%</b>\n`;
       message += `    ${sEmoji} ROI: <b>${sRoiSign}${s.roi}%</b> (${sProfitSign}${s.profitUnits.toFixed(2)}u)\n`;
       message += '\n';
     }
