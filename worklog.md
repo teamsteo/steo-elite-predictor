@@ -329,3 +329,26 @@ Stage Summary:
 - Vercel va redéployer automatiquement
 - Classification sûrs/modéré/risqué va fonctionner à nouveau
 - riskPercentage correctement en 0-100
+
+---
+Task ID: AUDIT-FINAL
+Agent: Main
+Task: Audit final site web + Telegram — corrections et persistence
+
+Work Log:
+- Audit complet du site web: 6 systèmes de seuils de risque différents trouvés
+- P0: RiskIndicator couleur (≤35) vs label (≤40) désalignés → unifiés à ≤40/≤60
+- P1: page.tsx 3 occurrences seuils ≤40/≤50 → alignés à ≤40/≤60
+- P1: API matches route 4 niveaux (Sûr/Modéré/Audacieux/Kamikaze) → 3 niveaux alignés
+- P1: Palier intelligent: ajout exclusion tennis dans filtre eligible
+- P2: formatDateTime: getHours()→getUTCHours() pour heures correctes ESPN→Telegram
+- P2: NHL mapping: ajout UTAH (Utah Hockey Club) — 32/32 équipes
+- Audit Telegram: tous les flux OK (safe, value bets, kamikaze, bilan, palier)
+- Audit ML pipeline: tous les fixes précédents confirmés en place
+- TypeScript: 0 erreurs
+- Push: commit 38fd943 sur main
+
+Stage Summary:
+- 7 fichiers modifiés: RiskIndicator.tsx (x2), page.tsx, matches/route.ts, cron/route.ts, telegramService.ts, nhlAdvancedModel.ts
+- Seuils de risque unifiés: ≤40 = Sûr (vert), ≤60 = Modéré (orange), >60 = Risqué (rouge)
+- Tout est déployé et persistant sur GitHub
