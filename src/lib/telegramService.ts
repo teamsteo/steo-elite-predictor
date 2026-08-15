@@ -1821,15 +1821,20 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   };
 
   try {
-    // 📊 BILAN COMPLET : TOUS les pronostics publiés (safe, modéré, kamikaze)
-    // Le filtre risk ne s'applique qu'à la SÉLECTION, pas au BILAN
-    // Foot/basket = risque faible, NHL/baseball = risque plus élevé → TOUS tracqués
+    // 📊 BILAN : UNIQUEMENT les pronos du jour (safe + modéré, risk < 51)
+    // Les kamikazes (risk >= 51) ont leur BILAN KAMIKAZE séparé
+    // Les value bets sont comptabilisés dans la section VB séparée
     const dayPredictions = allDayPredictions;
     if (dayPredictions.length === 0) return emptySummary;
 
     // 🤖 Séparer les combos (is_combo=true) des pronostics normaux
     const comboPredictions = dayPredictions.filter(p => p.is_combo === true);
-    const normalPredictions = dayPredictions.filter(p => !p.is_combo);
+    // ❌ EXCLURE les kamikazes du bilan principal → ils ont leur bilan séparé
+    const normalPredictions = dayPredictions.filter(p => 
+      !p.is_combo && (p.risk_percentage ?? 100) < 51
+    );
+
+    console.log(`📊 [BILAN] ${dayPredictions.length} total → ${comboPredictions.length} combos, ${normalPredictions.length} safe/modéré, ${dayPredictions.length - comboPredictions.length - normalPredictions.length} kamikazes exclus`);
 
     // Grouper les legs par combo_id
     const comboMap = new Map<string, any[]>();
@@ -2401,7 +2406,8 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
   // Pied de message
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
-  message += '🤖 Bilan journalier · Tous pronostics publiés\n';
+  message += '🤖 Bilan journalier · Pronos du jour (safe + modéré)\n';
+  message += '💣 Les kamikazes ont un bilan séparé\n';
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
 
   // Envoyer le message
@@ -2432,34 +2438,20 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
   })();
 
   try {
-    // Chercher aussi sur le lendemain pour les matchs de nuit US
-    const nextDay = (() => {
-      const d = new Date(targetDate + 'T12:00:00Z');
-      d.setDate(d.getDate() + 1);
-      return d.toISOString().split('T')[0];
-    })();
-    const [dayPreds, nextDayPreds] = await Promise.all([
-      SupabaseStore.getPredictionsByDate(targetDate),
-      SupabaseStore.getPredictionsByDate(nextDay),
-    ]);
-    const seen = new Set<string>();
-    const allDayPredictions: any[] = [];
-    for (const p of [...dayPreds, ...nextDayPreds]) {
-      if (!seen.has(p.match_id)) {
-        seen.add(p.match_id);
-        allDayPredictions.push(p);
-      }
-    }
+    // 🔧 UTILISER created_at (comme le bilan régulier) pour la cohérence
+    // Le bilan couvre les publications de la VEILLE, pas la date du match
+    const dayPreds = await SupabaseStore.getPredictionsByCreatedAt(targetDate);
+
+    // Exclure les matchs futurs (match_date > aujourd'hui)
+    const nowISO = new Date().toISOString().split('T')[0];
+    const allDayPredictions = dayPreds.filter(p => {
+      if (!p.match_date) return true;
+      const matchDate = p.match_date.split('T')[0];
+      return matchDate <= nowISO;
+    });
     
-    // 🔍 LOG DIAGNOSTIC: aider à comprendre pourquoi le bilan est vide
-    console.log(`💣 [BILAN KAMIKAZE] Date: ${targetDate} + ${nextDay}`);
-    console.log(`💣 [BILAN KAMIKAZE] Trouvé: ${dayPreds.length} (jour) + ${nextDayPreds.length} (lendemain) = ${allDayPredictions.length} total (après dédup)`);
-    if (allDayPredictions.length > 0) {
-      const riskBreakdown = allDayPredictions
-        .filter(p => !p.is_combo)
-        .map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status }));
-      console.log(`💣 [BILAN KAMIKAZE] Détails risk:`, JSON.stringify(riskBreakdown.slice(0, 10)));
-    }
+    // 🔍 LOG DIAGNOSTIC
+    console.log(`💣 [BILAN KAMIKAZE] created_at: ${targetDate}, trouvé: ${allDayPredictions.length} pronostics`);
     
     if (allDayPredictions.length === 0) {
       console.log('💣 [BILAN KAMIKAZE] Aucune prédiction trouvée pour cette date');
