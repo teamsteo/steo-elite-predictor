@@ -311,3 +311,21 @@ Stage Summary:
 - NHL utilise vraies stats TheSportsDB (GF/GA réels) au lieu de gamesPlayed=60 fabriqué
 - Draw proba basée sur expected goals et parité des forces au lieu de 25% hardcodé
 - Backtesting tennis sans data leakage (split 70/30 temporel)
+
+---
+Task ID: P2
+Agent: Main
+Task: Fix classification foot sur le site web — riskPercentage multiplié par 100 en trop
+
+Work Log:
+- Diagnostic: API retournait risk=-4470 au lieu de risk=23 pour les matchs football
+- Cause: mapUnifiedToEnrichedMatch (matches/route.ts L54) faisait `ml.homeProb * 100` alors que ml.homeProb est déjà en % (55.3 = 55.3%)
+- Fix: Supprimé le *100 sur homeProb/drawProb/awayProb
+- Fix: Ajouté clamp Math.max(0, Math.min(100, ...)) sur riskPercentage et winProbability
+- Fix: Corrigé ml.edge * 100 → ml.edge (déjà en %)
+- Push: commit eac5d7b
+
+Stage Summary:
+- Vercel va redéployer automatiquement
+- Classification sûrs/modéré/risqué va fonctionner à nouveau
+- riskPercentage correctement en 0-100
