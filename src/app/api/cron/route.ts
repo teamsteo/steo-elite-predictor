@@ -1991,11 +1991,12 @@ export async function GET(request: NextRequest) {
             const sorted = [...bySport[sport]].sort((a, b) => (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100));
             sorted.forEach(p => publishedIds.add(p.match_id));
           }
-          // Kamikaze: max 3 par sport (aligné sur publishKamikazeToTelegram)
+          // Kamikaze: max 4 global, tri par edge décroissant (aligné sur publishKamikazeToTelegram)
           const kamikazeSorted = [...kamikaze].sort((a, b) => {
-            const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
-            const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
-            return oddsB - oddsA;
+            const edgeA = a.edge_value || 0;
+            const edgeB = b.edge_value || 0;
+            if (edgeB !== edgeA) return edgeB - edgeA;
+            return (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100);
           });
           const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
           kamikazeCapped.forEach(p => publishedIds.add(p.match_id));
@@ -2631,7 +2632,7 @@ export async function GET(request: NextRequest) {
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS sur Telegram
-          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par cote desc + max 3/sport
+          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par edge desc + max 4 global
           try {
             const kamikazeFiltered = capKamikazePerSport(
               sortKamikazePicks(
@@ -3172,11 +3173,12 @@ export async function POST(request: NextRequest) {
             const isKamikazeGroup = key.includes('__other') || preds.every(p => (p.risk_percentage ?? 100) > 50);
             
             if (isKamikazeGroup) {
-              // Kamikaze: tri par cote desc, max 3 par sport
+              // Kamikaze: tri par edge desc, max 4 global
               const sorted = [...preds].sort((a, b) => {
-                const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
-                const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
-                return oddsB - oddsA;
+                const edgeA = a.edge_value || 0;
+                const edgeB = b.edge_value || 0;
+                if (edgeB !== edgeA) return edgeB - edgeA;
+                return (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100);
               });
               const capped = capKamikazePerSport(sorted);
               capped.forEach(p => toKeep.add(p.match_id));
@@ -3263,11 +3265,12 @@ export async function POST(request: NextRequest) {
             sorted.forEach(p => publishedIds.add(p.match_id));
           }
 
-          // Kamikaze: trier par cote desc, max 3 par sport (aligné sur publishKamikazeToTelegram)
+          // Kamikaze: tri par edge desc, max 4 global (aligné sur publishKamikazeToTelegram)
           const kamikazeSorted = [...kamikaze].sort((a, b) => {
-            const oddsA = Math.max(a.odds_home || 0, a.odds_away || 0);
-            const oddsB = Math.max(b.odds_home || 0, b.odds_away || 0);
-            return oddsB - oddsA;
+            const edgeA = a.edge_value || 0;
+            const edgeB = b.edge_value || 0;
+            if (edgeB !== edgeA) return edgeB - edgeA;
+            return (a.risk_percentage ?? 100) - (b.risk_percentage ?? 100);
           });
           const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
           kamikazeCapped.forEach(p => publishedIds.add(p.match_id));
@@ -3325,6 +3328,7 @@ export async function POST(request: NextRequest) {
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS (même logique que GET)
+          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par edge desc + max 4 global
           try {
             const kamikazeFiltered = capKamikazePerSport(
               sortKamikazePicks(

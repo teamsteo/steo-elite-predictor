@@ -61,7 +61,7 @@ export function isDuplicate(publicationType: string, messageContent: string, slo
 const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
 const MAX_DAILY_PREDICTIONS = 10; // Maximum 10 pronostics par jour
-const MAX_KAMIKAZE_PER_SPORT = 3; // Max 3 kamikazes par sport par jour
+const MAX_KAMIKAZE_TOTAL = 4; // Max 4 kamikazes par jour TOUS sports confondus
 // 🎯 CRITÈRES ALIGNÉS SUR BACKTEST XGBoost (août 2026)
 // Backtest foot: confidence ≥ 74% → 99.9% précision | ROI +34% à +43%
 // → Foot: risk ≤ 25% (win prob ≥ 75%) — dans la zone prouvée du backtest
@@ -101,8 +101,7 @@ export function isKamikaze(riskPercentage?: number): boolean {
 }
 
 /**
- * Plafonner les kamikazes à MAX_KAMIKAZE_PER_SPORT par sport
- * Conserve l'ordre de tri (cotes décroissantes, puis sport prioritaire)
+ * Normalise la clé de sport pour le groupement
  */
 function normalizeSportKey(sport: string): string {
   const s = (sport || '').toLowerCase();
@@ -114,25 +113,26 @@ function normalizeSportKey(sport: string): string {
 }
 
 // Surcharge générique: fonctionne avec TelegramMatch[] ET DbPrediction[]
+// Plafonne à MAX_KAMIKAZE_TOTAL (4) globalement, tous sports confondus
 export function capKamikazePerSport<T extends { sport?: string }>(picks: T[]): T[] {
-  const sportCount: Record<string, number> = {};
-  return picks.filter(p => {
-    const key = normalizeSportKey(p.sport || '');
-    sportCount[key] = (sportCount[key] || 0) + 1;
-    return sportCount[key] <= MAX_KAMIKAZE_PER_SPORT;
-  });
+  return picks.slice(0, MAX_KAMIKAZE_TOTAL);
 }
 
 /**
- * Trie les kamikazes : cotes décroissantes, puis sport prioritaire (football en premier).
+ * Trie les kamikazes : value bet edge décroissante (_mlEdge), puis risque croissant.
+ * Les meilleurs value bets (edge les plus élevés) sont publiés en premier.
  * Fonction centralisée utilisée partout pour garantir la cohérence save vs publish.
  */
 export function sortKamikazePicks<T extends { sport?: string; oddsHome?: number; oddsAway?: number }>(picks: T[]): T[] {
   return [...picks].sort((a, b) => {
-    const oddsA = a.oddsHome && a.oddsAway ? Math.max(a.oddsHome, a.oddsAway) : 0;
-    const oddsB = b.oddsHome && b.oddsAway ? Math.max(b.oddsHome, b.oddsAway) : 0;
-    if (oddsB !== oddsA) return oddsB - oddsA;
-    return getSportPriority(a.sport || '') - getSportPriority(b.sport || '');
+    // Priorité 1 : edge décroissant (meilleur edge = plus value)
+    const edgeA = (a as any)._mlEdge || 0;
+    const edgeB = (b as any)._mlEdge || 0;
+    if (edgeB !== edgeA) return edgeB - edgeA;
+    // Priorité 2 : risque croissant (moins risqué en cas d'égalité d'edge)
+    const riskA = (a as any).riskPercentage ?? 100;
+    const riskB = (b as any).riskPercentage ?? 100;
+    return riskA - riskB;
   });
 }
 
@@ -1349,7 +1349,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     // Trie centralisé : cotes décroissantes, puis football en premier
     const kamikazeSorted = sortKamikazePicks(kamikazePicks);
 
-    // 🔒 PLAFONNER à 3 kamikazes max par sport
+    // 🔒 PLAFONNER à 4 kamikazes max (tous sports confondus)
     const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
 
     message += '───────────────────────────\n';
@@ -1362,7 +1362,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     }
 
     if (kamikazePicks.length > kamikazeCapped.length) {
-      message += `<i>... et ${kamikazePicks.length - kamikazeCapped.length} autres (plafond 3/sport)</i>\n\n`;
+      message += `<i>... et ${kamikazePicks.length - kamikazeCapped.length} autres (plafond 4/jour)</i>\n\n`;
     }
 
     message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
