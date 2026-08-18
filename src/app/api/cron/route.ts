@@ -327,7 +327,7 @@ function matchPredictionWithResult(
     return returnInverted ? { matched: true, inverted } : true;
   }
   
-  // Match avec noms courts
+  // Match avec noms courts (5 chars)
   const predHomeShort = predHome.substring(0, 5);
   const predAwayShort = predAway.substring(0, 5);
   const resHomeShort = resHome.substring(0, 5);
@@ -335,6 +335,23 @@ function matchPredictionWithResult(
   
   if (predHomeShort === resHomeShort && predAwayShort === resAwayShort) {
     return returnInverted ? { matched: true, inverted: false } : true;
+  }
+
+  // Match par mots clés: vérifier que chaque mot du nom ESPN est trouvé dans le nom prédiction
+  // Gère les abbréviations comme "Man City" → "Manchester City", "Nottm Forest" → "Nottingham Forest"
+  const matchByWords = (pred: string, res: string): boolean => {
+    const resWords = res.split(/\d+/).filter(Boolean); // split par chiffres aussi
+    if (resWords.length === 0) return false;
+    const predWords = pred.split(/\d+/).filter(Boolean);
+    // Chaque mot ESPN doit être trouvé dans la prédiction (ou vice-versa)
+    const allResFound = resWords.every(rw => rw.length >= 2 && (pred.includes(rw) || predWords.some(pw => pw.includes(rw) || rw.includes(pw))));
+    return allResFound;
+  };
+  if (matchByWords(predHome, resHome) && matchByWords(predAway, resAway)) {
+    return returnInverted ? { matched: true, inverted: false } : true;
+  }
+  if (matchByWords(predHome, resAway) && matchByWords(predAway, resHome)) {
+    return returnInverted ? { matched: true, inverted: true } : true;
   }
 
   return returnInverted ? { matched: false, inverted: false } : false;
@@ -480,7 +497,14 @@ async function verifyFootballResults(): Promise<{
         const inverted = matchEntry.match.inverted;
         const predictedResult = prediction.predicted_result;
         const actualResult = adjustResultForInversion(result.actualResult, inverted);
-        const resultMatch = predictedResult === actualResult;
+
+        // 🎯 FIX VN: En football, predicted_result 'home'/'away' affiche "V/N: X%" dans le bilan.
+        // Le nul est donc couvert (double chance 1X/X2) → draw = WIN, seul la défaite = échec
+        const isFootballVNWin = (
+          actualResult === 'draw' &&
+          (predictedResult === 'home' || predictedResult === 'away')
+        );
+        const resultMatch = isFootballVNWin ? true : predictedResult === actualResult;
 
         // Vérifier les buts (Over/Under 2.5)
         let goalsMatch: boolean | undefined;
@@ -502,7 +526,7 @@ async function verifyFootballResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${isFootballVNWin ? 'V/N nul ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
         console.log(`⏳ Football: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
@@ -527,7 +551,7 @@ async function verifyFootballResults(): Promise<{
   // matchs que ESPN n'a pas trouvés (limiter les appels)
   try {
     const stillPending = (await SupabaseStore.getPendingPredictions()).filter(p => p.sport === 'football');
-    if (stillPending.length > 0 && stillPending.length <= 5) {
+    if (stillPending.length > 0) {
       console.log(`🔍 [FALLBACK] ${stillPending.length} matchs football encore en attente → TheSportsDB`);
       const fallbackResults = await fetchFootballResultsFromTheSportsDB(stillPending);
       for (const prediction of stillPending) {
@@ -538,7 +562,12 @@ async function verifyFootballResults(): Promise<{
         if (fbMatch) {
           const inverted = (matchPredictionWithResult(prediction, fbMatch, true) as { matched: boolean; inverted: boolean }).inverted;
           const actualResult = adjustResultForInversion(fbMatch.actualResult, inverted);
-          const resultMatch = prediction.predicted_result === actualResult;
+          // 🎯 FIX VN: nul couvert pour pronostics home/away
+          const isFootballVNWin = (
+            actualResult === 'draw' &&
+            (prediction.predicted_result === 'home' || prediction.predicted_result === 'away')
+          );
+          const resultMatch = isFootballVNWin ? true : prediction.predicted_result === actualResult;
           const success = await SupabaseStore.completePrediction(prediction.match_id, {
             homeScore: inverted ? fbMatch.awayScore : fbMatch.homeScore,
             awayScore: inverted ? fbMatch.homeScore : fbMatch.awayScore,
@@ -548,13 +577,51 @@ async function verifyFootballResults(): Promise<{
           if (success) {
             updated++;
             if (resultMatch) won++; else lost++;
-            console.log(`✅ [TheSportsDB] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${fbMatch.homeScore}-${fbMatch.awayScore})`);
+            console.log(`✅ [TheSportsDB] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${isFootballVNWin ? 'V/N nul ' : ''}${fbMatch.homeScore}-${fbMatch.awayScore})`);
           }
         }
       }
     }
   } catch (fbError: any) {
     console.log(`⚠️ [TheSportsDB] Fallback échoué: ${fbError.message}`);
+  }
+
+  // === PHASE 3: FALLBACK football-data.org pour les matchs ENCORE en attente ===
+  // API gratuite avec 10 req/min, couvre les ligues européennes majeures
+  try {
+    const stillPending2 = (await SupabaseStore.getPendingPredictions()).filter(p => p.sport === 'football');
+    if (stillPending2.length > 0) {
+      console.log(`🔍 [FALLBACK-2] ${stillPending2.length} matchs football encore en attente → football-data.org`);
+      const fdbResults = await fetchFootballResultsFromFootballDataOrg(stillPending2);
+      for (const prediction of stillPending2) {
+        const fdMatch = fdbResults.find(r => {
+          const m = matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean };
+          return m.matched;
+        });
+        if (fdMatch) {
+          const inverted = (matchPredictionWithResult(prediction, fdMatch, true) as { matched: boolean; inverted: boolean }).inverted;
+          const actualResult = adjustResultForInversion(fdMatch.actualResult, inverted);
+          const isFootballVNWin = (
+            actualResult === 'draw' &&
+            (prediction.predicted_result === 'home' || prediction.predicted_result === 'away')
+          );
+          const resultMatch = isFootballVNWin ? true : prediction.predicted_result === actualResult;
+          const success = await SupabaseStore.completePrediction(prediction.match_id, {
+            homeScore: inverted ? fdMatch.awayScore : fdMatch.homeScore,
+            awayScore: inverted ? fdMatch.homeScore : fdMatch.awayScore,
+            actualResult,
+            resultMatch,
+          });
+          if (success) {
+            updated++;
+            if (resultMatch) won++; else lost++;
+            console.log(`✅ [football-data.org] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${isFootballVNWin ? 'V/N nul ' : ''}${fdMatch.homeScore}-${fdMatch.awayScore})`);
+          }
+        }
+      }
+    }
+  } catch (fdbError: any) {
+    console.log(`⚠️ [football-data.org] Fallback échoué: ${fdbError.message}`);
   }
 
   return { verified, updated, won, lost, errors };
@@ -570,13 +637,13 @@ async function fetchFootballResultsFromTheSportsDB(predictions: DbPrediction[]):
   const results: MatchResult[] = [];
   const seen = new Set<string>();
   
-  // Collecter les noms d'équipes uniques (max 4 équipes = 8 requêtes max)
+  // Collecter les noms d'équipes uniques (max 8 équipes = 16 requêtes max)
   const teamNames = new Set<string>();
   for (const p of predictions) {
     teamNames.add(p.home_team);
     teamNames.add(p.away_team);
   }
-  const teams = [...teamNames].slice(0, 4);
+  const teams = [...teamNames].slice(0, 8);
   
   // Étape 1: Trouver les IDs TheSportsDB pour chaque équipe
   const teamIds: Map<string, string> = new Map();
@@ -637,6 +704,71 @@ async function fetchFootballResultsFromTheSportsDB(predictions: DbPrediction[]):
   }
   
   console.log(`✅ [TheSportsDB] ${results.length} résultats trouvés`);
+  return results;
+}
+
+/**
+ * FALLBACK 2: Récupère les résultats via football-data.org (API gratuite, 10 req/min)
+ * Utilise les matchs d'aujourd'hui et d'hier pour les ligues européennes majeures
+ */
+async function fetchFootballResultsFromFootballDataOrg(predictions: DbPrediction[]): Promise<MatchResult[]> {
+  const results: MatchResult[] = [];
+  const FDB_API_KEY = process.env.FOOTBALL_DATA_ORG_KEY;
+  if (!FDB_API_KEY) {
+    console.log('⚠️ [football-data.org] Pas de clé API configurée (FOOTBALL_DATA_ORG_KEY)');
+    return results;
+  }
+
+  // Calculer les dates à vérifier (hier et aujourd'hui)
+  const today = new Date();
+  const dates: string[] = [];
+  for (let i = 1; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().split('T')[0]);
+  }
+
+  // Ligues couvertes par football-data.org (codes API)
+  const leagues = ['PL', 'PD', 'BL1', 'SA', 'FL1', 'CL', 'EL'];
+
+  for (const league of leagues) {
+    for (const dateStr of dates) {
+      try {
+        await new Promise(r => setTimeout(r, 120)); // Rate limit 10 req/min
+        const resp = await fetch(
+          `https://api.football-data.org/v4/competitions/${league}/matches?date=${dateStr}&status=FINISHED`,
+          { headers: { 'X-Auth-Token': FDB_API_KEY } }
+        );
+        if (!resp.ok) continue;
+        const data = await resp.json();
+        const matches = data.matches || [];
+
+        for (const m of matches) {
+          const homeTeam = m.homeTeam?.shortName || m.homeTeam?.name || '';
+          const awayTeam = m.awayTeam?.shortName || m.awayTeam?.name || '';
+          if (!homeTeam || !awayTeam) continue;
+
+          const hs = m.score?.fullTime?.home ?? 0;
+          const as_ = m.score?.fullTime?.away ?? 0;
+
+          results.push({
+            matchId: `fdb_${m.id}`,
+            homeTeam,
+            awayTeam,
+            homeScore: hs,
+            awayScore: as_,
+            status: 'finished' as const,
+            actualResult: hs > as_ ? 'home' as const : hs < as_ ? 'away' as const : 'draw' as const,
+            sport: 'football' as const,
+          });
+        }
+      } catch (e) {
+        // Silent fail
+      }
+    }
+  }
+
+  console.log(`✅ [football-data.org] ${results.length} résultats trouvés`);
   return results;
 }
 
@@ -2298,19 +2430,8 @@ export async function GET(request: NextRequest) {
           // 📊 Sélectionner le top 10 PUBLIÉ (même filtres que Telegram)
           const { selected: publishedList, totalEligible } = selectTopDailyPredictions(predictions);
           
-          // 💾 Sauvegarder en Supabase TOUS les pronostics éligibles (pas seulement le top publié)
-          // → Le bilan doit refléter TOUS les sports, pas seulement ceux affichés sur Telegram
-          // publishedList = top 10 affichés ; allEligible = tous les matchs qui passent les filtres ML
-          const allEligible = predictions.filter((p: any) => {
-            const sport = (p.sport || '').toLowerCase();
-            if (['tennis'].includes(sport)) return false;
-            if (p.isEstimated) return false;
-            const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
-            if (wp < 70) return false;
-            if (p.riskPercentage > 50) return false;
-            return true;
-          });
-          
+          // 💾 Sauvegarder en Supabase UNIQUEMENT les pronostics publiés sur Telegram
+          // Le bilan journalier doit refléter EXACTEMENT ce qui a été publié
           let toSave: any[] = publishedList;
           try {
             const todayISO = new Date().toISOString().split('T')[0];
@@ -2327,41 +2448,6 @@ export async function GET(request: NextRequest) {
                 .filter((p: any) => isKamikaze(p.riskPercentage));
               toSave = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
               console.log(`💣 Mode kamikaze: ${toSave.length} kamikazes à sauvegarder en Supabase (sur ${kamikazePicks.length} totaux)`);
-            }
-            
-            // 💾 Sauvegarder TOUS les éligibles pour le bilan (tous les sports)
-            if (allEligible.length > 0) {
-              const allDbPredictions = allEligible.map((p: any) => {
-                const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-                const dateStr = (p.date || '').split('T')[0] || todayISO;
-                const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
-                const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
-                const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
-                const isPublished = publishedList.some((pub: any) => 
-                  pub.homeTeam === p.homeTeam && pub.awayTeam === p.awayTeam && pub.league === p.league
-                );
-                return {
-                  match_id: matchId,
-                  home_team: p.homeTeam,
-                  away_team: p.awayTeam,
-                  league: p.league || 'Unknown',
-                  sport: (p.sport || 'football').toLowerCase(),
-                  match_date: p.date || `${todayISO}T12:00:00Z`,
-                  odds_home: p.oddsHome || 1.0,
-                  odds_draw: p.oddsDraw || null,
-                  odds_away: p.oddsAway || 1.0,
-                  predicted_result: p.predictedResult || 'home',
-                  confidence: p.confidence || 'medium',
-                  risk_percentage: p.riskPercentage ?? 50,
-                  is_value_bet: p.valueBetDetected === true,
-                  edge_value: p._mlEdge || (p.valueBetDetected ? (p.edge || 0) : 0),
-                  status: 'pending' as const,
-                  source: isPublished ? 'telegram_published' : 'ml_eligible',
-                };
-              });
-              console.log(`💾 Sauvegarde TOUS éligibles: ${allEligible.length} pronostics (published: ${publishedList.length}, non-publiés: ${allEligible.length - publishedList.length})`);
-              const allSaved = await SupabaseStore.addPredictions(allDbPredictions);
-              console.log(`💾 ${allSaved}/${allEligible.length} pronostics éligibles sauvegardés (bilan complet tous sports)`);
             }
             
             console.log(`📊 Sauvegarde Supabase: ${toSave.length} pronostics publiés sur Telegram`);
@@ -2983,6 +3069,34 @@ export async function GET(request: NextRequest) {
         } catch (e: any) { result = { reset: { success: false, error: 'Erreur interne' } }; }
         break;
 
+      case 'fix-vn':
+        // Corriger rétroactivement les résultats football VN (draw = WIN pour home/away)
+        try {
+          const allCompleted = await SupabaseStore.getAllPredictions(2000);
+          const footballVNFixes = allCompleted.filter(p =>
+            p.sport === 'football' &&
+            p.status === 'completed' &&
+            p.result_match === false &&
+            p.actual_result === 'draw' &&
+            (p.predicted_result === 'home' || p.predicted_result === 'away')
+          );
+          let fixed = 0;
+          for (const p of footballVNFixes) {
+            const success = await SupabaseStore.completePrediction(p.match_id, {
+              homeScore: p.home_score || 0,
+              awayScore: p.away_score || 0,
+              actualResult: p.actual_result as 'home' | 'draw' | 'away',
+              resultMatch: true,
+            });
+            if (success) fixed++;
+          }
+          console.log(`🎯 [FIX-VN] ${fixed}/${footballVNFixes.length} résultats VN corrigés rétroactivement`);
+          result = { fixVn: { total: footballVNFixes.length, fixed } };
+        } catch (e: any) {
+          result = { fixVn: { error: e.message } };
+        }
+        break;
+
       case 'fix-data':
         // 1) Corriger le sport 'other' → 'baseball' pour les matchs MLB
         // 2) Supprimer les doublons (même home/away/sport/date)
@@ -3061,7 +3175,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'rebuild-date', 'mlb-palier'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier'] },
           { status: 400 }
         );
     }
@@ -3562,19 +3676,11 @@ export async function POST(request: NextRequest) {
 
           const { selected: publishedList } = selectTopDailyPredictions(predictions);
 
-          // 💾 [POST] Sauvegarder TOUS les éligibles en Supabase (pas seulement le top publié)
-          const allEligiblePOST = predictions.filter((p: any) => {
-            const sport = (p.sport || '').toLowerCase();
-            if (['tennis'].includes(sport)) return false;
-            if (p.riskPercentage > 50) return false;
-            const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
-            return wp >= 70;
-          });
-
+          // 💾 [POST] Sauvegarder UNIQUEMENT les pronostics publiés sur Telegram
           try {
             const todayISO = new Date().toISOString().split('T')[0];
-            if (allEligiblePOST.length > 0) {
-              const allDbPredictions = allEligiblePOST.map((p: any) => {
+            if (publishedList.length > 0) {
+              const dbPredictions = publishedList.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
                 const dateStr = (p.date || '').split('T')[0] || todayISO;
                 const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
@@ -3596,11 +3702,10 @@ export async function POST(request: NextRequest) {
                   is_value_bet: p.valueBetDetected === true,
                   edge_value: 0,
                   status: 'pending' as const,
-                  source: 'telegram_published',
                 };
               });
-              const allSaved = await SupabaseStore.addPredictions(allDbPredictions);
-              console.log(`💾 [POST summary] ${allSaved}/${allEligiblePOST.length} éligibles sauvegardés (bilan complet tous sports)`);
+              const saved = await SupabaseStore.addPredictions(dbPredictions);
+              console.log(`💾 [POST summary] ${saved}/${publishedList.length} publiés sauvegardés`);
             }
           } catch (saveErr: any) {
             console.log('⚠️ [POST summary] Erreur sauvegarde Supabase:', saveErr.message);

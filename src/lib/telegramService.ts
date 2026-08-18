@@ -1946,15 +1946,6 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
           else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
           else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
 
-          // 🎯 FIX VN: En football, Victoire + V/N affiché → le nul est une demi-victoire
-          // Le pronostic affiche "V/N: 87%" ce qui implique que le nul est couvert
-          const isFootballVNHalfWin = (
-            sport === 'football' &&
-            p.result_match === false &&
-            p.actual_result === 'draw' &&
-            (p.predicted_result === 'home' || p.predicted_result === 'away')
-          );
-
           if (p.result_match === true) {
             // Gain : profit = cote - 1
             const profit = betOdds - 1;
@@ -1962,13 +1953,6 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
             summary.bySport[sport].profitUnits += profit;
             summary.wins++;
             summary.bySport[sport].wins++;
-          } else if (isFootballVNHalfWin) {
-            // 🟡 Demi-victoire VN : le nul est couvert par le V/N affiché
-            // Profit = 0 (mise remboursée sur un double chance nul)
-            // Compté comme 0.5 victoire pour le win rate
-            summary.wins += 0.5;
-            summary.bySport[sport].wins += 0.5;
-            // Pas de profit ni de perte (mise remboursée)
           } else if (p.result_match === false) {
             // Perte : -1 unité
             totalProfit -= 1;
@@ -1984,9 +1968,8 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
             vbStats.total++;
             vbStats.stakes++;
             if (p.result_match === true) vbStats.wins++;
-            else if (isFootballVNHalfWin) vbStats.wins += 0.5;
             else if (p.result_match === false) vbStats.losses++;
-            vbStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false && !isFootballVNHalfWin) ? -1 : 0;
+            vbStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false) ? -1 : 0;
             if ((p as any).edge_value !== null && (p as any).edge_value !== undefined) {
               vbStats.edgeSum += (p as any).edge_value;
               vbStats.edgeCount++;
@@ -1995,9 +1978,8 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
             safeStats.total++;
             safeStats.stakes++;
             if (p.result_match === true) safeStats.wins++;
-            else if (isFootballVNHalfWin) safeStats.wins += 0.5;
             else if (p.result_match === false) safeStats.losses++;
-            safeStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false && !isFootballVNHalfWin) ? -1 : 0;
+            safeStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false) ? -1 : 0;
           }
         }
 
@@ -2238,10 +2220,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       message += `${emoji} <b>${name}</b> ${sportEmoji}\n`;
 
       if (verified > 0) {
-        // Ligne principale: X/Y vérifiés · Z% (pas de pending dans le ratio)
-        // 🎯 VN: wins peut être décimal (0.5 par demi-victoire V/N)
-        const winsDisplay = s.wins % 1 === 0 ? String(s.wins) : s.wins.toFixed(1);
-        message += `    ✅ ${winsDisplay}/${verified} vérifiés  ·  <b>${s.winRate}%</b>\n`;
+        message += `    ✅ ${s.wins}/${verified} vérifiés  ·  <b>${s.winRate}%</b>\n`;
       } else {
         message += `    ⏳ ${s.pending} en attente de résultat\n`;
       }
@@ -2272,9 +2251,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
     : '⏳';
   message += `${globalEmoji} <b>RÉSULTAT GLOBAL</b>\n`;
   if (summary.totalVerified > 0) {
-    // 🎯 VN: wins peut être décimal (0.5 par demi-victoire V/N)
-    const globalWinsDisplay = summary.wins % 1 === 0 ? String(summary.wins) : summary.wins.toFixed(1);
-    message += `    ✅ ${globalWinsDisplay}/${summary.totalVerified} vérifiés  ·  <b>${summary.winRate}%</b>\n`;
+    message += `    ✅ ${summary.wins}/${summary.totalVerified} vérifiés  ·  <b>${summary.winRate}%</b>\n`;
   } else {
     message += `    ⏳ Aucun résultat vérifié\n`;
   }
@@ -2416,16 +2393,9 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
       message += `${emoji} ${d.homeTeam} vs ${d.awayTeam}\n`;
 
       if (d.status === 'completed' && d.resultMatch !== null) {
-        // 🎯 FIX VN: Détecter les demi-victoires V/N
-        const isVNHalfWin = (
-          d.sport === 'football' &&
-          d.resultMatch === false &&
-          d.actualResult === 'draw' &&
-          (d.predictedResult === 'home' || d.predictedResult === 'away')
-        );
-        const resultEmoji = isVNHalfWin ? '🟡' : (d.resultMatch ? '✅' : '❌');
+        const resultEmoji = d.resultMatch ? '✅' : '❌';
         const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
-        const vnTag = isVNHalfWin ? ' (V/N)' : '';
+        const vnTag = (d.sport === 'football' && d.resultMatch && d.actualResult === 'draw' && (d.predictedResult === 'home' || d.predictedResult === 'away')) ? ' (V/N)' : '';
         message += `    ${resultEmoji} <b>${d.predicted}</b> → <b>${actual}</b>${vnTag}\n`;
       } else {
         message += `    ⏳ <b>${d.predicted}</b> — En attente\n`;
