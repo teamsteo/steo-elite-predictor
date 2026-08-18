@@ -373,3 +373,30 @@ Stage Summary:
 - Blessures: multi-source (Transfermarkt+ESPN ou NBA Official+ESPN) avec déduplication
 - Enjeu: classement réel ESPN → stake dynamique (maintien, titre, playoffs)
 - Anti-ban: ESPN API publique, cache 1h injuries + 2h standings, rate limit 200ms
+---
+Task ID: 1
+Agent: main
+Task: Investiguer et corriger le combo personnel non reçu + 3 problèmes bilan
+
+Work Log:
+- Analysé la chaîne de dépendance: telegram-summary (07:00 UTC) → Supabase → mlb-palier (08:00 UTC)
+- Identifié 3 causes racines pour le combo manquant:
+  1. addPredictions() ne fixait pas created_at → upsert conservait l'ancienne date
+  2. maxDuration=60s trop court pour le pipeline ML (ESPN+ML+Supabase)
+  3. Aucun fallback si Supabase vide (timeout telegram-summary)
+- Fix 1: Forcé created_at=now() dans addPredictions()
+- Fix 2: maxDuration 60→120s pour les routes cron
+- Fix 3: Ajouté fallback ESPN+ML direct dans generatePalierIntelligent()
+- Fix 4: Logging du résultat sendTelegramPersonalMessage
+- Analysé l'évaluation VN: code déjà correct (draw=WIN pour foot), anciennes données fausses
+- Ajouté AUTO-FIX VN automatique dans verifyFootballResults()
+- Ajouté 8 ligues ESPN supplémentaires
+- Ajouté mapping d'abbreviations (PSG, Man City, etc.)
+- Amélioré diagnostic logging pour matchs non trouvés
+
+Stage Summary:
+- 2 commits pushés: ebf00ec (palier) + 16079d2 (bilan)
+- Combo perso: 4 fixes appliquées (created_at, timeout, fallback, logging)
+- VN bilan: auto-fix automatique + code déjà correct
+- Bilan mismatch: causé par created_at manquant (fixé)
+- Résultats en attente: +8 ligues, abbreviations, meilleur diagnostic
