@@ -26,6 +26,10 @@ import {
   NBAPlayerInjury 
 } from './nbaInjuryScraper';
 import {
+  getESPNMatchInjuries,
+  ESPNInjury,
+} from './espnInjuryService';
+import {
   getAdvancedMatchStats,
   FormGuide,
   H2HHistory,
