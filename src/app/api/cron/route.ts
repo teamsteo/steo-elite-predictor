@@ -125,18 +125,20 @@ const ESPN_FOOTBALL_LEAGUES = [
 
 /**
  * Récupérer les résultats Football depuis ESPN (GRATUIT, pas de clé API)
- * Cherche sur 3 jours (avant-hier, hier, aujourd'hui) pour rattraper les matchs manqués
+ * Cherche sur 7 jours en arrière pour rattraper les matchs manqués
+ * (certains matchs peuvent rester pending plusieurs jours si la ligue
+ *  n'est pas dans la liste ou le nom d'équipe ne matche pas)
  */
 async function fetchFootballResultsFromESPN(): Promise<MatchResult[]> {
   const results: MatchResult[] = [];
   const dates: string[] = [];
   const today = new Date();
-  for (let i = 3; i >= 1; i--) {
+  for (let i = 7; i >= 1; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     dates.push(d.toISOString().split('T')[0].replace(/-/g, ''));
   }
-  console.log(`📅 Recherche résultats football pour: ${dates.join(', ')}`);
+  console.log(`📅 Recherche résultats football pour: ${dates.slice(0, 3).join(', ')}...+${dates.length - 3} jours`);
 
   // Récupérer les résultats de chaque ligue et chaque date en parallèle
   const fetchPromises = ESPN_FOOTBALL_LEAGUES.flatMap(league =>
@@ -504,6 +506,14 @@ async function verifyFootballResults(): Promise<{
         }
       } else {
         console.log(`⏳ Football: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
+        // 🔍 LOG détaillé pour diagnostiquer les "en attente" prolongés
+        const predLeague = (prediction.league || '').toLowerCase();
+        const knownLeagues = ESPN_FOOTBALL_LEAGUES.map(l => l.name.toLowerCase());
+        const isLeagueCovered = knownLeagues.some(kl => predLeague.includes(kl.split(' ')[0].toLowerCase()) || kl.toLowerCase().includes(predLeague.split(' ')[0]));
+        if (!isLeagueCovered) {
+          console.log(`   ⚠️ Ligue non couverte par ESPN: "${prediction.league}"`);
+        }
+        console.log(`   📅 match_date: ${prediction.match_date}, status: ${prediction.status}`);
       }
     }
 
@@ -512,7 +522,122 @@ async function verifyFootballResults(): Promise<{
     console.error('Erreur vérification Football:', error);
   }
 
+  // === PHASE 2: FALLBACK TheSportsDB pour les matchs encore en attente ===
+  // Utilise l'API gratuite TheSportsDB (3 requêtes/min) uniquement pour les
+  // matchs que ESPN n'a pas trouvés (limiter les appels)
+  try {
+    const stillPending = (await SupabaseStore.getPendingPredictions()).filter(p => p.sport === 'football');
+    if (stillPending.length > 0 && stillPending.length <= 5) {
+      console.log(`🔍 [FALLBACK] ${stillPending.length} matchs football encore en attente → TheSportsDB`);
+      const fallbackResults = await fetchFootballResultsFromTheSportsDB(stillPending);
+      for (const prediction of stillPending) {
+        const fbMatch = fallbackResults.find(r => {
+          const m = matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean };
+          return m.matched;
+        });
+        if (fbMatch) {
+          const inverted = (matchPredictionWithResult(prediction, fbMatch, true) as { matched: boolean; inverted: boolean }).inverted;
+          const actualResult = adjustResultForInversion(fbMatch.actualResult, inverted);
+          const resultMatch = prediction.predicted_result === actualResult;
+          const success = await SupabaseStore.completePrediction(prediction.match_id, {
+            homeScore: inverted ? fbMatch.awayScore : fbMatch.homeScore,
+            awayScore: inverted ? fbMatch.homeScore : fbMatch.awayScore,
+            actualResult,
+            resultMatch,
+          });
+          if (success) {
+            updated++;
+            if (resultMatch) won++; else lost++;
+            console.log(`✅ [TheSportsDB] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${fbMatch.homeScore}-${fbMatch.awayScore})`);
+          }
+        }
+      }
+    }
+  } catch (fbError: any) {
+    console.log(`⚠️ [TheSportsDB] Fallback échoué: ${fbError.message}`);
+  }
+
   return { verified, updated, won, lost, errors };
+}
+
+/**
+ * FALLBACK: Récupère les résultats via TheSportsDB (API gratuite, patron key '3')
+ * Utilisé uniquement quand ESPN ne trouve pas un résultat.
+ * Étape 1: Cherche l'ID de chaque équipe par nom
+ * Étape 2: Récupère les 5 derniers événements par ID
+ */
+async function fetchFootballResultsFromTheSportsDB(predictions: DbPrediction[]): Promise<MatchResult[]> {
+  const results: MatchResult[] = [];
+  const seen = new Set<string>();
+  
+  // Collecter les noms d'équipes uniques (max 4 équipes = 8 requêtes max)
+  const teamNames = new Set<string>();
+  for (const p of predictions) {
+    teamNames.add(p.home_team);
+    teamNames.add(p.away_team);
+  }
+  const teams = [...teamNames].slice(0, 4);
+  
+  // Étape 1: Trouver les IDs TheSportsDB pour chaque équipe
+  const teamIds: Map<string, string> = new Map();
+  for (const team of teams) {
+    try {
+      await new Promise(r => setTimeout(r, 350)); // Rate limit
+      const resp = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(team)}`);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const teamData = data.teams?.[0];
+      if (teamData?.idTeam) {
+        teamIds.set(team, teamData.idTeam);
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+  
+  console.log(`🔍 [TheSportsDB] ${teamIds.size}/${teams.length} équipes trouvées`);
+  
+  // Étape 2: Récupérer les derniers événements pour chaque ID
+  for (const [teamName, teamId] of teamIds) {
+    try {
+      await new Promise(r => setTimeout(r, 350));
+      const resp = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const events = data.results || [];
+      
+      for (const evt of events) {
+        const homeTeam = evt.strHomeTeam || '';
+        const awayTeam = evt.strAwayTeam || '';
+        if (!homeTeam || !awayTeam) continue;
+        
+        const homeScore = parseInt(evt.intHomeScore || '0');
+        const awayScore = parseInt(evt.intAwayScore || '0');
+        if (homeScore === 0 && awayScore === 0) continue;
+        
+        const dateStr = evt.dateEvent || '';
+        const key = `${homeTeam}_${awayTeam}_${dateStr}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        
+        results.push({
+          matchId: `tsdb_${evt.idEvent || Date.now()}`,
+          homeTeam,
+          awayTeam,
+          homeScore,
+          awayScore,
+          status: 'finished' as const,
+          actualResult: homeScore > awayScore ? 'home' as const : homeScore < awayScore ? 'away' as const : 'draw' as const,
+          sport: 'football' as const,
+        });
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }
+  
+  console.log(`✅ [TheSportsDB] ${results.length} résultats trouvés`);
+  return results;
 }
 
 // ============================================
