@@ -101,16 +101,24 @@ interface MatchResult {
 // Ligues ESPN Football
 const ESPN_FOOTBALL_LEAGUES = [
   { code: 'eng.1', name: 'Premier League' },
+  { code: 'eng.2', name: 'Championship' },
   { code: 'esp.1', name: 'La Liga' },
+  { code: 'esp.2', name: 'Segunda División' },
   { code: 'ger.1', name: 'Bundesliga' },
+  { code: 'ger.2', name: '2. Bundesliga' },
   { code: 'ita.1', name: 'Serie A' },
+  { code: 'ita.2', name: 'Serie B' },
   { code: 'fra.1', name: 'Ligue 1' },
   { code: 'fra.2', name: 'Ligue 2' },
   { code: 'uefa.champions', name: 'Champions League' },
   { code: 'uefa.europa', name: 'Europa League' },
+  { code: 'uefa.europa.conf', name: 'Conference League' },
   { code: 'por.1', name: 'Liga Portugal' },
   { code: 'ned.1', name: 'Eredivisie' },
   { code: 'bel.1', name: 'Belgian Pro League' },
+  { code: 'sco.1', name: 'Scottish Premiership' },
+  { code: 'tur.1', name: 'Turkish Süper Lig' },
+  { code: 'gre.1', name: 'Greek Super League' },
   { code: 'uefa.nations', name: 'UEFA Nations League' },
   { code: 'fifa.world', name: 'FIFA World Cup' },
   { code: 'fifa.world_cup_qual', name: 'World Cup Qualifiers' },
@@ -337,13 +345,11 @@ function matchPredictionWithResult(
     return returnInverted ? { matched: true, inverted: false } : true;
   }
 
-  // Match par mots clés: vérifier que chaque mot du nom ESPN est trouvé dans le nom prédiction
-  // Gère les abbréviations comme "Man City" → "Manchester City", "Nottm Forest" → "Nottingham Forest"
+  // Match par mots clés
   const matchByWords = (pred: string, res: string): boolean => {
-    const resWords = res.split(/\d+/).filter(Boolean); // split par chiffres aussi
+    const resWords = res.split(/\d+/).filter(Boolean);
     if (resWords.length === 0) return false;
     const predWords = pred.split(/\d+/).filter(Boolean);
-    // Chaque mot ESPN doit être trouvé dans la prédiction (ou vice-versa)
     const allResFound = resWords.every(rw => rw.length >= 2 && (pred.includes(rw) || predWords.some(pw => pw.includes(rw) || rw.includes(pw))));
     return allResFound;
   };
@@ -352,6 +358,62 @@ function matchPredictionWithResult(
   }
   if (matchByWords(predHome, resAway) && matchByWords(predAway, resHome)) {
     return returnInverted ? { matched: true, inverted: true } : true;
+  }
+
+  // 🏟️ ABBRÉVIATIONS COURANTES: PSG, Man City, Man United, etc.
+  const ABBREVIATIONS: Record<string, string[]> = {
+    'psg': ['parissaintgermain'],
+    'parissaintgermain': ['psg'],
+    'mancity': ['manchestercity'],
+    'manchestercity': ['mancity'],
+    'manchesterunited': ['manutd', 'manunited'],
+    'manutd': ['manchesterunited'],
+    'manunited': ['manchesterunited'],
+    'tottenham': ['spurs', 'tottenhamhotspur'],
+    'spurs': ['tottenham', 'tottenhamhotspur'],
+    'nottmforest': ['nottinghamforest', 'nottingham'],
+    'nottinghamforest': ['nottmforest'],
+    'wolverhampton': ['wolves'],
+    'wolves': ['wolverhampton', 'wolverhamptonwanderers'],
+    ' Leicester': ['leicestercity'],
+    'leicestercity': ['leicester'],
+    'westham': ['westhamunited'],
+    'westhamunited': ['westham'],
+    'bayernmunich': ['bayern', 'fcbayern'],
+    'bayern': ['bayernmunich', 'fcbayern'],
+    'bayerleverkusen': ['leverkusen', 'bayer'],
+    'leverkusen': ['bayerleverkusen'],
+    'borussiadortmund': ['dortmund', 'bvb'],
+    'dortmund': ['borussiadortmund', 'bvb'],
+    'bvb': ['borussiadortmund', 'dortmund'],
+    'atleticomadrid': ['atletico', 'atletimadrid'],
+    'atletico': ['atleticomadrid'],
+    'internazionale': ['intermilan', 'inter'],
+    'intermilan': ['internazionale', 'inter'],
+    'inter': ['internazionale', 'intermilan'],
+    'acmilan': ['milan'],
+    'milan': ['acmilan'],
+    'juventus': ['juve'],
+    'juve': ['juventus'],
+    'napoli': ['sscnnapoli'],
+    'sscnnapoli': ['napoli'],
+  };
+
+  // Vérifier si l'un des noms est une abréviation de l'autre
+  const expandAbbrev = (name: string): string[] => {
+    const expansions = ABBREVIATIONS[name];
+    return expansions || [name];
+  };
+  const predHomeExpansions = expandAbbrev(predHome);
+  const predAwayExpansions = expandAbbrev(predAway);
+
+  for (const ph of predHomeExpansions) {
+    for (const pa of predAwayExpansions) {
+      if ((ph === resHome && pa === resAway) || (ph === resAway && pa === resHome)) {
+        const inverted = ph === resAway;
+        return returnInverted ? { matched: true, inverted } : true;
+      }
+    }
   }
 
   return returnInverted ? { matched: false, inverted: false } : false;
@@ -465,6 +527,35 @@ async function verifyFootballResults(): Promise<{
   let lost = 0;
 
   try {
+    // 🔥 AUTO-FIX VN: Corriger les anciens résultats football où draw=a été marqué loss
+    // au lieu de win (avant que le fix VN soit ajouté au code de vérification)
+    try {
+      const allCompleted = await SupabaseStore.getAllPredictions(500);
+      const vnFixes = allCompleted.filter(p =>
+        p.sport === 'football' &&
+        p.status === 'completed' &&
+        p.result_match === false &&
+        p.actual_result === 'draw' &&
+        (p.predicted_result === 'home' || p.predicted_result === 'away')
+      );
+      if (vnFixes.length > 0) {
+        console.log(`🎯 [AUTO-FIX-VN] ${vnFixes.length} résultats football VN à corriger (draw était marqué loss)`);
+        let fixed = 0;
+        for (const p of vnFixes) {
+          const ok = await SupabaseStore.completePrediction(p.match_id, {
+            homeScore: p.home_score || 0,
+            awayScore: p.away_score || 0,
+            actualResult: p.actual_result as 'home' | 'draw' | 'away',
+            resultMatch: true,
+          });
+          if (ok) fixed++;
+        }
+        console.log(`🎯 [AUTO-FIX-VN] ${fixed}/${vnFixes.length} corrigés`);
+      }
+    } catch (fixErr: any) {
+      console.warn(`⚠️ [AUTO-FIX-VN] Échec (non-bloquant): ${fixErr.message}`);
+    }
+
     // Récupérer les pronostics football pending depuis Supabase
     const allPending = await SupabaseStore.getPendingPredictions();
     const pending = allPending.filter(p => p.sport === 'football');
@@ -529,15 +620,25 @@ async function verifyFootballResults(): Promise<{
           console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${isFootballVNWin ? 'V/N nul ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
-        console.log(`⏳ Football: ${prediction.home_team} vs ${prediction.away_team}: résultat non trouvé sur ESPN`);
         // 🔍 LOG détaillé pour diagnostiquer les "en attente" prolongés
         const predLeague = (prediction.league || '').toLowerCase();
         const knownLeagues = ESPN_FOOTBALL_LEAGUES.map(l => l.name.toLowerCase());
         const isLeagueCovered = knownLeagues.some(kl => predLeague.includes(kl.split(' ')[0].toLowerCase()) || kl.toLowerCase().includes(predLeague.split(' ')[0]));
+        // Chercher les matchs ESPN de la même ligue pour voir les noms utilisés
+        const leagueMatches = footballResults.filter(r => {
+          const rLeague = (r.league || '').toLowerCase();
+          return rLeague.includes(predLeague.split(' ')[0]) || predLeague.includes(rLeague.split(' ')[0]);
+        });
+        const espnTeamNames = leagueMatches.slice(0, 3).map(r => `  ESPN: "${r.homeTeam}" vs "${r.awayTeam}"`).join('\n');
+        console.log(`⏳ Football: "${prediction.home_team}" vs "${prediction.away_team}" — NON TROUVÉ sur ESPN`);
+        console.log(`   📅 match_date: ${prediction.match_date}, ligue: "${prediction.league}" (couverte: ${isLeagueCovered})`);
         if (!isLeagueCovered) {
           console.log(`   ⚠️ Ligue non couverte par ESPN: "${prediction.league}"`);
+        } else if (leagueMatches.length > 0) {
+          console.log(`   📋 Matchs ESPN de cette ligue (comparaison noms):\n${espnTeamNames}`);
+        } else {
+          console.log(`   ⚠️ Aucun résultat trouvé pour cette ligue sur ESPN (match pas encore terminé?)`);
         }
-        console.log(`   📅 match_date: ${prediction.match_date}, status: ${prediction.status}`);
       }
     }
 
