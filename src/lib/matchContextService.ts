@@ -3,8 +3,10 @@
  * 
  * Ce service centralise TOUTES les sources de données pour l'analyse:
  * - FBref: Forme, xG, discipline, H2H (Football uniquement)
- * - Transfermarkt: Blessures Football
- * - NBA Official: Blessures NBA
+ * - Transfermarkt: Blessures Football (source primaire)
+ * - NBA Official: Blessures NBA (source primaire)
+ * - ESPN Injury API: Blessures multi-sport (source secondaire, cross-validation)
+ * - ESPN Standings: Classement réel pour enjeu dynamique (cache 2h)
  * - Web Search: News récentes, contexte additionnel
  * 
  * PHILOSOPHIE:
@@ -12,6 +14,7 @@
  * - Minimiser les appels API redondants
  * - Cache intelligent par type de données
  * - Fallback gracieux si une source échoue
+ * - Multi-source cross-validation pour les blessures
  */
 
 import ZAI from 'z-ai-web-dev-sdk';
@@ -71,6 +74,10 @@ import {
   analyzeMatchImportance,
   MatchImportance,
 } from './matchImportanceService';
+import {
+  getMatchStandings,
+  TeamStanding,
+} from './espnStandingsService';
 
 // ============================================
 // TYPES
@@ -217,7 +224,7 @@ export async function getUnifiedMatchContext(params: {
   // PARALLÉLISER toutes les opérations async pour gagner du temps
   const [injuryData, fbrefOrNbaData, weatherData, newsData, teamNewsData] = await Promise.all([
     // 1. Blessures
-    fetchInjuryData(params.homeTeam, params.awayTeam, params.sport).then(data => {
+    fetchInjuryData(params.homeTeam, params.awayTeam, params.sport, params.league).then(data => {
       if (data.source !== 'None') sourcesUsed.push(data.source);
       return data;
     }).catch(err => {
@@ -422,13 +429,30 @@ export async function getUnifiedMatchContext(params: {
   
   // 6. Calculer l'enjeu du match (phase saison, type compétition, importance)
   // + Contexte enrichi (news, blessures, forme, météo, derby) pour le résumé court
+  // Récupérer les standings ESPN de façon asynchrone (cache 2h, anti-ban)
+  let homeStanding: number | undefined;
+  let awayStanding: number | undefined;
+  let totalTeams: number | undefined;
+  try {
+    const standings = await getMatchStandings(params.homeTeam, params.awayTeam, params.league, params.sport);
+    if (standings.home || standings.away) {
+      homeStanding = standings.home?.rank;
+      awayStanding = standings.away?.rank;
+      totalTeams = standings.totalTeams;
+      if (totalTeams > 0) sourcesUsed.push('ESPN-Standings');
+      console.log(`📊 Standings: ${params.homeTeam} ${homeStanding ? homeStanding + 'e' : '?'}/${totalTeams} vs ${params.awayTeam} ${awayStanding ? awayStanding + 'e' : '?'}/${totalTeams}`);
+    }
+  } catch (e) {
+    console.log('⚠️ ESPN Standings non disponible, enjeu basé sur type compétition');
+  }
+
   const matchImportanceData = analyzeMatchImportance(
     params.league,
-    params.sport || 'football',  // football, basketball, hockey, baseball — passe le sport directement
+    params.sport || 'football',
     new Date(),
-    undefined,  // homeStanding (non disponible via fbrefScraper)
-    undefined,  // awayStanding
-    undefined,  // totalTeams
+    homeStanding,
+    awayStanding,
+    totalTeams,
     {
       teamNews: teamNewsData || undefined,
       injuries: injuryData || undefined,
@@ -485,40 +509,140 @@ export async function getUnifiedMatchContext(params: {
 }
 
 /**
- * Récupère les données de blessures
+ * Récupère les données de blessures — MULTI-SOURCE avec cross-validation
+ * 
+ * Stratégie:
+ * 1. Source primaire (Transfermarkt / NBA Official)
+ * 2. Source secondaire (ESPN Injury API — cache 1h, anti-ban)
+ * 3. Fusion: déduplication par nom de joueur, ESPN complète la source primaire
+ * 
+ * L'impact est recalculé sur la liste fusionnée pour une vue complète.
  */
 async function fetchInjuryData(
   homeTeam: string,
   awayTeam: string,
-  sport: 'football' | 'basketball'
+  sport: 'football' | 'basketball',
+  leagueName?: string
 ): Promise<UnifiedMatchContext['injuries']> {
+  const sourcesUsed: string[] = [];
+  
   try {
+    // === PHASE 1: Source primaire (scraping dédié) ===
+    let primaryHome: any[] = [];
+    let primaryAway: any[] = [];
+    let primaryImpact: { homeImpact: number; awayImpact: number; summary: string; keyAbsentees: { home: string[]; away: string[] } } = { homeImpact: 0, awayImpact: 0, summary: '', keyAbsentees: { home: [], away: [] } };
+    
     if (sport === 'basketball') {
-      const { home, away } = await getNBAMatchInjuries(homeTeam, awayTeam);
-      const impact = evaluateNBAInjuryImpact(home, away);
-      
-      return {
-        home,
-        away,
-        homeImpact: impact.homeImpact,
-        awayImpact: impact.awayImpact,
-        summary: impact.summary,
-        keyAbsentees: impact.keyAbsentees,
-        source: 'NBA Official',
-      };
+      try {
+        const result = await getNBAMatchInjuries(homeTeam, awayTeam);
+        primaryHome = result.home;
+        primaryAway = result.away;
+        primaryImpact = evaluateNBAInjuryImpact(primaryHome, primaryAway);
+        sourcesUsed.push('NBA Official');
+      } catch (e) {
+        console.log('⚠️ NBA Official injuries indisponible');
+      }
     } else {
-      const { home, away } = await getFootballInjuries(homeTeam, awayTeam);
-      const impact = evaluateInjuryImpact(home, away);
-      
+      try {
+        const result = await getFootballInjuries(homeTeam, awayTeam);
+        primaryHome = result.home;
+        primaryAway = result.away;
+        const evalResult = evaluateInjuryImpact(primaryHome, primaryAway);
+        primaryImpact = {
+          homeImpact: evalResult.homeImpact,
+          awayImpact: evalResult.awayImpact,
+          summary: evalResult.summary,
+          keyAbsentees: { home: [], away: [] },
+        };
+        sourcesUsed.push('Transfermarkt');
+      } catch (e) {
+        console.log('⚠️ Transfermarkt injuries indisponible');
+      }
+    }
+    
+    // === PHASE 2: Source secondaire ESPN (API gratuite, cache 1h) ===
+    let espnHome: ESPNInjury[] = [];
+    let espnAway: ESPNInjury[] = [];
+    let espnImpact = { homeImpact: 0, awayImpact: 0, keyAbsentees: { home: [] as string[], away: [] as string[] } };
+    try {
+      const espnResult = await getESPNMatchInjuries(homeTeam, awayTeam, leagueName, sport);
+      espnHome = espnResult.home;
+      espnAway = espnResult.away;
+      espnImpact.homeImpact = espnResult.homeImpact;
+      espnImpact.awayImpact = espnResult.awayImpact;
+      espnImpact.keyAbsentees = espnResult.keyAbsentees;
+      if (espnHome.length > 0 || espnAway.length > 0) {
+        sourcesUsed.push('ESPN');
+      }
+    } catch (e) {
+      console.log('⚠️ ESPN injuries indisponible');
+    }
+    
+    // === PHASE 3: Fusion multi-source ===
+    const mergedHome = mergeInjuries(primaryHome, espnHome);
+    const mergedAway = mergeInjuries(primaryAway, espnAway);
+    
+    const espnAddedHome = mergedHome.length - primaryHome.length;
+    const espnAddedAway = mergedAway.length - primaryAway.length;
+    
+    // Si aucune source n'a fonctionné
+    if (primaryHome.length === 0 && primaryAway.length === 0 && espnHome.length === 0 && espnAway.length === 0) {
       return {
-        home,
-        away,
-        homeImpact: impact.homeImpact,
-        awayImpact: impact.awayImpact,
-        summary: impact.summary,
-        source: 'Transfermarkt',
+        home: [],
+        away: [],
+        homeImpact: 0,
+        awayImpact: 0,
+        summary: 'Aucune blessure signalée',
+        source: sourcesUsed.length > 0 ? sourcesUsed.join('+') : 'None',
       };
     }
+    
+    // Si ESPN n'a rien apporté de nouveau, retourner la source primaire telle quelle
+    if (espnAddedHome === 0 && espnAddedAway === 0) {
+      return {
+        home: primaryHome,
+        away: primaryAway,
+        homeImpact: primaryImpact.homeImpact,
+        awayImpact: primaryImpact.awayImpact,
+        summary: primaryImpact.summary,
+        keyAbsentees: primaryImpact.keyAbsentees,
+        source: sourcesUsed.join('+'),
+      };
+    }
+    
+    // ESPN a ajouté des blessures → recalculer l'impact sur la liste fusionnée
+    // Prendre le pire impact entre source primaire et ESPN
+    const finalHomeImpact = Math.min(primaryImpact.homeImpact, espnImpact.homeImpact);
+    const finalAwayImpact = Math.min(primaryImpact.awayImpact, espnImpact.awayImpact);
+    
+    // Fusionner les keyAbsentees (déduplication par nom)
+    const allKeyAbsentees = {
+      home: dedupStrings([
+        ...(primaryImpact.keyAbsentees?.home || []),
+        ...espnImpact.keyAbsentees.home,
+      ]),
+      away: dedupStrings([
+        ...(primaryImpact.keyAbsentees?.away || []),
+        ...espnImpact.keyAbsentees.away,
+      ]),
+    };
+    
+    const mergedSummary = buildMergedSummary(
+      primaryImpact.summary,
+      espnAddedHome,
+      espnAddedAway
+    );
+    
+    return {
+      home: mergedHome,
+      away: mergedAway,
+      homeImpact: finalHomeImpact,
+      awayImpact: finalAwayImpact,
+      summary: mergedSummary,
+      keyAbsentees: allKeyAbsentees,
+      source: sourcesUsed.join('+'),
+    };
+    
   } catch (error) {
     console.error('Erreur récupération blessures:', error);
     return {
@@ -530,6 +654,91 @@ async function fetchInjuryData(
       source: 'None',
     };
   }
+}
+
+/**
+ * Fusionne les blessures de deux sources en dédupliquant par nom de joueur
+ * Les entrées ESPN viennent compléter la source primaire (pas écraser)
+ */
+function mergeInjuries(primary: any[], espn: ESPNInjury[]): any[] {
+  if (espn.length === 0) return primary;
+  if (primary.length === 0) {
+    // Convertir ESPNInjury au format universel
+    return espn.map(e => ({
+      player: e.player,
+      team: e.team,
+      type: e.details || e.status,
+      status: e.status,
+      position: e.position,
+      source: 'ESPN',
+    }));
+  }
+  
+  // Normaliser les noms de la source primaire pour comparaison
+  const primaryNames = new Set(
+    primary.map(p => normalizePlayerName(p.player || p.name || ''))
+  );
+  
+  // Ajouter les blessures ESPN non présentes dans la source primaire
+  const merged = [...primary];
+  for (const e of espn) {
+    const normalizedName = normalizePlayerName(e.player);
+    if (!primaryNames.has(normalizedName)) {
+      merged.push({
+        player: e.player,
+        team: e.team,
+        type: e.details || e.status,
+        status: e.status,
+        position: e.position,
+        source: 'ESPN',
+      });
+    }
+  }
+  
+  return merged;
+}
+
+/**
+ * Normalise un nom de joueur pour la comparaison cross-source
+ */
+function normalizePlayerName(name: string): string {
+  return name
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Déduplique un tableau de strings (pour les keyAbsentees)
+ */
+function dedupStrings(arr: string[]): string[] {
+  const seen = new Set<string>();
+  return arr.filter(s => {
+    const key = s.toLowerCase().split('(')[0].trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Construit un résumé fusionné indiquant les ajouts ESPN
+ */
+function buildMergedSummary(
+  primarySummary: string,
+  espnAddedHome: number,
+  espnAddedAway: number
+): string {
+  const totalAdded = espnAddedHome + espnAddedAway;
+  if (totalAdded === 0) return primarySummary;
+  
+  const details: string[] = [];
+  if (espnAddedHome > 0) details.push(`${espnAddedHome} dom.`);
+  if (espnAddedAway > 0) details.push(`${espnAddedAway} ext.`);
+  
+  return `${primarySummary} [+${details.join(', ')} ESPN]`;
 }
 
 /**

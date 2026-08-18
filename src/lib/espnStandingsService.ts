@@ -134,13 +134,16 @@ export async function fetchLeagueStandings(
 
         teamRecords.set(teamName, {
           team: teamName,
-          wins: parsed.wins,
-          losses: parsed.losses,
-          draws: parsed.draws,
-          gamesPlayed: parsed.gamesPlayed,
-          winPct,
-          record: summary,
-          source: 'espn_scoreboard',
+          record: {
+            team: teamName,
+            wins: parsed.wins,
+            losses: parsed.losses,
+            draws: parsed.draws,
+            gamesPlayed: parsed.gamesPlayed,
+            winPct,
+            record: summary,
+            source: 'espn_scoreboard',
+          },
         });
       }
     }
@@ -151,14 +154,14 @@ export async function fetchLeagueStandings(
 
     const standings = new Map<string, TeamStanding>();
     for (let i = 0; i < sorted.length; i++) {
-      const [name, record] = sorted[i];
+      const [name, entry] = sorted[i];
       const rank = i + 1;
       const position = getPositionZone(rank, totalTeams);
 
       // Calculer le contexte d'enjeu
-      const context = calculateContext(rank, totalTeams, record, sorted);
+      const context = calculateContext(rank, totalTeams, entry.record, sorted);
 
-      standings.set(name, { team: name, record, rank, totalTeams, position, context });
+      standings.set(name, { team: name, record: entry.record, rank, totalTeams, position, context });
     }
 
     standingsCache.set(cacheKey, { teams: standings, timestamp: Date.now(), totalTeams });
