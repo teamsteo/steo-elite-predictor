@@ -352,3 +352,24 @@ Stage Summary:
 - 7 fichiers modifiés: RiskIndicator.tsx (x2), page.tsx, matches/route.ts, cron/route.ts, telegramService.ts, nhlAdvancedModel.ts
 - Seuils de risque unifiés: ≤40 = Sûr (vert), ≤60 = Modéré (orange), >60 = Risqué (rouge)
 - Tout est déployé et persistant sur GitHub
+---
+Task ID: 1
+Agent: Super Z (main)
+Task: Multi-source injuries cross-validation + dynamic enjeu from ESPN standings
+
+Work Log:
+- Discovered espnInjuryService.ts and espnStandingsService.ts already existed but were NOT wired into the pipeline
+- Updated matchContextService.ts fetchInjuryData() to cross-validate: Transfermarkt/NBA Official (primary) + ESPN (secondary)
+- Added mergeInjuries() with player name deduplication (normalized, accent-stripped)
+- Wired getMatchStandings() from espnStandingsService into getUnifiedMatchContext() to pass real homeStanding/awayStanding/totalTeams to analyzeMatchImportance()
+- Fixed TS error in espnStandingsService.ts (Map value structure mismatch)
+- Fixed TS error: evaluateInjuryImpact doesn't return keyAbsentees — wrapped result
+- Updated file header comment to reflect new data sources
+- 0 TypeScript errors after fixes
+
+Stage Summary:
+- 2 files changed, 251 insertions, 39 deletions
+- Commit f08bd95 pushed to main
+- Blessures: multi-source (Transfermarkt+ESPN ou NBA Official+ESPN) avec déduplication
+- Enjeu: classement réel ESPN → stake dynamique (maintien, titre, playoffs)
+- Anti-ban: ESPN API publique, cache 1h injuries + 2h standings, rate limit 200ms
