@@ -5,6 +5,10 @@
   "framework": "nextjs",
   "regions": ["cdg1"],
   "functions": {
+    "src/app/api/cron/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 120
+    },
     "src/app/api/**/*.ts": {
       "memory": 1024,
       "maxDuration": 60

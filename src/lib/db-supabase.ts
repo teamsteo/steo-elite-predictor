@@ -226,12 +226,16 @@ export const SupabaseStore = {
     const supabase = getSupabase();
     if (!supabase) return 0;
     
+    const nowISO = new Date().toISOString();
     const normalized: Record<string, any>[] = predictions.map(p => ({
       ...p,
       sport: normalizeSport(p.sport as string),
       predicted_result: normalizeResult(p.predicted_result as string),
       confidence: normalizeConfidence(p.confidence as string),
-      status: p.status || 'pending'
+      status: p.status || 'pending',
+      // 🔥 FIX: Forcer created_at à maintenant pour garantir que le palier (getPredictionsByCreatedAt)
+      // retrouve les prédictions du jour même si upsert conserve l'ancien created_at sur conflit
+      created_at: nowISO,
     }));
     
     try {

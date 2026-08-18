@@ -3983,8 +3983,81 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
   const todayISO = today.toISOString().split('T')[0];
 
   // 1. Lire les prédictions générées aujourd'hui par le pipeline ML (07:00 UTC)
-  const dayPredictions = await SupabaseStore.getPredictionsByCreatedAt(todayISO);
+  let dayPredictions = await SupabaseStore.getPredictionsByCreatedAt(todayISO);
   console.log(`📊 [PALIER] ${dayPredictions.length} prédictions trouvées pour ${todayISO}`);
+
+  // 2. FALLBACK: Si Supabase est vide (telegram-summary a timeout ou échoué),
+  //    générer directement les prédictions depuis ESPN + ML
+  if (dayPredictions.length === 0) {
+    console.log('⚠️ [PALIER] Supabase vide — fallback direct ESPN + ML...');
+    try {
+      invalidateEspnCache();
+      const matches = await getMatchesWithRealOdds();
+      const upcoming = (matches as any[]).filter((m: any) =>
+        !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
+      );
+      console.log(`📡 [PALIER-FALLBACK] ${upcoming.length} matchs éligibles depuis ESPN`);
+
+      if (upcoming.length > 0) {
+        const mlInputs: UnifiedPredictionInput[] = upcoming.map((m: any) => ({
+          id: m.id || `palier_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          homeTeam: m.homeTeam,
+          awayTeam: m.awayTeam,
+          sport: m.sport === 'Basketball' ? 'NBA' as const :
+                 m.sport === 'Hockey' ? 'NHL' as const :
+                 m.sport === 'Baseball' ? 'MLB' as const : 'Foot' as const,
+          league: m.league || 'Unknown',
+          oddsHome: m.oddsHome,
+          oddsDraw: m.oddsDraw || null,
+          oddsAway: m.oddsAway,
+        }));
+
+        let unifiedPreds: any[] = [];
+        try {
+          unifiedPreds = await getBatchPredictions(mlInputs);
+        } catch (mlErr: any) {
+          console.log(`⚠️ [PALIER-FALLBACK] ML échoué: ${mlErr.message}`);
+        }
+
+        if (unifiedPreds.length > 0) {
+          dayPredictions = unifiedPreds
+            .filter((p: any) =>
+              p.recommendation.bet !== 'avoid' &&
+              p.mlPrediction.confidence !== 'low' &&
+              p.odds.hasRealOdds &&
+              // Exclure tennis comme dans le pipeline normal
+              !['tennis'].includes((p.sport || '').toLowerCase())
+            )
+            .map((p: any) => {
+              const bet = p.recommendation.bet;
+              const isHome = bet === 'home';
+              const isAway = bet === 'away';
+              const winProb = isHome ? p.mlPrediction.homeProb :
+                               isAway ? p.mlPrediction.awayProb : p.mlPrediction.drawProb;
+              return {
+                home_team: p.homeTeam,
+                away_team: p.awayTeam,
+                sport: p.sport === 'NBA' ? 'basketball' : p.sport === 'NHL' ? 'hockey' : p.sport === 'MLB' ? 'baseball' : 'football',
+                league: p.league,
+                match_date: p.date || `${todayISO}T12:00:00Z`,
+                odds_home: p.odds.home,
+                odds_draw: p.odds.draw,
+                odds_away: p.odds.away,
+                predicted_result: bet,
+                confidence: p.mlPrediction.confidence,
+                risk_percentage: Math.round(100 - winProb),
+                edge_value: p.mlPrediction.edge || 0,
+                is_combo: false,
+                status: 'pending',
+              } as DbPrediction;
+            });
+          console.log(`✅ [PALIER-FALLBACK] ${dayPredictions.length} prédictions générées directement`);
+        }
+      }
+    } catch (fbErr: any) {
+      console.error('❌ [PALIER-FALLBACK] Échec complet:', fbErr.message);
+    }
+  }
 
   // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas low confidence, pas tennis
   // Note: is_value_bet=false + edge_value>=0 garantit des cotes réelles (pas estimées)
@@ -4013,7 +4086,8 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
 
   if (top5.length < 2) {
     const msg = `⚠️ <b>Palier Intelligent</b>\n\nPas assez de prédictions fiables aujourd'hui (${top5.length} seulement).\nLe pipeline ML tourne à 07:00 UTC.\n\n🔄 Prochain essai demain.`;
-    await sendTelegramPersonalMessage(msg);
+    const sent = await sendTelegramPersonalMessage(msg);
+    console.log(`📱 [PALIER] Message "pas assez" envoyé: ${sent ? 'OK' : 'ÉCHEC'}`);
     return { mlb_palier: { success: true, matches: top5.length } };
   }
 
@@ -4138,14 +4212,20 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
   if (message.length > 4096) {
     const mid = message.lastIndexOf('\n━━', Math.floor(message.length / 2));
     if (mid > 0) {
-      await sendTelegramPersonalMessage(message.slice(0, mid));
-      await sendTelegramPersonalMessage(message.slice(mid));
+      const s1 = await sendTelegramPersonalMessage(message.slice(0, mid));
+      const s2 = await sendTelegramPersonalMessage(message.slice(mid));
+      console.log(`📱 [PALIER] Envoi DM partie 1: ${s1 ? 'OK' : 'ÉCHEC'}, partie 2: ${s2 ? 'OK' : 'ÉCHEC'}`);
     } else {
-      await sendTelegramPersonalMessage(message.slice(0, 4000));
-      await sendTelegramPersonalMessage(message.slice(4000));
+      const s1 = await sendTelegramPersonalMessage(message.slice(0, 4000));
+      const s2 = await sendTelegramPersonalMessage(message.slice(4000));
+      console.log(`📱 [PALIER] Envoi DM split: ${s1 ? 'OK' : 'ÉCHEC'}, suite: ${s2 ? 'OK' : 'ÉCHEC'}`);
     }
   } else {
-    await sendTelegramPersonalMessage(message);
+    const sent = await sendTelegramPersonalMessage(message);
+    console.log(`📱 [PALIER] Envoi DM: ${sent ? 'OK' : 'ÉCHEC'}`);
+    if (!sent) {
+      console.error('❌ [PALIER] L\'envoi Telegram DM a échoué ! Vérifiez TELEGRAM_PERSONAL_CHAT_ID / TELEGRAM_CHAT_ID');
+    }
   }
 
   console.log(`✅ [PALIER] ${top5.length} picks envoyés perso, combo: ${getTeam(pick1)} + ${getTeam(pick2)} @ ${comboProb.toFixed(1)}%`);
