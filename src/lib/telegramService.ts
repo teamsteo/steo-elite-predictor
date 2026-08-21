@@ -1514,7 +1514,9 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
     const { date, time } = formatDateTime(m.date, m.displayDate);
     const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
-    const maxOdds = m.oddsHome && m.oddsAway ? Math.max(m.oddsHome, m.oddsAway) : 0;
+    const selectedOdds: number = m.predictedResult === 'home' ? (m.oddsHome || 0) :
+                          m.predictedResult === 'away' ? (m.oddsAway || 0) :
+                          (m.oddsDraw || m.oddsHome || m.oddsAway || 0);
     const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
     const isFootball = isFootballMatch(m.sport);
 
@@ -1539,7 +1541,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     }
 
     message += `💥 <b>Kamikaze</b> — Chance: <b>${winProb}%</b>\n`;
-    message += `💰 Gain potentiel: <b>x${maxOdds.toFixed(2)}</b>\n`;
+    message += `💰 Gain potentiel: <b>x${selectedOdds.toFixed(2)}</b>\n`;
     
     // Buts pour le football kamikaze aussi
     // PRIORITÉ: pipeline unifié → fallback recalcul
