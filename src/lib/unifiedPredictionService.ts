@@ -391,8 +391,13 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   // dataQuality est un NOMBRE (0-100) calculé par matchContextService
   // Bug corrigé: l'ancien code le traitait comme une chaîne ('complete'/'partial'/'limited')
   // → dataQualityMap[55] = undefined → fallback à 30 → tout rejeté en LOW
+  // FIX: Si Dixon-Coles a fonctionné (football), on accorde un minimum de 35
+  // car le modèle statistique本身就是 une source de données significative
   const rawDataQuality = context?.unifiedAnalysis.dataQuality;
-  const dataQualityNum = typeof rawDataQuality === 'number' ? rawDataQuality : 30;
+  const dcBonus = (match.sport === 'Foot' && dixonColesResult) ? 35 : 0;
+  const dataQualityNum = typeof rawDataQuality === 'number'
+    ? Math.max(rawDataQuality, dcBonus)
+    : Math.max(30, dcBonus);
   
   const featureVector: FeatureVector = {
     edge: Math.max(0, preliminaryEdge),
@@ -534,23 +539,44 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     bestProb = finalDrawProb;
   }
   
-  // Determine confidence - STRICTER THRESHOLDS based on backtest results
-  // LOW confidence bets have 0% win rate, so we make it harder to get LOW
+  // Determine confidence
+  // FIX: Pour le football, on utilise l'edge BRUT de Dixon-Coles (pre-blend)
+  // L'edge blendé (65% marché + 35% DC) dilue le signal à 0.7-2.8%
+  // ce qui est mathématiquement en dessous des anciens seuils de 4%.
+  // L'edge brut DC est typiquement 2-12%, bien plus représentatif.
+  const rawDCEdge = match.sport === 'Foot' && dixonColesResult
+    ? preliminaryEdge  // Max |DC_prob - implied_prob| calculé lignes 377-381
+    : bestEdge;         // Pour les autres sports, edge blendé
+  
   let confidence: 'very_high' | 'high' | 'medium' | 'low' = 'low';
-  const edgeThreshold = mlThresholds.edgeThreshold || 0.05; // Raised from 0.03
+  const edgeThreshold = mlThresholds.edgeThreshold || 0.05;
   const isValueBetRaw = bestEdge > edgeThreshold;
   const dataQualityScore = dataQualityNum;
   
-  // Much stricter confidence requirements
-  if (bestEdge > 0.10 && dataQualityScore >= 70) {
-    confidence = 'very_high';
-  } else if (bestEdge > 0.07 && dataQualityScore >= 55) {
-    confidence = 'high';
-  } else if (bestEdge > 0.04 && dataQualityScore >= 40) {
-    confidence = 'medium';
+  console.log(`🎯 Confidence check: rawEdge=${(rawDCEdge * 100).toFixed(1)}%, blendedEdge=${(bestEdge * 100).toFixed(1)}%, dataQuality=${dataQualityScore}, sport=${match.sport}`);
+  
+  if (match.sport === 'Foot') {
+    // Seuils FOOTBALL basés sur l'edge brut Dixon-Coles (réaliste: 2-12%)
+    if (rawDCEdge > 0.08 && dataQualityScore >= 55) {
+      confidence = 'very_high';
+    } else if (rawDCEdge > 0.05 && dataQualityScore >= 40) {
+      confidence = 'high';
+    } else if (rawDCEdge > 0.025 && dataQualityScore >= 25) {
+      confidence = 'medium';
+    } else {
+      confidence = 'low';
+    }
   } else {
-    // LOW confidence - automatically marked as avoid
-    confidence = 'low';
+    // Seuils OTHER SPORTS (inchangés)
+    if (bestEdge > 0.10 && dataQualityScore >= 70) {
+      confidence = 'very_high';
+    } else if (bestEdge > 0.07 && dataQualityScore >= 55) {
+      confidence = 'high';
+    } else if (bestEdge > 0.04 && dataQualityScore >= 40) {
+      confidence = 'medium';
+    } else {
+      confidence = 'low';
+    }
   }
   
   // 11.5. CLV MARKET ALIGNMENT
