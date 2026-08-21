@@ -7,13 +7,36 @@
  */
 
 // IDs des ligues TheSportsDB
-export const LEAGUE_IDS = {
+export const LEAGUE_IDS: Record<string, string> = {
   'Premier League': '4328',
-  'La Liga': '4335', 
+  'La Liga': '4335',
   'Serie A': '4332',
   'Bundesliga': '4331',
   'Ligue 1': '4334',
   'Champions League': '4480',
+  'English Championship': '4330',
+  'English League Championship': '4330',
+  'Championship': '4330',
+  'German 2. Bundesliga': '4339',
+  '2. Bundesliga': '4339',
+  'Spanish Segunda División': '4340',
+  'Segunda División': '4340',
+  'Segunda': '4340',
+  'Scottish Premiership': '4338',
+  'Portuguese Primeira Liga': '4336',
+  'Primeira Liga': '4336',
+  'Dutch Eredivisie': '4337',
+  'Eredivisie': '4337',
+  'Greek Super League': '4344',
+  'Turkish Süper Lig': '4346',
+  'Süper Lig': '4346',
+  'Europa League': '4481',
+  'UEFA Europa Conference League': '4482',
+  'DFB-Pokal': '4331', // Coupe d'Allemagne — utiliser les stats Bundesliga
+  'FA Cup': '4328',    // Coupe d'Angleterre — utiliser les stats Premier League
+  'Copa del Rey': '4335', // Coupe d'Espagne — utiliser les stats La Liga
+  'Coupe de France': '4334', // Coupe de France — utiliser les stats Ligue 1
+  'Coppa Italia': '4332',   // Coupe d'Italie — utiliser les stats Serie A
 } as const;
 
 // Type pour les stats d'équipe
@@ -181,7 +204,7 @@ export async function fetchLeagueTable(leagueId: string): Promise<TeamStats[]> {
 /**
  * Récupère les stats d'une équipe par nom
  */
-export async function getTeamStatsByName(teamName: string): Promise<TeamStats | null> {
+export async function getTeamStatsByName(teamName: string, leagueHint?: string): Promise<TeamStats | null> {
   // Normaliser le nom pour le cache
   const normalizedName = teamName.toLowerCase().trim();
   const cached = statsCache.get(`team-${normalizedName}`);
@@ -234,12 +257,22 @@ export async function getTeamStatsByName(teamName: string): Promise<TeamStats | 
   }
   
   if (!leagueId) {
-    // Par défaut, chercher en Premier League
-    leagueId = '4328';
+    // FIX: Plus de fallback Premier League aveugle
+    // Si on a la ligue du match, chercher dans cette ligue
+    console.log(`TheSportsDB: ${teamName} non trouvé dans le mapping, ligue=${leagueHint}`);
+    if (leagueHint) {
+      leagueId = LEAGUE_IDS[leagueHint] || LEAGUE_IDS[Object.keys(LEAGUE_IDS).find(k => 
+        leagueHint.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(leagueHint.toLowerCase())
+      ) || ''] || '4328';
+    } else {
+      leagueId = '4328';
+    }
   }
   
   // Récupérer le classement de la ligue
   const table = await fetchLeagueTable(leagueId);
+  
+  console.log(`TheSportsDB: recherche ${teamName} dans ligue ${leagueId} (${leagueHint || 'inconnue'})`);
   
   // Chercher l'équipe dans le classement
   for (const team of table) {
@@ -259,7 +292,8 @@ export async function getTeamStatsByName(teamName: string): Promise<TeamStats | 
  */
 export async function getMatchTeamStats(
   homeTeam: string, 
-  awayTeam: string
+  awayTeam: string,
+  leagueHint?: string
 ): Promise<{
   homeTeam: TeamStats | null;
   awayTeam: TeamStats | null;
@@ -268,15 +302,14 @@ export async function getMatchTeamStats(
     rankAdvantage: 'home' | 'away' | 'draw';
     goalsAdvantage: 'home' | 'away' | 'draw';
     overallAdvantage: 'home' | 'away' | 'draw';
-    confidence: number; // 0-100
+    confidence: number;
     analysis: string;
   };
 }> {
   const [homeStats, awayStats] = await Promise.all([
-    getTeamStatsByName(homeTeam),
-    getTeamStatsByName(awayTeam)
+    getTeamStatsByName(homeTeam, leagueHint),
+    getTeamStatsByName(awayTeam, leagueHint)
   ]);
-  
   let comparison = {
     formAdvantage: 'draw' as 'home' | 'away' | 'draw',
     rankAdvantage: 'draw' as 'home' | 'away' | 'draw',

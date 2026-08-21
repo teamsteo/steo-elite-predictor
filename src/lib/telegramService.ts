@@ -330,7 +330,7 @@ function formatGoalsFromUnified(dc: any): string {
   // Score exact le plus probable
   if (dc.mostLikelyScore) {
     const s = dc.mostLikelyScore;
-    block += `   🎯 Score probable: <b>${s.home}-${s.away}</b> (${Math.round((s.prob || 0) * 100)}%)\n`;
+    block += `   🎯 Score probable: <b>${s.home}-${s.away}</b> (${Math.round(s.prob || 0)}%)\n`;
   }
   
   return block;

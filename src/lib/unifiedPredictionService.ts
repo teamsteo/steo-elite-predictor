@@ -265,7 +265,7 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       // Fetch les 2 équipes en un seul appel (cache 1h TTL)
       let homeStats: any, awayStats: any;
       try {
-        const realStats = await getMatchTeamStats(match.homeTeam, match.awayTeam);
+        const realStats = await getMatchTeamStats(match.homeTeam, match.awayTeam, match.league);
         if (realStats.homeTeam && realStats.homeTeam.played >= 5) {
           const hForm = (realStats.homeTeam.form || '').split('').map((c: string) => c === 'W' ? 1 : c === 'D' ? 0.5 : 0);
           homeStats = {
@@ -295,11 +295,12 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       } catch { /* TheSportsDB indisponible */ }
       
       // Fallback: stats xG si TheSportsDB n'a rien retourné
+      // On passe les cotes implicites pour différencier les équipes
       if (!homeStats) {
-        homeStats = await generateTeamStatsFromContext(context, match.homeTeam, 'home', match.league);
+        homeStats = await generateTeamStatsFromContext(context, match.homeTeam, 'home', match.league, impliedHome, impliedAway);
       }
       if (!awayStats) {
-        awayStats = await generateTeamStatsFromContext(context, match.awayTeam, 'away', match.league);
+        awayStats = await generateTeamStatsFromContext(context, match.awayTeam, 'away', match.league, impliedHome, impliedAway);
       }
       
       const dcResult = predictMatch(
@@ -817,7 +818,9 @@ async function generateTeamStatsFromContext(
   context: UnifiedMatchContext | null,
   teamName: string,
   side: 'home' | 'away',
-  league: string
+  league: string,
+  impliedHomeProb?: number,
+  impliedAwayProb?: number
 ): Promise<any> {
   // PRIORITÉ 1: Vraies stats TheSportsDB (GF/GA réels, forme réelle)
   try {
@@ -825,7 +828,8 @@ async function generateTeamStatsFromContext(
     // ici par équipe. Le cache interne (1h TTL) évite les appels redondants.
     const realStats = await getMatchTeamStats(
       side === 'home' ? teamName : '__unused__',
-      side === 'away' ? teamName : '__unused__'
+      side === 'away' ? teamName : '__unused__',
+      league
     );
     const teamData = side === 'home' ? realStats.homeTeam : realStats.awayTeam;
     
@@ -858,8 +862,34 @@ async function generateTeamStatsFromContext(
   const form = side === 'home' ? context?.fbref?.homeForm : context?.fbref?.awayForm;
   const xg = side === 'home' ? context?.fbref?.homeXG : context?.fbref?.awayXG;
   
-  const xGFor90 = xg && xg.matches > 0 ? xg.xG / xg.matches : 1.35;
-  const xGAgainst90 = xg && xg.matches > 0 ? xg.xGA / xg.matches : 1.10;
+  let xGFor90: number;
+  let xGAgainst90: number;
+  
+  if (xg && xg.matches > 0) {
+    // Données FBref disponibles → utiliser les vrais xG
+    xGFor90 = xg.xG / xg.matches;
+    xGAgainst90 = xg.xGA / xg.matches;
+  } else if (impliedHomeProb !== undefined && impliedAwayProb !== undefined) {
+    // PAS de données réelles → dériver la force depuis les COTES
+    // L'équipe favorite (cote basse) marque plus et encaisse moins
+    const avgImplied = (impliedHomeProb + impliedAwayProb) / 2;
+    const myImplied = side === 'home' ? impliedHomeProb : impliedAwayProb;
+    const oppImplied = side === 'home' ? impliedAwayProb : impliedHomeProb;
+    
+    // Scale l'attaque: favori > 1.35, outsider < 1.35
+    // Scale la défense: favori < 1.10, outsider > 1.10
+    const attackScale = myImplied / avgImplied;
+    const defenseScale = avgImplied / myImplied;
+    
+    xGFor90 = 1.35 * Math.max(0.5, Math.min(2.0, attackScale));
+    xGAgainst90 = 1.10 * Math.max(0.5, Math.min(2.0, defenseScale));
+    
+    console.log(`⚠️ Fallback ODDS pour ${teamName}: implied=${(myImplied * 100).toFixed(0)}%, xG=${xGFor90.toFixed(2)}, xGA=${xGAgainst90.toFixed(2)} (scale att=${attackScale.toFixed(2)}, déf=${defenseScale.toFixed(2)})`);
+  } else {
+    // Ultime fallback (sans cotes)
+    xGFor90 = 1.35;
+    xGAgainst90 = 1.10;
+  }
   
   return {
     name: teamName,
