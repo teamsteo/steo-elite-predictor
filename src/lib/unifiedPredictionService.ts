@@ -388,9 +388,11 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     );
   }
   
-  // dataQuality est une chaîne ('complete'|'partial'|'limited') — convertir en nombre
-  const dataQualityMap: Record<string, number> = { complete: 80, partial: 50, limited: 25 };
-  const dataQualityNum = dataQualityMap[context?.unifiedAnalysis.dataQuality || ''] || 30;
+  // dataQuality est un NOMBRE (0-100) calculé par matchContextService
+  // Bug corrigé: l'ancien code le traitait comme une chaîne ('complete'/'partial'/'limited')
+  // → dataQualityMap[55] = undefined → fallback à 30 → tout rejeté en LOW
+  const rawDataQuality = context?.unifiedAnalysis.dataQuality;
+  const dataQualityNum = typeof rawDataQuality === 'number' ? rawDataQuality : 30;
   
   const featureVector: FeatureVector = {
     edge: Math.max(0, preliminaryEdge),
