@@ -2519,6 +2519,11 @@ export async function GET(request: NextRequest) {
                 pred.date = orig.date;
                 pred.displayDate = orig.displayDate || '';
                 pred.dateTag = orig.dateTag || "aujourd'hui";
+                // FIX: Propager valueBetDetected depuis les données ESPN brutes
+                if (!pred.valueBetDetected && orig.valueBets?.length > 0) {
+                  pred.valueBetDetected = true;
+                  pred.valueBetType = orig.valueBets?.[0]?.type;
+                }
               }
             }
           }
@@ -2635,6 +2640,56 @@ export async function GET(request: NextRequest) {
               } else {
                 console.log('📊 [SUMMARY] Aucun kamikaze à sauvegarder en plus (tous les matchs sont safe/modéré)');
               }
+            }
+            
+            // 💎 SAUVEGARDER AUSSI les Value Bets (top 5 par fiabilité)
+            // Le cron telegram-valuebets à 07:15 UTC tourne APRÈS le bilan du summary (07:00 UTC)
+            // → les VBs du matin n'étaient jamais dans le bilan du jour même
+            // FIX: sauvegarder les VBs ici pour qu'elles soient dans la DB avant le bilan
+            try {
+              const vbPredictions = predictions.filter((p: any) => {
+                const sport = (p.sport || '').toLowerCase();
+                return !sport.includes('tennis') && 
+                  p.valueBetDetected && 
+                  p.confidence !== 'low' && 
+                  isSafeOrModerate(p.riskPercentage);
+              }).sort((a: any, b: any) => {
+                const edgeA = a._mlEdge || a.edge || 0;
+                const edgeB = b._mlEdge || b.edge || 0;
+                if (edgeB !== edgeA) return edgeB - edgeA;
+                return (a.riskPercentage || 100) - (b.riskPercentage || 100);
+              }).slice(0, 5);
+              
+              if (vbPredictions.length > 0) {
+                const vbDbPredictions = vbPredictions.map((p: any) => {
+                  const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                  const dateStr = (p.date || '').split('T')[0] || todayISO;
+                  const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                  const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                  const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                  return {
+                    match_id: matchId,
+                    home_team: p.homeTeam,
+                    away_team: p.awayTeam,
+                    league: p.league || 'Unknown',
+                    sport: (p.sport || 'football').toLowerCase(),
+                    match_date: p.date || `${todayISO}T12:00:00Z`,
+                    odds_home: p.oddsHome || 1.0,
+                    odds_draw: p.oddsDraw || null,
+                    odds_away: p.oddsAway || 1.0,
+                    predicted_result: p.predictedResult || 'home',
+                    confidence: p.confidence || 'medium',
+                    risk_percentage: p.riskPercentage ?? 50,
+                    is_value_bet: true,
+                    edge_value: p._mlEdge || p.edge || 0,
+                    status: 'pending' as const,
+                  };
+                });
+                const vbSaved = await SupabaseStore.addPredictions(vbDbPredictions);
+                console.log(`💎 [SUMMARY] ${vbSaved} value bets sauvegardés en plus (sur ${vbPredictions.length} détectés)`);
+              }
+            } catch (vbErr: any) {
+              console.log('⚠️ Erreur sauvegarde VBs dans summary:', vbErr.message);
             }
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
