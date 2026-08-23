@@ -1781,7 +1781,17 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   // 🎯 Filtrer par created_at = date de publication (pas match_date)
   // Le bilan du jour J couvre les publications de la VEILLE (J-1)
   // Ex: bilan publié le 11 août à 5h → publications du 10 août
-  const dayPreds = await SupabaseStore.getPredictionsByCreatedAt(targetDate);
+  let dayPreds = await SupabaseStore.getPredictionsByCreatedAt(targetDate);
+
+  // 🔧 FALLBACK: si created_at retourne trop peu de résultats,
+  // essayer aussi par match_date (utile si les VB n'ont pas été sauvées au bon created_at)
+  if (dayPreds.length < 3) {
+    const byMatchDate = await SupabaseStore.getPredictionsByDate(targetDate);
+    if (byMatchDate.length > dayPreds.length) {
+      console.log(`⚠️ [BILAN] created_at n'a trouvé que ${dayPreds.length} pronostics, match_date en a trouvé ${byMatchDate.length} → utilisation du fallback`);
+      dayPreds = byMatchDate;
+    }
+  }
 
   console.log(`📊 [BILAN] created_at: ${targetDate} (publications de la veille)`);
   console.log(`📊 [BILAN] Trouvé: ${dayPreds.length} pronostics publiés ce jour`);

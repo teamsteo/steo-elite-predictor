@@ -2754,19 +2754,20 @@ export async function GET(request: NextRequest) {
                 away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
               };
               const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
+              const predResult = m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away');
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
                 sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
                 league: m.league || 'Unknown',
-                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+                predictedResult: predResult,
                 winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
                 oddsHome: m.oddsHome,
                 oddsAway: m.oddsAway,
                 oddsDraw: m.oddsDraw,
                 riskPercentage: m.riskPercentage ?? 50,
                 valueBetDetected: vb.detected,
-                valueBetType: vb.type,
+                valueBetType: vb.detected ? predResult : null,
                 confidence: m.confidence || 'medium',
                 date: m.date,
                 _mlEdge: vb.edge,
@@ -2864,6 +2865,7 @@ export async function GET(request: NextRequest) {
                 away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
               };
               const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
+              const predResult = m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away');
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
@@ -2873,10 +2875,10 @@ export async function GET(request: NextRequest) {
                 displayDate: m.displayDate,
                 dateTag: m.dateTag,
                 recommendation: m.recommendations?.[0]?.label,
-                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+                predictedResult: predResult,
                 confidence: m.confidence,
                 valueBetDetected: vb.detected,
-                valueBetType: vb.type,
+                valueBetType: vb.detected ? predResult : null,
                 riskPercentage: m.riskPercentage,
                 winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
                 oddsHome: m.oddsHome,
@@ -2937,10 +2939,17 @@ export async function GET(request: NextRequest) {
                 };
               });
               const saved = await SupabaseStore.addPredictions(dbPredictions);
-              console.log(`💾 ${saved} value bets sauvegardés en Supabase (sur ${vbFiltered.length} publiés)`);
+              if (saved < vbFiltered.length) {
+                console.error(`❌ [CRITICAL] Seuls ${saved}/${vbFiltered.length} value bets sauvegardés — certains manquent pour le bilan !`);
+              } else {
+                console.log(`💾 ${saved} value bets sauvegardés en Supabase (sur ${vbFiltered.length} publiés)`);
+              }
             }
           } catch (saveErr: any) {
-            console.log('⚠️ Erreur sauvegarde value bets Supabase:', saveErr.message);
+            console.error('❌ [CRITICAL] Erreur sauvegarde value bets Supabase:', saveErr.message);
+            console.error('❌ [CRITICAL] Détail:', saveErr.stack || saveErr);
+            // Les VBs ont été publiés sur Telegram mais PAS sauvés en DB
+            // → le bilan ne pourra pas les vérifier
           }
           
           const valueBetsCount = predictions.filter(p => 
@@ -3898,6 +3907,7 @@ export async function POST(request: NextRequest) {
               away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
             };
             const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
+            const predResult = m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away');
             return {
               homeTeam: m.homeTeam,
               awayTeam: m.awayTeam,
@@ -3906,12 +3916,12 @@ export async function POST(request: NextRequest) {
               date: m.date,
               displayDate: m.displayDate,
               recommendation: m.recommendations?.[0]?.label,
-              predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+              predictedResult: predResult,
               confidence: m.confidence,
               riskPercentage: m.riskPercentage,
               winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : undefined),
               valueBetDetected: vb.detected,
-              valueBetType: vb.type,
+              valueBetType: vb.detected ? predResult : null,
               oddsHome: m.oddsHome,
               oddsAway: m.oddsAway,
               oddsDraw: m.oddsDraw,
@@ -3945,11 +3955,16 @@ export async function POST(request: NextRequest) {
                   edge_value: p._mlEdge || p.edge || 0, status: 'pending' as const,
                 };
               });
-              await SupabaseStore.addPredictions(dbPredictions);
-              console.log(`💾 [POST] ${vbFiltered.length} value bets sauvegardés en Supabase`);
+              const saved = await SupabaseStore.addPredictions(dbPredictions);
+              if (saved < vbFiltered.length) {
+                console.error(`❌ [POST-CRITICAL] Seuls ${saved}/${vbFiltered.length} VB sauvés — certains manquent pour le bilan !`);
+              } else {
+                console.log(`💾 [POST] ${vbFiltered.length} value bets sauvegardés en Supabase`);
+              }
             }
           } catch (saveErr: any) {
-            console.log('⚠️ [POST] Erreur sauvegarde value bets:', saveErr.message);
+            console.error('❌ [POST-CRITICAL] Erreur sauvegarde value bets:', saveErr.message);
+            console.error('❌ [POST-CRITICAL] Détail:', saveErr.stack || saveErr);
           }
           
           const valueBetsCount = predictions.filter(p =>
@@ -4004,19 +4019,20 @@ export async function POST(request: NextRequest) {
                 away: 100 - (m.winProbability || (100 - (m.riskPercentage ?? 50))) - drawProb,
               };
               const vb = detectValueBets(m.oddsHome, m.oddsDraw, m.oddsAway, modelProbs, !!m.hasRealOdds);
+              const predResult = m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away');
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
                 sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
                 league: m.league || 'Unknown',
-                predictedResult: m.predictedResult || (m.probabilities?.home > m.probabilities?.away ? 'home' : 'away'),
+                predictedResult: predResult,
                 winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
                 oddsHome: m.oddsHome,
                 oddsAway: m.oddsAway,
                 oddsDraw: m.oddsDraw,
                 riskPercentage: m.riskPercentage ?? 50,
                 valueBetDetected: vb.detected,
-                valueBetType: vb.type,
+                valueBetType: vb.detected ? predResult : null,
                 confidence: m.confidence || 'medium',
                 date: m.date,
                 _mlEdge: vb.edge,
@@ -4177,13 +4193,21 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
 
         if (unifiedPreds.length > 0) {
           dayPredictions = unifiedPreds
-            .filter((p: any) =>
-              p.recommendation.bet !== 'avoid' &&
-              p.mlPrediction.confidence !== 'low' &&
-              p.odds.hasRealOdds &&
-              // Exclure tennis comme dans le pipeline normal
-              !['tennis'].includes((p.sport || '').toLowerCase())
-            )
+            .filter((p: any) => {
+              if (p.recommendation.bet === 'avoid') return false;
+              if (!p.odds.hasRealOdds) return false;
+              if (['tennis'].includes((p.sport || '').toLowerCase())) return false;
+              // Palier exige haute confiance (high ou very_high)
+              if (p.mlPrediction.confidence !== 'high' && p.mlPrediction.confidence !== 'very_high') return false;
+              // Plafond de risque par sport
+              const bet = p.recommendation.bet;
+              const winProb = bet === 'home' ? p.mlPrediction.homeProb :
+                               bet === 'away' ? p.mlPrediction.awayProb : p.mlPrediction.drawProb;
+              const risk = Math.round(100 - winProb);
+              const sport = (p.sport || '').toLowerCase();
+              const maxRisk = sport === 'nba' ? 30 : sport === 'nhl' || sport === 'mlb' ? 30 : 25;
+              return risk <= maxRisk;
+            })
             .map((p: any) => {
               const bet = p.recommendation.bet;
               const isHome = bet === 'home';
@@ -4215,18 +4239,23 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
     }
   }
 
-  // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas low confidence, pas tennis
-  // Note: is_value_bet=false + edge_value>=0 garantit des cotes réelles (pas estimées)
-  const eligible = dayPredictions.filter(p =>
-    p.status === 'pending' &&
-    p.odds_home > 0 &&
-    p.odds_away > 0 &&
-    !p.is_combo &&
-    p.predicted_result !== 'avoid' &&
-    p.confidence !== 'low' &&
-    p.sport !== 'tennis'
-  );
-  console.log(`📊 [PALIER] ${eligible.length} éligibles (pending, cotes réelles, pas combo)`);
+  // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas tennis
+  // Palier Intelligent = montante → exige haute fiabilité : confiance high+, risque plafonné
+  const eligible = dayPredictions.filter(p => {
+    if (p.status !== 'pending' || p.is_combo || p.predicted_result === 'avoid') return false;
+    if (p.sport === 'tennis') return false;
+    if (!(p.odds_home > 0 && p.odds_away > 0)) return false;
+    // Exiger au minimum confiance 'high' (pas medium, pas low)
+    if (p.confidence !== 'high' && p.confidence !== 'very_high') return false;
+    // Plafond de risque par sport (même seuils que selectTopDailyPredictions)
+    const risk = p.risk_percentage ?? 100;
+    const sport = (p.sport || '').toLowerCase();
+    const maxRisk = sport === 'basketball' || sport === 'nba' ? 30
+                  : sport === 'hockey' || sport === 'nhl' || sport === 'baseball' || sport === 'mlb' ? 30
+                  : 25; // football par défaut
+    return risk <= maxRisk;
+  });
+  console.log(`📊 [PALIER] ${eligible.length} éligibles (high confidence, risque ≤ sport max, pas combo)`);
 
   // 3. Trier par fiabilité : risk % croissant, puis edge décroissant
   eligible.sort((a, b) => {
@@ -4303,67 +4332,91 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
     message += `   Niveau: ${riskLabel}\n\n`;
   }
 
-  // 6. Combo : 2 plus sûrs, idéalement sports différents
-  let pick1 = top5[0];
-  let pick2: typeof top5[0] | null = null;
-  for (let i = 1; i < top5.length; i++) {
-    if (top5[i].sport !== pick1.sport) {
-      pick2 = top5[i];
-      break;
-    }
-  }
-  if (!pick2) pick2 = top5[1];
+  // 6. Combo montante : UNIQUEMENT des matchs SAFE (risque ≤ 25%), haute confiance
+  // La montante exige des matchs fiables — pas de pari risqué autorisé dans le combo
+  const comboEligible = top5.filter(p => {
+    const risk = p.risk_percentage ?? 100;
+    return risk <= 25 && (p.confidence === 'high' || p.confidence === 'very_high');
+  });
+  console.log(`📊 [PALIER-COMBO] ${comboEligible.length} matchs SAFE disponibles pour le combo`);
 
-  function getOdds(p: typeof pick1): number {
+  let pick1: typeof top5[0] | null = null;
+  let pick2: typeof top5[0] | null = null;
+
+  if (comboEligible.length >= 2) {
+    pick1 = comboEligible[0];
+    // Privilégier un sport différent pour le 2e pick
+    for (let i = 1; i < comboEligible.length; i++) {
+      if (comboEligible[i].sport !== pick1.sport) {
+        pick2 = comboEligible[i];
+        break;
+      }
+    }
+    if (!pick2) pick2 = comboEligible[1];
+  } else if (comboEligible.length === 1) {
+    pick1 = comboEligible[0];
+  }
+
+  function getOdds(p: DbPrediction): number {
+    if (!p) return 0;
     if (p.predicted_result === 'home') return p.odds_home;
     if (p.predicted_result === 'away') return p.odds_away;
     if (p.predicted_result === 'draw') return p.odds_draw || 1.5;
     return Math.max(p.odds_home, p.odds_away);
   }
 
-  function getTeam(p: typeof pick1): string {
+  function getTeam(p: DbPrediction): string {
+    if (!p) return '?';
     if (p.predicted_result === 'home') return p.home_team;
     if (p.predicted_result === 'away') return p.away_team;
     if (p.predicted_result === 'draw') return 'Match Nul';
     return p.predicted_result || '?';
   }
 
-  const odds1 = getOdds(pick1);
-  const odds2 = getOdds(pick2);
-  const comboOdds = odds1 * odds2;
-  const comboProb = ((100 - (pick1.risk_percentage ?? 100)) / 100) * ((100 - (pick2.risk_percentage ?? 100)) / 100) * 100;
-
-  let palierNiveau: string;
-  if (comboProb >= 45) palierNiveau = '🟢 EXCELLENT';
-  else if (comboProb >= 35) palierNiveau = '🟡 BON';
-  else if (comboProb >= 25) palierNiveau = '🟠 ACCEPTABLE';
-  else palierNiveau = '🔴 TROP RISQUÉ';
-
-  const se1 = sportEmoji[pick1.sport] || '⚡';
-  const se2 = sportEmoji[pick2.sport] || '⚡';
-
   message += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   message += `🎯 <b>COMBO DU JOUR</b>\n\n`;
-  message += `1️⃣ ${se1} ${getTeam(pick1)} @ ${odds1.toFixed(2)} [${pick1.league}]\n`;
-  message += `     Risque: ${(pick1.risk_percentage ?? 100).toFixed(0)}% | ${pick1.confidence}\n`;
-  message += `2️⃣ ${se2} ${getTeam(pick2)} @ ${odds2.toFixed(2)} [${pick2.league}]\n`;
-  message += `     Risque: ${(pick2.risk_percentage ?? 100).toFixed(0)}% | ${pick2.confidence}\n`;
-  message += `\n╔══════════════════════════╗\n`;
-  message += `║  Cote combo: x${comboOdds.toFixed(2)}\n`;
-  message += `║  Probabilité: ${comboProb.toFixed(1)}%\n`;
-  message += `║  Niveau: ${palierNiveau}\n`;
-  message += `╚══════════════════════════╝\n`;
 
-  const mise = 10000;
-  const gain = Math.round(mise * comboOdds);
-  const retrait = Math.round(gain * 0.4);
-  const bankrollSuiv = gain - retrait;
+  if (pick1 && pick2) {
+    const odds1 = getOdds(pick1);
+    const odds2 = getOdds(pick2);
+    const comboOdds = odds1 * odds2;
+    const comboProb = ((100 - (pick1.risk_percentage ?? 100)) / 100) * ((100 - (pick2.risk_percentage ?? 100)) / 100) * 100;
 
-  message += `\n💰 <b>Simulation Montante</b>\n`;
-  message += `   Mise: ${mise.toLocaleString('fr-FR')}F\n`;
-  message += `   Gain: ${gain.toLocaleString('fr-FR')}F\n`;
-  message += `   Retrait 40%: ${retrait.toLocaleString('fr-FR')}F ✅\n`;
-  message += `   Bankroll suivant: ${bankrollSuiv.toLocaleString('fr-FR')}F\n`;
+    let palierNiveau: string;
+    if (comboProb >= 45) palierNiveau = '🟢 EXCELLENT';
+    else if (comboProb >= 35) palierNiveau = '🟡 BON';
+    else if (comboProb >= 25) palierNiveau = '🟠 ACCEPTABLE';
+    else palierNiveau = '🔴 TROP RISQUÉ';
+
+    const se1 = sportEmoji[pick1.sport] || '⚡';
+    const se2 = sportEmoji[pick2.sport] || '⚡';
+
+    message += `1️⃣ ${se1} ${getTeam(pick1)} @ ${odds1.toFixed(2)} [${pick1.league}]\n`;
+    message += `     Risque: ${(pick1.risk_percentage ?? 100).toFixed(0)}% | ${pick1.confidence}\n`;
+    message += `2️⃣ ${se2} ${getTeam(pick2)} @ ${odds2.toFixed(2)} [${pick2.league}]\n`;
+    message += `     Risque: ${(pick2.risk_percentage ?? 100).toFixed(0)}% | ${pick2.confidence}\n`;
+    message += `\n╔══════════════════════════╗\n`;
+    message += `║  Cote combo: x${comboOdds.toFixed(2)}\n`;
+    message += `║  Probabilité: ${comboProb.toFixed(1)}%\n`;
+    message += `║  Niveau: ${palierNiveau}\n`;
+    message += `╚══════════════════════════╝\n`;
+
+    const mise = 10000;
+    const gain = Math.round(mise * comboOdds);
+    const retrait = Math.round(gain * 0.4);
+    const bankrollSuiv = gain - retrait;
+
+    message += `\n💰 <b>Simulation Montante</b>\n`;
+    message += `   Mise: ${mise.toLocaleString('fr-FR')}F\n`;
+    message += `   Gain: ${gain.toLocaleString('fr-FR')}F\n`;
+    message += `   Retrait 40%: ${retrait.toLocaleString('fr-FR')}F ✅\n`;
+    message += `   Bankroll suivant: ${bankrollSuiv.toLocaleString('fr-FR')}F\n`;
+  } else {
+    // Pas assez de matchs SAFE pour un combo fiable
+    message += `⚠️ Pas assez de matchs SAFE (≤25% risque, haute confiance) aujourd'hui.\n`;
+    message += `   ${comboEligible.length} match(s) SAFE disponible(s) sur ${top5.length} sélectionnés.\n`;
+    message += `   Combo annulé pour protéger la montante.\n`;
+  }
 
   if (message.length > 4096) {
     const mid = message.lastIndexOf('\n━━', Math.floor(message.length / 2));
@@ -4384,13 +4437,13 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
     }
   }
 
-  console.log(`✅ [PALIER] ${top5.length} picks envoyés perso, combo: ${getTeam(pick1)} + ${getTeam(pick2)} @ ${comboProb.toFixed(1)}%`);
+  console.log(`✅ [PALIER] ${top5.length} picks envoyés perso, combo: ${pick1 && pick2 ? `${getTeam(pick1)} + ${getTeam(pick2)}` : 'ANNULÉ (pas assez de SAFE)'})`);
 
   return {
     mlb_palier: {
       success: true,
       matches: top5.length,
-      combo: `${getTeam(pick1)} (${pick1.sport}) + ${getTeam(pick2)} (${pick2.sport}) @ ${comboProb.toFixed(1)}%`,
+      combo: pick1 && pick2 ? `${getTeam(pick1)} (${pick1.sport}) + ${getTeam(pick2)} (${pick2.sport})` : 'ANNULÉ',
     }
   };
 }
