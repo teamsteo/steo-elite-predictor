@@ -810,14 +810,57 @@ export function detectValueBets(
   if (!hasRealOdds) {
     return { detected: false, type: null, edge: 0, explanation: 'Cotes estimées — pas de value bet' };
   }
-  
+
+  // 🔒 EXCLUSION: Cotes extrêmes — l'edge est mathématiquement du bruit
+  // Une cote > 8.00 implique < 12.5% de prob. Même un edge de +10% ne donne que ~15%
+  // de chance réelle. En pratique, ce sont toujours des pertes.
+  const MAX_VALUE_ODDS = 8.00;
+  if (oddsHome > MAX_VALUE_ODDS && oddsAway > MAX_VALUE_ODDS) {
+    return { detected: false, type: null, edge: 0, explanation: `Cotes extrêmes (H:${oddsHome.toFixed(1)} A:${oddsAway.toFixed(1)}) — pas de value bet fiable` };
+  }
+
+  // 🔒 EXCLUSION: Favori écrasant (< 1.25)
+  // Quand un favori a une cote < 1.25, le "value" sur l'outsider est un artefact statistique.
+  // L'écart de niveau est trop net pour espérer capturer du value sur l'outsider.
+  const favoriteOdds = Math.min(oddsHome, oddsAway);
+  if (favoriteOdds < 1.25) {
+    return { detected: false, type: null, edge: 0, explanation: `Favori écrasant (${favoriteOdds.toFixed(2)}) — value sur outsider non exploitable` };
+  }
+
+  // 🔒 EXCLUSION: Ne pas chercher de value sur une cote > MAX_VALUE_ODDS
+  // Même si l'autre cote est normale, parier sur une cote > 8.00 est du gambling pur
+  if (oddsHome > MAX_VALUE_ODDS) {
+    // home est l'outsider extrême → ne pas détecter de value sur home
+    const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
+    const awayEdge = modelProbs.away - impliedProbs.away;
+    if (awayEdge > 5) {
+      return {
+        detected: true, type: 'away', edge: awayEdge,
+        explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}%)`,
+      };
+    }
+    return { detected: false, type: null, edge: 0, explanation: `Outsider home à ${oddsHome.toFixed(1)} — pas de value bet fiable` };
+  }
+  if (oddsAway > MAX_VALUE_ODDS) {
+    // away est l'outsider extrême → ne pas détecter de value sur away
+    const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
+    const homeEdge = modelProbs.home - impliedProbs.home;
+    if (homeEdge > 5) {
+      return {
+        detected: true, type: 'home', edge: homeEdge,
+        explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}%)`,
+      };
+    }
+    return { detected: false, type: null, edge: 0, explanation: `Outsider away à ${oddsAway.toFixed(1)} — pas de value bet fiable` };
+  }
+
   const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
-  
+
   const homeEdge = modelProbs.home - impliedProbs.home;
   const awayEdge = modelProbs.away - impliedProbs.away;
-  
+
   const threshold = 5;
-  
+
   if (homeEdge > threshold) {
     return {
       detected: true,
@@ -826,7 +869,7 @@ export function detectValueBets(
       explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}%)`,
     };
   }
-  
+
   if (awayEdge > threshold) {
     return {
       detected: true,
@@ -835,7 +878,7 @@ export function detectValueBets(
       explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}%)`,
     };
   }
-  
+
   return { detected: false, type: null, edge: 0, explanation: 'Pas de value bet' };
 }
 

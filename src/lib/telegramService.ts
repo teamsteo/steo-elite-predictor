@@ -1395,12 +1395,18 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const valueBets = nonTennis.filter(p => 
-    p.valueBetDetected && 
-    p.confidence !== 'low' && 
-    isSafeOrModerate(p.riskPercentage) &&
-    !p.isEstimated
-  );
+  // Filtrer les value bets publiable
+  // 🔒 isSafeOrModerate vérifie le risque global, mais on vérifie aussi
+  // que la direction du VB n'a pas une cote absurde (défense en profondeur)
+  const valueBets = nonTennis.filter(p => {
+    if (!p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
+    if (!isSafeOrModerate(p.riskPercentage)) return false;
+    // Vérifier la cote de la direction VB — exclure les outsiders extrêmes
+    const vbDir = p.valueBetType || p.predictedResult;
+    const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+    if (vbOdds && vbOdds > 8.0) return false; // Cote VB > 8.00 = gambling
+    return true;
+  });
 
   if (valueBets.length === 0) {
     console.log('⚠️ Aucun value bet safe/modéré');
@@ -1436,14 +1442,41 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const m = valueBets[i];
     const sportEmoji = SPORT_EMOJIS[m.sport] || '🏟️';
     const { date, time } = formatDateTime(m.date, m.displayDate);
-    const winProb = m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50);
-    const betOption = getBetOption(m.predictedResult, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
-    const riskEmoji = (m.riskPercentage || 100) <= 30 ? '🟢' : (m.riskPercentage || 100) <= 50 ? '🟡' : '🔴';
-    const riskLabel = (m.riskPercentage || 100) <= 30 ? 'Safe' : (m.riskPercentage || 100) <= 50 ? 'Modéré' : 'Kamikaze';
+    
+    // 🔒 CRITIQUE: Pour les Value Bets, la direction du pari = valueBetType
+    // (là où le modèle détecte la valeur), PAS predictedResult (le favori global).
+    // Ex: Magdeburg est favori (predictedResult=away), mais le VB est sur Bahlinger (valueBetType=home)
+    // → On affiche le VB (home), pas le favori (away)
+    const vbDirection = (m.valueBetType as 'home' | 'away' | 'draw') || m.predictedResult;
+    
+    // Calculer la proba et le risque pour la DIRECTION du VB, pas du favori
+    let vbWinProb: number;
+    let vbOdds: number;
+    if (vbDirection === 'home') {
+      vbOdds = m.oddsHome || 2.0;
+      vbWinProb = m.oddsHome ? Math.round((100 / m.oddsHome)) : 50;
+    } else if (vbDirection === 'away') {
+      vbOdds = m.oddsAway || 2.0;
+      vbWinProb = m.oddsAway ? Math.round((100 / m.oddsAway)) : 50;
+    } else {
+      vbOdds = m.oddsDraw || 3.0;
+      vbWinProb = m.oddsDraw ? Math.round((100 / m.oddsDraw)) : 33;
+    }
+    // Ajuster avec la proba modèle si disponible (plus précis que implied)
+    if (m._mlEdge && vbDirection === 'home' && m.oddsHome) {
+      vbWinProb = Math.min(95, Math.round((100 / m.oddsHome) + m._mlEdge));
+    } else if (m._mlEdge && vbDirection === 'away' && m.oddsAway) {
+      vbWinProb = Math.min(95, Math.round((100 / m.oddsAway) + m._mlEdge));
+    }
+    const vbRisk = Math.round(100 - vbWinProb);
+    
+    // Affichage aligné sur la direction VB
+    const betOption = getBetOption(vbDirection, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
+    const riskEmoji = vbRisk <= 30 ? '🟢' : vbRisk <= 50 ? '🟡' : '🔴';
+    const riskLabel = vbRisk <= 30 ? 'Safe' : vbRisk <= 50 ? 'Modéré' : 'Risqué';
     
     message += '━━━━━━━━━━━━━━━━━━━━━\n';
     message += `<b>${i + 1}. ${m.homeTeam} vs ${m.awayTeam}</b>\n`;
-    // 📅 Date toujours affichée + tag dynamique [DEMAIN] si applicable
     const vbDateTag = computeDateTag(m.date);
     message += `📅 <b>${date}</b>${vbDateTag}\n`;
     message += `${sportEmoji} ${m.sport}`;
@@ -1451,9 +1484,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     message += `\n`;
     
     if (time) message += `⏰ ${time}  ·  `;
-    // 🎯 Ne pas afficher 'N/A' si la recommendation est absente — le betOption contient déjà le nom de l'équipe
-    const rec = m.recommendation && m.recommendation !== 'N/A' ? ` <b>${m.recommendation}</b>` : '';
-    message += `🎯 ${betOption}${rec}\n`;
+    message += `🎯 ${betOption}\n`;
     
     if (m.oddsHome && m.oddsAway) {
       message += `📊 Cotes: 1:<b>${m.oddsHome.toFixed(2)}</b>`;
@@ -1461,10 +1492,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
       message += ` 2:<b>${m.oddsAway.toFixed(2)}</b>\n`;
     }
     
-    message += `${riskEmoji} <b>${riskLabel}</b> — Chance: <b>${winProb}%</b>\n`;
-    if (m.valueBetType) {
-      message += `💎 Type: ${m.valueBetType}\n`;
-    }
+    message += `${riskEmoji} <b>${riskLabel}</b> — Chance VB: <b>${vbWinProb}%</b> | Cote: <b>${vbOdds.toFixed(2)}</b>\n`;
     message += '\n';
   }
 
