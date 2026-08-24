@@ -31,7 +31,8 @@ import {
   isKamikaze,
   selectTopDailyPredictions,
   capKamikazePerSport,
-  sortKamikazePicks
+  sortKamikazePicks,
+  vigRemovedProb
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache, detectValueBets } from '@/lib/combinedDataService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
@@ -2546,12 +2547,24 @@ export async function GET(request: NextRequest) {
             // Il faut les sauvegarder pour le bilan
             if (publishedList.length === 0 && predictions.length > 0) {
               // Même logique que publishKamikazeToTelegram + publishKamikazeOnlyMessage
+              // 🔒 CROSS-SECTION DEDUP: exclure les VB (vbRisk ≤ 50)
               const nonTennis = predictions.filter((p: any) => {
                 const sport = (p.sport || '').toLowerCase();
                 return !['tennis'].includes(sport);
               });
               const kamikazePicks = nonTennis
-                .filter((p: any) => isKamikaze(p.riskPercentage));
+                .filter((p: any) => {
+                  if (!isKamikaze(p.riskPercentage)) return false;
+                  if (p.valueBetDetected && p.confidence !== 'low') {
+                    const vbDir = p.valueBetType || p.predictedResult;
+                    const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+                    if (vbOdds && vbOdds <= 8.0) {
+                      const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+                      if (vbRisk <= 50) return false;
+                    }
+                  }
+                  return true;
+                });
               toSave = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
               console.log(`💣 Mode kamikaze: ${toSave.length} kamikazes à sauvegarder en Supabase (sur ${kamikazePicks.length} totaux)`);
             }
@@ -3009,11 +3022,23 @@ export async function GET(request: NextRequest) {
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS sur Telegram
-          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par edge desc + max 4 global
+          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + cross-section VB dedup + tri par edge desc + max 4 global
           try {
             const kamikazeFiltered = capKamikazePerSport(
               sortKamikazePicks(
-                predictions.filter((p: any) => isKamikaze(p.riskPercentage))
+                predictions.filter((p: any) => {
+                  if (!isKamikaze(p.riskPercentage)) return false;
+                  // 🔒 CROSS-SECTION DEDUP: exclure les VB (vbRisk ≤ 50)
+                  if (p.valueBetDetected && p.confidence !== 'low') {
+                    const vbDir = p.valueBetType || p.predictedResult;
+                    const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+                    if (vbOdds && vbOdds <= 8.0) {
+                      const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+                      if (vbRisk <= 50) return false;
+                    }
+                  }
+                  return true;
+                })
               )
             );
             
@@ -3733,11 +3758,23 @@ export async function POST(request: NextRequest) {
           const kamikazeCount = predictions.filter(p => isKamikaze(p.riskPercentage)).length;
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS (même logique que GET)
-          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + tri par edge desc + max 4 global
+          // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + cross-section VB dedup + tri par edge desc + max 4 global
           try {
             const kamikazeFiltered = capKamikazePerSport(
               sortKamikazePicks(
-                predictions.filter((p: any) => isKamikaze(p.riskPercentage))
+                predictions.filter((p: any) => {
+                  if (!isKamikaze(p.riskPercentage)) return false;
+                  // 🔒 CROSS-SECTION DEDUP: exclure les VB (vbRisk ≤ 50)
+                  if (p.valueBetDetected && p.confidence !== 'low') {
+                    const vbDir = p.valueBetType || p.predictedResult;
+                    const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+                    if (vbOdds && vbOdds <= 8.0) {
+                      const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+                      if (vbRisk <= 50) return false;
+                    }
+                  }
+                  return true;
+                })
               )
             );
             

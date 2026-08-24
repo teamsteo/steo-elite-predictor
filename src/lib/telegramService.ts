@@ -1279,7 +1279,7 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
   // En-tête — titre unique selon le slot horaire
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += `║   📅 <b>PRONOS DU JOUR — ${slotLabel}</b>\n`;
+  message += `║   ⚠️ <b>PARIS MODÉRÉS-SÛR — ${slotLabel}</b>\n`;
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
   
@@ -1343,7 +1343,19 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const kamikazePicks = dedupMatches(nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated));
+  // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
+  const kamikazePicks = dedupMatches(nonTennis.filter(p => {
+    if (!isKamikaze(p.riskPercentage) || p.isEstimated) return false;
+    if (p.valueBetDetected && p.confidence !== 'low') {
+      const vbDir = p.valueBetType || p.predictedResult;
+      const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+      if (vbOdds && vbOdds <= 8.0) {
+        const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+        if (vbRisk <= 50) return false;
+      }
+    }
+    return true;
+  }));
 
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -1396,8 +1408,10 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
   }
 
   // Dedup: eviter d'envoyer le meme kamikaze-only 2 fois
-  if (isDuplicate('kamikaze-only', message)) {
-    console.log('Kamikaze-only deja publie - skip');
+  // 🔒 Utiliser la meme cle 'kamikaze' que publishKamikazeToTelegram pour eviter
+  // qu'un meme match apparaisse dans les 2 sections kamikaze le meme jour
+  if (isDuplicate('kamikaze', message)) {
+    console.log('Kamikaze-only deja publie (dedup kamikaze) - skip');
     return false;
   }
 
@@ -1414,7 +1428,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
  * Ex: 1.29/6.50/4.20 → totalImplied=1.167 → home = (1/1.29)/1.167 = 66.4%
  *   (vs brut 100/1.29 = 77.5% qui SURÉVALUE de ~11 pts à cause du vig)
  */
-function vigRemovedProb(targetOdds: number, oddsHome: number | null | undefined, oddsDraw: number | null | undefined, oddsAway: number | null | undefined): number {
+export function vigRemovedProb(targetOdds: number, oddsHome: number | null | undefined, oddsDraw: number | null | undefined, oddsAway: number | null | undefined): number {
   const valid = [oddsHome, oddsDraw, oddsAway].filter((o): o is number => o != null && o > 1);
   const total = valid.reduce((s, o) => s + (1 / o), 0);
   return total > 0 ? ((1 / targetOdds) / total) * 100 : 50;
@@ -1578,7 +1592,19 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const kamikazePicks = dedupMatches(nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated));
+  // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
+  const kamikazePicks = dedupMatches(nonTennis.filter(p => {
+    if (!isKamikaze(p.riskPercentage) || p.isEstimated) return false;
+    if (p.valueBetDetected && p.confidence !== 'low') {
+      const vbDir = p.valueBetType || p.predictedResult;
+      const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+      if (vbOdds && vbOdds <= 8.0) {
+        const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+        if (vbRisk <= 50) return false;
+      }
+    }
+    return true;
+  }));
 
   if (kamikazePicks.length === 0) {
     console.log('⚠️ Aucun pronostic Kamikaze à publier');
