@@ -2884,6 +2884,7 @@ export async function GET(request: NextRequest) {
                 oddsHome: m.oddsHome,
                 oddsAway: m.oddsAway,
                 oddsDraw: m.oddsDraw,
+                _mlEdge: vb.edge,
               };
             });
           console.log(`💎 Value bets: ${predictions.filter(p => p.valueBetDetected).length} détectés sur ${predictions.length} matchs`);
@@ -3925,6 +3926,7 @@ export async function POST(request: NextRequest) {
               oddsHome: m.oddsHome,
               oddsAway: m.oddsAway,
               oddsDraw: m.oddsDraw,
+              _mlEdge: vb.edge,
             };
           });
           console.log(`💎 [POST] Value bets: ${predictions.filter(p => p.valueBetDetected).length} détectés sur ${predictions.length} matchs`);

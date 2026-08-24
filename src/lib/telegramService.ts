@@ -1396,15 +1396,16 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
   // Filtrer les value bets publiable
-  // 🔒 isSafeOrModerate vérifie le risque global, mais on vérifie aussi
-  // que la direction du VB n'a pas une cote absurde (défense en profondeur)
+  // 🔒 Vérifier le risque de la DIRECTION du VB, pas du favori global
   const valueBets = nonTennis.filter(p => {
     if (!p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
-    if (!isSafeOrModerate(p.riskPercentage)) return false;
-    // Vérifier la cote de la direction VB — exclure les outsiders extrêmes
     const vbDir = p.valueBetType || p.predictedResult;
     const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
-    if (vbOdds && vbOdds > 8.0) return false; // Cote VB > 8.00 = gambling
+    if (!vbOdds || vbOdds > 8.0) return false; // Cote VB absente ou > 8.00 = gambling
+    // Calculer le risque réel de la direction VB
+    const vbImpliedProb = 100 / vbOdds;
+    const vbRisk = Math.round(100 - vbImpliedProb);
+    if (vbRisk > 50) return false; // VB à risque > 50% = pas safe/modéré
     return true;
   });
 
@@ -1413,14 +1414,20 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     return false;
   }
 
-  // Trier par fiabilité décroissante : edge le plus élevé d'abord, puis risque le plus faible
+  // Trier par fiabilité décroissante : edge le plus élevé d'abord, puis risque VB le plus faible
   valueBets.sort((a, b) => {
     // Priorité 1 : edge décroissant (meilleur edge = plus fiable)
     const edgeA = a._mlEdge || 0;
     const edgeB = b._mlEdge || 0;
     if (edgeB !== edgeA) return edgeB - edgeA;
-    // Priorité 2 : risque croissant (moins risqué = plus fiable)
-    return (a.riskPercentage || 100) - (b.riskPercentage || 100);
+    // Priorité 2 : risque VB croissant (moins risqué = plus fiable)
+    const vbDirA = a.valueBetType || a.predictedResult;
+    const vbOddsA = vbDirA === 'home' ? a.oddsHome : vbDirA === 'away' ? a.oddsAway : a.oddsDraw;
+    const vbRiskA = vbOddsA ? Math.round(100 - (100 / vbOddsA)) : 100;
+    const vbDirB = b.valueBetType || b.predictedResult;
+    const vbOddsB = vbDirB === 'home' ? b.oddsHome : vbDirB === 'away' ? b.oddsAway : b.oddsDraw;
+    const vbRiskB = vbOddsB ? Math.round(100 - (100 / vbOddsB)) : 100;
+    return vbRiskA - vbRiskB;
   });
 
   // 🔒 PLAFONNER à 5 value bets max — les plus sûrs uniquement
