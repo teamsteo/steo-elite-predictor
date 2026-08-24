@@ -548,10 +548,16 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   const rawDCEdge = match.sport === 'Foot' && dixonColesResult
     ? preliminaryEdge  // Max |DC_prob - implied_prob| calculé lignes 377-381
     : bestEdge;         // Pour les autres sports, edge blendé
-  
+
+  // 🔧 SEUIL ADAPTATIF: exiger plus d'edge sur cotes élevées (plus de variance)
+  // Cotes courtes ≤1.50 → 3% (signal rare mais précis)
+  // Cotes moyennes 1.51-3.00 → 5% (standard)
+  // Cotes hautes 3.01-8.00 → 8% (bruit accru)
+  const dynamicThresholdPct = bestOdds <= 1.50 ? 3 : bestOdds <= 3.00 ? 5 : bestOdds <= 8.00 ? 8 : 12;
+  const isValueBetRaw = bestEdge > (dynamicThresholdPct / 100);
+
   let confidence: 'very_high' | 'high' | 'medium' | 'low' = 'low';
-  const edgeThreshold = mlThresholds.edgeThreshold || 0.05;
-  const isValueBetRaw = bestEdge > edgeThreshold;
+  const edgeThreshold = dynamicThresholdPct / 100;
   const dataQualityScore = dataQualityNum;
   
   console.log(`🎯 Confidence check: rawEdge=${(rawDCEdge * 100).toFixed(1)}%, blendedEdge=${(bestEdge * 100).toFixed(1)}%, dataQuality=${dataQualityScore}, sport=${match.sport}`);

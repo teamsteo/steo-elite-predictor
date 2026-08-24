@@ -1488,10 +1488,22 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     let vbWinProb = Math.round(vigRemovedProb(vbOdds, m.oddsHome, m.oddsDraw, m.oddsAway));
 
     // Ajuster avec l'edge ML si disponible (même base vig-removed, tous les cas: home/away/draw)
-    if (m._mlEdge && m._mlEdge > 0) {
-      vbWinProb = Math.min(95, Math.max(1, vbWinProb + Math.round(m._mlEdge)));
+    const trueEdge = (m._mlEdge && m._mlEdge > 0) ? m._mlEdge : 0;
+    if (trueEdge > 0) {
+      vbWinProb = Math.min(95, Math.max(1, vbWinProb + Math.round(trueEdge)));
     }
     const vbRisk = Math.round(100 - vbWinProb);
+    
+    // 💰 ¼ Kelly Criterion — staking adaptatif à la cote ET à la proba modèle
+    // f* = (b×p - q) / b  où b = cote-1, p = proba modèle, q = 1-p
+    // Quarter Kelly pour lisser la variance : mise = ¼ f*
+    let quarterKelly = 0;
+    const b = vbOdds - 1;
+    if (b > 0 && vbWinProb > 0) {
+      const p = vbWinProb / 100;
+      const fullKelly = Math.max(0, (b * p - (1 - p)) / b);
+      quarterKelly = Math.min(5, Math.round(fullKelly * 0.25 * 1000) / 10); // cap 5% bankroll
+    }
     
     // Affichage aligné sur la direction VB
     const betOption = getBetOption(vbDirection, m.sport, m.oddsHome, m.oddsDraw, m.oddsAway, m.homeTeam, m.awayTeam);
@@ -1516,6 +1528,15 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     }
     
     message += `${riskEmoji} <b>${riskLabel}</b> — Chance VB: <b>${vbWinProb}%</b> | Cote: <b>${vbOdds.toFixed(2)}</b>\n`;
+    
+    // Ligne métriques avancées : Vrai Edge + Kelly staking
+    if (trueEdge > 0) {
+      message += `📐 Edge: <b>+${trueEdge.toFixed(1)}%</b>`;
+      if (quarterKelly > 0) {
+        message += ` | 💰 Mise: <b>${quarterKelly.toFixed(1)}%</b> bankroll (¼ Kelly)`;
+      }
+      message += '\n';
+    }
     message += '\n';
   }
 

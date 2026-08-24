@@ -797,6 +797,25 @@ export function calculateImpliedProbabilities(oddsHome: number, oddsDraw: number
 }
 
 /**
+ * Seuil d'edge minimum adaptatif selon la cote.
+ * Les cotes courtes demandent moins d'edge (signal rare mais précis).
+ * Les cotes élevées demandent plus d'edge pour compenser la variance.
+ *
+ * | Cote        | Seuil | Rationale                              |
+ * |-------------|-------|----------------------------------------|
+ * | ≤ 1.50      | 3%    | Favori fort, edge rare et précis        |
+ * | 1.51 - 3.00 | 5%    | Zone standard                          |
+ * | 3.01 - 8.00 | 8%    | Outsider modéré, bruit plus élevé      |
+ * | > 8.00      | 12%   | (exclu par MAX_VALUE_ODDS par ailleurs) |
+ */
+function getDynamicEdgeThreshold(odds: number): number {
+  if (odds <= 1.50) return 3;
+  if (odds <= 3.00) return 5;
+  if (odds <= 8.00) return 8;
+  return 12;
+}
+
+/**
  * Détecte les value bets
  */
 export function detectValueBets(
@@ -830,25 +849,27 @@ export function detectValueBets(
   // 🔒 EXCLUSION: Ne pas chercher de value sur une cote > MAX_VALUE_ODDS
   // Même si l'autre cote est normale, parier sur une cote > 8.00 est du gambling pur
   if (oddsHome > MAX_VALUE_ODDS) {
-    // home est l'outsider extrême → ne pas détecter de value sur home
+    // home est l'outsider extrême → ne vérifier que le côté away
     const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
     const awayEdge = modelProbs.away - impliedProbs.away;
-    if (awayEdge > 5) {
+    const awayThreshold = getDynamicEdgeThreshold(oddsAway);
+    if (awayEdge > awayThreshold) {
       return {
         detected: true, type: 'away', edge: awayEdge,
-        explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}%)`,
+        explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}% [seuil ${awayThreshold}%])`,
       };
     }
     return { detected: false, type: null, edge: 0, explanation: `Outsider home à ${oddsHome.toFixed(1)} — pas de value bet fiable` };
   }
   if (oddsAway > MAX_VALUE_ODDS) {
-    // away est l'outsider extrême → ne pas détecter de value sur away
+    // away est l'outsider extrême → ne vérifier que le côté home
     const impliedProbs = calculateImpliedProbabilities(oddsHome, oddsDraw, oddsAway);
     const homeEdge = modelProbs.home - impliedProbs.home;
-    if (homeEdge > 5) {
+    const homeThreshold = getDynamicEdgeThreshold(oddsHome);
+    if (homeEdge > homeThreshold) {
       return {
         detected: true, type: 'home', edge: homeEdge,
-        explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}%)`,
+        explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}% [seuil ${homeThreshold}%])`,
       };
     }
     return { detected: false, type: null, edge: 0, explanation: `Outsider away à ${oddsAway.toFixed(1)} — pas de value bet fiable` };
@@ -859,23 +880,25 @@ export function detectValueBets(
   const homeEdge = modelProbs.home - impliedProbs.home;
   const awayEdge = modelProbs.away - impliedProbs.away;
 
-  const threshold = 5;
+  // 🔧 SEUIL ADAPTATIF: exiger plus d'edge sur les cotes élevées (plus de variance)
+  const homeThreshold = getDynamicEdgeThreshold(oddsHome);
+  const awayThreshold = getDynamicEdgeThreshold(oddsAway);
 
-  if (homeEdge > threshold) {
+  if (homeEdge > homeThreshold) {
     return {
       detected: true,
       type: 'home',
       edge: homeEdge,
-      explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}%)`,
+      explanation: `Value: Modèle ${modelProbs.home}% vs Marché ${impliedProbs.home}% (+${homeEdge.toFixed(1)}% [seuil ${homeThreshold}%])`,
     };
   }
 
-  if (awayEdge > threshold) {
+  if (awayEdge > awayThreshold) {
     return {
       detected: true,
       type: 'away',
       edge: awayEdge,
-      explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}%)`,
+      explanation: `Value: Modèle ${modelProbs.away}% vs Marché ${impliedProbs.away}% (+${awayEdge.toFixed(1)}% [seuil ${awayThreshold}%])`,
     };
   }
 
