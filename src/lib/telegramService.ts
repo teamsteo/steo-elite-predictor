@@ -57,6 +57,24 @@ export function isDuplicate(publicationType: string, messageContent: string, slo
   return false;
 }
 
+/** Clé unique pour un match (équipe domic + ext) */
+function matchKey(m: { homeTeam?: string; awayTeam?: string }): string {
+  const h = (m.homeTeam || '').toLowerCase().trim();
+  const a = (m.awayTeam || '').toLowerCase().trim();
+  return `${h} vs ${a}`;
+}
+
+/** Déduplique une liste de matchs par clé (home vs away) */
+function dedupMatches<T extends { homeTeam?: string; awayTeam?: string }>(matches: T[]): T[] {
+  const seen = new Set<string>();
+  return matches.filter(m => {
+    const key = matchKey(m);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 // Seuils de risque
 const MAX_RISK_PERCENTAGE = 50; // Kamikaze: risque >= 51%
 const KAMIKAZE_MIN_RISK = 51; // Kamikaze: risque >= 51%
@@ -868,7 +886,8 @@ interface TelegramMatch {
 async function formatMatchBlock(
   m: TelegramMatch,
   index: number,
-  includeGoals: boolean = true
+  includeGoals: boolean = true,
+  suppressValueBetBadge: boolean = false
 ): Promise<string> {
   const emoji = SPORT_EMOJIS[m.sport] || '🏟️';
   const { date, time } = formatDateTime(m.date, m.displayDate);
@@ -887,8 +906,8 @@ async function formatMatchBlock(
 
   // Séparateur + titre
   block += '───────────────────────────\n';
-  // 💎 Marqueur "VALUE BET" si le match a un value bet détecté
-  const valueBetBadge = m.valueBetDetected ? ' 💎 <b>VALUE BET</b>' : '';
+  // 💎 Marqueur "VALUE BET" si le match a un value bet détecté (supprimé dans les sections kamikaze pour éviter confusion)
+  const valueBetBadge = (!suppressValueBetBadge && m.valueBetDetected) ? ' 💎 <b>VALUE BET</b>' : '';
   block += `<b>${index}.</b> ${m.homeTeam} vs ${m.awayTeam}${valueBetBadge}\n`;
 
   // 📅 Date de la rencontre (toujours affichée pour éviter confusion lendemain)
@@ -1132,8 +1151,8 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
   const excludedTennis = predictions.length - nonTennis.length;
   if (excludedTennis > 0) console.log(`🎾 ${excludedTennis} pronostics tennis exclus des prédictions Telegram`);
 
-  // 1) Filtrer: cotes réelles uniquement
-  const withRealOdds = nonTennis.filter(p => !p.isEstimated);
+  // 1) Filtrer: cotes réelles uniquement + dédupliquer les matchs
+  const withRealOdds = dedupMatches(nonTennis.filter(p => !p.isEstimated));
   const excludedEstimated = predictions.length - withRealOdds.length;
   
   // 2) CRITÈRES ALIGNÉS SUR BACKTEST: football ≤ 25%, basket ≤ 30%, NHL/baseball ≤ 30%
@@ -1324,7 +1343,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated);
+  const kamikazePicks = dedupMatches(nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated));
 
   const today = new Date().toLocaleDateString('fr-FR', {
     weekday: 'long', day: 'numeric', month: 'long'
@@ -1333,7 +1352,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
   let message = '';
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += '║   💣 <b>PRONOS DU JOUR — KAMIKAZE</b>\n';
+  message += `║   ⚠️ <b>AUCUN PARIS S\u00dbR AUJOURD'HUI</b>\n`;
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
 
@@ -1353,12 +1372,12 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     const kamikazeCapped = capKamikazePerSport(kamikazeSorted);
 
     message += '───────────────────────────\n';
-    message += `💣 <b>SÉLECTION KAMIKAZE</b> — ${kamikazeCapped.length} opportunité${kamikazeCapped.length > 1 ? 's' : ''}\n`;
+    message += `💣 <b>OUTSIDERS À GROS POTENTIEL</b> — ${kamikazeCapped.length} opportunité${kamikazeCapped.length > 1 ? 's' : ''}\n`;
     message += '───────────────────────────\n\n';
     message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n\n`;
 
     for (let i = 0; i < kamikazeCapped.length; i++) {
-      message += await formatMatchBlock(kamikazeCapped[i], i + 1, true);
+      message += await formatMatchBlock(kamikazeCapped[i], i + 1, true, true);
     }
 
     if (kamikazePicks.length > kamikazeCapped.length) {
@@ -1409,7 +1428,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   });
   // Filtrer les value bets publiable
   // 🔒 Vérifier le risque de la DIRECTION du VB, pas du favori global
-  const valueBets = nonTennis.filter(p => {
+  const valueBets = dedupMatches(nonTennis.filter(p => {
     if (!p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
     const vbDir = p.valueBetType || p.predictedResult;
     const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
@@ -1419,7 +1438,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const vbRisk = Math.round(100 - vbImpliedProb);
     if (vbRisk > 50) return false; // VB à risque > 50% = pas safe/modéré
     return true;
-  });
+  }));
 
   if (valueBets.length === 0) {
     console.log('⚠️ Aucun value bet safe/modéré');
@@ -1448,7 +1467,7 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   let message = '';
   
   message += '╔════════════════════════╗\n';
-  message += `║   💎 <b>VALUE BETS DU JOUR</b>   ║\n`;
+  message += `║   💎 <b>VALUE BETS — Paris fiables</b>    ║\n`;
   message += '╚════════════════════════╝\n\n';
   
   if (valueBets.length > vbDisplayCount) {
@@ -1559,7 +1578,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
-  const kamikazePicks = nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated);
+  const kamikazePicks = dedupMatches(nonTennis.filter(p => isKamikaze(p.riskPercentage) && !p.isEstimated));
 
   if (kamikazePicks.length === 0) {
     console.log('⚠️ Aucun pronostic Kamikaze à publier');
@@ -1575,7 +1594,7 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
   let message = '';
 
   message += '╔════════════════════════╗\n';
-  message += `║ 💣 <b>KAMIKAZE DU JOUR</b>  ║\n`;
+  message += `║ 💣 <b>PARIS RISQUÉS — Gros potentiels</b> ║\n`;
   message += '╚════════════════════════╝\n\n';
 
   message += `⚠️ <b>HAUT RISQUE - HAUTE RÉCOMPENSE</b>\n`;
