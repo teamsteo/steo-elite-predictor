@@ -1389,6 +1389,18 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
 // PUBLICATION VALUE BETS
 // ============================================
 
+/**
+ * Probabilité implicite NORMALISÉE (vig/marge bookmaker retirée) en %.
+ * Cohérent avec le calcul d'edge ML qui utilise la même base vig-removed.
+ * Ex: 1.29/6.50/4.20 → totalImplied=1.167 → home = (1/1.29)/1.167 = 66.4%
+ *   (vs brut 100/1.29 = 77.5% qui SURÉVALUE de ~11 pts à cause du vig)
+ */
+function vigRemovedProb(targetOdds: number, oddsHome: number | null | undefined, oddsDraw: number | null | undefined, oddsAway: number | null | undefined): number {
+  const valid = [oddsHome, oddsDraw, oddsAway].filter((o): o is number => o != null && o > 1);
+  const total = valid.reduce((s, o) => s + (1 / o), 0);
+  return total > 0 ? ((1 / targetOdds) / total) * 100 : 50;
+}
+
 export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
   // 🎾 EXCLURE le tennis des pronostics Telegram
   const nonTennis = predictions.filter(p => {
@@ -1402,8 +1414,8 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const vbDir = p.valueBetType || p.predictedResult;
     const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
     if (!vbOdds || vbOdds > 8.0) return false; // Cote VB absente ou > 8.00 = gambling
-    // Calculer le risque réel de la direction VB
-    const vbImpliedProb = 100 / vbOdds;
+    // 🔒 FIX VIC: Risque calculé sur base vig-removed (cohérent avec _mlEdge)
+    const vbImpliedProb = vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway);
     const vbRisk = Math.round(100 - vbImpliedProb);
     if (vbRisk > 50) return false; // VB à risque > 50% = pas safe/modéré
     return true;
@@ -1420,13 +1432,13 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     const edgeA = a._mlEdge || 0;
     const edgeB = b._mlEdge || 0;
     if (edgeB !== edgeA) return edgeB - edgeA;
-    // Priorité 2 : risque VB croissant (moins risqué = plus fiable)
+    // Priorité 2 : risque VB croissant (moins risqué = plus fiable) — base vig-removed
     const vbDirA = a.valueBetType || a.predictedResult;
     const vbOddsA = vbDirA === 'home' ? a.oddsHome : vbDirA === 'away' ? a.oddsAway : a.oddsDraw;
-    const vbRiskA = vbOddsA ? Math.round(100 - (100 / vbOddsA)) : 100;
+    const vbRiskA = vbOddsA ? Math.round(100 - vigRemovedProb(vbOddsA, a.oddsHome, a.oddsDraw, a.oddsAway)) : 100;
     const vbDirB = b.valueBetType || b.predictedResult;
     const vbOddsB = vbDirB === 'home' ? b.oddsHome : vbDirB === 'away' ? b.oddsAway : b.oddsDraw;
-    const vbRiskB = vbOddsB ? Math.round(100 - (100 / vbOddsB)) : 100;
+    const vbRiskB = vbOddsB ? Math.round(100 - vigRemovedProb(vbOddsB, b.oddsHome, b.oddsDraw, b.oddsAway)) : 100;
     return vbRiskA - vbRiskB;
   });
 
@@ -1456,24 +1468,28 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     // → On affiche le VB (home), pas le favori (away)
     const vbDirection = (m.valueBetType as 'home' | 'away' | 'draw') || m.predictedResult;
     
-    // Calculer la proba et le risque pour la DIRECTION du VB, pas du favori
-    let vbWinProb: number;
+    // Déterminer la cote de la direction VB
     let vbOdds: number;
     if (vbDirection === 'home') {
       vbOdds = m.oddsHome || 2.0;
-      vbWinProb = m.oddsHome ? Math.round((100 / m.oddsHome)) : 50;
     } else if (vbDirection === 'away') {
       vbOdds = m.oddsAway || 2.0;
-      vbWinProb = m.oddsAway ? Math.round((100 / m.oddsAway)) : 50;
     } else {
       vbOdds = m.oddsDraw || 3.0;
-      vbWinProb = m.oddsDraw ? Math.round((100 / m.oddsDraw)) : 33;
     }
-    // Ajuster avec la proba modèle si disponible (plus précis que implied)
-    if (m._mlEdge && vbDirection === 'home' && m.oddsHome) {
-      vbWinProb = Math.min(95, Math.round((100 / m.oddsHome) + m._mlEdge));
-    } else if (m._mlEdge && vbDirection === 'away' && m.oddsAway) {
-      vbWinProb = Math.min(95, Math.round((100 / m.oddsAway) + m._mlEdge));
+
+    // 🔒 FIX VIC: Probabilité implicite SANS vig (marge bookmaker retirée)
+    // L'edge ML (_mlEdge) est calculé contre la base NORMALISÉE (vig retiré) :
+    //   - ML path: homeEdge = finalHomeProb - impliedHome (impliedHome = (1/odds)/total)
+    //   - Fallback:  homeEdge = modelProbs.home - impliedProbs.home (calculateImpliedProbabilities normalise)
+    // Ancien bug: 100/odds (AVEC vig) + _mlEdge (SANS vig) = SURÉVALUATION
+    //   Ex: Feyenoord @ 1.29 → brut 77.5%, normalisé 66.4%, edge 15.6
+    //   Ancien: 77.5 + 15.6 = 93.1% ❌  |  Nouveau: 66.4 + 15.6 = 82.0% ✅
+    let vbWinProb = Math.round(vigRemovedProb(vbOdds, m.oddsHome, m.oddsDraw, m.oddsAway));
+
+    // Ajuster avec l'edge ML si disponible (même base vig-removed, tous les cas: home/away/draw)
+    if (m._mlEdge && m._mlEdge > 0) {
+      vbWinProb = Math.min(95, Math.max(1, vbWinProb + Math.round(m._mlEdge)));
     }
     const vbRisk = Math.round(100 - vbWinProb);
     
