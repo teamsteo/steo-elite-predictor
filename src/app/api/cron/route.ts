@@ -2615,12 +2615,24 @@ export async function GET(request: NextRequest) {
             // 💣 SAUVEGARDER AUSSI les kamikazes séparément (même si safe/modéré existent)
             // Le cron telegram-kamikaze à 13h UTC peut ne rien trouver (matchs US terminés)
             // → sauvegarder les kamikazes ici garantit qu'ils seront dans le bilan
+            // 🔒 CROSS-SECTION DEDUP: exclure les VB (vbRisk ≤ 50)
             if (publishedList.length > 0) {
               const nonTennis = predictions.filter((p: any) => {
                 const sport = (p.sport || '').toLowerCase();
                 return !['tennis'].includes(sport);
               });
-              const kamikazePicks = nonTennis.filter((p: any) => isKamikaze(p.riskPercentage));
+              const kamikazePicks = nonTennis.filter((p: any) => {
+                if (!isKamikaze(p.riskPercentage)) return false;
+                if (p.valueBetDetected && p.confidence !== 'low') {
+                  const vbDir = p.valueBetType || p.predictedResult;
+                  const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+                  if (vbOdds && vbOdds <= 8.0) {
+                    const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+                    if (vbRisk <= 50) return false;
+                  }
+                }
+                return true;
+              });
               const kamikazeToSave = capKamikazePerSport(sortKamikazePicks(kamikazePicks));
               
               if (kamikazeToSave.length > 0) {
@@ -2660,17 +2672,27 @@ export async function GET(request: NextRequest) {
             // → les VBs du matin n'étaient jamais dans le bilan du jour même
             // FIX: sauvegarder les VBs ici pour qu'elles soient dans la DB avant le bilan
             try {
+              // 🔒 MÊME FILTRE que publishValueBetsToTelegram (vbRisk ≤ 50)
+              // pour garantir que seuls les VBs PUBLIÉS sont sauvegardés
               const vbPredictions = predictions.filter((p: any) => {
                 const sport = (p.sport || '').toLowerCase();
-                return !sport.includes('tennis') && 
-                  p.valueBetDetected && 
-                  p.confidence !== 'low' && 
-                  isSafeOrModerate(p.riskPercentage);
+                if (sport.includes('tennis') || !p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
+                const vbDir = p.valueBetType || p.predictedResult;
+                const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+                if (!vbOdds || vbOdds > 8.0) return false;
+                const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+                return vbRisk <= 50;
               }).sort((a: any, b: any) => {
                 const edgeA = a._mlEdge || a.edge || 0;
                 const edgeB = b._mlEdge || b.edge || 0;
                 if (edgeB !== edgeA) return edgeB - edgeA;
-                return (a.riskPercentage || 100) - (b.riskPercentage || 100);
+                const vbDirA = a.valueBetType || a.predictedResult;
+                const vbOddsA = vbDirA === 'home' ? a.oddsHome : vbDirA === 'away' ? a.oddsAway : a.oddsDraw;
+                const vbRiskA = vbOddsA ? Math.round(100 - vigRemovedProb(vbOddsA, a.oddsHome, a.oddsDraw, a.oddsAway)) : 100;
+                const vbDirB = b.valueBetType || b.predictedResult;
+                const vbOddsB = vbDirB === 'home' ? b.oddsHome : vbDirB === 'away' ? b.oddsAway : b.oddsDraw;
+                const vbRiskB = vbOddsB ? Math.round(100 - vigRemovedProb(vbOddsB, b.oddsHome, b.oddsDraw, b.oddsAway)) : 100;
+                return vbRiskA - vbRiskB;
               }).slice(0, 5);
               
               if (vbPredictions.length > 0) {
@@ -2680,6 +2702,11 @@ export async function GET(request: NextRequest) {
                   const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
                   const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
                   const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                  // 🔒 STOCKER valueBetType comme predicted_result pour le bilan
+                  // Le VB parie sur la direction valueBetType, pas predictedResult
+                  const vbDirection = p.valueBetType || p.predictedResult || 'home';
+                  const vbOdds = vbDirection === 'home' ? p.oddsHome : vbDirection === 'away' ? p.oddsAway : p.oddsDraw;
+                  const vbRisk = vbOdds ? Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway)) : 50;
                   return {
                     match_id: matchId,
                     home_team: p.homeTeam,
@@ -2690,9 +2717,9 @@ export async function GET(request: NextRequest) {
                     odds_home: p.oddsHome || 1.0,
                     odds_draw: p.oddsDraw || null,
                     odds_away: p.oddsAway || 1.0,
-                    predicted_result: p.predictedResult || 'home',
+                    predicted_result: vbDirection,
                     confidence: p.confidence || 'medium',
-                    risk_percentage: p.riskPercentage ?? 50,
+                    risk_percentage: vbRisk,
                     is_value_bet: true,
                     edge_value: p._mlEdge || p.edge || 0,
                     status: 'pending' as const,
@@ -2905,23 +2932,30 @@ export async function GET(request: NextRequest) {
           const telegramResult = await publishValueBetsToTelegram(predictions);
           
           // 💾 Sauvegarder les value bets PUBLIÉS en Supabase pour le bilan
-          // Les value bets sont un sous-ensemble des safe/modéré → déjà sauvegardés via telegram-summary
-          // Mais si appelé séparément, il faut aussi les sauvegarder
+          // 🔒 MÊME FILTRE que publishValueBetsToTelegram (vbRisk ≤ 50)
+          // 🔒 STOCKER valueBetType comme predicted_result (direction réelle du VB)
           try {
             const vbFiltered = predictions.filter((p: any) => {
               const sport = (p.sport || '').toLowerCase();
-              // 🎾 Exclure tennis + filtres value bet standard
-              return !sport.includes('tennis') && 
-                p.valueBetDetected && 
-                p.confidence !== 'low' && 
-                isSafeOrModerate(p.riskPercentage);
+              if (sport.includes('tennis') || !p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
+              const vbDir = p.valueBetType || p.predictedResult;
+              const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+              if (!vbOdds || vbOdds > 8.0) return false;
+              const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+              return vbRisk <= 50;
             })
             // Trier par fiabilité décroissante (edge descendant, risque ascendant)
             .sort((a: any, b: any) => {
               const edgeA = a._mlEdge || a.edge || 0;
               const edgeB = b._mlEdge || b.edge || 0;
               if (edgeB !== edgeA) return edgeB - edgeA;
-              return (a.riskPercentage || 100) - (b.riskPercentage || 100);
+              const vbDirA = a.valueBetType || a.predictedResult;
+              const vbOddsA = vbDirA === 'home' ? a.oddsHome : vbDirA === 'away' ? a.oddsAway : a.oddsDraw;
+              const vbRiskA = vbOddsA ? Math.round(100 - vigRemovedProb(vbOddsA, a.oddsHome, a.oddsDraw, a.oddsAway)) : 100;
+              const vbDirB = b.valueBetType || b.predictedResult;
+              const vbOddsB = vbDirB === 'home' ? b.oddsHome : vbDirB === 'away' ? b.oddsAway : b.oddsDraw;
+              const vbRiskB = vbOddsB ? Math.round(100 - vigRemovedProb(vbOddsB, b.oddsHome, b.oddsDraw, b.oddsAway)) : 100;
+              return vbRiskA - vbRiskB;
             })
             // 🔒 PLAFONNER à 5 — seuls les 5 plus fiables sont sauvegardés pour le bilan
             .slice(0, 5);
@@ -2934,6 +2968,10 @@ export async function GET(request: NextRequest) {
                 const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
                 const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
                 const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
+                // 🔒 STOCKER valueBetType comme predicted_result pour le bilan
+                const vbDirection = p.valueBetType || p.predictedResult || 'home';
+                const vbOdds = vbDirection === 'home' ? p.oddsHome : vbDirection === 'away' ? p.oddsAway : p.oddsDraw;
+                const vbRisk = vbOdds ? Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway)) : 50;
                 return {
                   match_id: matchId,
                   home_team: p.homeTeam,
@@ -2944,10 +2982,10 @@ export async function GET(request: NextRequest) {
                   odds_home: p.oddsHome || 1.0,
                   odds_draw: p.oddsDraw || null,
                   odds_away: p.oddsAway || 1.0,
-                  predicted_result: p.predictedResult || 'home',
+                  predicted_result: vbDirection,
                   confidence: p.confidence || 'medium',
-                  risk_percentage: p.riskPercentage || 50,
-                  is_value_bet: true, // Value bets section — always true
+                  risk_percentage: vbRisk,
+                  is_value_bet: true,
                   edge_value: p._mlEdge || p.edge || 0,
                   status: 'pending' as const,
                 };
