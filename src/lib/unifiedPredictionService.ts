@@ -549,15 +549,31 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     ? preliminaryEdge  // Max |DC_prob - implied_prob| calculé lignes 377-381
     : bestEdge;         // Pour les autres sports, edge blendé
 
-  // 🔧 SEUIL ADAPTATIF: exiger plus d'edge sur cotes élevées (plus de variance)
-  // Cotes courtes ≤1.50 → 3% (signal rare mais précis)
-  // Cotes moyennes 1.51-3.00 → 5% (standard)
-  // Cotes hautes 3.01-8.00 → 8% (bruit accru)
-  const dynamicThresholdPct = bestOdds <= 1.50 ? 3 : bestOdds <= 3.00 ? 5 : bestOdds <= 8.00 ? 8 : 12;
-  const isValueBetRaw = bestEdge > (dynamicThresholdPct / 100);
+  // 🔧 SEUIL ADAPTATIF PAR DIRECTION: chaque direction a son propre seuil
+  // Cotes courtes ≤1.50 → 3% | Cotes moyennes 1.51-3.00 → 5% | Cotes hautes 3.01-8.00 → 8%
+  // Fix: un edge de 4% sur un favori @ 1.40 (seuil 3%) doit être détecté
+  // même si l'edge max est de 6% sur un outsider @ 3.50 (seuil 8%, rejeté).
+  const getThresh = (o: number) => o <= 1.50 ? 0.03 : o <= 3.00 ? 0.05 : o <= 8.00 ? 0.08 : 0.12;
+
+  const homePasses = homeEdge > getThresh(oddsHome);
+  const awayPasses = awayEdge > getThresh(oddsAway);
+  const drawPasses = oddsDraw ? (drawEdge > getThresh(oddsDraw)) : false;
+  const isValueBetRaw = homePasses || awayPasses || drawPasses;
+
+  // Si VB détecté, bestBet pointe sur la direction VB avec le plus haut edge
+  // (pas forcément la direction avec le plus haut edge global)
+  if (isValueBetRaw) {
+    if (homePasses && (!awayPasses || homeEdge >= awayEdge) && (!drawPasses || homeEdge >= drawEdge)) {
+      bestBet = 'home'; bestEdge = homeEdge; bestOdds = oddsHome; bestProb = finalHomeProb;
+    } else if (awayPasses && (!drawPasses || awayEdge >= drawEdge)) {
+      bestBet = 'away'; bestEdge = awayEdge; bestOdds = oddsAway; bestProb = finalAwayProb;
+    } else if (drawPasses && oddsDraw) {
+      bestBet = 'draw'; bestEdge = drawEdge; bestOdds = oddsDraw; bestProb = finalDrawProb;
+    }
+  }
 
   let confidence: 'very_high' | 'high' | 'medium' | 'low' = 'low';
-  const edgeThreshold = dynamicThresholdPct / 100;
+  const edgeThreshold = getThresh(bestOdds);
   const dataQualityScore = dataQualityNum;
   
   console.log(`🎯 Confidence check: rawEdge=${(rawDCEdge * 100).toFixed(1)}%, blendedEdge=${(bestEdge * 100).toFixed(1)}%, dataQuality=${dataQualityScore}, sport=${match.sport}`);

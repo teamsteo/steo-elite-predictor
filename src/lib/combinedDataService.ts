@@ -783,7 +783,10 @@ export function calculateImpliedProbabilities(oddsHome: number, oddsDraw: number
   
   const homeProb = 1 / oddsHome;
   const awayProb = 1 / oddsAway;
-  const drawProb = oddsDraw ? 1 / oddsDraw : 0.28;
+  // 🔒 FIX: drawProb = 0 quand pas de cote draw (basket/hockey)
+  // Ancien: 0.28 déformait la normalisation (total gonflé artificiellement)
+  // Maintenant cohérent avec vigRemovedProb (telegramService) et unifiedPredictionService
+  const drawProb = oddsDraw ? 1 / oddsDraw : 0;
   
   const total = homeProb + awayProb + drawProb;
   const margin = total - 1;
