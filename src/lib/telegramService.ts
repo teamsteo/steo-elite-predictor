@@ -101,6 +101,8 @@ const PRIORITY_SPORTS = ['football']; // Seul le football est prioritaire (backt
 const NON_PRIORITY_SPORTS = ['basketball', 'baseball', 'hockey', 'other'];
 const EXCLUDED_TELEGRAM_SPORTS = ['tennis']; // Sports exclus des pronostics Telegram
 const BASKETBALL_MIN_ODDS = 1.80; // ROI break-even à 56% WR
+const MAX_BET_ODDS = 8.00; // Cote max pour tout pari (au-delà = gambling)
+const MIN_FAVORITE_ODDS = 1.25; // Cote min du favori — en dessous = trop de valeur négative, pas rentable
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
@@ -108,6 +110,23 @@ const BASKETBALL_MIN_ODDS = 1.80; // ROI break-even à 56% WR
 export function isSafeOrModerate(riskPercentage?: number): boolean {
   if (riskPercentage === undefined) return false;
   return riskPercentage <= MAX_RISK_PERCENTAGE;
+}
+
+/**
+ * Vérifie si les cotes du match sont dans les bornes acceptables.
+ * - Aucune cote (home/draw/away) ne doit dépasser MAX_BET_ODDS (8.00)
+ * - La cote du favori (la plus basse) doit être >= MIN_FAVORITE_ODDS (1.25)
+ *   → En dessous de 1.25, le favori est trop court, value négative même en cas de win
+ */
+export function isOddsInRange(oddsHome?: number | null, oddsDraw?: number | null, oddsAway?: number | null): boolean {
+  const all = [oddsHome, oddsDraw, oddsAway].filter((o): o is number => o != null && o > 1);
+  if (all.length === 0) return false;
+  // Cote max : aucune cote ne doit dépasser 8.00
+  if (all.some(o => o > MAX_BET_ODDS)) return false;
+  // Cote min du favori : la plus basse doit être >= 1.25
+  const favoriteOdds = Math.min(...all);
+  if (favoriteOdds < MIN_FAVORITE_ODDS) return false;
+  return true;
 }
 
 /**
@@ -1155,9 +1174,14 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
   const withRealOdds = dedupMatches(nonTennis.filter(p => !p.isEstimated));
   const excludedEstimated = predictions.length - withRealOdds.length;
   
+  // 1b) 🔒 Cotes dans les bornes acceptables (favori >= 1.25, aucune cote > 8.00)
+  const withValidOdds = withRealOdds.filter(p => isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway));
+  const excludedOddsRange = withRealOdds.length - withValidOdds.length;
+  if (excludedOddsRange > 0) console.log(`🔒 ${excludedOddsRange} pronostics exclus (cotes hors bornes: favori < 1.25 ou cote > 8.00)`);
+  
   // 2) CRITÈRES ALIGNÉS SUR BACKTEST: football ≤ 25%, basket ≤ 30%, NHL/baseball ≤ 30%
   // Plus on s'éloigne de 74% win prob, plus le ratio win/loss se dégrade
-  const underRisk = withRealOdds.filter(p => {
+  const underRisk = withValidOdds.filter(p => {
     const sport = (p.sport || '').toLowerCase();
     let maxRisk: number;
     if (sport === 'baseball' || sport === 'hockey' || sport === 'nhl' || sport === 'mlb') {
@@ -1344,8 +1368,10 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
   // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
+  // 🔒 COTES DANS BORNES: favori >= 1.25, aucune cote > 8.00
   const kamikazePicks = dedupMatches(nonTennis.filter(p => {
     if (!isKamikaze(p.riskPercentage) || p.isEstimated) return false;
+    if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
     if (p.valueBetDetected && p.confidence !== 'low') {
       const vbDir = p.valueBetType || p.predictedResult;
       const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
@@ -1442,11 +1468,13 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
   });
   // Filtrer les value bets publiable
   // 🔒 Vérifier le risque de la DIRECTION du VB, pas du favori global
+  // 🔒 COTES DANS BORNES: favori >= 1.25, aucune cote > 8.00
   const valueBets = dedupMatches(nonTennis.filter(p => {
     if (!p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
+    if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
     const vbDir = p.valueBetType || p.predictedResult;
     const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
-    if (!vbOdds || vbOdds > 8.0) return false; // Cote VB absente ou > 8.00 = gambling
+    if (!vbOdds) return false; // Cote VB absente
     // 🔒 FIX VIC: Risque calculé sur base vig-removed (cohérent avec _mlEdge)
     const vbImpliedProb = vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway);
     const vbRisk = Math.round(100 - vbImpliedProb);
@@ -1593,8 +1621,10 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
   // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
+  // 🔒 COTES DANS BORNES: favori >= 1.25, aucune cote > 8.00
   const kamikazePicks = dedupMatches(nonTennis.filter(p => {
     if (!isKamikaze(p.riskPercentage) || p.isEstimated) return false;
+    if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
     if (p.valueBetDetected && p.confidence !== 'low') {
       const vbDir = p.valueBetType || p.predictedResult;
       const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;

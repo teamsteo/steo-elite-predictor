@@ -32,7 +32,8 @@ import {
   selectTopDailyPredictions,
   capKamikazePerSport,
   sortKamikazePicks,
-  vigRemovedProb
+  vigRemovedProb,
+  isOddsInRange
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache, detectValueBets } from '@/lib/combinedDataService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
@@ -2555,6 +2556,7 @@ export async function GET(request: NextRequest) {
               const kamikazePicks = nonTennis
                 .filter((p: any) => {
                   if (!isKamikaze(p.riskPercentage)) return false;
+                  if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
                   if (p.valueBetDetected && p.confidence !== 'low') {
                     const vbDir = p.valueBetType || p.predictedResult;
                     const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
@@ -2623,6 +2625,7 @@ export async function GET(request: NextRequest) {
               });
               const kamikazePicks = nonTennis.filter((p: any) => {
                 if (!isKamikaze(p.riskPercentage)) return false;
+                if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
                 if (p.valueBetDetected && p.confidence !== 'low') {
                   const vbDir = p.valueBetType || p.predictedResult;
                   const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
@@ -2677,9 +2680,10 @@ export async function GET(request: NextRequest) {
               const vbPredictions = predictions.filter((p: any) => {
                 const sport = (p.sport || '').toLowerCase();
                 if (sport.includes('tennis') || !p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
+                if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
                 const vbDir = p.valueBetType || p.predictedResult;
                 const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
-                if (!vbOdds || vbOdds > 8.0) return false;
+                if (!vbOdds) return false;
                 const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
                 return vbRisk <= 50;
               }).sort((a: any, b: any) => {
@@ -2938,9 +2942,10 @@ export async function GET(request: NextRequest) {
             const vbFiltered = predictions.filter((p: any) => {
               const sport = (p.sport || '').toLowerCase();
               if (sport.includes('tennis') || !p.valueBetDetected || p.confidence === 'low' || p.isEstimated) return false;
+              if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
               const vbDir = p.valueBetType || p.predictedResult;
               const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
-              if (!vbOdds || vbOdds > 8.0) return false;
+              if (!vbOdds) return false;
               const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
               return vbRisk <= 50;
             })
@@ -3066,6 +3071,7 @@ export async function GET(request: NextRequest) {
               sortKamikazePicks(
                 predictions.filter((p: any) => {
                   if (!isKamikaze(p.riskPercentage)) return false;
+                  if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
                   // 🔒 CROSS-SECTION DEDUP: exclure les VB (vbRisk ≤ 50)
                   if (p.valueBetDetected && p.confidence !== 'low') {
                     const vbDir = p.valueBetType || p.predictedResult;
@@ -3802,6 +3808,7 @@ export async function POST(request: NextRequest) {
               sortKamikazePicks(
                 predictions.filter((p: any) => {
                   if (!isKamikaze(p.riskPercentage)) return false;
+                  if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
                   // 🔒 CROSS-SECTION DEDUP: exclure les VB (vbRisk ≤ 50)
                   if (p.valueBetDetected && p.confidence !== 'low') {
                     const vbDir = p.valueBetType || p.predictedResult;
