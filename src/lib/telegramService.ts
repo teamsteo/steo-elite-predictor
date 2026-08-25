@@ -1390,7 +1390,7 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
   let message = '';
   message += '╔═════════════════════════════╗\n';
   message += '║\n';
-  message += `║   ⚠️ <b>AUCUN PARIS S\u00dbR AUJOURD'HUI</b>\n`;
+  message += `║   📊 <b>ANOMALIES & VALUE BETS DU JOUR</b>\n`;
   message += '║\n';
   message += '╚═════════════════════════════╝\n\n';
 
