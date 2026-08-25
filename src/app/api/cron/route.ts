@@ -4281,8 +4281,8 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
               if (p.recommendation.bet === 'avoid') return false;
               if (!p.odds.hasRealOdds) return false;
               if (['tennis'].includes((p.sport || '').toLowerCase())) return false;
-              // Palier exige haute confiance (high ou very_high)
-              if (p.mlPrediction.confidence !== 'high' && p.mlPrediction.confidence !== 'very_high') return false;
+              // Palier: exclure low uniquement (ML produit majoritairement du medium)
+              if (p.mlPrediction.confidence === 'low') return false;
               // Plafond de risque par sport
               const bet = p.recommendation.bet;
               const winProb = bet === 'home' ? p.mlPrediction.homeProb :
@@ -4324,13 +4324,14 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
   }
 
   // 2. Filtrer : pending, cotes réelles, pas combo, pas avoid, pas tennis
-  // Palier Intelligent = montante → exige haute fiabilité : confiance high+, risque plafonné
+  // Palier Intelligent = montante → fiabilité via risque plafonné + pas low confidence
+  // Note: le ML produit majoritairement du 'medium' — exiger 'high+' = 0 éligible
   const eligible = dayPredictions.filter(p => {
     if (p.status !== 'pending' || p.is_combo || p.predicted_result === 'avoid') return false;
     if (p.sport === 'tennis') return false;
     if (!(p.odds_home > 0 && p.odds_away > 0)) return false;
-    // Exiger au minimum confiance 'high' (pas medium, pas low)
-    if (p.confidence !== 'high' && p.confidence !== 'very_high') return false;
+    // Exclure low confidence uniquement (0% win rate en backtest)
+    if (p.confidence === 'low') return false;
     // Plafond de risque par sport (même seuils que selectTopDailyPredictions)
     const risk = p.risk_percentage ?? 100;
     const sport = (p.sport || '').toLowerCase();
@@ -4339,7 +4340,7 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
                   : 25; // football par défaut
     return risk <= maxRisk;
   });
-  console.log(`📊 [PALIER] ${eligible.length} éligibles (high confidence, risque ≤ sport max, pas combo)`);
+  console.log(`📊 [PALIER] ${eligible.length} éligibles (pas low, risque ≤ sport max, pas combo)`);
 
   // 3. Trier par fiabilité : risk % croissant, puis edge décroissant
   eligible.sort((a, b) => {
@@ -4416,11 +4417,11 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
     message += `   Niveau: ${riskLabel}\n\n`;
   }
 
-  // 6. Combo montante : UNIQUEMENT des matchs SAFE (risque ≤ 25%), haute confiance
-  // La montante exige des matchs fiables — pas de pari risqué autorisé dans le combo
+  // 6. Combo montante : matchs SAFE (risque ≤ 25%), pas low confidence
+  // La montante exige des matchs fiables — le risque plafonné est le garde-fou principal
   const comboEligible = top5.filter(p => {
     const risk = p.risk_percentage ?? 100;
-    return risk <= 25 && (p.confidence === 'high' || p.confidence === 'very_high');
+    return risk <= 25 && p.confidence !== 'low';
   });
   console.log(`📊 [PALIER-COMBO] ${comboEligible.length} matchs SAFE disponibles pour le combo`);
 
