@@ -2097,75 +2097,84 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       } else if (isVerified) {
         summary.totalVerified++;
 
-        // Calcul du bénéfice (ROI)
-        if (p.result_match !== null && p.result_match !== undefined) {
-          // Trouver la cote du pronostic
-          let betOdds = 1.0;
-          if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
-          else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
-          else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
+        // 🔒 SÉCURITÉ: Ignorer les prédictions avec predicted_result corrompu/null/avoid
+        const hasValidPrediction = p.predicted_result &&
+          p.predicted_result !== 'avoid' &&
+          ['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no'].includes(p.predicted_result);
 
-          if (p.result_match === true) {
-            // Gain : profit = cote - 1
-            const profit = betOdds - 1;
-            totalProfit += profit;
-            summary.bySport[sport].profitUnits += profit;
-            summary.wins++;
-            summary.bySport[sport].wins++;
-          } else if (p.result_match === false) {
-            // Perte : -1 unité
-            totalProfit -= 1;
-            summary.bySport[sport].profitUnits -= 1;
-            summary.losses++;
-            summary.bySport[sport].losses++;
-          }
-          totalStakes += 1;
+        if (!hasValidPrediction) {
+          // Prédiction corrompue: ne pas compter dans les stats mais afficher dans les détails
+          console.warn(`⚠️ [BILAN] Prédiction corrompue ignorée: ${p.home_team} vs ${p.away_team} — predicted_result='${p.predicted_result}', result_match=${p.result_match}`);
+          summary.details.push({
+            homeTeam: p.home_team || '',
+            awayTeam: p.away_team || '',
+            sport, league: p.league || '',
+            predicted: '⚠️ Donnée corrompue (prévision manquante)',
+            actualHome: p.home_score ?? null, actualAway: p.away_score ?? null,
+            actualResult: p.actual_result || null, resultMatch: null,
+            goalsMatch: p.goals_match ?? null, status: 'completed',
+            oddsHome: p.odds_home || undefined, oddsDraw: p.odds_draw ?? undefined,
+            oddsAway: p.odds_away || undefined, predictedResult: p.predicted_result,
+          });
+        } else {
+          // Calcul du bénéfice (ROI) — uniquement pour prédictions valides
+          if (p.result_match !== null && p.result_match !== undefined) {
+            // Trouver la cote du pronostic
+            let betOdds = 1.0;
+            if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
+            else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
+            else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
 
-          // 💎 Accumulate value bet vs safe stats for completed predictions
-          const isVB = (p as any).is_value_bet === true;
-          if (isVB) {
-            vbStats.total++;
-            vbStats.stakes++;
-            if (p.result_match === true) vbStats.wins++;
-            else if (p.result_match === false) vbStats.losses++;
-            vbStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false) ? -1 : 0;
-            if ((p as any).edge_value !== null && (p as any).edge_value !== undefined) {
-              vbStats.edgeSum += (p as any).edge_value;
-              vbStats.edgeCount++;
+            if (p.result_match === true) {
+              const profit = betOdds - 1;
+              totalProfit += profit;
+              summary.bySport[sport].profitUnits += profit;
+              summary.wins++;
+              summary.bySport[sport].wins++;
+            } else if (p.result_match === false) {
+              totalProfit -= 1;
+              summary.bySport[sport].profitUnits -= 1;
+              summary.losses++;
+              summary.bySport[sport].losses++;
             }
-          } else {
-            safeStats.total++;
-            safeStats.stakes++;
-            if (p.result_match === true) safeStats.wins++;
-            else if (p.result_match === false) safeStats.losses++;
-            safeStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false) ? -1 : 0;
+            totalStakes += 1;
+
+            const isVB = (p as any).is_value_bet === true;
+            if (isVB) {
+              vbStats.total++;
+              vbStats.stakes++;
+              if (p.result_match === true) vbStats.wins++;
+              else if (p.result_match === false) vbStats.losses++;
+              vbStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false) ? -1 : 0;
+              if ((p as any).edge_value !== null && (p as any).edge_value !== undefined) {
+                vbStats.edgeSum += (p as any).edge_value;
+                vbStats.edgeCount++;
+              }
+            } else {
+              safeStats.total++;
+              safeStats.stakes++;
+              if (p.result_match === true) safeStats.wins++;
+              else if (p.result_match === false) safeStats.losses++;
+              safeStats.profitUnits += (p.result_match === true) ? (betOdds - 1) : (p.result_match === false) ? -1 : 0;
+            }
           }
-        }
 
-        // ❌ Plus de suivi des buts dans le bilan — uniquement le résultat de la prédiction
-      }
-
-      // Détail du match
-      const predictedLabel = formatPredictedResult(p.predicted_result, sport, p.home_team, p.away_team, p.odds_home, p.odds_draw, p.odds_away);
-      summary.details.push({
-        homeTeam: p.home_team || '',
-        awayTeam: p.away_team || '',
-        sport: sport,
-        league: p.league || '',
-        predicted: predictedLabel,
-        predictedGoals: p.predicted_goals || undefined,
-        actualHome: p.home_score ?? null,
-        actualAway: p.away_score ?? null,
-        actualResult: p.actual_result || null,
-        resultMatch: p.result_match ?? null,
-        goalsMatch: p.goals_match ?? null,
-        status: p.status || 'pending',
-        oddsHome: p.odds_home || undefined,
-        oddsDraw: p.odds_draw ?? undefined,
-        oddsAway: p.odds_away || undefined,
-        predictedResult: p.predicted_result,
-      });
-    }
+          // Détail du match (uniquement pour prédictions valides)
+          const predictedLabel = formatPredictedResult(p.predicted_result, sport, p.home_team, p.away_team, p.odds_home, p.odds_draw, p.odds_away);
+          summary.details.push({
+            homeTeam: p.home_team || '',
+            awayTeam: p.away_team || '',
+            sport, league: p.league || '',
+            predicted: predictedLabel,
+            actualHome: p.home_score ?? null, actualAway: p.away_score ?? null,
+            actualResult: p.actual_result || null, resultMatch: p.result_match ?? null,
+            goalsMatch: p.goals_match ?? null, status: 'completed',
+            oddsHome: p.odds_home || undefined, oddsDraw: p.odds_draw ?? undefined,
+            oddsAway: p.odds_away || undefined, predictedResult: p.predicted_result,
+          });
+        } // fin else (prédiction valide)
+      } // fin else if (isVerified)
+    } // fin for (const p of normalPredictions)
 
     // Calcul des taux + ROI
     summary.profitUnits = Math.round(totalProfit * 100) / 100;

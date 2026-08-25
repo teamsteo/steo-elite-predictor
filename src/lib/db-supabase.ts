@@ -118,6 +118,7 @@ function normalizeSport(sport: string): 'football' | 'basketball' | 'baseball' |
 }
 
 function normalizeResult(result: string): 'home' | 'draw' | 'away' | 'over' | 'under' | 'btts_yes' | 'btts_no' | 'avoid' {
+  if (!result) return 'home'; // 🔒 FIX: ne jamais retourner 'avoid' par défaut
   const r = result.toLowerCase();
   if (r === 'home' || r === '1' || r === 'h') return 'home';
   if (r === 'draw' || r === 'x' || r === 'nul') return 'draw';
@@ -126,7 +127,10 @@ function normalizeResult(result: string): 'home' | 'draw' | 'away' | 'over' | 'u
   if (r.includes('under')) return 'under';
   if (r.includes('btts') && r.includes('yes')) return 'btts_yes';
   if (r.includes('btts') && r.includes('no')) return 'btts_no';
-  return 'avoid';
+  // 🔒 FIX: Si la valeur est non reconnue, retourner 'home' au lieu de 'avoid'
+  // 'avoid' corrompt le bilan (affiché 'Non joué' mais compté comme pari)
+  console.warn(`⚠️ normalizeResult: valeur non reconnue '${result}' → fallback 'home'`);
+  return 'home';
 }
 
 function normalizeConfidence(confidence: string): 'very_high' | 'high' | 'medium' | 'low' {
@@ -225,19 +229,73 @@ export const SupabaseStore = {
   async addPredictions(predictions: Array<Record<string, any>>): Promise<number> {
     const supabase = getSupabase();
     if (!supabase) return 0;
-    
+
     const nowISO = new Date().toISOString();
-    const normalized: Record<string, any>[] = predictions.map(p => ({
-      ...p,
-      sport: normalizeSport(p.sport as string),
-      predicted_result: normalizeResult(p.predicted_result as string),
-      confidence: normalizeConfidence(p.confidence as string),
-      status: p.status || 'pending',
-      // 🔥 FIX: Forcer created_at à maintenant pour garantir que le palier (getPredictionsByCreatedAt)
-      // retrouve les prédictions du jour même si upsert conserve l'ancien created_at sur conflit
-      created_at: nowISO,
-    }));
-    
+    const normalized: Record<string, any>[] = predictions.map(p => {
+      const pr = p.predicted_result;
+      return {
+        // 🔒 Ne JAMAIS spread ...p — éviter d'injecter des champs indésirables
+        // (result_match, home_score, actual_result, etc.) qui corrompraient l'upsert
+        match_id: p.match_id,
+        home_team: p.home_team,
+        away_team: p.away_team,
+        league: p.league,
+        sport: normalizeSport(p.sport as string),
+        match_date: p.match_date,
+        season: p.season || null,
+        odds_home: p.odds_home,
+        odds_draw: p.odds_draw ?? null,
+        odds_away: p.odds_away,
+        // 🔒 predicted_result: utiliser la valeur normalisée, ou 'home' si absent
+        predicted_result: pr ? normalizeResult(pr as string) : 'home',
+        confidence: normalizeConfidence((p.confidence || 'medium') as string),
+        risk_percentage: p.risk_percentage ?? 50,
+        is_value_bet: p.is_value_bet === true,
+        edge_value: p.edge_value || 0,
+        is_combo: p.is_combo === true,
+        combo_id: p.combo_id || null,
+        combo_name: p.combo_name || null,
+        status: p.status || 'pending',
+        // 🔥 Forcer created_at à maintenant pour le palier (getPredictionsByCreatedAt)
+        created_at: nowISO,
+      };
+    });
+
+    // 🔒 SÉCURITÉ: Exclure les match_ids déjà vérifiés (status='completed')
+    // Un upsert écraserait status='completed' par 'pending' et perdrait la vérification
+    try {
+      const matchIds = normalized.map(p => p.match_id);
+      const { data: completedIds } = await supabase
+        .from('predictions')
+        .select('match_id')
+        .in('match_id', matchIds)
+        .eq('status', 'completed');
+      if (completedIds && completedIds.length > 0) {
+        const completedSet = new Set(completedIds.map((r: any) => r.match_id));
+        const before = normalized.length;
+        const filtered = normalized.filter(p => !completedSet.has(p.match_id));
+        console.log(`🔒 [UPSAFEGUARD] ${completedIds.length} prédictions déjà vérifiées exclues de l'upsert (${before} → ${filtered.length})`);
+        if (filtered.length === 0) return 0;
+        // Continue with filtered
+        try {
+          const { data, error } = await supabase
+            .from('predictions')
+            .upsert(filtered, { onConflict: 'match_id' })
+            .select();
+          if (error) {
+            console.error('Erreur ajout prédictions:', error);
+            return 0;
+          }
+          return data?.length || 0;
+        } catch (e) {
+          console.error('Exception ajout prédictions:', e);
+          return 0;
+        }
+      }
+    } catch {
+      // Si la vérification échoue, continuer avec l'upsert normal (fallback)
+    }
+
     try {
       const { data, error } = await supabase
         .from('predictions')
