@@ -3332,6 +3332,23 @@ export async function GET(request: NextRequest) {
         }
         break;
 
+      case 'fix-corrupted':
+        // 🔧 Corriger les prédictions avec predicted_result corrompu (null/avoid/empty)
+        // Déduit le predicted_result depuis les cotes (favori = cote la plus basse)
+        try {
+          const fixDate = url.searchParams.get('date'); // optionnel: filtrer par date
+          const fixResult = await SupabaseStore.fixCorruptedPredictions(fixDate || undefined);
+          result = {
+            fixCorrupted: {
+              fixed: fixResult.fixed,
+              deleted: fixResult.deleted,
+              details: fixResult.details,
+              message: `${fixResult.fixed} corrigées, ${fixResult.deleted} supprimées${fixDate ? ` (${fixDate})` : ''}`
+            }
+          };
+        } catch (e: any) { result = { fixCorrupted: { success: false, error: e.message } }; }
+        break;
+
       case 'fix-data':
         // 1) Corriger le sport 'other' → 'baseball' pour les matchs MLB
         // 2) Supprimer les doublons (même home/away/sport/date)
@@ -3410,7 +3427,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-corrupted', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier'] },
           { status: 400 }
         );
     }

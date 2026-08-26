@@ -256,40 +256,77 @@ export const SupabaseStore = {
         combo_id: p.combo_id || null,
         combo_name: p.combo_name || null,
         status: p.status || 'pending',
-        // 🔥 Forcer created_at à maintenant pour le palier (getPredictionsByCreatedAt)
+        // 🔥 created_at : maintenant par défaut, mais préservé si upsert d'une existante
         created_at: nowISO,
       };
     });
 
     // 🔒 SÉCURITÉ: Exclure les match_ids déjà vérifiés (status='completed')
     // Un upsert écraserait status='completed' par 'pending' et perdrait la vérification
+    // 🔒 SÉCURITÉ 2: Préserver created_at des prédictions existantes (non-completed)
+    // pour éviter que le bilan de la veille mélange les dates
     try {
       const matchIds = normalized.map(p => p.match_id);
-      const { data: completedIds } = await supabase
+      const { data: existingPreds } = await supabase
         .from('predictions')
-        .select('match_id')
-        .in('match_id', matchIds)
-        .eq('status', 'completed');
-      if (completedIds && completedIds.length > 0) {
-        const completedSet = new Set(completedIds.map((r: any) => r.match_id));
-        const before = normalized.length;
-        const filtered = normalized.filter(p => !completedSet.has(p.match_id));
-        console.log(`🔒 [UPSAFEGUARD] ${completedIds.length} prédictions déjà vérifiées exclues de l'upsert (${before} → ${filtered.length})`);
-        if (filtered.length === 0) return 0;
-        // Continue with filtered
-        try {
-          const { data, error } = await supabase
-            .from('predictions')
-            .upsert(filtered, { onConflict: 'match_id' })
-            .select();
-          if (error) {
-            console.error('Erreur ajout prédictions:', error);
+        .select('match_id, created_at, status')
+        .in('match_id', matchIds);
+
+      if (existingPreds && existingPreds.length > 0) {
+        // Séparer les completed (à exclure) et les non-completed (à préserver created_at)
+        const completedSet = new Set<string>();
+        const existingMap = new Map<string, string>();
+        for (const ep of existingPreds) {
+          if (ep.status === 'completed') {
+            completedSet.add(ep.match_id);
+          } else {
+            existingMap.set(ep.match_id, ep.created_at as string);
+          }
+        }
+
+        if (completedSet.size > 0) {
+          const before = normalized.length;
+          const filtered = normalized.filter(p => !completedSet.has(p.match_id));
+          console.log(`🔒 [UPSAFEGUARD] ${completedSet.size} prédictions déjà vérifiées exclues de l'upsert (${before} → ${filtered.length})`);
+          if (filtered.length === 0) return 0;
+
+          // Préserver created_at pour les non-completed existantes
+          for (const p of filtered) {
+            const origCreated = existingMap.get(p.match_id);
+            if (origCreated) {
+              p.created_at = origCreated;
+              console.log(`🔒 [UPSAFEGUARD] created_at préservé pour ${p.match_id?.slice(0, 50)}: ${origCreated.split('T')[0]}`);
+            }
+          }
+
+          try {
+            const { data, error } = await supabase
+              .from('predictions')
+              .upsert(filtered, { onConflict: 'match_id' })
+              .select();
+            if (error) {
+              console.error('Erreur ajout prédictions:', error);
+              return 0;
+            }
+            return data?.length || 0;
+          } catch (e) {
+            console.error('Exception ajout prédictions:', e);
             return 0;
           }
-          return data?.length || 0;
-        } catch (e) {
-          console.error('Exception ajout prédictions:', e);
-          return 0;
+        }
+
+        // Pas de completed, mais des existantes → préserver created_at
+        const before = normalized.length;
+        let preservedCount = 0;
+        for (const p of normalized) {
+          const origCreated = existingMap.get(p.match_id);
+          if (origCreated) {
+            p.created_at = origCreated;
+            preservedCount++;
+          }
+        }
+        if (preservedCount > 0) {
+          console.log(`🔒 [UPSAFEGUARD] created_at préservé pour ${preservedCount}/${before} prédictions existantes`);
         }
       }
     } catch {
@@ -542,6 +579,97 @@ export const SupabaseStore = {
       return !error;
     } catch {
       return false;
+    }
+  },
+
+  /**
+   * Nettoie les prédictions corrompues : predicted_result null/avoid/empty
+   * @param dateISO Optionnel : limiter à une date de match spécifique
+   * @returns { deleted: number, fixed: number, details: any[] }
+   */
+  async fixCorruptedPredictions(dateISO?: string): Promise<{ deleted: number; fixed: number; details: any[] }> {
+    const supabase = getSupabase();
+    if (!supabase) return { deleted: 0, fixed: 0, details: [] };
+
+    try {
+      // Récupérer les prédictions avec predicted_result corrompu
+      let query = supabase
+        .from('predictions')
+        .select('*')
+        .or('predicted_result.is.null,predicted_result.eq.avoid,predicted_result.eq.')
+        .order('match_date', { ascending: true });
+
+      const { data, error } = await query;
+      if (error) { console.error('fixCorruptedPredictions error:', error); return { deleted: 0, fixed: 0, details: [] }; }
+
+      let allCorrupted = (data as DbPrediction[]) || [];
+
+      // Filtrer par date si demandé
+      if (dateISO) {
+        allCorrupted = allCorrupted.filter(p => {
+          const md = (p.match_date || '').split('T')[0];
+          const ca = (p.created_at || '').split('T')[0];
+          return md === dateISO || ca === dateISO;
+        });
+      }
+
+      if (allCorrupted.length === 0) {
+        console.log('✅ [FIX-CORRUPTED] Aucune prédiction corrompue trouvée');
+        return { deleted: 0, fixed: 0, details: [] };
+      }
+
+      console.log(`🔧 [FIX-CORRUPTED] ${allCorrupted.length} prédictions corrompues trouvées`);
+
+      let deleted = 0;
+      let fixed = 0;
+      const details: any[] = [];
+
+      for (const p of allCorrupted) {
+        // Déduire le predicted_result depuis les cotes (le favori = cote la plus basse)
+        let inferredResult: 'home' | 'away' | 'draw' = 'home';
+        const hOdds = p.odds_home || 999;
+        const aOdds = p.odds_away || 999;
+        const dOdds = p.odds_draw || 999;
+
+        if (dOdds < hOdds && dOdds < aOdds) {
+          inferredResult = 'draw';
+        } else if (aOdds < hOdds) {
+          inferredResult = 'away';
+        }
+        // else home (default)
+
+        // Mettre à jour predicted_result
+        const { error: updateError } = await supabase
+          .from('predictions')
+          .update({ predicted_result: inferredResult })
+          .eq('match_id', p.match_id);
+
+        if (updateError) {
+          console.error(`❌ [FIX-CORRUPTED] Échec mise à jour ${p.match_id}:`, updateError.message);
+          // Si on ne peut pas corriger, supprimer
+          const delOk = await this.deleteByMatchId(p.match_id);
+          if (delOk) deleted++;
+          details.push({ match: `${p.home_team} vs ${p.away_team}`, action: 'deleted', reason: updateError.message });
+        } else {
+          fixed++;
+          details.push({
+            match: `${p.home_team} vs ${p.away_team}`,
+            sport: p.sport,
+            match_date: (p.match_date || '').split('T')[0],
+            created_at: (p.created_at || '').split('T')[0],
+            old_predicted: p.predicted_result || 'null',
+            new_predicted: inferredResult,
+            status: p.status,
+            action: 'fixed',
+          });
+        }
+      }
+
+      console.log(`🔧 [FIX-CORRUPTED] Résultat: ${fixed} corrigées, ${deleted} supprimées`);
+      return { deleted, fixed, details };
+    } catch (e: any) {
+      console.error('fixCorruptedPredictions:', e);
+      return { deleted: 0, fixed: 0, details: [] };
     }
   },
 
