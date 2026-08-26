@@ -400,3 +400,22 @@ Stage Summary:
 - VN bilan: auto-fix automatique + code déjà correct
 - Bilan mismatch: causé par created_at manquant (fixé)
 - Résultats en attente: +8 ligues, abbreviations, meilleur diagnostic
+
+---
+Task ID: 1
+Agent: Main
+Task: Post-déploiement — fix-corrupted + analyse doublons + bilan manuel 25 août + vérification pollution
+
+Work Log:
+- Endpoint fix-corrupted déjà déployé (commits bd81553 + 1d0286a + 9ea0963)
+- CRON_SECRET inaccessible localement (Vercel CLI non connecté, env vars uniquement sur Vercel)
+- Préparé commande curl pour l'utilisateur avec instructions
+- Analysé les doublons Telegram du 25 août: causés par isDuplicate() qui compare le hash du message (incluant les cotes), or ESPN met à jour les cotes entre 07:00 et 18:00 UTC → hash différent → doublon non détecté
+- Fait le bilan manuel du 25 août via web search (EFL.com): 0/4 kamikazes (Doncaster 1-3, Plymouth 2-4, Sheff Wed 0-2, Birmingham 1-6)
+- Vérifié la pollution des données: bilan quotidien protégé (filtre created_at + filet anti-matchs-anciens), bilan mensuel risque faible (N/A cosmétique), upsert futur safe (match_id inclut date), auto-fix dans verify-all + telegram-results
+
+Stage Summary:
+- Données corrompues du 24 août: NE POLLUENT PAS les bilans quotidiens futurs
+- Bilan 25 août: 0/4 kamikazes, ROI -100%, cohérent (outsiders Carabao Cup vs Premier League)
+- Doublons: design issue avec isDuplicate (hash-based), à corriger futur (match_id-based)
+- ACTION REQUISE UTILISATEUR: exécuter curl fix-corrupted avec son CRON_SECRET
