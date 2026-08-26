@@ -1945,6 +1945,16 @@ export async function GET(request: NextRequest) {
         break;
         
       case 'verify':
+        // 🔧 AUTO-FIX: corriger les predicted_result corrompus avant vérification
+        try {
+          const autoFixResult = await SupabaseStore.fixCorruptedPredictions();
+          if (autoFixResult.fixed > 0 || autoFixResult.deleted > 0) {
+            console.log(`🔧 [AUTO-FIX] ${autoFixResult.fixed} predicted_result corrigés, ${autoFixResult.deleted} supprimés avant vérification`);
+          }
+        } catch (e: any) {
+          console.log('⚠️ [AUTO-FIX] Échec du nettoyage auto:', e.message);
+        }
+
         const verifyResult = await verifyAllResults();
         const mlResult = await trainMLModel();
         
@@ -3500,6 +3510,16 @@ export async function POST(request: NextRequest) {
         break;
         
       case 'verify':
+        // 🔧 AUTO-FIX: corriger les predicted_result corrompus avant vérification
+        try {
+          const autoFixResult2 = await SupabaseStore.fixCorruptedPredictions();
+          if (autoFixResult2.fixed > 0 || autoFixResult2.deleted > 0) {
+            console.log(`🔧 [AUTO-FIX] ${autoFixResult2.fixed} predicted_result corrigés, ${autoFixResult2.deleted} supprimés avant vérification`);
+          }
+        } catch (e: any) {
+          console.log('⚠️ [AUTO-FIX] Échec du nettoyage auto:', e.message);
+        }
+
         const verifyResult = await verifyAllResults();
         const mlResult = await trainMLModel();
         
