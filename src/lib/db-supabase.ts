@@ -230,7 +230,10 @@ export const SupabaseStore = {
     const supabase = getSupabase();
     if (!supabase) return 0;
 
-    const nowISO = new Date().toISOString();
+    // 🔒 Ne JAMAIS inclure created_at dans l'upsert.
+    // - Nouvelles lignes : PostgreSQL DEFAULT now() gère created_at
+    // - Upserts (existants) : created_at est PRÉSERVÉ automatiquement car absent du set
+    // Cela évite le bug où un re-lancement du pipeline changeait la date de publication
     const normalized: Record<string, any>[] = predictions.map(p => {
       const pr = p.predicted_result;
       return {
@@ -256,31 +259,24 @@ export const SupabaseStore = {
         combo_id: p.combo_id || null,
         combo_name: p.combo_name || null,
         status: p.status || 'pending',
-        // 🔥 created_at : maintenant par défaut, mais préservé si upsert d'une existante
-        created_at: nowISO,
+        // ⛔ created_at volontairement OMIS — voir commentaire ci-dessus
       };
     });
 
     // 🔒 SÉCURITÉ: Exclure les match_ids déjà vérifiés (status='completed')
     // Un upsert écraserait status='completed' par 'pending' et perdrait la vérification
-    // 🔒 SÉCURITÉ 2: Préserver created_at des prédictions existantes (non-completed)
-    // pour éviter que le bilan de la veille mélange les dates
     try {
       const matchIds = normalized.map(p => p.match_id);
       const { data: existingPreds } = await supabase
         .from('predictions')
-        .select('match_id, created_at, status')
+        .select('match_id, status')
         .in('match_id', matchIds);
 
       if (existingPreds && existingPreds.length > 0) {
-        // Séparer les completed (à exclure) et les non-completed (à préserver created_at)
         const completedSet = new Set<string>();
-        const existingMap = new Map<string, string>();
         for (const ep of existingPreds) {
           if (ep.status === 'completed') {
             completedSet.add(ep.match_id);
-          } else {
-            existingMap.set(ep.match_id, ep.created_at as string);
           }
         }
 
@@ -289,15 +285,6 @@ export const SupabaseStore = {
           const filtered = normalized.filter(p => !completedSet.has(p.match_id));
           console.log(`🔒 [UPSAFEGUARD] ${completedSet.size} prédictions déjà vérifiées exclues de l'upsert (${before} → ${filtered.length})`);
           if (filtered.length === 0) return 0;
-
-          // Préserver created_at pour les non-completed existantes
-          for (const p of filtered) {
-            const origCreated = existingMap.get(p.match_id);
-            if (origCreated) {
-              p.created_at = origCreated;
-              console.log(`🔒 [UPSAFEGUARD] created_at préservé pour ${p.match_id?.slice(0, 50)}: ${origCreated.split('T')[0]}`);
-            }
-          }
 
           try {
             const { data, error } = await supabase
@@ -308,25 +295,19 @@ export const SupabaseStore = {
               console.error('Erreur ajout prédictions:', error);
               return 0;
             }
+            // 🔧 Post-upsert: fixer created_at=NULL pour les nouvelles insertions
+            // (si la colonne n'a pas de DEFAULT)
+            const newIds = filtered.map(p => p.match_id);
+            await supabase
+              .from('predictions')
+              .update({ created_at: new Date().toISOString() })
+              .in('match_id', newIds)
+              .is('created_at', null);
             return data?.length || 0;
           } catch (e) {
             console.error('Exception ajout prédictions:', e);
             return 0;
           }
-        }
-
-        // Pas de completed, mais des existantes → préserver created_at
-        const before = normalized.length;
-        let preservedCount = 0;
-        for (const p of normalized) {
-          const origCreated = existingMap.get(p.match_id);
-          if (origCreated) {
-            p.created_at = origCreated;
-            preservedCount++;
-          }
-        }
-        if (preservedCount > 0) {
-          console.log(`🔒 [UPSAFEGUARD] created_at préservé pour ${preservedCount}/${before} prédictions existantes`);
         }
       }
     } catch {
@@ -338,12 +319,22 @@ export const SupabaseStore = {
         .from('predictions')
         .upsert(normalized, { onConflict: 'match_id' })
         .select();
-      
+
       if (error) {
         console.error('Erreur ajout prédictions:', error);
         return 0;
       }
-      
+
+      // 🔧 Post-upsert: fixer created_at=NULL pour les nouvelles insertions
+      if (data && data.length > 0) {
+        const newIds = (data as any[]).map(p => p.match_id);
+        await supabase
+          .from('predictions')
+          .update({ created_at: new Date().toISOString() })
+          .in('match_id', newIds)
+          .is('created_at', null);
+      }
+
       return data?.length || 0;
     } catch (e) {
       console.error('Exception ajout prédictions:', e);

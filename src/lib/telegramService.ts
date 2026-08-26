@@ -1946,6 +1946,27 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     console.log(`📊 [BILAN] Détails: ${JSON.stringify(dayPreds.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, created: (p.created_at || '').split('T')[0], match: (p.match_date || '').split('T')[0] })))}`);
   }
 
+  // 🔒 FILET DE SÉCURITÉ: Exclure les matchs dont match_date est trop ancien
+  // (match_date < targetDate - 1 jour) = probablement un re-save qui a corrompu created_at
+  const targetDT = new Date(targetDate + 'T12:00:00Z');
+  const minAllowedDate = new Date(targetDT);
+  minAllowedDate.setDate(minAllowedDate.getDate() - 1);
+  const minAllowedISO = minAllowedDate.toISOString().split('T')[0];
+
+  const dateFiltered = dayPreds.filter(p => {
+    if (!p.match_date) return true;
+    const matchDate = p.match_date.split('T')[0];
+    return matchDate >= minAllowedISO;
+  });
+  if (dateFiltered.length < dayPreds.length) {
+    const excluded = dayPreds.filter(p => {
+      if (!p.match_date) return false;
+      return p.match_date.split('T')[0] < minAllowedISO;
+    });
+    console.log(`🚨 [BILAN] EXCLUES ${excluded.length} prédictions avec match_date trop ancien (avant ${minAllowedISO}): ${JSON.stringify(excluded.map(p => ({ team: p.home_team, match: (p.match_date || '').split('T')[0], created: (p.created_at || '').split('T')[0] })))}`);
+    dayPreds = dateFiltered;
+  }
+
   // 🔧 EXCLURE les matchs dont la date est dans le futur (pas encore joués)
   // Le cron SOIR publie des matchs du lendemain → ils apparaissent pending dans le bilan
   const nowISO = new Date().toISOString().split('T')[0];
