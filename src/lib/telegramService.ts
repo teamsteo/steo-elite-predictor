@@ -1217,6 +1217,29 @@ export function selectTopDailyPredictions(predictions: TelegramMatch[]): {
     return (p.riskPercentage ?? 100) <= maxRisk;
   });
   const excludedRisk = withRealOdds.length - underRisk.length;
+
+  // 🔍 DIAGNOSTIC: Montrer pourquoi les matchs sont exclus par risque
+  if (excludedRisk > 0) {
+    const excluded = withValidOdds.filter(p => {
+      const sport = (p.sport || '').toLowerCase();
+      let maxRisk: number;
+      if (sport === 'baseball' || sport === 'hockey' || sport === 'nhl' || sport === 'mlb') maxRisk = TIGHT_MAX_RISK_HIGH_RISK_SPORTS;
+      else if (sport === 'basketball' || sport === 'basket' || sport === 'nba') maxRisk = TIGHT_MAX_RISK_BASKETBALL;
+      else maxRisk = TIGHT_MAX_RISK_FOOTBALL;
+      return (p.riskPercentage ?? 100) > maxRisk;
+    });
+    const riskRanges: Record<string, number> = { '26-35%': 0, '36-50%': 0, '51%+': 0 };
+    for (const p of excluded) {
+      const r = p.riskPercentage ?? 100;
+      if (r <= 35) riskRanges['26-35%']++;
+      else if (r <= 50) riskRanges['36-50%']++;
+      else riskRanges['51%+']++;
+    }
+    console.log(`🔍 [DIAG STANDARD] ${excludedRisk} exclus par risque: ${JSON.stringify(riskRanges)} (sur ${withValidOdds.length} à cotes réelles)`);
+    for (const p of excluded.slice(0, 5)) {
+      console.log(`   ✗ ${p.homeTeam} vs ${p.awayTeam} | risk=${p.riskPercentage}% | sport=${p.sport} | league=${p.league || '?'} | topChamp=${isTopChampionship(p.league)}`);
+    }
+  }
   
   // 3) Confiance minimum: proba ≥ 70% (aligné sur backtest)
   const withConfidence = underRisk.filter(p => {
@@ -1515,6 +1538,48 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     const sport = (p.sport || '').toLowerCase();
     return !EXCLUDED_TELEGRAM_SPORTS.includes(sport) && !sport.includes('tennis');
   });
+
+  // 🔍 DIAGNOSTIC: Log la distribution des risques quand on arrive ici
+  // (c'est-à-dire quand AUCUN safe/modéré n'a été trouvé)
+  const riskBuckets: Record<string, number> = {
+    '0-25% (safe standard)': 0,
+    '26-35% (top champ)': 0,
+    '36-50% (zone morte)': 0,
+    '51%+ (kamikaze)': 0,
+    'isEstimated=true': 0,
+    'odds hors bornes': 0,
+    'VB exclus': 0,
+  };
+  for (const p of nonTennis) {
+    if (p.isEstimated) { riskBuckets['isEstimated=true']++; continue; }
+    if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) { riskBuckets['odds hors bornes']++; continue; }
+    if (p.valueBetDetected && p.confidence !== 'low') {
+      const vbDir = p.valueBetType || p.predictedResult;
+      const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
+      if (vbOdds && vbOdds <= 8.0) {
+        const vbRisk = Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway));
+        if (vbRisk <= 50) { riskBuckets['VB exclus']++; continue; }
+      }
+    }
+    const r = p.riskPercentage ?? 100;
+    if (r <= 25) riskBuckets['0-25% (safe standard)']++;
+    else if (r <= 35) riskBuckets['26-35% (top champ)']++;
+    else if (r <= 50) riskBuckets['36-50% (zone morte)']++;
+    else riskBuckets['51%+ (kamikaze)']++;
+  }
+  console.log(`🔍 [DIAG KAMIKAZE] Distribution risques (${nonTennis.length} non-tennis): ${JSON.stringify(riskBuckets)}`);
+  // Détail par match pour les matchs de la zone morte
+  const deadZone = nonTennis.filter(p => {
+    const r = p.riskPercentage ?? 100;
+    return r > 25 && r <= 50 && !p.isEstimated && isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway);
+  });
+  if (deadZone.length > 0) {
+    console.log(`🔍 [ZONE MORTE] ${deadZone.length} matchs entre 26-50% risque:`);
+    for (const p of deadZone.slice(0, 5)) {
+      console.log(`   - ${p.homeTeam} vs ${p.awayTeam} | risk=${p.riskPercentage}% | sport=${p.sport} | league=${p.league || '?'} | est=${p.isEstimated}`);
+    }
+  }
+
   // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
   // 🔒 COTES DANS BORNES: favori >= 1.25, aucune cote > 8.00
   const kamikazePicks = dedupMatches(nonTennis.filter(p => {
