@@ -256,6 +256,7 @@ export const SupabaseStore = {
         risk_percentage: p.risk_percentage ?? 50,
         is_value_bet: p.is_value_bet === true,
         edge_value: p.edge_value || 0,
+        source: p.source || null,
         is_combo: p.is_combo === true,
         combo_id: p.combo_id || null,
         combo_name: p.combo_name || null,
