@@ -1980,6 +1980,27 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     console.log(`📊 [BILAN] Exclu ${dayPreds.length - allDayPredictions.length} matchs futurs (match_date > aujourd'hui)`);
   }
 
+  // 🔒 AUTO-RÉPARATION: corriger les predicted_result corrompus EN MÉMOIRE avant le bilan
+  // Cela garantit que le bilan n'affiche JAMAIS "Donnée corrompue"
+  // tout en fixant aussi en base pour les bilans futurs
+  const VALID_RESULTS = new Set(['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no']);
+  for (const p of allDayPredictions) {
+    if (!p.predicted_result || !VALID_RESULTS.has(p.predicted_result)) {
+      const oldVal = p.predicted_result || 'null';
+      // Déduire depuis les cotes (favori = cote la plus basse)
+      const hOdds = p.odds_home || 999;
+      const aOdds = p.odds_away || 999;
+      const dOdds = p.odds_draw || 999;
+      let inferred: 'home' | 'draw' | 'away' = 'home';
+      if (dOdds < hOdds && dOdds < aOdds) inferred = 'draw';
+      else if (aOdds < hOdds) inferred = 'away';
+      p.predicted_result = inferred;
+      console.log(`🔧 [BILAN AUTO-FIX] ${p.home_team} vs ${p.away_team}: '${oldVal}' → '${inferred}' (cotes: H=${hOdds} D=${dOdds} A=${aOdds})`);
+      // Fix en base aussi (async, non-bloquant)
+      SupabaseStore.fixSinglePrediction(p.match_id, inferred).catch(() => {});
+    }
+  }
+
   const emptySummary: DailyResultSummary = {
     date: targetDate,
     totalPredictions: 0,
@@ -2118,9 +2139,8 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
       } else if (isVerified) {
         summary.totalVerified++;
 
-        // 🔒 SÉCURITÉ: Ignorer les prédictions avec predicted_result corrompu/null/avoid
+        // 🔒 SÉCURITÉ: Ignorer les prédictions avec predicted_result corrompu
         const hasValidPrediction = p.predicted_result &&
-          p.predicted_result !== 'avoid' &&
           ['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no'].includes(p.predicted_result);
 
         if (!hasValidPrediction) {
@@ -2638,6 +2658,22 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
       const matchDate = p.match_date.split('T')[0];
       return matchDate <= nowISO;
     });
+
+    // 🔒 AUTO-RÉPARATION: corriger les predicted_result corrompus (même logique que le bilan régulier)
+    const VALID_RESULTS = new Set(['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no']);
+    for (const p of allDayPredictions) {
+      if (!p.predicted_result || !VALID_RESULTS.has(p.predicted_result)) {
+        const hOdds = p.odds_home || 999;
+        const aOdds = p.odds_away || 999;
+        const dOdds = p.odds_draw || 999;
+        let inferred: 'home' | 'draw' | 'away' = 'home';
+        if (dOdds < hOdds && dOdds < aOdds) inferred = 'draw';
+        else if (aOdds < hOdds) inferred = 'away';
+        p.predicted_result = inferred;
+        console.log(`🔧 [BILAN KAMIKAZE AUTO-FIX] ${p.home_team} vs ${p.away_team}: → '${inferred}'`);
+        SupabaseStore.fixSinglePrediction(p.match_id, inferred).catch(() => {});
+      }
+    }
     
     // 🔍 LOG DIAGNOSTIC
     console.log(`💣 [BILAN KAMIKAZE] created_at: ${targetDate}, trouvé: ${allDayPredictions.length} pronostics`);

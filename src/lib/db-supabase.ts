@@ -53,7 +53,7 @@ export interface DbPrediction {
   odds_draw: number | null;
   odds_away: number;
   
-  predicted_result: 'home' | 'draw' | 'away' | 'over' | 'under' | 'btts_yes' | 'btts_no' | 'avoid';
+  predicted_result: 'home' | 'draw' | 'away' | 'over' | 'under' | 'btts_yes' | 'btts_no';
   predicted_goals?: string;
   confidence: 'very_high' | 'high' | 'medium' | 'low';
   risk_percentage: number;
@@ -117,9 +117,11 @@ function normalizeSport(sport: string): 'football' | 'basketball' | 'baseball' |
   return 'other';
 }
 
-function normalizeResult(result: string): 'home' | 'draw' | 'away' | 'over' | 'under' | 'btts_yes' | 'btts_no' | 'avoid' {
-  if (!result) return 'home'; // 🔒 FIX: ne jamais retourner 'avoid' par défaut
-  const r = result.toLowerCase();
+function normalizeResult(result: string): 'home' | 'draw' | 'away' | 'over' | 'under' | 'btts_yes' | 'btts_no' {
+  // 🔒 BULLETPROOF: ne JAMAIS retourner 'avoid', null, ou chaîne vide
+  if (!result || result === 'avoid') return 'home';
+  const r = String(result).toLowerCase().trim();
+  if (!r || r === 'avoid') return 'home';
   if (r === 'home' || r === '1' || r === 'h') return 'home';
   if (r === 'draw' || r === 'x' || r === 'nul') return 'draw';
   if (r === 'away' || r === '2' || r === 'a') return 'away';
@@ -127,8 +129,7 @@ function normalizeResult(result: string): 'home' | 'draw' | 'away' | 'over' | 'u
   if (r.includes('under')) return 'under';
   if (r.includes('btts') && r.includes('yes')) return 'btts_yes';
   if (r.includes('btts') && r.includes('no')) return 'btts_no';
-  // 🔒 FIX: Si la valeur est non reconnue, retourner 'home' au lieu de 'avoid'
-  // 'avoid' corrompt le bilan (affiché 'Non joué' mais compté comme pari)
+  // 🔒 Toute valeur non reconnue → 'home' (favori par défaut)
   console.warn(`⚠️ normalizeResult: valeur non reconnue '${result}' → fallback 'home'`);
   return 'home';
 }
@@ -671,6 +672,24 @@ export const SupabaseStore = {
       const { error } = await supabase
         .from('predictions')
         .delete()
+        .eq('match_id', matchId);
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Corrige une seule prédiction: met à jour predicted_result
+   * Utilisé par l'auto-réparation du bilan (fire-and-forget)
+   */
+  async fixSinglePrediction(matchId: string, predictedResult: string): Promise<boolean> {
+    const supabase = getSupabase();
+    if (!supabase) return false;
+    try {
+      const { error } = await supabase
+        .from('predictions')
+        .update({ predicted_result: predictedResult })
         .eq('match_id', matchId);
       return !error;
     } catch {
