@@ -58,7 +58,7 @@ export function isDuplicate(publicationType: string, messageContent: string, slo
 }
 
 /** Clé unique pour un match (équipe domic + ext) */
-function matchKey(m: { homeTeam?: string; awayTeam?: string }): string {
+export function matchKey(m: { homeTeam?: string; awayTeam?: string }): string {
   const h = (m.homeTeam || '').toLowerCase().trim();
   const a = (m.awayTeam || '').toLowerCase().trim();
   return `${h} vs ${a}`;
@@ -2062,6 +2062,13 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     return matchDate <= nowISO; // exclure les matchs futurs
   });
 
+  // 🏆 EXCLURE les prédictions top-championship du bilan principal
+  // (elles ont leur propre bilan séparé)
+  const mainPredictions = allDayPredictions.filter(p => (p as any).source !== 'top-championship');
+  if (mainPredictions.length < allDayPredictions.length) {
+    console.log(`🏆 [BILAN] Exclu ${allDayPredictions.length - mainPredictions.length} top-championship (bilan séparé)`);
+  }
+
   if (allDayPredictions.length < dayPreds.length) {
     console.log(`📊 [BILAN] Exclu ${dayPreds.length - allDayPredictions.length} matchs futurs (match_date > aujourd'hui)`);
   }
@@ -2070,7 +2077,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
   // Cela garantit que le bilan n'affiche JAMAIS "Donnée corrompue"
   // tout en fixant aussi en base pour les bilans futurs
   const VALID_RESULTS = new Set(['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no']);
-  for (const p of allDayPredictions) {
+  for (const p of mainPredictions) {
     if (!p.predicted_result || !VALID_RESULTS.has(p.predicted_result)) {
       const oldVal = p.predicted_result || 'null';
       // Déduire depuis les cotes (favori = cote la plus basse)
@@ -2112,7 +2119,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     // 📊 BILAN : UNIQUEMENT les pronos du jour (safe + modéré, risk < 51)
     // Les kamikazes (risk >= 51) ont leur BILAN KAMIKAZE séparé
     // Les value bets sont comptabilisés dans la section VB séparée
-    const dayPredictions = allDayPredictions;
+    const dayPredictions = mainPredictions;
     if (dayPredictions.length === 0) return emptySummary;
 
     // 🤖 Séparer les combos (is_combo=true) des pronostics normaux
@@ -2952,6 +2959,217 @@ async function sendResultSticker(winRate: number, wins: number, losses: number):
 }
 
 // ============================================
+// 🏆 TOP CHAMPIONSHIP — Publication + Bilan
+// ============================================
+
+/**
+ * Publie les pronostics Top Championship sur Telegram (message séparé).
+ * Seuils assouplis : risk ≤ 35%, win prob ≥ 65%.
+ * Uniquement foot (Top 5 championnats + Coupes d'Europe).
+ */
+export async function publishTopChampionshipToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
+  if (predictions.length === 0) {
+    console.log('🏆 [TOP CHAMP] Aucun pronostic top championship à publier');
+    return false;
+  }
+
+  const today = new Date().toLocaleDateString('fr-FR', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  });
+
+  const safeCount = predictions.filter(p => (p.riskPercentage || 100) <= 30).length;
+  const moderateCount = predictions.length - safeCount;
+
+  let message = '';
+  message += '╔═════════════════════════════╗\n';
+  message += '║\n';
+  message += '║   🏆 <b>TOP CHAMPIONNAT</b>\n';
+  message += '║\n';
+  message += '╚═════════════════════════════╝\n\n';
+  message += `${today.charAt(0).toUpperCase() + today.slice(1)}\n\n`;
+  message += `📊 <b>${predictions.length}</b> pronostic${predictions.length > 1 ? 's' : ''} · Grands championnats\n`;
+  message += `🟢 ${safeCount} safe  ·  🟡 ${moderateCount} modéré\n\n`;
+
+  // Trier : safe en premier
+  const sorted = [...predictions].sort((a, b) => (a.riskPercentage || 100) - (b.riskPercentage || 100));
+
+  for (let i = 0; i < sorted.length; i++) {
+    const block = await formatMatchBlock(sorted[i], i + 1, true);
+    message += block;
+  }
+
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+  message += '🏆 Top Championnat · Seuils assouplis\n';
+  message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+  // Dedup par slot horaire (MATIN à 07h, SOIR à 18h)
+  const hourUTC = new Date().getUTCHours();
+  const slotSuffix = hourUTC < 14 ? 'MATIN' : 'SOIR';
+  if (isDuplicate('top-championship', message, slotSuffix)) {
+    console.log('🏆 [TOP CHAMP] Doublon détecté — publication ignorée');
+    return false;
+  }
+
+  const sent = await sendTelegramMessageLong(message);
+  if (sent) {
+    console.log(`🏆 [TOP CHAMP] ${predictions.length} pronostics publiés sur Telegram (${slotSuffix})`);
+  }
+  return sent;
+}
+
+/**
+ * Bilan séparé pour les pronostics Top Championship.
+ * Appelé dans le cron telegram-results (05:30 UTC) après le bilan principal.
+ */
+export async function publishTopChampionshipBilanToTelegram(dateISO?: string): Promise<boolean> {
+  const targetDate = dateISO || (() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  })();
+
+  try {
+    const startRange = `${targetDate}T00:00:00Z`;
+    const endRange = `${targetDate}T23:59:59Z`;
+
+    // Récupérer uniquement les prédictions top championship
+    const { data, error } = await SupabaseStore.queryPredictions({
+      gte_created: startRange,
+      lte_created: endRange,
+      source: 'top-championship',
+    });
+
+    if (error || !data || data.length === 0) {
+      console.log('🏆 [BILAN TOP CHAMP] Aucune prédiction top championship pour cette date');
+      return false;
+    }
+
+    const preds = data as DbPrediction[];
+
+    // Exclure matchs futurs
+    const nowISO = new Date().toISOString().split('T')[0];
+    const validPreds = preds.filter(p => {
+      if (!p.match_date) return true;
+      return p.match_date.split('T')[0] <= nowISO;
+    });
+
+    if (validPreds.length === 0) return false;
+
+    // Calculer les stats
+    let wins = 0, losses = 0, totalProfit = 0;
+    const details: any[] = [];
+
+    for (const p of validPreds) {
+      // Auto-fix corrompu
+      const VALID = new Set(['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no']);
+      if (!p.predicted_result || !VALID.has(p.predicted_result)) {
+        const hO = p.odds_home || 999, aO = p.odds_away || 999, dO = p.odds_draw || 999;
+        p.predicted_result = (dO < hO && dO < aO) ? 'draw' : (aO < hO) ? 'away' : 'home';
+        try { await SupabaseStore.fixSinglePrediction(p.match_id, p.predicted_result); } catch { /* silent */ }
+      }
+
+      let betOdds = 1.0;
+      if (p.predicted_result === 'home') betOdds = p.odds_home || 1.0;
+      else if (p.predicted_result === 'away') betOdds = p.odds_away || 1.0;
+      else if (p.predicted_result === 'draw') betOdds = p.odds_draw || 1.0;
+
+      if (p.status === 'completed' && p.result_match !== null && p.result_match !== undefined) {
+        if (p.result_match === true) { wins++; totalProfit += (betOdds - 1); }
+        else { losses++; totalProfit -= 1; }
+      }
+
+      const predictedLabel = formatPredictedResult(p.predicted_result, 'football', p.home_team, p.away_team, p.odds_home, p.odds_draw, p.odds_away);
+      details.push({
+        homeTeam: p.home_team,
+        awayTeam: p.away_team,
+        league: p.league,
+        predicted: predictedLabel,
+        actualHome: p.home_score ?? null,
+        actualAway: p.away_score ?? null,
+        actualResult: p.actual_result || null,
+        resultMatch: p.result_match ?? null,
+        status: p.status || 'pending',
+      });
+    }
+
+    const total = wins + losses;
+    const hasPending = validPreds.filter(p => p.status === 'pending').length > 0;
+    const winRate = total > 0 ? Math.round((wins / total) * 100) : 0;
+    const roi = total > 0 ? Math.round(totalProfit * 100 / total) : 0;
+    const profitSign = totalProfit >= 0 ? '+' : '';
+    const roiSign = roi >= 0 ? '+' : '';
+
+    // Formatter la date
+    const dateObj = new Date(targetDate + 'T12:00:00');
+    const dayNames = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+    const monthNames = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const dateLabel = `${dayNames[dateObj.getDay()]} ${dateObj.getDate()} ${monthNames[dateObj.getMonth()]}`;
+
+    let message = '';
+    message += '╔═════════════════════════════╗\n';
+    message += '║\n';
+    message += '║   🏆 <b>BILAN TOP CHAMPIONNAT</b>\n';
+    message += '║\n';
+    message += '╚═════════════════════════════╝\n\n';
+    message += `📅 <b>${dateLabel}</b>\n\n`;
+
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    if (total > 0) {
+      const kEmoji = winRate >= 60 ? '🔥' : winRate >= 40 ? '📊' : '📉';
+      message += `${kEmoji} ✅ ${wins}/${total} corrects  ·  <b>${winRate}%</b>\n`;
+      if (totalProfit !== 0) {
+        const pEmoji = roi >= 0 ? '💰' : '📉';
+        message += `${pEmoji} ROI: <b>${roiSign}${roi}%</b> (${profitSign}${totalProfit.toFixed(2)}u)\n`;
+      }
+    } else if (hasPending) {
+      message += `⏳ <b>${validPreds.length} pronostic${validPreds.length > 1 ? 's' : ''} en attente</b>\n`;
+    }
+    message += '\n';
+
+    // Détails groupés par ligue
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '<b>DÉTAILS</b>\n\n';
+
+    // Grouper par ligue
+    const byLeague = new Map<string, typeof details>();
+    for (const d of details) {
+      const league = d.league || 'Autre';
+      if (!byLeague.has(league)) byLeague.set(league, []);
+      byLeague.get(league)!.push(d);
+    }
+
+    for (const [league, leagueDetails] of byLeague) {
+      message += `🏟️ <b>${league}</b>\n`;
+      for (const d of leagueDetails) {
+        if (d.status === 'completed' && d.resultMatch !== null) {
+          const rEmoji = d.resultMatch ? '✅' : '❌';
+          const actual = formatActualResult(d.actualResult, d.actualHome, d.actualAway);
+          message += `⚽ ${d.homeTeam} vs ${d.awayTeam}\n`;
+          message += `    ${rEmoji} <b>${d.predicted}</b> → <b>${actual}</b>\n`;
+        } else {
+          message += `⚽ ${d.homeTeam} vs ${d.awayTeam}\n`;
+          message += `    ⏳ <b>${d.predicted}</b> — En attente\n`;
+        }
+      }
+      message += '\n';
+    }
+
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    message += '🏆 Top Championnat · Seuils assouplis (risk ≤ 35%)\n';
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+    if (isDuplicate('top-championship-bilan', message)) {
+      return false;
+    }
+
+    return await sendTelegramMessageLong(message);
+  } catch (e) {
+    console.error('🏆 [BILAN TOP CHAMP] Erreur:', e);
+    return false;
+  }
+}
+
+// ============================================
 // BILAN MENSUEL PAR SPORT
 // ============================================
 
@@ -3201,7 +3419,6 @@ export async function publishComboToTelegram(combo: any): Promise<boolean> {
 
 export default {
   sendTelegramMessage,
-  publishPredictionToTelegram,
   publishDailySummaryToTelegram,
   publishValueBetsToTelegram,
   publishKamikazeToTelegram,
@@ -3211,11 +3428,16 @@ export default {
   publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
   publishComboToTelegram,
+  publishTopChampionshipToTelegram,
+  publishTopChampionshipBilanToTelegram,
   getTelegramChatId,
   testTelegramConnection,
   isSafeOrModerate,
   isKamikaze,
+  isTopChampionship,
   selectTopDailyPredictions,
+  selectTopChampionshipPredictions,
+  matchKey,
   capKamikazePerSport,
   sortKamikazePicks,
 };

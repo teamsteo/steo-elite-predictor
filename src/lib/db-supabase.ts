@@ -259,6 +259,7 @@ export const SupabaseStore = {
         is_combo: p.is_combo === true,
         combo_id: p.combo_id || null,
         combo_name: p.combo_name || null,
+        source: p.source || null,
         status: p.status || 'pending',
         // ⛔ created_at volontairement OMIS — voir commentaire ci-dessus
       };
@@ -483,6 +484,54 @@ export const SupabaseStore = {
       return rawData || [];
     } catch {
       return [];
+    }
+  },
+
+  /**
+   * Requête générique de prédictions avec filtres flexibles.
+   * Utilisée pour le bilan Top Championship (filtre par source).
+   */
+  async queryPredictions(opts: {
+    gte_created?: string;
+    lte_created?: string;
+    source?: string;
+  }): Promise<{ data: DbPrediction[] | null; error: any }> {
+    const supabase = getSupabase();
+    if (!supabase) return { data: null, error: 'Supabase not available' };
+
+    try {
+      let query = supabase.from('predictions').select('*');
+      if (opts.gte_created) query = query.gte('created_at', opts.gte_created);
+      if (opts.lte_created) query = query.lte('created_at', opts.lte_created);
+      if (opts.source) query = query.eq('source', opts.source);
+      query = query.order('created_at', { ascending: true });
+
+      const { data, error } = await query;
+      return { data: (data as DbPrediction[]) || null, error };
+    } catch (e) {
+      return { data: null, error: e };
+    }
+  },
+
+  /**
+   * Compte les prédictions d'une source pour aujourd'hui (quota journalier).
+   */
+  async countTodayBySource(source: string): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 0;
+
+    try {
+      const todayISO = new Date().toISOString().split('T')[0];
+      const { count, error } = await supabase
+        .from('predictions')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', `${todayISO}T00:00:00Z`)
+        .lte('created_at', `${todayISO}T23:59:59Z`)
+        .eq('source', source);
+      if (error) return 0;
+      return count || 0;
+    } catch {
+      return 0;
     }
   },
 

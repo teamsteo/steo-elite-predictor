@@ -26,10 +26,15 @@ import {
   publishDailyResultsToTelegram,
   publishKamikazeBilanToTelegram,
   publishMonthlyResultsToTelegram,
+  publishTopChampionshipToTelegram,
+  publishTopChampionshipBilanToTelegram,
   sendTelegramPersonalMessage,
   isSafeOrModerate,
   isKamikaze,
+  isTopChampionship,
   selectTopDailyPredictions,
+  selectTopChampionshipPredictions,
+  matchKey,
   capKamikazePerSport,
   sortKamikazePicks,
   vigRemovedProb,
@@ -2750,6 +2755,74 @@ export async function GET(request: NextRequest) {
           }
           
           const telegramResult = await publishDailySummaryToTelegram(predictions);
+
+          // ══════════════════════════════════════════════════════
+          // 🏆 TOP CHAMPIONNAT — Seuils assouplis (risk ≤ 35%, prob ≥ 65%)
+          // MÊMES prédictions ML, 0 appel API supplémentaire
+          // Uniquement foot Top 5 + Coupes d'Europe, max 5/jour
+          // ══════════════════════════════════════════════════════
+          let topChampCount = 0;
+          try {
+            // 1) Collecter tous les matchs déjà publiés (main + kamikazes + VBs) pour le dédup
+            const alreadyPublished = new Set<string>();
+            for (const p of (publishedList as any[])) alreadyPublished.add(matchKey(p));
+            for (const p of (toSave as any[])) alreadyPublished.add(matchKey(p));
+            // VBs
+            const vbKeys = predictions.filter((p: any) => p.valueBetDetected && p.confidence !== 'low')
+              .slice(0, 5).map((p: any) => matchKey(p));
+            vbKeys.forEach(k => alreadyPublished.add(k));
+
+            // 2) Compter combien de top-champ déjà publiés aujourd'hui
+            topChampCount = await SupabaseStore.countTodayBySource('top-championship');
+            console.log(`🏆 [TOP CHAMP] Quota aujourd'hui: ${topChampCount}/5 déjà publiés`);
+
+            if (topChampCount < 5) {
+              const { selected: topChampSelected, totalEligible: tcEligible, excludedDuplicate: tcDup } =
+                selectTopChampionshipPredictions(predictions, alreadyPublished, topChampCount);
+
+              console.log(`🏆 [TOP CHAMP] ${topChampSelected.length} sélectionnés (sur ${tcEligible} éligibles, ${tcDup} doublons exclus)`);
+
+              if (topChampSelected.length > 0) {
+                // Sauvegarder en DB avec source='top-championship'
+                const todayISO = new Date().toISOString().split('T')[0];
+                const topChampDb = topChampSelected.map((p: any) => {
+                  const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                  const dateStr = (p.date || '').split('T')[0] || todayISO;
+                  const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                  const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                  const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}-tc`;
+                  return {
+                    match_id: matchId,
+                    home_team: p.homeTeam,
+                    away_team: p.awayTeam,
+                    league: p.league || 'Unknown',
+                    sport: 'football',
+                    match_date: p.date || `${todayISO}T12:00:00Z`,
+                    odds_home: p.oddsHome || 1.0,
+                    odds_draw: p.oddsDraw || null,
+                    odds_away: p.oddsAway || 1.0,
+                    predicted_result: p.predictedResult || 'home',
+                    confidence: p.confidence || 'medium',
+                    risk_percentage: p.riskPercentage ?? 50,
+                    is_value_bet: p.valueBetDetected === true,
+                    edge_value: p._mlEdge || 0,
+                    source: 'top-championship',
+                    status: 'pending' as const,
+                  };
+                });
+                const tcSaved = await SupabaseStore.addPredictions(topChampDb);
+                console.log(`🏆 [TOP CHAMP] ${tcSaved} sauvegardés en Supabase (source=top-championship)`);
+
+                // Publier sur Telegram (message séparé)
+                await publishTopChampionshipToTelegram(topChampSelected);
+              }
+            } else {
+              console.log(`🏆 [TOP CHAMP] Quota journalier atteint (5/5) — skip`);
+            }
+          } catch (tcErr: any) {
+            console.error(`🏆 [TOP CHAMP] Erreur: ${tcErr.message}`);
+          }
+
           const isKamikazeMode = publishedList.length === 0 && predictions.length > 0;
           result = { 
             telegram: { 
@@ -3194,6 +3267,9 @@ export async function GET(request: NextRequest) {
           // Publier aussi le bilan kamikaze séparément
           const kamikazeBilanDate = targetDate || undefined;
           const kamikazeResult = await publishKamikazeBilanToTelegram(kamikazeBilanDate);
+          
+          // 🏆 Publier le bilan Top Championship séparément
+          await publishTopChampionshipBilanToTelegram(kamikazeBilanDate);
           
           // 🔔 Si aucun bilan n'a été publié
           if (!telegramResult && !kamikazeResult) {
@@ -3944,6 +4020,8 @@ export async function POST(request: NextRequest) {
           const telegramResult = await publishDailyResultsToTelegram(targetDate || undefined);
           const kamikazeBilanDate = targetDate || undefined;
           const kamikazeResult = await publishKamikazeBilanToTelegram(kamikazeBilanDate);
+          // 🏆 Bilan Top Championship
+          await publishTopChampionshipBilanToTelegram(kamikazeBilanDate);
           result = { 
             telegram: { 
               success: telegramResult || kamikazeResult,
@@ -4017,6 +4095,40 @@ export async function POST(request: NextRequest) {
           }
 
           const telegramResult = await publishDailySummaryToTelegram(predictions);
+
+          // 🏆 [POST] TOP CHAMPIONNAT — même logique que GET, 0 appel API extra
+          try {
+            const alreadyPublished = new Set<string>();
+            for (const p of (publishedList as any[])) alreadyPublished.add(matchKey(p));
+            const topChampCount = await SupabaseStore.countTodayBySource('top-championship');
+            if (topChampCount < 5) {
+              const { selected: topChampSelected } = selectTopChampionshipPredictions(predictions, alreadyPublished, topChampCount);
+              if (topChampSelected.length > 0) {
+                const todayISO = new Date().toISOString().split('T')[0];
+                const topChampDb = topChampSelected.map((p: any) => {
+                  const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                  const dateStr = (p.date || '').split('T')[0] || todayISO;
+                  const timeMatch = (p.date || '').match(/T(\d{2}:\d{2})/);
+                  const timeSuffix = timeMatch ? `-${timeMatch[1].replace(':', '')}` : '';
+                  const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}-tc`;
+                  return {
+                    match_id: matchId, home_team: p.homeTeam, away_team: p.awayTeam,
+                    league: p.league || 'Unknown', sport: 'football',
+                    match_date: p.date || `${todayISO}T12:00:00Z`,
+                    odds_home: p.oddsHome || 1.0, odds_draw: p.oddsDraw || null, odds_away: p.oddsAway || 1.0,
+                    predicted_result: p.predictedResult || 'home', confidence: p.confidence || 'medium',
+                    risk_percentage: p.riskPercentage ?? 50, is_value_bet: p.valueBetDetected === true,
+                    edge_value: 0, source: 'top-championship', status: 'pending' as const,
+                  };
+                });
+                await SupabaseStore.addPredictions(topChampDb);
+                await publishTopChampionshipToTelegram(topChampSelected);
+              }
+            }
+          } catch (tcErr: any) {
+            console.error(`🏆 [POST TOP CHAMP] Erreur: ${tcErr.message}`);
+          }
+
           result = {
             telegram: {
               success: telegramResult,
