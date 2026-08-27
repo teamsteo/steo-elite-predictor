@@ -100,9 +100,95 @@ const MAX_DISPLAY_PER_SPORT = 4; // Max 4 par sport dans l'affichage ET la sauve
 const PRIORITY_SPORTS = ['football']; // Seul le football est prioritaire (backtest positif)
 const NON_PRIORITY_SPORTS = ['basketball', 'baseball', 'hockey', 'other'];
 const EXCLUDED_TELEGRAM_SPORTS = ['tennis']; // Sports exclus des pronostics Telegram
+
+// ============================================
+// 🏆 TOP CHAMPIONSHIP — Filtres assouplis pour grands championnats
+// ============================================
+const TOP_CHAMPIONSHIP_LEAGUES = [
+  'Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1',
+  'Champions League', 'Europa League', 'Conference League',
+];
+const TOP_CHAMP_MAX_RISK = 35; // Assoupli: 35% vs 25% normal football
+const TOP_CHAMP_MIN_WIN_PROB = 65; // Assoupli: 65% vs 70% normal
+const TOP_CHAMP_MAX_PER_RUN = 3; // Max 3 par exécution cron
+const TOP_CHAMP_MAX_PER_DAY = 5; // Max 5 par jour total
 const BASKETBALL_MIN_ODDS = 1.80; // ROI break-even à 56% WR
 const MAX_BET_ODDS = 8.00; // Cote max pour tout pari (au-delà = gambling)
 const MIN_FAVORITE_ODDS = 1.25; // Cote min du favori — en dessous = trop de valeur négative, pas rentable
+
+/**
+ * Vérifie si une ligue est un grand championnat
+ */
+export function isTopChampionship(league?: string): boolean {
+  if (!league) return false;
+  const l = league.toLowerCase();
+  return TOP_CHAMPIONSHIP_LEAGUES.some(tl => l.includes(tl.toLowerCase()));
+}
+
+/**
+ * Sélectionne les pronostics Top Championship avec seuils assouplis.
+ * @param predictions Toutes les prédictions ML du jour
+ * @param existingMatchKeys Matchs déjà publiés (main summary, VB, etc.) — Set de matchKey()
+ * @param todayCount Nombre déjà publié aujourd'hui (pour respecter le max 5/jour)
+ * @returns selected + stats
+ */
+export function selectTopChampionshipPredictions(
+  predictions: TelegramMatch[],
+  existingMatchKeys: Set<string>,
+  todayCount: number
+): { selected: TelegramMatch[]; totalEligible: number; excludedDuplicate: number; excludedDailyCap: number } {
+  // 1) Football uniquement + Top Championship leagues
+  const topChampFootball = predictions.filter(p => {
+    const sport = (p.sport || '').toLowerCase();
+    if (!sport.includes('foot') && sport !== 'soccer') return false;
+    if (!isTopChampionship(p.league)) return false;
+    return true;
+  });
+
+  // 2) Dédupliquer contre les matchs déjà publiés
+  const deduped = topChampFootball.filter(p => !existingMatchKeys.has(matchKey(p)));
+  const excludedDuplicate = topChampFootball.length - deduped.length;
+
+  // 3) Cotes réelles uniquement (pas estimées)
+  const withRealOdds = deduped.filter(p => !p.isEstimated);
+
+  // 4) Cotes dans les bornes acceptables
+  const withValidOdds = withRealOdds.filter(p => isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway));
+
+  // 5) Seuils assouplis: risk ≤ 35% (vs 25% normal), win prob ≥ 65% (vs 70%)
+  const underRisk = withValidOdds.filter(p => {
+    const risk = p.riskPercentage ?? 100;
+    return risk <= TOP_CHAMP_MAX_RISK;
+  });
+
+  const withConfidence = underRisk.filter(p => {
+    const wp = p.winProbability ?? (100 - (p.riskPercentage ?? 50));
+    return wp >= TOP_CHAMP_MIN_WIN_PROB;
+  });
+
+  // 6) Trier par fiabilité (risque croissant, puis win prob décroissante)
+  const sorted = [...withConfidence].sort((a, b) => {
+    const riskA = a.riskPercentage ?? 100;
+    const riskB = b.riskPercentage ?? 100;
+    if (riskA !== riskB) return riskA - riskB;
+    const probA = a.winProbability ?? (100 - riskA);
+    const probB = b.winProbability ?? (100 - riskB);
+    return probB - probA;
+  });
+
+  // 7) Plafonner: max 3 par run ET max 5/jour (respecter le quota restant)
+  const remaining = Math.max(0, TOP_CHAMP_MAX_PER_DAY - todayCount);
+  const runCap = Math.min(TOP_CHAMP_MAX_PER_RUN, remaining);
+  const selected = sorted.slice(0, runCap);
+  const excludedDailyCap = Math.max(0, sorted.length - runCap - (runCap < sorted.length ? 0 : 0));
+
+  return {
+    selected,
+    totalEligible: sorted.length,
+    excludedDuplicate,
+    excludedDailyCap: todayCount >= TOP_CHAMP_MAX_PER_DAY ? sorted.length : (sorted.length - selected.length - excludedDuplicate),
+  };
+}
 
 /**
  * Vérifie si un pronostic est publiable (safe ou modéré)
