@@ -51,3 +51,5 @@ server.log
 /skills/
 # Tool results (temporary)
 tool-results/
+# ML virtual environment
+ml/venv/

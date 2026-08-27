@@ -3151,6 +3151,17 @@ export async function GET(request: NextRequest) {
         // Publier le bilan quotidien des pronostics (prédictions vs résultats réels)
         // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
         try {
+          // 🔒 PRE-BILAN FIX: corriger TOUTES les prédictions corrompues AVANT le bilan
+          // Cela garantit que le bilan n'affichera JAMAIS "Donnée corrompue"
+          try {
+            const preFixResult = await SupabaseStore.fixCorruptedPredictions();
+            if (preFixResult.fixed > 0 || preFixResult.deleted > 0) {
+              console.log(`🔧 [PRE-BILAN FIX] ${preFixResult.fixed} predicted_result corrigés, ${preFixResult.deleted} supprimés AVANT publication du bilan`);
+            }
+          } catch (preFixErr: any) {
+            console.log('⚠️ [PRE-BILAN FIX] Échec:', preFixErr.message);
+          }
+
           // D'abord lancer la vérification pour mettre à jour les résultats (non-bloquant)
           let verifyResult = { verified: 0, updated: 0, won: 0, lost: 0, errors: [] as string[] };
           try {
@@ -3911,6 +3922,15 @@ export async function POST(request: NextRequest) {
 
       case 'telegram-results':
         try {
+          // 🔒 PRE-BILAN FIX: corriger TOUTES les prédictions corrompues AVANT le bilan
+          try {
+            const preFixResult = await SupabaseStore.fixCorruptedPredictions();
+            if (preFixResult.fixed > 0 || preFixResult.deleted > 0) {
+              console.log(`🔧 [POST PRE-BILAN FIX] ${preFixResult.fixed} corrigés, ${preFixResult.deleted} supprimés`);
+            }
+          } catch (preFixErr: any) {
+            console.log('⚠️ [POST PRE-BILAN FIX] Échec:', preFixErr.message);
+          }
           // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
           let verifyResult = { verified: 0, updated: 0, won: 0, lost: 0, errors: [] as string[] };
           try {
