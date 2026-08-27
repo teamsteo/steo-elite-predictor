@@ -20,7 +20,7 @@ export async function GET() {
       p.odds_home > 0 &&
       p.odds_away > 0 &&
       !p.is_combo &&
-      p.predicted_result !== 'avoid' &&
+      p.predicted_result &&
       p.confidence !== 'low'
     );
 
