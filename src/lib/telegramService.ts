@@ -2269,7 +2269,7 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
 
         // 🔒 SÉCURITÉ: Ignorer les prédictions avec predicted_result corrompu/null/avoid
         const hasValidPrediction = p.predicted_result &&
-          p.predicted_result !== 'avoid' &&
+          (p.predicted_result as string) !== 'avoid' &&
           ['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no'].includes(p.predicted_result);
 
         if (!hasValidPrediction) {

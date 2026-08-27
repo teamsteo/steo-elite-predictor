@@ -4426,7 +4426,7 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
   // Palier Intelligent = montante → fiabilité via risque plafonné + pas low confidence
   // Note: le ML produit majoritairement du 'medium' — exiger 'high+' = 0 éligible
   const eligible = dayPredictions.filter(p => {
-    if (p.status !== 'pending' || p.is_combo || p.predicted_result === 'avoid') return false;
+    if (p.status !== 'pending' || p.is_combo || (p.predicted_result as string) === 'avoid') return false;
     if (p.sport === 'tennis') return false;
     if (!(p.odds_home > 0 && p.odds_away > 0)) return false;
     // Exclure low confidence uniquement (0% win rate en backtest)
