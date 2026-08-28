@@ -3213,6 +3213,16 @@ export async function GET(request: NextRequest) {
         // Publier le bilan quotidien des pronostics (prédictions vs résultats réels)
         // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
         try {
+          // 🔧 AUTO-FIX: corriger les predicted_result corrompus AVANT le bilan
+          try {
+            const autoFix = await SupabaseStore.fixCorruptedPredictions();
+            if (autoFix.fixed > 0 || autoFix.deleted > 0) {
+              console.log(`🔧 [BILAN AUTO-FIX] ${autoFix.fixed} predicted_result corrigés, ${autoFix.deleted} supprimés avant bilan`);
+            }
+          } catch (fixErr: any) {
+            console.log(`⚠️ Auto-fix corrupted échoué (non-bloquant): ${fixErr.message}`);
+          }
+
           // D'abord lancer la vérification pour mettre à jour les résultats (non-bloquant)
           let verifyResult = { verified: 0, updated: 0, won: 0, lost: 0, errors: [] as string[] };
           try {
@@ -3973,6 +3983,15 @@ export async function POST(request: NextRequest) {
 
       case 'telegram-results':
         try {
+          // 🔧 AUTO-FIX: corriger les predicted_result corrompus AVANT le bilan
+          try {
+            const autoFix = await SupabaseStore.fixCorruptedPredictions();
+            if (autoFix.fixed > 0 || autoFix.deleted > 0) {
+              console.log(`🔧 [BILAN AUTO-FIX POST] ${autoFix.fixed} corrigés, ${autoFix.deleted} supprimés`);
+            }
+          } catch (fixErr: any) {
+            console.log(`⚠️ Auto-fix corrupted échoué (non-bloquant): ${fixErr.message}`);
+          }
           // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
           let verifyResult = { verified: 0, updated: 0, won: 0, lost: 0, errors: [] as string[] };
           try {

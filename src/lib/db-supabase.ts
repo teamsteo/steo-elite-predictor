@@ -632,8 +632,12 @@ export const SupabaseStore = {
     const supabase = getSupabase();
     if (!supabase) return { deleted: 0, fixed: 0, details: [] };
 
+    const VALID_RESULTS = new Set(['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no']);
+
     try {
-      // Récupérer les prédictions avec predicted_result corrompu
+      // Récupérer les prédictions avec predicted_result corrompu (query large)
+      // On récupère TOUTES les prédictions et on filtre côté JS pour attraper
+      // tous les cas: null, avoid, empty, et toute valeur non-standard
       let query = supabase
         .from('predictions')
         .select('*')
@@ -643,7 +647,10 @@ export const SupabaseStore = {
       const { data, error } = await query;
       if (error) { console.error('fixCorruptedPredictions error:', error); return { deleted: 0, fixed: 0, details: [] }; }
 
-      let allCorrupted = (data as DbPrediction[]) || [];
+      let allCorrupted = ((data as DbPrediction[]) || []).filter(p => {
+        // Filtrer JS: tout ce qui n'est pas dans VALID_RESULTS est corrompu
+        return !p.predicted_result || !VALID_RESULTS.has(p.predicted_result);
+      });
 
       // Filtrer par date si demandé
       if (dateISO) {
