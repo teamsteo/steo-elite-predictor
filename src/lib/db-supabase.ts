@@ -349,10 +349,17 @@ export const SupabaseStore = {
     if (!supabase) return [];
     
     try {
+      // 🔒 FIX: Limiter aux matchs qui devraient être terminés (match_date < J+2)
+      // Évite d'accumuler des milliers de pending impossibles à vérifier
+      const maxDate = new Date();
+      maxDate.setDate(maxDate.getDate() + 2);
+      const maxDateISO = maxDate.toISOString();
+      
       const { data, error } = await supabase
         .from('predictions')
         .select('*')
         .eq('status', 'pending')
+        .lt('match_date', maxDateISO)
         .order('match_date', { ascending: true });
       
       if (error) return [];

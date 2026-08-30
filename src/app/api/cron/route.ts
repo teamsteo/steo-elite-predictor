@@ -2409,10 +2409,11 @@ export async function GET(request: NextRequest) {
           
           // Mapper vers le format UnifiedPredictionInput
           // 📅 Conserver la date ESPN originale pour la sauvegarde Supabase
+          // 🔒 CLÉ COMPOSITE: homeTeam|awayTeam|league pour éviter les collisions
           const dateLookup = new Map<string, string>();
           const mlInputs: UnifiedPredictionInput[] = upcomingWithOdds.map((m: any) => {
             const mid = m.id || `espn_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-            if (m.date) dateLookup.set(`${m.homeTeam}|${m.awayTeam}`, m.date);
+            if (m.date) dateLookup.set(`${m.homeTeam}|${m.awayTeam}|${m.league || ''}`, m.date);
             return {
               id: mid,
               homeTeam: m.homeTeam,
@@ -2463,7 +2464,7 @@ export async function GET(request: NextRequest) {
                   league: p.league,
                   // 📅 Date ESPN originale (lookup par équipes) — CRITIQUE pour la sauvegarde Supabase
                   // Le bilan cherche les prédictions par date de match, pas par date de publication
-                  date: dateLookup.get(`${p.homeTeam}|${p.awayTeam}`) || undefined,
+                  date: dateLookup.get(`${p.homeTeam}|${p.awayTeam}|${p.league || ''}`) || undefined,
                   displayDate: '',
                   dateTag: "aujourd'hui",
                   recommendation: isHome ? p.homeTeam : isAway ? p.awayTeam : 'Match Nul',
@@ -2527,9 +2528,10 @@ export async function GET(request: NextRequest) {
             }));
           } else {
             // Compléter les dates depuis les matchs originaux
-            const matchMap = new Map(upcomingWithOdds.map((m: any) => [m.homeTeam, m]));
+            // 🔒 CLÉ COMPOSITE: homeTeam|awayTeam|league pour éviter les collisions
+            const matchMap = new Map(upcomingWithOdds.map((m: any) => [`${m.homeTeam}|${m.awayTeam}|${m.league || ''}`, m]));
             for (const pred of predictions) {
-              const orig = matchMap.get(pred.homeTeam);
+              const orig = matchMap.get(`${pred.homeTeam}|${pred.awayTeam}|${pred.league || ''}`);
               if (orig) {
                 pred.date = orig.date;
                 pred.displayDate = orig.displayDate || '';
@@ -2721,7 +2723,13 @@ export async function GET(request: NextRequest) {
                   const matchId = `${cleanTeam(p.homeTeam)}-${cleanTeam(p.awayTeam)}-${cleanTeam(p.league || '')}-${dateStr}${timeSuffix}`;
                   // 🔒 STOCKER valueBetType comme predicted_result pour le bilan
                   // Le VB parie sur la direction valueBetType, pas predictedResult
-                  const vbDirection = p.valueBetType || p.predictedResult || 'home';
+                  // 🔒 VALIDATION: garantir que vbDirection est une valeur reconnue
+                  const VALID_DIRECTIONS = new Set(['home', 'away', 'draw']);
+                  const vbDirection = (p.valueBetType && VALID_DIRECTIONS.has(p.valueBetType))
+                    ? p.valueBetType
+                    : (p.predictedResult && VALID_DIRECTIONS.has(p.predictedResult))
+                      ? p.predictedResult
+                      : 'home';
                   const vbOdds = vbDirection === 'home' ? p.oddsHome : vbDirection === 'away' ? p.oddsAway : p.oddsDraw;
                   const vbRisk = vbOdds ? Math.round(100 - vigRemovedProb(vbOdds, p.oddsHome, p.oddsDraw, p.oddsAway)) : 50;
                   return {
