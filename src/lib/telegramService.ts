@@ -2139,26 +2139,47 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
     return yesterday.toISOString().split('T')[0];
   })();
 
-  // 🎯 Filtrer par created_at = date de publication (pas match_date)
-  // Le bilan du jour J couvre les publications de la VEILLE (J-1)
-  // Ex: bilan publié le 11 août à 5h → publications du 10 août
-  let dayPreds = await SupabaseStore.getPredictionsByCreatedAt(targetDate);
+  // 🎯 STRATÉGIE DE RECHERCHE — PRIORITÉ match_date SUR created_at
+  // Pourquoi ? Le cron summary tourne à ~01:00 UTC (02:00-03:00 Paris)
+  // pour les matchs du JOUR (match_date = aujourd'hui).
+  // Mais le cron « SOIR » tourne à 20:00 UTC (22:00 Paris)
+  // pour les matchs du LENDEMAIN (match_date = demain en UTC, mais aujourd'hui Paris).
+  // Conséquence : created_at est décalé de 1 jour par rapport à match_date.
+  // 
+  // NOUVELLE LOGIQUE :
+  // 1. Chercher par match_date = targetDate (plage large ±1 jour pour fuseaux)
+  // 2. EN PARALLÈLE chercher par created_at = targetDate
+  // 3. Merger en dédoublonnant sur match_id
+  // 4. Exclure les matchs futurs (match_date > aujourd'hui)
 
-  // 🔧 FALLBACK: si created_at retourne trop peu de résultats,
-  // essayer aussi par match_date (utile si les VB n'ont pas été sauvées au bon created_at)
-  if (dayPreds.length < 3) {
-    const byMatchDate = await SupabaseStore.getPredictionsByDate(targetDate);
-    if (byMatchDate.length > dayPreds.length) {
-      console.log(`⚠️ [BILAN] created_at n'a trouvé que ${dayPreds.length} pronostics, match_date en a trouvé ${byMatchDate.length} → utilisation du fallback`);
-      dayPreds = byMatchDate;
+  console.log(`📊 [BILAN] Date cible: ${targetDate}`);
+
+  const [byMatchDate, byCreatedAt] = await Promise.all([
+    SupabaseStore.getPredictionsByDate(targetDate),
+    SupabaseStore.getPredictionsByCreatedAt(targetDate),
+  ]);
+
+  console.log(`📊 [BILAN] match_date: ${byMatchDate.length} trouvées, created_at: ${byCreatedAt.length} trouvées`);
+
+  // Merger : match_date en priorité, puis ajouter ceux uniquement dans created_at
+  const seenIds = new Set<string>();
+  const merged: DbPrediction[] = [];
+
+  for (const p of byMatchDate) {
+    if (p.match_id && !seenIds.has(p.match_id)) {
+      seenIds.add(p.match_id);
+      merged.push(p);
+    }
+  }
+  for (const p of byCreatedAt) {
+    if (p.match_id && !seenIds.has(p.match_id)) {
+      seenIds.add(p.match_id);
+      merged.push(p);
     }
   }
 
-  console.log(`📊 [BILAN] created_at: ${targetDate} (publications de la veille)`);
-  console.log(`📊 [BILAN] Trouvé: ${dayPreds.length} pronostics publiés ce jour`);
-  if (dayPreds.length > 0) {
-    console.log(`📊 [BILAN] Détails: ${JSON.stringify(dayPreds.slice(0, 5).map(p => ({ id: p.match_id?.slice(0, 40), sport: p.sport, risk: p.risk_percentage, status: p.status, created: (p.created_at || '').split('T')[0], match: (p.match_date || '').split('T')[0] })))}`);
-  }
+  let dayPreds = merged;
+  console.log(`📊 [BILAN] Merge: ${dayPreds.length} pronostics uniques (match_date + created_at)`);
 
   // 🔒 FILET DE SÉCURITÉ: Exclure les matchs dont match_date est trop ancien
   // (match_date < targetDate - 1 jour) = probablement un re-save qui a corrompu created_at
@@ -2848,20 +2869,38 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
   })();
 
   try {
-    // 🔧 UTILISER created_at (comme le bilan régulier) pour la cohérence
-    // Le bilan couvre les publications de la VEILLE, pas la date du match
-    const dayPreds = await SupabaseStore.getPredictionsByCreatedAt(targetDate);
+    // 🔧 MÊME LOGIQUE QUE LE BILAN PRINCIPAL : match_date + created_at merge
+    // Le bilan kamikaze souffrait du même bug : created_at décalé de match_date
+    const [byMatchDate, byCreatedAt] = await Promise.all([
+      SupabaseStore.getPredictionsByDate(targetDate),
+      SupabaseStore.getPredictionsByCreatedAt(targetDate),
+    ]);
+
+    // Merger en dédoublonnant sur match_id
+    const seenIds = new Set<string>();
+    const merged: DbPrediction[] = [];
+    for (const p of byMatchDate) {
+      if (p.match_id && !seenIds.has(p.match_id)) {
+        seenIds.add(p.match_id);
+        merged.push(p);
+      }
+    }
+    for (const p of byCreatedAt) {
+      if (p.match_id && !seenIds.has(p.match_id)) {
+        seenIds.add(p.match_id);
+        merged.push(p);
+      }
+    }
+
+    console.log(`💣 [BILAN KAMIKAZE] ${targetDate}: match_date=${byMatchDate.length}, created_at=${byCreatedAt.length}, merge=${merged.length}`);
 
     // Exclure les matchs futurs (match_date > aujourd'hui)
     const nowISO = new Date().toISOString().split('T')[0];
-    const allDayPredictions = dayPreds.filter(p => {
+    const allDayPredictions = merged.filter(p => {
       if (!p.match_date) return true;
       const matchDate = p.match_date.split('T')[0];
       return matchDate <= nowISO;
     });
-    
-    // 🔍 LOG DIAGNOSTIC
-    console.log(`💣 [BILAN KAMIKAZE] created_at: ${targetDate}, trouvé: ${allDayPredictions.length} pronostics`);
     
     if (allDayPredictions.length === 0) {
       console.log('💣 [BILAN KAMIKAZE] Aucune prédiction trouvée pour cette date');

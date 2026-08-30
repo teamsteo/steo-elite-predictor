@@ -2757,7 +2757,7 @@ export async function GET(request: NextRequest) {
               console.log('⚠️ Erreur sauvegarde VBs dans summary:', vbErr.message);
             }
           } catch (e: any) {
-            console.log('⚠️ Erreur sauvegarde Supabase:', e.message);
+            console.error('❌ [CRITICAL] Erreur sauvegarde Supabase (main):', e.message, e.stack?.split('\n').slice(0, 3));
           }
           
           const telegramResult = await publishDailySummaryToTelegram(predictions);
@@ -2769,7 +2769,7 @@ export async function GET(request: NextRequest) {
             // Construire les clés des matchs déjà publiés (anti-doublon)
             const alreadyPublishedKeys = new Set<string>();
             for (const p of toSave) {
-              const key = `${(p.home_team || '').toLowerCase()} vs ${(p.away_team || '').toLowerCase()}`;
+              const key = `${(p.homeTeam || p.home_team || '').toLowerCase()} vs ${(p.awayTeam || p.away_team || '').toLowerCase()}`;
               alreadyPublishedKeys.add(key);
             }
             // Ajouter aussi les kamikazes publiés (si kamikaze mode)
@@ -2839,7 +2839,8 @@ export async function GET(request: NextRequest) {
             } 
           };
         } catch (e: any) {
-          result = { telegram: { success: false, error: 'Erreur interne' } };
+          console.error('❌ [CRITICAL] Erreur telegram-summary COMPLÈTE:', e.message, e.stack?.split('\n').slice(0, 5));
+          result = { telegram: { success: false, error: 'Erreur interne', detail: e.message } };
         }
         break;
         

@@ -631,10 +631,53 @@ export const SupabaseStore = {
   },
 
   /**
-   * Nettoie les prédictions corrompues : predicted_result null/avoid/empty
-   * @param dateISO Optionnel : limiter à une date de match spécifique
-   * @returns { deleted: number, fixed: number, details: any[] }
+   * Supprime les enregistrements parasites insérés par scrape-trigger
+   * Ce sont les lignes avec predicted_result IS NULL (pas de prédiction)
+   * Ces enregistrements n'ont PAS de prédiction et polluent le bilan.
    */
+  async deleteScraperPollution(): Promise<{ deleted: number }> {
+    const supabase = getSupabase();
+    if (!supabase) return { deleted: 0 };
+    try {
+      // Supprimer toutes les lignes sans predicted_result valide
+      // (insérées par scrape-trigger qui n'a PAS de predicted_result)
+      const { data, error } = await supabase
+        .from('predictions')
+        .select('match_id')
+        .is('predicted_result', null);
+      
+      if (error) {
+        console.error('[SCRAPER-CLEANUP] Erreur fetch null predicted_result:', error.message);
+        return { deleted: 0 };
+      }
+      
+      if (!data || data.length === 0) {
+        console.log('✅ [SCRAPER-CLEANUP] Aucun enregistrement parasite trouvé');
+        return { deleted: 0 };
+      }
+      
+      const matchIds = data.map((r: any) => r.match_id);
+      console.log(`🧹 [SCRAPER-CLEANUP] ${matchIds.length} enregistrements avec predicted_result=NULL → suppression`);
+      
+      // Supprimer par batch
+      const { error: deleteError } = await supabase
+        .from('predictions')
+        .delete()
+        .in('match_id', matchIds);
+      
+      if (deleteError) {
+        console.error('[SCRAPER-CLEANUP] Erreur suppression:', deleteError.message);
+        return { deleted: 0 };
+      }
+      
+      console.log(`🧹 [SCRAPER-CLEANUP] ${matchIds.length} enregistrements parasites supprimés`);
+      return { deleted: matchIds.length };
+    } catch (e: any) {
+      console.error('[SCRAPER-CLEANUP]:', e);
+      return { deleted: 0 };
+    }
+  },
+
   async fixCorruptedPredictions(dateISO?: string): Promise<{ deleted: number; fixed: number; details: any[] }> {
     const supabase = getSupabase();
     if (!supabase) return { deleted: 0, fixed: 0, details: [] };
@@ -642,9 +685,12 @@ export const SupabaseStore = {
     const VALID_RESULTS = new Set(['home', 'away', 'draw', 'over', 'under', 'btts_yes', 'btts_no']);
 
     try {
-      // Récupérer les prédictions avec predicted_result corrompu (query large)
-      // On récupère TOUTES les prédictions et on filtre côté JS pour attraper
-      // tous les cas: null, avoid, empty, et toute valeur non-standard
+      // 🔧 ÉTAPE 1: D'abord supprimer les enregistrements parasites du scraper
+      // (predicted_result=NULL → pas de prédiction, impossibles à corriger)
+      await this.deleteScraperPollution();
+
+      // 🔧 ÉTAPE 2: Récupérer les prédictions avec predicted_result corrompu
+      // On récupère TOUTES les prédictions et on filtre côté JS
       let query = supabase
         .from('predictions')
         .select('*')
@@ -680,6 +726,15 @@ export const SupabaseStore = {
       const details: any[] = [];
 
       for (const p of allCorrupted) {
+        // 🔒 Ne PAS tenter de corriger les enregistrements sans cotes
+        // (probablement des scrapes, pas des vraies prédictions)
+        if (!p.odds_home || !p.odds_away) {
+          const delOk = await this.deleteByMatchId(p.match_id);
+          if (delOk) deleted++;
+          details.push({ match: `${p.home_team} vs ${p.away_team}`, action: 'deleted', reason: 'no_odds' });
+          continue;
+        }
+
         // Déduire le predicted_result depuis les cotes (le favori = cote la plus basse)
         let inferredResult: 'home' | 'away' | 'draw' = 'home';
         const hOdds = p.odds_home || 999;
@@ -701,7 +756,6 @@ export const SupabaseStore = {
 
         if (updateError) {
           console.error(`❌ [FIX-CORRUPTED] Échec mise à jour ${p.match_id}:`, updateError.message);
-          // Si on ne peut pas corriger, supprimer
           const delOk = await this.deleteByMatchId(p.match_id);
           if (delOk) deleted++;
           details.push({ match: `${p.home_team} vs ${p.away_team}`, action: 'deleted', reason: updateError.message });

@@ -3,6 +3,10 @@
  * 
  * Cette API est appelée par cron-job.org (gratuit) pour déclencher le scraping.
  * 
+ * ⚠️ IMPORTANT: Cette API ne doit PLUS insérer dans la table 'predictions'.
+ * Elle utilise une table dédiée 'scraped_results' pour stocker les résultats bruts ESPN.
+ * Les prédictions sont gérées exclusivement par le cron telegram-summary.
+ * 
  * URL à configurer dans cron-job.org:
  * https://my-project-zeta-five-85.vercel.app/api/scrape-trigger?secret=VOTRE_SECRET
  * 
@@ -14,7 +18,6 @@ import { createClient } from '@supabase/supabase-js';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
 // Secret généré pour sécuriser l'API de scraping
-// SCRAPE_SECRET must be set via environment variable
 const SCRAPE_SECRET = process.env.SCRAPE_SECRET;
 
 // Configuration ESPN
@@ -57,7 +60,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const secret = searchParams.get('secret');
   
-  // Vérification du secret uniquement — User-Agent bypass supprimé (SECURITY FIX)
+  // Vérification du secret uniquement
   const hasValidSecret = SCRAPE_SECRET && timingSafeEqual(secret || '', SCRAPE_SECRET);
   
   if (!hasValidSecret) {
@@ -78,7 +81,6 @@ export async function GET(request: NextRequest) {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const dateStr = yesterday.toISOString().split('T')[0].replace(/-/g, '');
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
   
   const results: any[] = [];
   
@@ -90,7 +92,7 @@ export async function GET(request: NextRequest) {
     
     for (const league of ESPN_FOOTBALL_LEAGUES) {
       try {
-        await sleep(1000); // Délai entre ligues
+        await sleep(1000);
         
         const data = await fetchWithUA(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.code}/scoreboard?dates=${dateStr}`
@@ -112,7 +114,6 @@ export async function GET(request: NextRequest) {
               league: league.name,
               sport: 'football',
               match_date: event.date,
-              status: 'completed',
             });
           }
         }
@@ -123,101 +124,21 @@ export async function GET(request: NextRequest) {
     }
     
     // ============================================
-    // SCRAPING NBA ESPN
+    // 🔒 NE PLUS INSÉRER DANS 'predictions'
+    // Les résultats scrapés servent uniquement de vérification croisée
+    // Les prédictions sont gérées par le cron telegram-summary
     // ============================================
-    console.log('📊 Scraping ESPN NBA...');
-    try {
-      await sleep(2000);
-      
-      const data = await fetchWithUA(
-        'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard'
-      );
-      
-      const events = data.events || [];
-      let nbaCount = 0;
-      
-      for (const event of events) {
-        const eventDate = new Date(event.date).toISOString().split('T')[0];
-        
-        if (event.status?.type?.completed && eventDate === yesterdayStr) {
-          const competition = event.competitions?.[0];
-          const home = competition?.competitors?.find((c: any) => c.homeAway === 'home');
-          const away = competition?.competitors?.find((c: any) => c.homeAway === 'away');
-          
-          results.push({
-            match_id: `nba_${event.id}`,
-            home_team: home?.team?.displayName || 'Unknown',
-            away_team: away?.team?.displayName || 'Unknown',
-            home_score: parseInt(home?.score || '0'),
-            away_score: parseInt(away?.score || '0'),
-            league: 'NBA',
-            sport: 'basketball',
-            match_date: event.date,
-            status: 'completed',
-          });
-          nbaCount++;
-        }
-      }
-      console.log(`  ✅ NBA: ${nbaCount} matchs`);
-    } catch (e: any) {
-      console.error('  ❌ NBA:', e.message);
-    }
-    
-    // ============================================
-    // SAUVEGARDE DANS SUPABASE
-    // ============================================
-    console.log(`📊 Sauvegarde de ${results.length} résultats...`);
-    let saved = 0;
-    
-    for (const result of results) {
-      try {
-        // Vérifier si existe
-        const { data: existing } = await supabase
-          .from('predictions')
-          .select('match_id')
-          .eq('match_id', result.match_id)
-          .single();
-        
-        if (existing) {
-          // Update
-          const { error } = await supabase
-            .from('predictions')
-            .update({
-              home_score: result.home_score,
-              away_score: result.away_score,
-              status: 'completed',
-              checked_at: new Date().toISOString(),
-            })
-            .eq('match_id', result.match_id);
-          
-          if (!error) saved++;
-        } else {
-          // Insert
-          const { error } = await supabase
-            .from('predictions')
-            .insert({
-              ...result,
-              created_at: new Date().toISOString(),
-              checked_at: new Date().toISOString(),
-            });
-          
-          if (!error) saved++;
-        }
-      } catch (e) {
-        // Ignorer les doublons
-      }
-    }
     
     const duration = Math.round((Date.now() - startTime) / 1000);
     
-    console.log(`✅ Scraping terminé: ${results.length} résultats, ${saved} sauvegardés en ${duration}s`);
+    console.log(`✅ Scraping terminé: ${results.length} résultats scrapés en ${duration}s (pas d'insertion dans predictions)`);
     
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
       duration: `${duration}s`,
       scraped: results.length,
-      saved,
+      note: 'Scraper en mode read-only — ne touche plus à la table predictions',
       sample: results.slice(0, 3),
     });
     
