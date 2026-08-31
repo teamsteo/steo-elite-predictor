@@ -1,10 +1,9 @@
 /**
  * Endpoint temporaire de diagnostic DB
- * GET  = diagnostic (comme avant)
- * POST = test sauvegarde d'une prédiction et vérification immédiate
+ * Test upsert avec les MÊMES colonnes que addPredictions (sans season)
  * SUPPRIMER après diagnostic
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 function getSupabase() {
@@ -19,38 +18,17 @@ export async function GET() {
   const supabase = getSupabase();
   if (!supabase) return NextResponse.json({ error: 'Supabase not configured' });
 
-  // 1. Total count + status
-  const { count: totalCount } = await supabase.from('predictions').select('*', { count: 'exact', head: true });
-  results.total_predictions = totalCount;
-  for (const st of ['pending', 'completed']) {
-    const { count } = await supabase.from('predictions').select('*', { count: 'exact', head: true }).eq('status', st);
-    results[`status_${st}`] = count;
-  }
-
-  // 2. 10 dernières prédictions
-  const { data: recent } = await supabase
-    .from('predictions')
-    .select('match_id, home_team, away_team, league, sport, match_date, created_at, status, predicted_result')
-    .order('created_at', { ascending: false })
-    .limit(10);
-  results.last_10 = (recent || []).map((p: any) => ({
-    mid: (p.match_id || '').slice(0, 60),
-    home: p.home_team, away: p.away_team, league: p.league, sport: p.sport,
-    match_date: (p.match_date || '').split('T')[0], status: p.status, pred: p.predicted_result,
-    ca: (p.created_at || '').substring(0, 16),
-  }));
-
-  // 3. Test: tenter un upsert réel et vérifier
-  const testMatchId = `test-diagnostics-${Date.now()}`;
+  const testMatchId = `test-fix-${Date.now()}`;
   const nowISO = new Date().toISOString();
-  const testPrediction = {
+
+  // Test 1: upsert SANS season (le fix)
+  const testWithoutSeason = {
     match_id: testMatchId,
     home_team: 'Test Home',
     away_team: 'Test Away',
     league: 'Test League',
     sport: 'football',
     match_date: nowISO,
-    season: null,
     odds_home: 1.5,
     odds_draw: null,
     odds_away: 2.5,
@@ -66,55 +44,79 @@ export async function GET() {
     status: 'pending',
   };
 
-  // Test upsert
-  const { data: upsertData, error: upsertError } = await supabase
+  const { data: d1, error: e1 } = await supabase
     .from('predictions')
-    .upsert(testPrediction, { onConflict: 'match_id' })
+    .upsert(testWithoutSeason, { onConflict: 'match_id' })
     .select();
 
-  results.test_upsert = {
-    match_id: testMatchId,
-    error: upsertError ? upsertError.message : null,
-    returned_rows: upsertData?.length || 0,
-    returned_data: upsertData?.map((p: any) => ({
-      id: p.id, match_id: p.match_id, created_at: p.created_at, status: p.status, pred: p.predicted_result,
-    })),
+  results.test_without_season = {
+    error: e1 ? e1.message : null,
+    rows: d1?.length || 0,
   };
 
-  // Vérifier que la ligne existe après upsert
-  const { data: verifyData, error: verifyError } = await supabase
-    .from('predictions')
-    .select('id, match_id, created_at, status, predicted_result')
-    .eq('match_id', testMatchId);
-
-  results.test_verify = {
-    found: verifyData?.length || 0,
-    error: verifyError ? verifyError.message : null,
-    data: verifyData,
-  };
-
-  // Nettoyer le test
-  if (verifyData && verifyData.length > 0) {
+  // Nettoyer
+  if (d1 && d1.length > 0) {
     await supabase.from('predictions').delete().eq('match_id', testMatchId);
-    results.test_cleanup = 'deleted';
   }
 
-  // 4. Check created_at column: est-ce que DEFAULT now() fonctionne ?
-  const { data: noCreated } = await supabase
-    .from('predictions')
-    .select('match_id, created_at')
-    .is('created_at', null)
-    .limit(5);
-  results.null_created_at = { count: (noCreated || []).length, items: noCreated };
+  // Test 2: upsert AVEC season (pour confirmer le bug)
+  const testMatchId2 = `test-with-season-${Date.now()}`;
+  const testWithSeason = { ...testWithoutSeason, match_id: testMatchId2, season: null };
 
-  // 5. Vérifier les contraintes de la table
-  try {
-    const { data: colInfo, error: colErr } = await supabase
-      .rpc('get_column_info', { table_name: 'predictions' })
-      .select('*')
-      .limit(1);
-    // La RPC n'existe probablement pas, ignorer
-  } catch {}
+  const { data: d2, error: e2 } = await supabase
+    .from('predictions')
+    .upsert(testWithSeason, { onConflict: 'match_id' })
+    .select();
+
+  results.test_with_season = {
+    error: e2 ? e2.message : null,
+    rows: d2?.length || 0,
+  };
+
+  // Nettoyer
+  await supabase.from('predictions').delete().eq('match_id', testMatchId2);
+
+  // Test 3: upsert minimal (just les colonnes obligatoires)
+  const testMatchId3 = `test-minimal-${Date.now()}`;
+  const { data: d3, error: e3 } = await supabase
+    .from('predictions')
+    .upsert({
+      match_id: testMatchId3,
+      home_team: 'Min',
+      away_team: 'Mal',
+      league: 'L',
+      sport: 'football',
+      match_date: nowISO,
+      odds_home: 1.5,
+      odds_draw: null,
+      odds_away: 2.5,
+      predicted_result: 'home',
+      confidence: 'medium',
+      risk_percentage: 50,
+      status: 'pending',
+    }, { onConflict: 'match_id' })
+    .select();
+
+  results.test_minimal = {
+    error: e3 ? e3.message : null,
+    rows: d3?.length || 0,
+  };
+
+  await supabase.from('predictions').delete().eq('match_id', testMatchId3);
+
+  // 4. Vérifier quelles colonnes existent réellement
+  // On insère une ligne puis on la relit avec select('*')
+  const testMatchId4 = `test-cols-${Date.now()}`;
+  await supabase.from('predictions').upsert({
+    match_id: testMatchId4, home_team: 'C', away_team: 'C',
+    league: 'L', sport: 'football', match_date: nowISO,
+    odds_home: 1.5, odds_draw: null, odds_away: 2.5,
+    predicted_result: 'home', confidence: 'medium', risk_percentage: 50, status: 'pending',
+  }, { onConflict: 'match_id' });
+
+  const { data: colRow } = await supabase.from('predictions').select('*').eq('match_id', testMatchId4).single();
+  results.actual_columns = colRow ? Object.keys(colRow).sort() : [];
+  await supabase.from('predictions').delete().eq('match_id', testMatchId4);
 
   return NextResponse.json(results, {
     headers: { 'Cache-Control': 'no-store' }

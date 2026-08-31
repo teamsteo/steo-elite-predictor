@@ -246,7 +246,6 @@ export const SupabaseStore = {
         league: p.league,
         sport: normalizeSport(p.sport as string),
         match_date: p.match_date,
-        season: p.season || null,
         odds_home: p.odds_home,
         odds_draw: p.odds_draw ?? null,
         odds_away: p.odds_away,
