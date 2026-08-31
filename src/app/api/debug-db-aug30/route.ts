@@ -1,72 +1,33 @@
 /**
- * Endpoint temporaire de diagnostic DB — prédictions autour du 30 août
- * Appel: GET /api/debug-db-aug30
+ * Endpoint temporaire de diagnostic DB
+ * GET  = diagnostic (comme avant)
+ * POST = test sauvegarde d'une prédiction et vérification immédiate
  * SUPPRIMER après diagnostic
  */
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+}
 
 export async function GET() {
   const results: Record<string, any> = {};
+  const supabase = getSupabase();
+  if (!supabase) return NextResponse.json({ error: 'Supabase not configured' });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return NextResponse.json({ error: 'Supabase env vars missing', url: !!supabaseUrl, key: !!supabaseKey });
-  }
-
-  const supabase = createClient(supabaseUrl, supabaseKey, {
-    auth: { autoRefreshToken: false, persistSession: false }
-  });
-
-  // 1. Total count
-  const { count: totalCount } = await supabase
-    .from('predictions')
-    .select('*', { count: 'exact', head: true });
+  // 1. Total count + status
+  const { count: totalCount } = await supabase.from('predictions').select('*', { count: 'exact', head: true });
   results.total_predictions = totalCount;
-
-  // 2. Status breakdown
-  for (const st of ['pending', 'completed', 'cancelled', 'postponed']) {
-    const { count } = await supabase
-      .from('predictions')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', st);
+  for (const st of ['pending', 'completed']) {
+    const { count } = await supabase.from('predictions').select('*', { count: 'exact', head: true }).eq('status', st);
     results[`status_${st}`] = count;
   }
 
-  // 3. NULL predicted_result
-  const { count: nullPred } = await supabase
-    .from('predictions')
-    .select('*', { count: 'exact', head: true })
-    .is('predicted_result', null);
-  results.null_predicted_result = nullPred;
-
-  // 4. Par created_at pour les 5 derniers jours
-  for (const d of ['2026-08-27', '2026-08-28', '2026-08-29', '2026-08-30', '2026-08-31']) {
-    const { data } = await supabase
-      .from('predictions')
-      .select('match_id, home_team, away_team, league, sport, match_date, created_at, status, predicted_result')
-      .gte('created_at', `${d}T00:00:00Z`)
-      .lte('created_at', `${d}T23:59:59Z`)
-      .order('created_at', { ascending: true });
-    results[`created_${d}`] = {
-      count: (data || []).length,
-      items: (data || []).slice(0, 5).map((p: any) => ({
-        mid: (p.match_id || '').slice(0, 60),
-        home: p.home_team,
-        away: p.away_team,
-        league: p.league,
-        sport: p.sport,
-        match_date: (p.match_date || '').split('T')[0],
-        status: p.status,
-        pred: p.predicted_result,
-        ca: (p.created_at || '').substring(0, 16),
-      }))
-    };
-  }
-
-  // 5. 10 dernières prédictions (created_at DESC)
+  // 2. 10 dernières prédictions
   const { data: recent } = await supabase
     .from('predictions')
     .select('match_id, home_team, away_team, league, sport, match_date, created_at, status, predicted_result')
@@ -74,44 +35,86 @@ export async function GET() {
     .limit(10);
   results.last_10 = (recent || []).map((p: any) => ({
     mid: (p.match_id || '').slice(0, 60),
-    home: p.home_team,
-    away: p.away_team,
-    league: p.league,
-    sport: p.sport,
-    match_date: (p.match_date || '').split('T')[0],
-    status: p.status,
-    pred: p.predicted_result,
+    home: p.home_team, away: p.away_team, league: p.league, sport: p.sport,
+    match_date: (p.match_date || '').split('T')[0], status: p.status, pred: p.predicted_result,
     ca: (p.created_at || '').substring(0, 16),
   }));
 
-  // 6. Dates de created_at distinctes (dernière semaine)
-  const weekAgo = '2026-08-24T00:00:00Z';
-  const { data: weekData } = await supabase
-    .from('predictions')
-    .select('created_at')
-    .gte('created_at', weekAgo)
-    .order('created_at', { ascending: false });
-  const distinctDates = [...new Set((weekData || []).map((p: any) => (p.created_at || '').split('T')[0]))];
-  results.distinct_created_dates_last_week = distinctDates;
+  // 3. Test: tenter un upsert réel et vérifier
+  const testMatchId = `test-diagnostics-${Date.now()}`;
+  const nowISO = new Date().toISOString();
+  const testPrediction = {
+    match_id: testMatchId,
+    home_team: 'Test Home',
+    away_team: 'Test Away',
+    league: 'Test League',
+    sport: 'football',
+    match_date: nowISO,
+    season: null,
+    odds_home: 1.5,
+    odds_draw: null,
+    odds_away: 2.5,
+    predicted_result: 'home',
+    confidence: 'medium',
+    risk_percentage: 35,
+    is_value_bet: false,
+    edge_value: 0,
+    is_combo: false,
+    combo_id: null,
+    combo_name: null,
+    source: null,
+    status: 'pending',
+  };
 
-  // 7. Dates de match_date distinctes (dernière semaine)
-  const { data: weekMatchData } = await supabase
+  // Test upsert
+  const { data: upsertData, error: upsertError } = await supabase
     .from('predictions')
-    .select('match_date')
-    .gte('created_at', weekAgo)
-    .order('match_date', { ascending: false });
-  const distinctMatchDates = [...new Set((weekMatchData || []).map((p: any) => (p.match_date || '').split('T')[0]))];
-  results.distinct_match_dates_last_week = distinctMatchDates;
+    .upsert(testPrediction, { onConflict: 'match_id' })
+    .select();
 
-  // 8. Check if UPSAFEGUARD is blocking
-  // Récupérer les 5 dernières prédictions avec status=completed et regarder leur created_at
-  const { data: completedRecent } = await supabase
+  results.test_upsert = {
+    match_id: testMatchId,
+    error: upsertError ? upsertError.message : null,
+    returned_rows: upsertData?.length || 0,
+    returned_data: upsertData?.map((p: any) => ({
+      id: p.id, match_id: p.match_id, created_at: p.created_at, status: p.status, pred: p.predicted_result,
+    })),
+  };
+
+  // Vérifier que la ligne existe après upsert
+  const { data: verifyData, error: verifyError } = await supabase
     .from('predictions')
-    .select('match_id, created_at, status')
-    .eq('status', 'completed')
-    .order('created_at', { ascending: false })
+    .select('id, match_id, created_at, status, predicted_result')
+    .eq('match_id', testMatchId);
+
+  results.test_verify = {
+    found: verifyData?.length || 0,
+    error: verifyError ? verifyError.message : null,
+    data: verifyData,
+  };
+
+  // Nettoyer le test
+  if (verifyData && verifyData.length > 0) {
+    await supabase.from('predictions').delete().eq('match_id', testMatchId);
+    results.test_cleanup = 'deleted';
+  }
+
+  // 4. Check created_at column: est-ce que DEFAULT now() fonctionne ?
+  const { data: noCreated } = await supabase
+    .from('predictions')
+    .select('match_id, created_at')
+    .is('created_at', null)
     .limit(5);
-  results.recent_completed = completedRecent;
+  results.null_created_at = { count: (noCreated || []).length, items: noCreated };
+
+  // 5. Vérifier les contraintes de la table
+  try {
+    const { data: colInfo, error: colErr } = await supabase
+      .rpc('get_column_info', { table_name: 'predictions' })
+      .select('*')
+      .limit(1);
+    // La RPC n'existe probablement pas, ignorer
+  } catch {}
 
   return NextResponse.json(results, {
     headers: { 'Cache-Control': 'no-store' }
