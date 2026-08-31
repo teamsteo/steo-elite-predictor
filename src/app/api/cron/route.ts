@@ -2586,7 +2586,7 @@ export async function GET(request: NextRequest) {
               console.log(`💣 Mode kamikaze: ${toSave.length} kamikazes à sauvegarder en Supabase (sur ${kamikazePicks.length} totaux)`);
             }
             
-            console.log(`📊 Sauvegarde Supabase: ${toSave.length} pronostics publiés sur Telegram`);
+            console.log(`📊 Sauvegarde Supabase: ${toSave.length} pronostics publiés sur Telegram (total predictions: ${predictions.length}, publishedList: ${publishedList.length})`);
             
             if (toSave.length > 0) {
               const dbPredictions = toSave.map((p: any) => {
@@ -2616,6 +2616,15 @@ export async function GET(request: NextRequest) {
               console.log(`💾 Sauvegarde summary: ${toSave.length} pronostics, risk breakdown: ${JSON.stringify(toSave.slice(0, 5).map((p: any) => ({ r: p.riskPercentage, s: p.sport, d: (p.date || '').split('T')[0], t: p.homeTeam, vb: p.valueBetDetected })))}`);
               const saved = await SupabaseStore.addPredictions(dbPredictions);
               console.log(`💾 ${saved} pronostics sauvegardés en Supabase (sur ${toSave.length} publiés)`);
+              // 🔒 VÉRIFICATION POST-SAUVEGARDE: relire la DB pour confirmer
+              if (saved > 0) {
+                try {
+                  const verify = await SupabaseStore.getPredictionsByCreatedAt(todayISO);
+                  console.log(`✅ [POST-SAVE VERIFY] ${verify.length} prédictions en DB pour ${todayISO}, match_ids: ${verify.slice(0, 3).map(p => p.match_id?.slice(0, 60)).join(' | ')}`);
+                } catch (verifyErr: any) {
+                  console.log(`⚠️ [POST-SAVE VERIFY] Échec: ${verifyErr.message}`);
+                }
+              }
               if (saved === 0 && toSave.length > 0) {
                 console.error('❌ [ALERTE] Sauvegarde summary ÉCHOUÉE — 0 enregistré sur ${toSave.length}!');
                 // Loguer les match_ids et match_dates pour diagnostic
