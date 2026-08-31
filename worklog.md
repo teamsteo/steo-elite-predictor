@@ -61,3 +61,40 @@ Stage Summary:
 | Corrompues (predicted_result NULL) | 67 (77%) | 0 (0%) |
 | Décalages created_at ≠ match_date | 67 | 0 |
 | Enregistrements parasites scrapes | 519+ | 0 |
+
+---
+Task ID: 2
+Agent: main
+Task: Diagnostic bilan 30 août "Aucun pronostic à vérifier" + fix ML training workflow
+
+Work Log:
+- Créé endpoint temporaire debug-db-aug30 pour interroger la DB Supabase en production
+- Diagnostic DB : 388 prédictions totales, dernière created_at = 2026-08-24 (aucune sauvegarde depuis 6 jours !)
+- Test upsert direct depuis Vercel : erreur "Could not find the 'season' column of 'predictions' in the schema cache"
+- Root cause : le commit 41f99617 (25 août) a ajouté `season: p.season || null` au mapping addPredictions, mais la colonne `season` n'existe PAS dans la table Supabase
+- L'upsert échouait silencieusement (renvoyait 0), le code continuait vers la publication Telegram → message publié mais rien en DB
+- Fix : retiré `season` du mapping dans addPredictions (db-supabase.ts ligne 249)
+- Test post-fix : upsert sans season = 1 row insérée ✅, upsert avec season = erreur confirmée ❌
+- Découverte colonnes réelles de la table via select('*') (35 colonnes, pas de 'season')
+- Fix workflow ML training : secrets GitHub nommés SUPABASE_URL/SUPABASE_SERVICE_KEY mais le workflow attendait NEXT_PUBLIC_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY
+- Nettoyage : suppression endpoint debug + script check-aug30.ts
+
+Stage Summary:
+- **ROOT CAUSE trouvé** : colonne `season` inexistante dans l'upsert → 6 jours de sauvegarde échouée (25-30 août)
+- **Fix déployé** : retrait de `season` du mapping addPredictions
+- **ML training workflow corrigé** : utilise maintenant les bons noms de secrets GitHub
+- Prochain cycle cron (07:00 ou 18:00 UTC) sauvegardera correctement en DB
+
+---
+
+## Bug 7 (CRITIQUE) : Colonnes inconnues dans l'upsert
+- **Fichier** : `src/lib/db-supabase.ts` (addPredictions, ligne 249)
+- **Problème** : Le mapping explicite incluait `season: p.season || null` mais la colonne `season` n'existe pas dans la table Supabase `predictions`. L'upsert échouait silencieusement (erreur attrapée → return 0).
+- **Impact** : Aucune prédiction sauvegardée du 25 au 31 août (6 jours). Le cron summary publiait sur Telegram mais ne sauvegardait rien en DB → le bilan trouvait 0 prédiction.
+- **Fix** : Retiré `season` du mapping. Testé via endpoint temporaire : upsert fonctionne maintenant.
+
+## Bug 8 : ML Training workflow - mauvais noms de secrets
+- **Fichier** : `.github/workflows/ml-train.yml`
+- **Problème** : Le workflow référençait `secrets.NEXT_PUBLIC_SUPABASE_URL` et `secrets.SUPABASE_SERVICE_ROLE_KEY` mais les secrets GitHub sont nommés `SUPABASE_URL` et `SUPABASE_SERVICE_KEY`
+- **Impact** : Le workflow ML training échouait systématiquement
+- **Fix** : Corrigé les noms de secrets pour correspondre à ceux configurés dans le repo
