@@ -102,6 +102,11 @@
     {
       "path": "/api/cron?action=mlb-palier",
       "schedule": "0 8 * * 2"
+    },
+    {
+      "path": "/api/combo-private",
+      "schedule": "0 19 * * *",
+      "method": "POST"
     }
   ]
 }

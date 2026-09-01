@@ -261,7 +261,20 @@ export async function POST(request: NextRequest) {
     console.log(`⚽ ${footballMatches.length} matchs foot éligibles`);
 
     if (footballMatches.length === 0) {
-      return NextResponse.json({ error: 'Aucun match foot avec cotes réelles' });
+      const trèveMsg =
+        '╔═════════════════════════════════════════╗\n' +
+        '║                                       ║\n' +
+        '║   🎯 <b>COMBO MULTI-JOURS FOOT</b>        ║\n' +
+        '║                                       ║\n' +
+        '╚═════════════════════════════════════════╝\n\n' +
+        '⏳ <b>Trêve internationale</b> — aucun match foot avec cotes disponibles.\n\n' +
+        `📊 ${matches.length} matchs trouvés (autres sports), 0 foot.\n\n' +
+        '🔄 Le combo sera généré automatiquement dès que des matchs foot seront disponibles.\n' +
+        '📅 Prochaines journées de ligue : probablement après la trêve FIFA.\n' +
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+      await sendTelegramPersonalMessage(trèveMsg);
+      return NextResponse.json({ error: 'Trêve internationale', totalMatches: matches.length, footballMatches: 0 });
     }
 
     // 3. Pipeline ML
