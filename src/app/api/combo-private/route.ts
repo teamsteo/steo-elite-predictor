@@ -176,17 +176,79 @@ export async function POST(request: NextRequest) {
 
     console.log('🎯 [COMBO PRIVATE] Début génération combo multi-jours...');
 
-    // 1. Récupérer TOUS les matchs avec cotes ( ESPN = hier, aujourd'hui, demain)
+    // 1. Récupérer les matchs via pipeline standard (ESPN hier/aujourd'hui/demain)
     invalidateEspnCache();
-    const matches = await getMatchesWithRealOdds(true);
+    let matches = await getMatchesWithRealOdds(true);
+
+    // 2. Si pas assez de foot, étendre à J+2 et J+3 via ESPN direct
+    const footMatches = matches?.filter((m: any) => FOOTBALL_SPORTS.has(m.sport) && !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0) || [];
+    
+    if (footMatches.length < 5) {
+      console.log(`⚠️ Seulement ${footMatches.length} matchs foot — extension à J+2/J+3`);
+      const FOOTBALL_ESPN_KEYS = [
+        'soccer/eng.1', 'soccer/esp.1', 'soccer/ita.1', 'soccer/ger.1', 'soccer/fra.1',
+        'soccer/uefa.champions', 'soccer/uefa.europa', 'soccer/uefa.europa.conf',
+        'soccer/por.1', 'soccer/ned.1', 'soccer/bel.1', 'soccer/tur.1', 'soccer/gre.1',
+        'soccer/usa.1', 'soccer/mex.1', 'soccer/arg.1', 'soccer/bra.1',
+        'soccer/fra.2', 'soccer/eng.2', 'soccer/eng.3', 'soccer/esp.2', 'soccer/ita.2', 'soccer/ger.2',
+        'soccer/scotland', 'soccer/ger.3',
+      ];
+      
+      const extraDates: string[] = [];
+      for (let d = 2; d <= 4; d++) {
+        const dt = new Date();
+        dt.setUTCDate(dt.getUTCDate() + d);
+        extraDates.push(dt.toISOString().split('T')[0]);
+      }
+      
+      const extraPromises: Promise<any[]>[] = [];
+      for (const date of extraDates) {
+        for (const sportKey of FOOTBALL_ESPN_KEYS) {
+          extraPromises.push(
+            fetch(`https://site.api.espn.com/apis/site/v2/sports/${sportKey}/scoreboard?dates=${date}`)
+              .then(r => r.json())
+              .then(data => {
+                const events = data?.events || [];
+                return events.map((ev: any) => {
+                  const comp = ev.competitions?.[0];
+                  const homeTeam = comp?.competitors?.find((c: any) => c.homeAway === 'home')?.team?.displayName || '';
+                  const awayTeam = comp?.competitors?.find((c: any) => c.homeAway === 'away')?.team?.displayName || '';
+                  return {
+                    id: ev.id,
+                    homeTeam,
+                    awayTeam,
+                    league: ev.league?.name || sportKey,
+                    sport: 'Football',
+                    date: ev.date || `${date}T00:00:00Z`,
+                    isFinished: ev.status?.type?.completed || false,
+                    isEstimated: false,
+                    oddsHome: comp?.odds?.[0]?.homeTeamOdds?.value || 0,
+                    oddsDraw: comp?.odds?.[0]?.drawOdds?.value || null,
+                    oddsAway: comp?.odds?.[0]?.awayTeamOdds?.value || 0,
+                  };
+                });
+              })
+              .catch(() => []),
+          );
+        }
+      }
+      
+      const extraResults = await Promise.all(extraPromises);
+      const extraMatches = extraResults.flat().filter(
+        (m: any) => m.homeTeam && m.awayTeam && m.oddsHome > 0 && m.oddsAway > 0 && !m.isFinished,
+      );
+      
+      console.log(`📡 +${extraMatches.length} matchs foot supplémentaires (J+2 à J+4)`);
+      matches = [...(matches || []), ...extraMatches];
+    }
 
     if (!matches || matches.length === 0) {
       return NextResponse.json({ error: 'Aucun match disponible' });
     }
 
-    console.log(`📡 ${matches.length} matchs récupérés`);
+    console.log(`📡 ${matches.length} matchs récupérés (total)`);
 
-    // 2. Filtrer : foot uniquement, pas terminé, cotes réelles
+    // 3. Filtrer : foot uniquement, pas terminé, cotes réelles
     const footballMatches = matches.filter(
       (m: any) =>
         FOOTBALL_SPORTS.has(m.sport) &&
