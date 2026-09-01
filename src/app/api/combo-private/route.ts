@@ -243,13 +243,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!matches || matches.length === 0) {
-      return NextResponse.json({ error: 'Aucun match disponible' });
+      console.log('⚠️ getMatchesWithRealOdds a retourné un tableau vide');
     }
 
-    console.log(`📡 ${matches.length} matchs récupérés (total)`);
-
-    // 3. Filtrer : foot uniquement, pas terminé, cotes réelles
-    const footballMatches = matches.filter(
+    // Filtrer les matchs foot avec cotes réelles
+    const footballMatches = (matches || []).filter(
       (m: any) =>
         FOOTBALL_SPORTS.has(m.sport) &&
         !m.isFinished &&
