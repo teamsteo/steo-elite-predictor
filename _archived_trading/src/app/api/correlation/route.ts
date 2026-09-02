@@ -233,35 +233,4 @@ export async function GET(request: NextRequest) {
       symbol,
       timestamp: new Date().toISOString(),
       priceAnalysis: {
-        current,
-        change24h: change24h.toFixed(3),
-        change4h: change4h.toFixed(3),
-        change1h: change1h.toFixed(3),
-        trend: change24h > 0.1 ? 'uptrend' : change24h < -0.1 ? 'downtrend' : 'sideways'
-      },
-      newsCorrelation: {
-        overallSentiment,
-        bullishSignals: bullishCount,
-        bearishSignals: bearishCount,
-        neutralSignals: correlations.filter(c => c.priceImpact.direction === 'neutral').length
-      },
-      correlations,
-      upcomingEvents: upcomingEvents.slice(0, 5),
-      tradingRecommendation: {
-        direction: overallSentiment === 'bullish' ? 'BUY' : overallSentiment === 'bearish' ? 'SELL' : 'WAIT',
-        confidence: Math.abs(bullishCount - bearishCount) * 20 + 40,
-        reasoning: overallSentiment === 'bullish' 
-          ? 'Les actualités récentes montrent un sentiment positif pour cette devise'
-          : overallSentiment === 'bearish'
-          ? 'Les actualités récentes montrent un sentiment négatif pour cette devise'
-          : 'Les signaux sont mixtes - attendre une tendance plus claire'
-      }
-    });
-  } catch (error) {
-    console.error('Correlation API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', details: String(error) },
-      { status: 500 }
-    );
-  }
-}
+        cu                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   

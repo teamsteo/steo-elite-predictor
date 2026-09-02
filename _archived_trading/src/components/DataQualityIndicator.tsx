@@ -261,10 +261,4 @@ export function DataSourceBadge({ source }: DataSourceBadgeProps) {
   
   return (
     <Badge variant="outline" className={`text-[10px] ${config.color}`}>
-      {config.label}
-    </Badge>
-  );
-}
-
-// Export par défaut
-export default DataQualityIndicator;
+      {con                                                                                           
