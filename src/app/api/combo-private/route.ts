@@ -271,7 +271,7 @@ export async function POST(request: NextRequest) {
         '║                                       ║\n' +
         '╚═════════════════════════════════════════╝\n\n' +
         '⏳ <b>Trêve internationale</b> — aucun match foot avec cotes disponibles.\n\n' +
-        `📊 ${matches.length} matchs trouvés (autres sports), 0 foot.\n\n' +
+        `📊 ${matches.length} matchs trouvés (autres sports), 0 foot.\n\n` +
         '🔄 Le combo sera généré automatiquement dès que des matchs foot seront disponibles.\n' +
         '📅 Prochaines journées de ligue : probablement après la trêve FIFA.\n' +
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
