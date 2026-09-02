@@ -134,8 +134,9 @@ function formatComboMessage(combo: MatchCandidate[]): string {
   const stake = 1000;
   const potentialWin = stake * combinedOdds;
   msg += `\U0001f4b3 <b>Simulation bankroll</b>\n`;
-  msg += `   Mise : ${stake:,}F \u2192 Gain potentiel : <b>${potentialWin.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}F</b>\n`;
-  msg += `   Profit net : +${(potentialWin - stake).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}F\n\n`;
+  const fmt = (n: number) => n.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  msg += `   Mise : ${fmt(stake)}F \u2192 Gain potentiel : <b>${fmt(potentialWin)}F</b>\n`;
+  msg += `   Profit net : +${fmt(potentialWin - stake)}F\n\n`;
 
   const riskLevel = combinedWinProb >= 0.25 ? '\U0001f7e2 CONTR\u00d4L\u00c9' : combinedWinProb >= 0.15 ? '\U0001f7e1 MOD\u00c9R\u00c9' : '\U0001f7e0 RISQU\u00c9';
   msg += `\U0001f6e1\ufe0f Niveau de risque global : <b>${riskLevel}</b>\n`;
