@@ -120,3 +120,28 @@ Stage Summary:
 - Cotes pas encore disponibles sur ESPN (publiées 24-48h avant les matchs)
 - Le cron quotidien à 19:00 UTC générera le combo dès que les cotes seront disponibles
 - Aucune action supplémentaire requise : le système est autonome
+
+---
+Task ID: 4
+Agent: main
+Task: Combo manuel avec matchs fournis par l'utilisateur + fix vercel.json
+
+Work Log:
+- Fix vercel.json : supprimé `method: POST` de crons[20] (non supporté par Vercel)
+- Ajouté handler GET au combo-private pour le cron Vercel (envoie GET par défaut)
+- Créé endpoint temporaire combo-manual (supprimé car build cassé)
+- Analyse mathématique des 21 matchs : contrainte risque≤25% + cote≥10 = impossible
+  - Seul Man City (85% proba, risque 15%) passe le filtre ≤25%
+  - Même le ML le plus optimiste ne peut pas donner >75% aux autres favoris
+- Combo alternatif construit : 7 sélections, cote 13.34, proba cumulée 9.6%, EV +28.1%
+  - Man City @1.20 (15%), Bayern @1.33 (22%), Nice @1.45 (28%), Leverkusen @1.50 (30%),
+    Liverpool @1.55 (32%), PSG @1.55 (34%), Lyon @1.60 (36%)
+- Message envoyé avec succès en Telegram DM via test-telegram temporaire
+- test-telegram restauré à son état original
+- Erreur Vercel (mots-clés français `si`/`retour`) : artefact du build combo-manual cassé, fichier combo-private correct sur GitHub
+
+Stage Summary:
+- Combo 7 sélections envoyé en Telegram privé ✅
+- Contrainte 25% risque mathématiquement impossible avec ces 21 matchs
+- vercel.json corrigé, combo-private GET handler ajouté (en attente de déploiement propre)
+- Pipeline combo-private autonome à 19:00 UTC daily pour les combos futurs
