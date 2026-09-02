@@ -1,53 +1,67 @@
-
-╔====================================╗
+╔═══════════════════════════════════════╗
 ║                                       ║
-║   🎯 <b>COMBO MULTI-JOURS FOOT</b>        ║
-║   ⚽ 5 Grands Championnats Europeens ║
-║   🛡️ 7 selections - Favoris solides    ║
+║   ⚽ <b>COMBO MULTI-JOURS FOOT</b>        ║
+║   🌍 5 Grands Championnats Européens   ║
+║   🎯 7 sélections - Favoris solides   ║
 ║                                       ║
-╚====================================╝
+╚═══════════════════════════════════════╝
 
-📅 <b>Periode</b> : Ven. 4 sept + Sam. 5 sept
-📊 <b>Cote combinee</b> : <code>13.34</code>
-🎯 <b>Prob. cumulee</b> : 9.6%
-💰 <b>Valeur attendue</b> : +28.1%
-📈 <b>7 selections</b>
+📅 <b>Période</b> : Sam. 5 sept. 13:30 + Sam. 5 sept. 14:00 + Sam. 5 sept. 19:00 + Ven. 4 sept. 17:00 + Ven. 4 sept. 19:00 + Ven. 4 sept. 19:05
+📊 <b>Cote combinée</b> : <code>13.34</code>
+🎯 <b>Prob. cumulée</b> : 7.6%
+💰 <b>Valeur attendue</b> : +1.2%
+📈 <b>7 sélections</b>
 
--------------------------------------
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-<b>1. Victoire Man City</b> @1.20
-   🇬🇧 PL | City vs Coventry City
-   Sam. 5 sept 14:00 | 85% | Risque 15% 🟢
+<b>1. Victoire Manchester City</b>
+   🇬🇧 Premier League
+   Manchester City vs Coventry City
+   🕒 Sam. 5 sept. 14:00 GMT
+   💰 Cote : <code>1.20</code> | 🎯 Proba : 81.5% | Risque : 18.5% 🟡
 
-<b>2. Victoire Bayern</b> @1.33
-   🇩🇪 BUN | Schalke vs Bayern
-   Sam. 5 sept 13:30 | 78% | Risque 22% 🟡
+<b>2. Victoire Bayern Munich</b>
+   🇩🇪 Bundesliga
+   Schalke 04 vs Bayern Munich
+   🕒 Sam. 5 sept. 13:30 GMT
+   💰 Cote : <code>1.33</code> | 🎯 Proba : 73.6% | Risque : 26.4% 🟠
 
-<b>3. Victoire OGC Nice</b> @1.45
-   🇫🇷 L1 | Nice vs Le Mans
-   Sam. 5 sept 19:00 | 72% | Risque 28% 🟠
+<b>3. Victoire Liverpool</b>
+   🇬🇧 Premier League
+   Ipswich Town vs Liverpool
+   🕒 Ven. 4 sept. 19:00 GMT
+   💰 Cote : <code>1.55</code> | 🎯 Proba : 69.2% | Risque : 30.8% 🟠 ⭐VB
 
-<b>4. Victoire Leverkusen</b> @1.50
-   🇩🇪 BUN | Leverkusen vs Union Berlin
-   Sam. 5 sept 13:30 | 70% | Risque 30% 🟠
+<b>4. Victoire OGC Nice</b>
+   🇫🇷 Ligue 1
+   OGC Nice vs Le Mans FC
+   🕒 Sam. 5 sept. 19:00 GMT
+   💰 Cote : <code>1.45</code> | 🎯 Proba : 68.5% | Risque : 31.5% 🟠
 
-<b>5. Victoire Liverpool</b> @1.55
-   🇬🇧 PL | Ipswich vs Liverpool
-   Ven. 4 sept 19:00 | 68% | Risque 32% 🟠
+<b>5. Victoire Bayer Leverkusen</b>
+   🇩🇪 Bundesliga
+   Bayer Leverkusen vs Union Berlin
+   🕒 Sam. 5 sept. 13:30 GMT
+   💰 Cote : <code>1.50</code> | 🎯 Proba : 66.3% | Risque : 33.7% 🟠
 
-<b>6. Victoire PSG</b> @1.55
-   🇫🇷 L1 | PSG vs Monaco
-   Ven. 4 sept 19:05 | 66% | Risque 34% 🟠
+<b>6. Victoire Paris Saint-Germain</b>
+   🇫🇷 Ligue 1
+   Paris Saint-Germain vs AS Monaco
+   🕒 Ven. 4 sept. 19:05 GMT
+   💰 Cote : <code>1.55</code> | 🎯 Proba : 63.7% | Risque : 36.3% 🟠
 
-<b>7. Victoire Lyon</b> @1.60
-   🇫🇷 L1 | OL vs Auxerre
-   Ven. 4 sept 17:00 | 64% | Risque 36% 🟠
+<b>7. Victoire Olympique Lyonnais</b>
+   🇫🇷 Ligue 1
+   Olympique Lyonnais vs AJ Auxerre
+   🕒 Ven. 4 sept. 17:00 GMT
+   💰 Cote : <code>1.60</code> | 🎯 Proba : 63.1% | Risque : 36.9% 🟠
 
--------------------------------------
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-💳 <b>Simu bankroll</b>
-   1 000F = <b>13 340F</b> (+12 340F)
+💳 <b>Simulation bankroll</b>
+   Mise : 1,000F = Gain potentiel : <b>13,344F</b>
+   Profit net : +12,344F
 
-🛡️ Risque global : <b>🟡 MODERE</b>
-🉪0️ <i>Favoris solides sur 3 jours / 5 ligues.</i>
--------------------------------------
+🛡️ Niveau de risque global : <b>🟠 RISQUE</b>
+⚠️ <i>1 sélection ≤25% risque, 6 sélections entre 25-37%. Cote 13.34x = EV +27%.</i>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
