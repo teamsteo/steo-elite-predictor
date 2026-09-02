@@ -12,6 +12,10 @@
     "src/app/api/**/*.ts": {
       "memory": 1024,
       "maxDuration": 60
+    },
+    "src/app/api/combo-private/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 120
     }
   },
   "headers": [
