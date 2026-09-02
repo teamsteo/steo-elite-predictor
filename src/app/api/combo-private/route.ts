@@ -158,6 +158,11 @@ function formatComboMessage(combo: MatchCandidate[]): string {
   return msg;
 }
 
+// GET handler pour le cron Vercel (envoie GET par défaut, pas POST)
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Auth : CRON_SECRET ou param combo_key (pour appel manuel unique)
