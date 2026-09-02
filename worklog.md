@@ -98,3 +98,25 @@ Stage Summary:
 - **Problème** : Le workflow référençait `secrets.NEXT_PUBLIC_SUPABASE_URL` et `secrets.SUPABASE_SERVICE_ROLE_KEY` mais les secrets GitHub sont nommés `SUPABASE_URL` et `SUPABASE_SERVICE_KEY`
 - **Impact** : Le workflow ML training échouait systématiquement
 - **Fix** : Corrigé les noms de secrets pour correspondre à ceux configurés dans le repo
+
+---
+Task ID: 3
+Agent: main
+Task: Générer un combo multi-jours cotes ≥10, risque ≤25%, Telegram privé
+
+Work Log:
+- Exploration complète du codebase : 5 sous-systèmes combo identifiés (LLM Combo, Combo-Private, Palier Intelligent, Pronostiqueur Pro, UI Combinations)
+- Le endpoint `/api/combo-private` (route.ts, 462 lignes) fait exactement ce qui est demandé :
+  - Cote combinée ≥10, risque max 25%/sélection, 3-7 matchs foot
+  - Extension automatique J+2 à J+4 si <5 matchs foot
+  - Algorithme gloutonne : phase 1 risques ≤20%, phase 2 risques 20-25%
+  - Envoi via `sendTelegramPersonalMessage()` (DM privé)
+- Déclenchement manuel via combo_key : 0 candidats retournés
+- Diagnostic ESPN : 15 matchs foot trouvés mais TOUS avec cotes=0 (non publiées par les bookmakers)
+- Un message informatif a été envoyé en Telegram DM pour signaler 0 matchs éligibles
+
+Stage Summary:
+- Pipeline combo-private opérationnel et déjà déployé
+- Cotes pas encore disponibles sur ESPN (publiées 24-48h avant les matchs)
+- Le cron quotidien à 19:00 UTC générera le combo dès que les cotes seront disponibles
+- Aucune action supplémentaire requise : le système est autonome
