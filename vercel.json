@@ -114,10 +114,6 @@
     {
       "path": "/api/combo-private",
       "schedule": "0 19 * * *"
-    },
-    {
-      "path": "/api/live-calibration/scan",
-      "schedule": "*/10 * * * *"
     }
   ]
 }
