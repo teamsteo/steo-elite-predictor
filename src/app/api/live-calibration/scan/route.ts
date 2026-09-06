@@ -19,6 +19,7 @@ import { sendTelegramPersonalMessage } from '@/lib/telegramService';
 import { fetchUnderstatMatch, buildCalibrationInput } from '@/lib/liveCalibration/understatFetcher';
 import { calibrate } from '@/lib/liveCalibration/calibrate';
 import { formatCalibrationTelegram } from '@/lib/liveCalibration/telegramFormatter';
+import { recordCalibration } from '@/lib/liveCalibration/store';
 
 const FOOTBALL_SPORTS = new Set(['Football', 'football']);
 const MIN_CONFIDENCE_TO_PUBLISH = 50;
@@ -98,6 +99,19 @@ export async function POST(request: NextRequest) {
 
         // Calibrer
         const output = calibrate(input);
+
+        // 📊 Enregistrer dans le store (pour bilan quotidien Telegram)
+        // On enregistre TOUTES les calibrations (même non publiées) pour que
+        // le bilan puisse montrer "X matchs analysés à la mi-temps" même si 0 publication
+        recordCalibration({
+          match_id: input.match_id,
+          home_team: input.home_team,
+          away_team: input.away_team,
+          league: input.league,
+          kickoff_utc: input.kickoff_utc,
+          halftime_utc: input.halftime_utc,
+          score_ht: input.score_ht,
+        }, output);
 
         results.push({
           match: `${match.homeTeam} vs ${match.awayTeam}`,

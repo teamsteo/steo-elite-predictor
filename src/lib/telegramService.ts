@@ -12,6 +12,7 @@
 import { predictGoalsEnriched, type GoalsPredictionResult } from './dixonColesModel';
 import { getMatchTeamStats } from './teamStatsService';
 import SupabaseStore, { type DbPrediction } from './db-supabase';
+import { getDailyCalibrations, type StoredCalibration } from './liveCalibration/store';
 
 // Configuration Telegram
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -2582,6 +2583,22 @@ function formatActualResult(result?: string | null, homeScore?: number | null, a
  * Publie le bilan quotidien des pronostics sur Telegram.
  * Format: résumé par sport détaillé AVANT bilan global, puis détails par match.
  */
+/**
+ * Récupère les calibrations live du jour (ou d'une date passée en param).
+ * Wrapper autour du store in-memory `liveCalibration/store.ts`.
+ *
+ * Le bilan quotidien (cron 08:00 UTC) porte sur la veille, donc on passe
+ * la date d'hier par défaut si dateISO n'est pas fourni.
+ */
+async function getDailyLiveCalibrations(dateISO?: string): Promise<StoredCalibration[]> {
+  const targetDate = dateISO || (() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return yesterday.toISOString().split('T')[0];
+  })();
+  return getDailyCalibrations(targetDate);
+}
+
 export async function publishDailyResultsToTelegram(dateISO?: string): Promise<boolean> {
   const summary = await fetchDailyResultsFromSupabase(dateISO);
 
@@ -2779,6 +2796,69 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
 
       message += '\n';
     }
+  }
+
+  // =============================================
+  // 🎯 RÉAJUSTEMENTS LIVE (IN-PLAY CALIBRATION)
+  // =============================================
+  // Section dédiée au module Live Calibration : affiche les matchs
+  // analysés à la mi-temps avec value bets détectés.
+  // Source : src/lib/liveCalibration/store.ts (cache in-memory)
+  try {
+    const liveCalibrations = await getDailyLiveCalibrations(dateISO);
+    if (liveCalibrations.length > 0) {
+      message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      message += '🎯 <b>RÉAJUSTEMENTS LIVE (MI-TEMPS)</b>\n\n';
+
+      const published = liveCalibrations.filter(c => c.confidence_index >= 50);
+      const skipped = liveCalibrations.length - published.length;
+
+      // Stats globales
+      const avgConf = published.length > 0
+        ? Math.round(published.reduce((acc, c) => acc + c.confidence_index, 0) / published.length)
+        : 0;
+      const totalVBs = published.reduce((acc, c) => acc + c.value_bets_count, 0);
+
+      message += `📊 ${liveCalibrations.length} match${liveCalibrations.length > 1 ? 's' : ''} analysé${liveCalibrations.length > 1 ? 's' : ''} à la MT`;
+      message += `  ·  📨 ${published.length} publié${published.length > 1 ? 's' : ''}`;
+      if (skipped > 0) message += `  ·  ⏸️ ${skipped} skip (confiance insuffisante)`;
+      message += '\n';
+      if (published.length > 0) {
+        message += `🎯 Confiance moyenne: <b>${avgConf}/100</b>`;
+        message += `  ·  💎 ${totalVBs} value bet${totalVBs > 1 ? 's' : ''}\n`;
+      }
+      message += '\n';
+
+      // Détails : seulement les calibrations publiées (top 5 par confiance)
+      if (published.length > 0) {
+        const sorted = [...published].sort((a, b) => b.confidence_index - a.confidence_index);
+        const top = sorted.slice(0, 5);
+        for (const c of top) {
+          const confBar = c.confidence_index >= 85 ? '🟢' :
+                          c.confidence_index >= 70 ? '🟡' :
+                          c.confidence_index >= 50 ? '🟠' : '🔴';
+          message += `${confBar} <b>${c.home_team} ${c.score_ht.home}-${c.score_ht.away} ${c.away_team}</b>\n`;
+          message += `    ${c.league} · MT ${new Date(c.halftime_utc).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}\n`;
+          message += `    λ 2e MT: ${c.home_team} ${c.lambda_home_2nd_half.toFixed(2)} · ${c.away_team} ${c.lambda_away_2nd_half.toFixed(2)}\n`;
+          if (c.top_value_bet) {
+            const recBar = c.top_value_bet.recommendation === 'HIGH_CONFIDENCE' ? '🟢' :
+                          c.top_value_bet.recommendation === 'LOW_STAKE' ? '🟡' : '🟠';
+            message += `    ${recBar} Top VB: <b>${c.top_value_bet.market.replace(/_/g, ' ').toUpperCase()}</b> · `;
+            message += `edge +${c.top_value_bet.edge_pct.toFixed(1)}% · `;
+            message += `cote ${c.top_value_bet.bookmaker_odds.toFixed(2)} (fair ${c.top_value_bet.fair_odds.toFixed(2)})\n`;
+          }
+          message += '\n';
+        }
+        if (published.length > 5) {
+          message += `<i>... et ${published.length - 5} autre${published.length - 5 > 1 ? 's' : ''} (résumé abrégé)</i>\n\n`;
+        }
+      } else if (liveCalibrations.length > 0) {
+        message += `<i>Aucune calibration publiée (confiance < 50 sur tous les matchs analysés).</i>\n\n`;
+      }
+    }
+  } catch (liveErr: any) {
+    console.warn('⚠️ Erreur section réajustements live:', liveErr.message);
+    // Ne pas faire échouer le bilan si la section live échoue
   }
 
   // =============================================
