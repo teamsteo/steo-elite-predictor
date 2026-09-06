@@ -60,6 +60,10 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      # Les secrets doivent être exposés via env pour être lisibles dans run:
+      LIVE_CALIB_SECRET: ${{ secrets.LIVE_CALIB_SECRET }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
 
     steps:
       - name: Trigger Vercel scan endpoint
@@ -77,8 +81,16 @@ jobs:
             echo "🧪 Dry-run mode → $ENDPOINT"
           fi
 
+          # Token d'auth : LIVE_CALIB_SECRET en priorité, fallback CRON_SECRET
+          AUTH_TOKEN="${LIVE_CALIB_SECRET:-${CRON_SECRET:-}}"
+          if [ -z "$AUTH_TOKEN" ]; then
+            echo "❌ Aucun token d'auth disponible (LIVE_CALIB_SECRET ou CRON_SECRET)"
+            exit 1
+          fi
+          echo "🔑 Auth token chargé (${#AUTH_TOKEN} chars)"
+
           RESPONSE=$(curl -sS -X POST "$ENDPOINT" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Authorization: Bearer $AUTH_TOKEN" \
             -H "Content-Type: application/json" \
             -H "User-Agent: GitHubActions-LiveCalibration/1.0" \
             -w "\n---HTTP_STATUS:%{http_code}---" \
