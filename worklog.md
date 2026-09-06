@@ -191,3 +191,30 @@ Stage Summary:
   pick directionnel, ROI simulé des value bets, cumul roulant
 - Message indicatif privé automatique chaque soir (22:30/23:45 UTC) quand des matchs sont résolus
 - Réponse empirique à "est-ce fiable ?" disponible dans le message : % picks, Brier, ROI cumulé
+
+---
+Task ID: 9
+Agent: main
+Task: Persistance permanente de l'historique de calibration (survit aux redéploiements Vercel)
+
+Work Log:
+- Constat : DDL impossible via Supabase REST (0 fonction RPC, pas de table dédiée) → choix Supabase STORAGE
+- Créé bucket privé "live-calibration" (10MB limit) via Storage API avec service key
+- Refactoré store.ts : extraction de resolveEntry() (résolution pure) et aggregateEntries() (agrégat pur),
+  réutilisés par la mémoire ET la persistance ; getRollingAggregate() = wrapper mince mémoire
+- Créé persistence.ts : loadHistory/saveHistory (JSON upsert, cache-bust, timeouts),
+  persistCalibrationSnapshot (fire-and-forget, skip mocks), fetchRollingAggregatePersistent,
+  dégradation gracieuse totale (jamais de crash si Storage indisponible)
+- Rebranché resultTracker.trackResultsForDate : vue unifiée mémoire+historique,
+  pending inclut l'historique (une calibration survit à un recyclage d'instance entre MT et 22:30 UTC)
+- Scan route : persistCalibrationSnapshot(stored) après chaque recordCalibration
+- Test bout-en-bout local avec vrai match ESPN (Everton 2-2 Man Utd) :
+  persistance ✅, simulation redéploiement (clearStore) → agrégat restauré depuis Storage ✅
+  (1 match, Brier 0.512, ROI 78.8%)
+- Nettoyé l'entrée de test du Storage (historique production démarre propre)
+- tsc OK → push → Vercel READY → dispatch tracker en prod : success, resolved 0, matches_tracked 0
+
+Stage Summary:
+- L'historique de fiabilité (Brier, ROI, picks) est maintenant PERMANENT (bucket Supabase Storage)
+- Résilience : calibration persistée dès le scan HT → trackable le soir même même après redéploiement
+- Aucune nouvelle variable d'environnement requise (NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY existants)
