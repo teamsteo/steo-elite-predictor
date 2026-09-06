@@ -21,13 +21,15 @@
  */
 
 import {
-  getPendingTracking,
   getDailyCalibrations,
   getRollingAggregate,
+  resolveEntry,
   updateFinalScore,
+  aggregateEntries,
   StoredCalibration,
 } from './store';
 import { fetchFinalScoresBatch } from './finalScores';
+import { loadHistory, saveHistory } from './persistence';
 
 export interface TrackedMatch {
   home_team: string;
@@ -66,46 +68,87 @@ export interface TrackingResult {
 
 /**
  * Résout les calibrations d'une date : fetch scores finaux, calcule les métriques,
- * met à jour le store. Idempotent (les matchs déjà résolus ne sont pas retraités).
+ * met à jour le store ET l'historique permanent. Idempotent (les matchs déjà
+ * résolus ne sont pas retraités).
+ *
+ * 📦 Vue unifiée : store in-memory (jour courant) + historique Storage (permanent).
+ *   → les calibrations survivent aux redéploiements Vercel : une calibration
+ *     enregistrée à la MT est encore trackable le soir même après un redéploiement.
  */
 export async function trackResultsForDate(dateISO?: string): Promise<TrackingResult> {
-  const date = dateISO || 'today';
-  const pending = getPendingTracking(date);
+  const date = resolveDateISO(dateISO);
 
-  const matches: TrackedMatch[] = [];
+  // 1. Vue unifiée : l'historique permanent + les entrées mémoire du jour (plus fraîches, gagnent)
+  const history = await loadHistory();
+  const unified = new Map<string, StoredCalibration>();
+  for (const h of history) unified.set(h.match_id, h);
+  for (const m of getDailyCalibrations(date)) unified.set(m.match_id, m);
+
+  // 2. Pending : sans résultat final, kickoff du jour, id ESPN réel (les mocks ne sortent jamais)
+  const pending = Array.from(unified.values()).filter(c =>
+    !c.final_score && kickoffDateOf(c) === date && c.match_id.startsWith('espn_'),
+  );
+
   const unresolvedIds: string[] = [];
 
   if (pending.length > 0) {
-    // 1. Fetch des scores finaux (par batch, rate-limit friendly)
+    // 3. Fetch des scores finaux (par batch, rate-limit friendly)
     const scores = await fetchFinalScoresBatch(pending.map(c => ({
       match_id: c.match_id,
       league: c.league,
       kickoff_utc: c.kickoff_utc,
     })));
 
-    // 2. Résoudre chaque match
+    // 4. Résoudre chaque match (entrée unifiée + sync mémoire pour le bilan)
     for (const entry of pending) {
       const score = scores.get(entry.match_id);
       if (!score) {
         unresolvedIds.push(entry.match_id);
-        continue; // pas encore fini, reporté, ou ligue non couverte → retry au prochain run
+        continue; // pas encore fini ou ligue non couverte → retry au prochain run
       }
+      resolveEntry(entry, score);
       updateFinalScore(entry.match_id, score);
-      matches.push(buildTrackedMatch(entry, score));
     }
+
+    // 5. 💾 Persister l'historique mis à jour (résiliant aux redéploiements)
+    const saved = await saveHistory(Array.from(unified.values()));
+    console.log(saved
+      ? `💾 [TRACKER] Historique persisté (${unified.size} entrées)`
+      : `⚠️ [TRACKER] Persistance échouée — historique en mémoire seul`);
   }
 
-  // 3. Stats du jour : inclure aussi les matchs résolus par le bilan plus tôt
-  const allDay = getDailyCalibrations(date).filter(c => c.final_score);
-  const resolvedAll = allDay.map(c => buildTrackedMatch(c, c.final_score!));
+  // 6. Résolus du jour (nouveaux + résolus précédemment)
+  const resolvedDay = Array.from(unified.values()).filter(
+    c => c.final_score && kickoffDateOf(c) === date,
+  );
+
+  // 7. Agrégat roulant : vue unifiée (mémoire + permanent) = toujours le plus frais
+  const allResolved = Array.from(unified.values()).filter(c => c.final_score);
+  const rolling = allResolved.length > 0
+    ? aggregateEntries(allResolved)
+    : getRollingAggregate();
 
   return {
     date,
-    matches: resolvedAll.length > 0 ? resolvedAll : matches,
-    day: computeDayStats(allDay, unresolvedIds.length),
-    rolling: getRollingAggregate(),
+    matches: resolvedDay.map(c => buildTrackedMatch(c, c.final_score!)),
+    day: computeDayStats(resolvedDay, unresolvedIds.length),
+    rolling,
     unresolved_ids: unresolvedIds,
   };
+}
+
+function resolveDateISO(dateISO?: string): string {
+  if (!dateISO || dateISO === 'today') return new Date().toISOString().split('T')[0];
+  if (dateISO === 'yesterday') {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  }
+  return dateISO;
+}
+
+function kickoffDateOf(entry: StoredCalibration): string {
+  return (entry.kickoff_utc || entry.halftime_utc || '').split('T')[0];
 }
 
 function buildTrackedMatch(entry: StoredCalibration, score: { home: number; away: number }): TrackedMatch {

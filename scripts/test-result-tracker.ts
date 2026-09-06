@@ -7,8 +7,9 @@
  * 4. recordCalibration → trackResultsForDate → affiche le message Telegram + stats JSON
  */
 import { calibrate } from '../src/lib/liveCalibration/calibrate';
-import { recordCalibration, clearStore, getDailyCalibrations } from '../src/lib/liveCalibration/store';
+import { recordCalibration, clearStore, getDailyCalibrations, getRollingAggregate } from '../src/lib/liveCalibration/store';
 import { trackResultsForDate, formatResultsTelegram } from '../src/lib/liveCalibration/resultTracker';
+import { loadHistory, fetchRollingAggregatePersistent } from '../src/lib/liveCalibration/persistence';
 import type { LiveCalibrationInput } from '../src/lib/liveCalibration/types';
 
 const LEAGUES = ['eng.1', 'esp.1', 'ita.1', 'ger.1', 'fra.1'];
@@ -157,7 +158,20 @@ async function main() {
   console.log(`brier calculé (modèle + pre-match): ${okBrier ? '✅' : '❌'} (${entry?.brier_model?.toFixed(3)} vs ${entry?.brier_pre_match?.toFixed(3)})`);
   console.log(`tous les value bets évalués: ${okBets ? '✅' : '❌'}`);
   console.log(`pick directionnel: ${okPick ? '✅' : '❌'} (${entry?.model_pick_hit})`);
-  if (!okBrier || !okBets || !okPick) process.exit(1);
+
+  // 🔁 TEST PERSISTANCE : simuler un redéploiement (mémoire vidée)
+  console.log('\n━━━ TEST PERSISTANCE (simulation redéploiement) ━━━');
+  const histAfterTrack = await loadHistory();
+  console.log(`historique Storage après tracking: ${histAfterTrack.length} entrée(s)`);
+  clearStore(); // ← simule le redémarrage de l'instance Vercel
+  console.log(`mémoire vidée → getRollingAggregate() mémoire: ${getRollingAggregate().matches_tracked} match(s)`);
+  const histAfterRestart = await loadHistory();
+  const aggPersist = await fetchRollingAggregatePersistent();
+  const okPersist = histAfterRestart.length > 0 && aggPersist !== null && aggPersist.matches_tracked > 0;
+  console.log(`historique après "redéploiement": ${histAfterRestart.length} entrée(s) → agrégat permanent: ${aggPersist?.matches_tracked} match(s), Brier ${aggPersist?.avg_brier_model?.toFixed(3) ?? 'n/a'}, ROI ${aggPersist?.roi_pct?.toFixed(1) ?? 'n/a'}%`);
+  console.log(`persistance survit au redéploiement: ${okPersist ? '✅' : '❌'}`);
+
+  if (!okBrier || !okBets || !okPick || !okPersist) process.exit(1);
   console.log('\n🎉 TEST PASSED');
   void goalsOffset;
 }

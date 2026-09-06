@@ -19,7 +19,8 @@ import { sendTelegramPersonalMessage } from '@/lib/telegramService';
 import { fetchUnderstatMatch, buildCalibrationInput } from '@/lib/liveCalibration/understatFetcher';
 import { calibrate } from '@/lib/liveCalibration/calibrate';
 import { formatCalibrationTelegram } from '@/lib/liveCalibration/telegramFormatter';
-import { recordCalibration, isAlreadyPublished, markPublished } from '@/lib/liveCalibration/store';
+import { recordCalibration, isAlreadyPublished, markPublished, StoredCalibration } from '@/lib/liveCalibration/store';
+import { persistCalibrationSnapshot } from '@/lib/liveCalibration/persistence';
 import { isBettingWindow, bettingWindowRemainingMinutes } from '@/lib/liveCalibration/bettingWindow';
 
 const FOOTBALL_SPORTS = new Set(['Football', 'football']);
@@ -139,7 +140,7 @@ export async function POST(request: NextRequest) {
         // 📊 Enregistrer dans le store (pour bilan quotidien Telegram)
         // On enregistre TOUTES les calibrations (même non publiées) pour que
         // le bilan puisse montrer "X matchs analysés à la mi-temps" même si 0 publication
-        recordCalibration({
+        const stored: StoredCalibration = recordCalibration({
           match_id: input.match_id,
           home_team: input.home_team,
           away_team: input.away_team,
@@ -153,6 +154,11 @@ export async function POST(request: NextRequest) {
           // 📊 Probas pre-match pour mesurer l'apport de la recalibration (Brier comparé)
           pre_match_probs: preMatchModel.predicted_outcome_probs,
         });
+
+        // 💾 Snapshot permanent (fire-and-forget) : survit aux redéploiements,
+        // permet au tracker du soir de retrouver la calibration même si
+        // l'instance Vercel a été recyclée entre la MT et 22:30 UTC.
+        persistCalibrationSnapshot(stored);
 
         results.push({
           match: `${match.homeTeam} vs ${match.awayTeam}`,

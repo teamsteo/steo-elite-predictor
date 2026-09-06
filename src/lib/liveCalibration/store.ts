@@ -197,7 +197,18 @@ export function updateFinalScore(
 ): void {
   const entry = store.find(c => c.match_id === matchId);
   if (!entry) return;
+  resolveEntry(entry, finalScore);
+}
 
+/**
+ * 📊 RÉSOLUTION PURE d'une calibration contre un score final.
+ * Mute l'entrée : value_bets_outcome, Brier (modèle + pre-match), pick directionnel.
+ * Utilisée par updateFinalScore (mémoire) ET par le tracker (persistance).
+ */
+export function resolveEntry(
+  entry: StoredCalibration,
+  finalScore: { home: number; away: number },
+): void {
   entry.final_score = finalScore;
   entry.tracked_at = Date.now();
 
@@ -253,30 +264,22 @@ export function computeBrier(
 }
 
 /**
- * 📈 Calibrations avec résultat final mais pas encore évaluées par le tracker.
+ * 📊 AGRÉGAT PUR sur une liste de calibrations résolues.
+ * Utilisé par getRollingAggregate (mémoire) ET par la persistance (historique Storage).
  */
-export function getPendingTracking(dateISO?: string): StoredCalibration[] {
-  return getDailyCalibrations(dateISO).filter(c => !c.final_score);
-}
-
-/**
- * 📊 Agrégat roulant sur TOUTES les calibrations résolues du store
- * (historique complet de la fiabilité empirique).
- */
-export function getRollingAggregate(): {
+export function aggregateEntries(tracked: StoredCalibration[]): {
   matches_tracked: number;
   avg_brier_model: number | null;
   avg_brier_pre_match: number | null;
-  recalibration_wins: number;      // matchs où brier_model < brier_pre_match
+  recalibration_wins: number;
   pick_hits: number;
   bets_won: number;
   bets_lost: number;
   bets_void: number;
   stakes: number;
-  returns: number;                 // profit net en unités (stake 1u flat)
+  returns: number;
   roi_pct: number | null;
 } {
-  const tracked = store.filter(c => c.final_score);
   const withBrierM = tracked.filter(c => c.brier_model !== undefined);
   const withBrierP = tracked.filter(c => c.brier_model !== undefined && c.brier_pre_match !== undefined);
 
@@ -307,6 +310,23 @@ export function getRollingAggregate(): {
     returns,
     roi_pct: stakes > 0 ? (returns / stakes) * 100 : null,
   };
+}
+
+/**
+ * 📈 Calibrations avec résultat final mais pas encore évaluées par le tracker.
+ */
+export function getPendingTracking(dateISO?: string): StoredCalibration[] {
+  return getDailyCalibrations(dateISO).filter(c => !c.final_score);
+}
+
+/**
+ * 📊 Agrégat roulant sur TOUTES les calibrations résolues du store EN MÉMOIRE.
+ * ⚠️ Le store in-memory est vidé à chaque redéploiement — pour l'historique
+ * permanent, voir persistence.ts (fetchRollingAggregatePersistent).
+ */
+export function getRollingAggregate(): ReturnType<typeof aggregateEntries> {
+  const tracked = store.filter(c => c.final_score);
+  return aggregateEntries(tracked);
 }
 
 function evaluateMarketOutcome(
