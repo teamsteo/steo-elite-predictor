@@ -1,0 +1,129 @@
+name: Live Calibration Scan
+
+# Scan automatique des matchs football live à la mi-temps.
+# Déclenche le pipeline de recalibration sur Vercel, qui :
+#   1. Récupère les matchs ESPN à l'état "live + 2e mi-temps démarrée"
+#   2. Pour chaque match, fetch Understat xG + applique pipeline bayésien
+#   3. Publie les value bets (confidence >= 50) sur Telegram DM
+#
+# Cron planifié aux heures de mi-temps typiques (UTC) :
+#   - Weekend (Ven/Sam/Dim) : après-midi et soirée
+#   - Semaine : soirées (Ligue des Champions, Europa League, coupes)
+#
+# Note: GitHub Actions cron peut avoir ~5-15 min de retard sur les heures
+# de pointe. Le module Vercel filtre lui-même les matchs à la mi-temps,
+# donc si aucun match n'est à la MT au moment du scan → no-op silencieux.
+
+on:
+  schedule:
+    # ─── WEEKEND (Ven=5, Sam=6, Dim=0) ───
+    # Samedi après-midi (kickoffs 12:30, 14:00, 15:00 → MT vers 13:15, 14:45, 15:45)
+    - cron: '15 13 * * 6'
+    - cron: '45 13 * * 6'
+    - cron: '15 15 * * 6'
+    - cron: '45 15 * * 6'
+    # Samedi soir (kickoffs 17:00, 18:45, 20:00 → MT vers 17:45, 19:30, 20:45)
+    - cron: '45 17 * * 6'
+    - cron: '30 19 * * 6'
+    - cron: '45 20 * * 6'
+    # Dimanche (kickoffs 13:00, 14:00, 15:30, 16:00, 18:45, 20:45)
+    - cron: '50 13 * * 0'
+    - cron: '50 14 * * 0'
+    - cron: '20 16 * * 0'
+    - cron: '50 16 * * 0'
+    - cron: '30 19 * * 0'
+    - cron: '30 20 * * 0'
+    # Vendredi soir (Ligue 1, Bundesliga, La Liga matchs)
+    - cron: '45 18 * * 5'
+    - cron: '30 20 * * 5'
+    # ─── SEMAINE (Lun=1, Mar=2, Mer=3, Jeu=4) ───
+    # Ligue des Champions / Europa League (mardi/mercredi/jeudi soir)
+    - cron: '45 17 * * 2,3,4'
+    - cron: '30 19 * * 2,3,4'
+    - cron: '30 20 * * 2,3,4'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (scan sans publication Telegram)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-calibration-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger Vercel scan endpoint
+        id: scan
+        run: |
+          set -euo pipefail
+          echo "🔄 [$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting live calibration scan..."
+
+          ENDPOINT="${{ vars.LIVE_CALIBRATION_URL || 'https://my-project-zeta-five-85.vercel.app/api/live-calibration/scan' }}"
+          echo "Endpoint: $ENDPOINT"
+
+          # Si dry_run, on appelle /backtest?publish=false au lieu de /scan
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ENDPOINT="${ENDPOINT%/scan}/backtest?publish=false"
+            echo "🧪 Dry-run mode → $ENDPOINT"
+          fi
+
+          RESPONSE=$(curl -sS -X POST "$ENDPOINT" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHubActions-LiveCalibration/1.0" \
+            -w "\n---HTTP_STATUS:%{http_code}---" \
+            --max-time 240 \
+            -d '{}' || echo "CURL_ERROR")
+
+          # Extract status code
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -oE 'HTTP_STATUS:[0-9]+' | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response body:"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+
+          # Set outputs pour le step suivant
+          echo "http_status=$HTTP_STATUS" >> $GITHUB_OUTPUT
+          echo "response<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          # Fail si HTTP 5xx ou curl error
+          if [[ "$HTTP_STATUS" =~ ^5 ]] || [[ "$HTTP_STATUS" == "" ]]; then
+            echo "❌ Scan failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "✅ Scan completed (HTTP $HTTP_STATUS)"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 🎯 Live Calibration Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+          echo "- **HTTP status**: ${{ steps.scan.outputs.http_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Response" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.scan.outputs.response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          echo "❌ Live calibration scan failed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "Check the logs above for details."
+          # Future: ajouter notification Discord/Slack ici si besoin
+          exit 0

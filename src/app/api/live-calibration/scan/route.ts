@@ -1,15 +1,17 @@
 /**
  * GET /api/live-calibration/scan
  *
- * Cron : scanne les matchs football live à la mi-temps,
- * récupère les xG Understat, calibre les prédictions,
- * et publie les value bets sur Telegram (DM privé).
+ * Scan : matchs football live à la mi-temps, calibre via pipeline bayésien,
+ * publie les value bets (confidence >= 50) sur Telegram DM.
  *
- * - Auth : CRON_SECRET (header Bearer ou ?token=)
- * - Filtre : ne publie que les matchs avec confidence >= 50
- * - Rate limit : 1 match Understat / 30s max
+ * Auth : accepte CRON_SECRET ou LIVE_CALIB_SECRET (header Bearer ou ?token=)
+ *   - CRON_SECRET       : usage interne Vercel cron
+ *   - LIVE_CALIB_SECRET : usage GitHub Actions (scan auto)
  *
- * Cron schedule: every 10 minutes (see vercel.json)
+ * Déclenchement :
+ *   - Manuel via GitHub Actions (workflow_dispatch)
+ *   - Cron GitHub Actions aux heures de mi-temps typiques
+ *   - Appel direct avec token
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
@@ -26,13 +28,18 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // Auth
+  // Auth : accept CRON_SECRET ou LIVE_CALIB_SECRET (secret dédié pour GH Actions)
   const authHeader = request.headers.get('authorization');
   const tokenParam = new URL(request.url).searchParams.get('token');
   const cronSecret = process.env.CRON_SECRET;
+  const liveCalibSecret = process.env.LIVE_CALIB_SECRET;
   const token = authHeader?.replace('Bearer ', '') || tokenParam;
 
-  if (cronSecret && token !== cronSecret) {
+  const authorized =
+    (cronSecret && token === cronSecret) ||
+    (liveCalibSecret && token === liveCalibSecret);
+
+  if (!authorized) {
     return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
   }
 
