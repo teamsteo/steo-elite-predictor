@@ -145,3 +145,22 @@ Stage Summary:
 - Contrainte 25% risque mathématiquement impossible avec ces 21 matchs
 - vercel.json corrigé, combo-private GET handler ajouté (en attente de déploiement propre)
 - Pipeline combo-private autonome à 19:00 UTC daily pour les combos futurs
+---
+Task ID: 7
+Agent: main
+Task: Garde-fou wall-clock anti feed figé + évaluation honnête de la logique du modèle
+
+Work Log:
+- Vérifié que le durcissement précédent (commit 70514b3) est bien poussé + déployé (READY)
+- Identifié la dernière faille : le garde-fou reposait uniquement sur le clock ESPN (feed figé = risque de publication post-match)
+- Ajouté wallClockGuard() dans scan/route.ts : croise clock ESPN avec temps réel depuis kickoff
+  - wall < 40′ → clock suspect → rejet
+  - wall > 80′ → fenêtre [42′,55′] physiquement impossible → rejet (match fini ou feed figé)
+  - parseKickoffUtc() gère le format ESPN "2026-09-06T1900Z" (sans deux-points, Date.parse = NaN) et ignore les dates seules
+- tsc --noEmit OK → push (commit baa4dbb) → déploiement Vercel READY
+- Backtest production revalidé : confiance 60 MEDIUM, λ 2H 0.73/0.50, 3 value bets, cotes 1X2 1.30/5.56/20.36
+
+Stage Summary:
+- La chaîne de garanties est complète : isFinished → fenêtre clock [42′,55′] → wall-clock [40′,80′] → anti-doublon → skip si < 3 min restantes
+- La publication post-match est désormais impossible même avec un flux ESPN figé
+- Brique suivante proposée (non construite) : tracking des résultats (Brier score, ROI simulé, calibration réelle) pour répondre à "est-ce fiable" par la donnée
