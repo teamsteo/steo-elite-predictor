@@ -16,6 +16,10 @@
     "src/app/api/combo-private/**/*.ts": {
       "memory": 1024,
       "maxDuration": 120
+    },
+    "src/app/api/live-calibration/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 120
     }
   },
   "headers": [
@@ -110,6 +114,10 @@
     {
       "path": "/api/combo-private",
       "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/live-calibration/scan",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

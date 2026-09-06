@@ -8,6 +8,7 @@ import { ExportManager } from '@/components/ExportManager';
 import { ParlayBuilder } from '@/components/ParlayBuilder';
 import { NotificationManager } from '@/components/NotificationManager';
 import LiveMatchesGrid from '@/components/LiveMatchesGrid';
+import LiveCalibrationPanel from '@/components/LiveCalibrationPanel';
 
 // Interface pour les infos utilisateur
 interface UserInfo {
@@ -4250,7 +4251,7 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
   const [activeTab, setActiveTab] = useState<'safes' | 'moderate' | 'risky' | 'live' | 'finished' | 'all'>('safes');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'loading'>('loading');
-  const [activeSection, setActiveSection] = useState<'football' | 'basketball' | 'nhl' | 'nfl' | 'mlb' | 'tennis' | 'challenges' | 'expert' | 'analyse' | 'antitrap' | 'bankroll' | 'results' | 'pronostiqueur' | 'admin' | 'apistatus' | 'parlay' | 'notifications'>('football');
+  const [activeSection, setActiveSection] = useState<'football' | 'basketball' | 'nhl' | 'nfl' | 'mlb' | 'tennis' | 'challenges' | 'expert' | 'analyse' | 'antitrap' | 'bankroll' | 'results' | 'pronostiqueur' | 'admin' | 'apistatus' | 'parlay' | 'notifications' | 'calibration'>('football');
   const [timing, setTiming] = useState<TimingInfo>({
     currentHour: new Date().getHours(),
     canRefresh: true,
@@ -4566,6 +4567,11 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         {/* Admin Button - Visible uniquement pour les admins */}
         {userInfo?.role === 'admin' && (
           <NavButton icon="⚙️" label="Admin" active={activeSection === 'admin'} onClick={() => setActiveSection('admin')} color="#eab308" />
+        )}
+
+        {/* Live Calibration Button - Visible uniquement pour les admins */}
+        {userInfo?.role === 'admin' && (
+          <NavButton icon="🎯" label="Calib" active={activeSection === 'calibration'} onClick={() => setActiveSection('calibration')} color="#f97316" />
         )}
         
         {/* Spacer */}
@@ -4949,6 +4955,13 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
               </p>
             </div>
             <AdminPanel />
+          </div>
+        )}
+
+        {/* Section Réajustement Live - Visible uniquement pour les admins */}
+        {activeSection === 'calibration' && userInfo?.role === 'admin' && (
+          <div style={{ marginBottom: '12px' }}>
+            <LiveCalibrationPanel />
           </div>
         )}
       </main>
