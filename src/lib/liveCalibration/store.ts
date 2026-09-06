@@ -16,6 +16,16 @@
 
 import type { LiveCalibrationOutput } from './types';
 
+/** Value bet stocké intégralement (pour évaluation ROI 1u flat par le tracker) */
+export interface StoredValueBet {
+  market: string;
+  model_prob: number;
+  fair_odds: number;
+  bookmaker_odds: number;
+  edge_pct: number;
+  recommendation: string;
+}
+
 export interface StoredCalibration {
   match_id: string;
   home_team: string;
@@ -46,6 +56,14 @@ export interface StoredCalibration {
   // 📈 Résultat final (rempli par le bilan du lendemain pour mesurer la performance)
   final_score?: { home: number; away: number };
   value_bets_outcome?: ('won' | 'lost' | 'void')[];
+  // 📊 TRACKER DE CALIBRATION (rempli par /api/live-calibration/track-results)
+  value_bets?: StoredValueBet[];                    // TOUS les value bets (pas seulement le top)
+  model_outcome_probs?: { home: number; draw: number; away: number }; // 1X2 modèle post-recalibration
+  pre_match_outcome_probs?: { home: number; draw: number; away: number }; // 1X2 pre-match (comparaison)
+  brier_model?: number;             // Brier 1X2 du modèle recalibré (0-2, bas = mieux)
+  brier_pre_match?: number;         // Brier 1X2 du pre-match seul (mesure l'apport de la recalibration)
+  model_pick_hit?: boolean;         // le pick directionnel (argmax proba) était-il correct ?
+  tracked_at?: number;              // epoch ms de la résolution
 }
 
 const MAX_ENTRIES = 200;
@@ -71,8 +89,17 @@ export function recordCalibration(
   options?: {
     clock_at_calibration?: number;
     betting_window_remaining_min?: number;
+    pre_match_probs?: { home: number; draw: number; away: number };
   },
 ): StoredCalibration {
+  // 📊 Probas 1X2 implicites aux fair odds (p = 1/cote, normalisées) — pour le Brier
+  const fo = output.halftime_fair_odds;
+  const invSum = 1 / fo.home_win + 1 / fo.draw + 1 / fo.away_win;
+  const modelProbs = {
+    home: 1 / fo.home_win / invSum,
+    draw: 1 / fo.draw / invSum,
+    away: 1 / fo.away_win / invSum,
+  };
   // Supprimer les doublons (même match_id) en préservant l'état de publication
   const existingIdx = store.findIndex(c => c.match_id === matchInfo.match_id);
   let wasPublished = false;
@@ -107,6 +134,17 @@ export function recordCalibration(
     published_at: publishedAt,
     clock_at_calibration: options?.clock_at_calibration,
     betting_window_remaining_min: options?.betting_window_remaining_min,
+    // 📊 Tracker : TOUS les value bets + probas pour calibration empirique
+    value_bets: output.value_bets_detected.map(vb => ({
+      market: vb.market,
+      model_prob: vb.model_prob,
+      fair_odds: vb.fair_odds,
+      bookmaker_odds: vb.bookmaker_odds,
+      edge_pct: vb.edge_pct,
+      recommendation: vb.recommendation,
+    })),
+    model_outcome_probs: modelProbs,
+    pre_match_outcome_probs: options?.pre_match_probs,
   };
 
   store.push(entry);
@@ -161,15 +199,114 @@ export function updateFinalScore(
   if (!entry) return;
 
   entry.final_score = finalScore;
+  entry.tracked_at = Date.now();
 
-  // Évaluer les value bets contre le résultat final
+  const totalGoals = finalScore.home + finalScore.away;
+
+  // Évaluer TOUS les value bets contre le résultat final
   // Note : les value bets du module live portent sur le RÉSULTAT FINAL du match
   // (match_winner_home/draw/away, over/under 2.5 total, btts) — pas seulement la 2e MT
-  if (entry.top_value_bet) {
-    const totalGoals = finalScore.home + finalScore.away;
+  if (entry.value_bets) {
+    entry.value_bets_outcome = entry.value_bets.map(
+      vb => evaluateMarketOutcome(vb.market, finalScore.home, finalScore.away, totalGoals),
+    );
+  } else if (entry.top_value_bet) {
     const outcome = evaluateMarketOutcome(entry.top_value_bet.market, finalScore.home, finalScore.away, totalGoals);
     entry.value_bets_outcome = [outcome];
   }
+
+  // 📊 Brier 1X2 du modèle recalibré (+ du pre-match pour comparaison)
+  if (entry.model_outcome_probs) {
+    entry.brier_model = computeBrier(entry.model_outcome_probs, finalScore);
+  }
+  if (entry.pre_match_outcome_probs) {
+    entry.brier_pre_match = computeBrier(entry.pre_match_outcome_probs, finalScore);
+  }
+
+  // 🎯 Pick directionnel : argmax des probas modèle vs résultat réel
+  if (entry.model_outcome_probs) {
+    const p = entry.model_outcome_probs;
+    const pick = p.home >= p.draw && p.home >= p.away ? 'home' : p.away >= p.draw ? 'away' : 'draw';
+    const actual = finalScore.home > finalScore.away ? 'home' : finalScore.away > finalScore.home ? 'away' : 'draw';
+    entry.model_pick_hit = pick === actual;
+  }
+}
+
+/**
+ * Brier multi-classes 1X2 : Σ (p_i - o_i)² avec o one-hot.
+ * 0 = parfait, 2 = pire. Référence : prédire 1/3 partout = 0.667.
+ */
+export function computeBrier(
+  probs: { home: number; draw: number; away: number },
+  finalScore: { home: number; away: number },
+): number {
+  const actual = finalScore.home > finalScore.away
+    ? { home: 1, draw: 0, away: 0 }
+    : finalScore.away > finalScore.home
+      ? { home: 0, draw: 0, away: 1 }
+      : { home: 0, draw: 1, away: 0 };
+  return (
+    Math.pow(probs.home - actual.home, 2) +
+    Math.pow(probs.draw - actual.draw, 2) +
+    Math.pow(probs.away - actual.away, 2)
+  );
+}
+
+/**
+ * 📈 Calibrations avec résultat final mais pas encore évaluées par le tracker.
+ */
+export function getPendingTracking(dateISO?: string): StoredCalibration[] {
+  return getDailyCalibrations(dateISO).filter(c => !c.final_score);
+}
+
+/**
+ * 📊 Agrégat roulant sur TOUTES les calibrations résolues du store
+ * (historique complet de la fiabilité empirique).
+ */
+export function getRollingAggregate(): {
+  matches_tracked: number;
+  avg_brier_model: number | null;
+  avg_brier_pre_match: number | null;
+  recalibration_wins: number;      // matchs où brier_model < brier_pre_match
+  pick_hits: number;
+  bets_won: number;
+  bets_lost: number;
+  bets_void: number;
+  stakes: number;
+  returns: number;                 // profit net en unités (stake 1u flat)
+  roi_pct: number | null;
+} {
+  const tracked = store.filter(c => c.final_score);
+  const withBrierM = tracked.filter(c => c.brier_model !== undefined);
+  const withBrierP = tracked.filter(c => c.brier_model !== undefined && c.brier_pre_match !== undefined);
+
+  let betsWon = 0, betsLost = 0, betsVoid = 0, returns = 0;
+  for (const c of tracked) {
+    if (!c.value_bets || !c.value_bets_outcome) continue;
+    c.value_bets_outcome.forEach((o, i) => {
+      const odds = c.value_bets![i]?.bookmaker_odds ?? 2;
+      if (o === 'won') { betsWon++; returns += odds - 1; }
+      else if (o === 'lost') { betsLost++; returns -= 1; }
+      else betsVoid++;
+    });
+  }
+  const stakes = betsWon + betsLost; // void = stake remboursée
+
+  return {
+    matches_tracked: tracked.length,
+    avg_brier_model: withBrierM.length > 0
+      ? withBrierM.reduce((a, c) => a + (c.brier_model || 0), 0) / withBrierM.length : null,
+    avg_brier_pre_match: withBrierP.length > 0
+      ? withBrierP.reduce((a, c) => a + (c.brier_pre_match || 0), 0) / withBrierP.length : null,
+    recalibration_wins: withBrierP.filter(c => (c.brier_model || 0) < (c.brier_pre_match || 0)).length,
+    pick_hits: tracked.filter(c => c.model_pick_hit === true).length,
+    bets_won: betsWon,
+    bets_lost: betsLost,
+    bets_void: betsVoid,
+    stakes,
+    returns,
+    roi_pct: stakes > 0 ? (returns / stakes) * 100 : null,
+  };
 }
 
 function evaluateMarketOutcome(

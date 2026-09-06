@@ -1,0 +1,112 @@
+name: Live Calibration Result Tracker
+
+# Tracker de calibration : chaque soir après la fin des matchs, résout les
+# résultats finaux des matchs calibrés à la mi-temps et envoie le message
+# indicatif EN PRIVÉ sur Telegram (DM) :
+#   - Brier 1X2 du modèle recalibré vs pre-match seul (apport réel de la MT)
+#   - Pick directionnel correct ou non
+#   - P&L simulé des value bets (mise fixe 1u) + ROI + cumul global
+#
+# Deux passages : 22:30 UTC (matchs du soir terminés) et 23:45 UTC (catch-up,
+# matchs tardifs / redoutés). Idempotent : seuls les matchs non résolus sont traités,
+# pas de message si rien de nouveau (pas de spam).
+
+on:
+  schedule:
+    - cron: '30 22 * * *'
+    - cron: '45 23 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date à tracker (today / yesterday / YYYY-MM-DD)'
+        required: false
+        default: 'today'
+        type: string
+      publish:
+        description: 'Envoyer le message Telegram privé ?'
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-calibration-tracker
+  cancel-in-progress: false
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Les secrets doivent être exposés via env pour être lisibles dans run:
+      LIVE_CALIB_SECRET: ${{ secrets.LIVE_CALIB_SECRET }}
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+
+    steps:
+      - name: Trigger Vercel tracker endpoint
+        id: track
+        run: |
+          set -euo pipefail
+          echo "📊 [$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting result tracking..."
+
+          ENDPOINT="${{ vars.LIVE_CALIBRATION_URL || 'https://my-project-zeta-five-85.vercel.app/api/live-calibration/track-results' }}"
+          DATE="${{ github.event.inputs.date || 'today' }}"
+          PUBLISH="${{ github.event.inputs.publish || 'true' }}"
+
+          URL="${ENDPOINT}?date=${DATE}&publish=${PUBLISH}"
+          echo "Endpoint: $URL"
+
+          AUTH_TOKEN="${LIVE_CALIB_SECRET:-${CRON_SECRET:-}}"
+          if [ -z "$AUTH_TOKEN" ]; then
+            echo "❌ Aucun token d'auth disponible (LIVE_CALIB_SECRET ou CRON_SECRET)"
+            exit 1
+          fi
+          echo "🔑 Auth token chargé (${#AUTH_TOKEN} chars)"
+
+          RESPONSE=$(curl -sS -X POST "$URL" \
+            -H "Authorization: Bearer $AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "User-Agent: GitHubActions-LiveCalibTracker/1.0" \
+            -w "\n---HTTP_STATUS:%{http_code}---" \
+            --max-time 240 \
+            -d '{}' || echo "CURL_ERROR")
+
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -oE 'HTTP_STATUS:[0-9]+' | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response body:"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+
+          echo "http_status=$HTTP_STATUS" >> $GITHUB_OUTPUT
+          echo "response<<EOF" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          if [[ "$HTTP_STATUS" =~ ^5 ]] || [[ "$HTTP_STATUS" == "" ]]; then
+            echo "❌ Tracking failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+
+          echo "✅ Tracking completed (HTTP $HTTP_STATUS)"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 📊 Live Calibration Tracker Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+          echo "- **HTTP status**: ${{ steps.track.outputs.http_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Response" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo '${{ steps.track.outputs.response }}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Alert on failure
+        if: failure()
+        run: |
+          echo "❌ Live calibration tracker failed at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          exit 0

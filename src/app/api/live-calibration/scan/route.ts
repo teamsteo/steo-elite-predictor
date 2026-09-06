@@ -150,6 +150,8 @@ export async function POST(request: NextRequest) {
         }, output, {
           clock_at_calibration: window.minutes ?? undefined,
           betting_window_remaining_min: remainingMin ?? undefined,
+          // 📊 Probas pre-match pour mesurer l'apport de la recalibration (Brier comparé)
+          pre_match_probs: preMatchModel.predicted_outcome_probs,
         });
 
         results.push({
