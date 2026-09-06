@@ -64,10 +64,17 @@ export async function POST(request: NextRequest) {
         !m.isFinished,
     );
 
-    const windowResults = allLiveFootball.map((m: any) => ({
-      match: m,
-      window: isBettingWindow(m.clock, m.period, m.isFinished),
-    }));
+    const windowResults = allLiveFootball.map((m: any) => {
+      const window = isBettingWindow(m.clock, m.period, m.isFinished);
+      const wall = wallClockGuard(m.date);
+      // Fenêtre effective = clock ESPN dans [42′,55′] ET wall-clock cohérent.
+      // Si le clock ESPN dit "mi-temps" mais que le temps réel depuis le
+      // kickoff contredit (match déjà fini, feed figé), on rejette.
+      const effective = window.is_betting_window && !wall.ok
+        ? { ...window, is_betting_window: false, reason: `${window.reason} — REJETÉ: ${wall.reason}` }
+        : window;
+      return { match: m, window: effective, wall };
+    });
 
     const liveFootballHT = windowResults.filter(w => w.window.is_betting_window).map(w => w.match);
 
@@ -210,6 +217,52 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+/**
+ * 🕐 GARDE-FOU HORAIRE (anti feed figé) — la garantie finale.
+ *
+ * Le clock ESPN peut MENTIR : feed figé, données en retard, match abandonné.
+ * Ce garde-fou croise le clock ESPN avec le temps RÉEL écoulé depuis le kickoff :
+ *   - wall < 40′  → physiquement impossible d'être à la pause → clock suspect
+ *   - wall > 80′  → un clock ∈ [42′,55′] est impossible à cet instant
+ *                   (80 min réelles = ~2e MT 65′) → feed figé, match
+ *                   vraisemblablement terminé → JAMAIS de publication
+ * Fenêtre physique de validité : 1ère MT finit vers 45-49′ réelles, pause
+ * jusqu'à ~60′, 2e MT clock 55′ ≈ 70′ réelles (+arrêts de jeu ≈ 75′ max).
+ */
+function wallClockGuard(kickoffRaw: string | undefined): { ok: boolean; reason: string } {
+  const kickoff = parseKickoffUtc(kickoffRaw);
+  // Pas de timestamp fiable → on ne peut pas vérifier ; on laisse passer
+  // (le clock ESPN + isFinished restent les gardes primaires).
+  if (kickoff === null) {
+    return { ok: true, reason: 'kickoff non parsable — garde-fou wall-clock inapplicable' };
+  }
+  const wallMin = (Date.now() - kickoff) / 60000;
+  if (wallMin < 40) {
+    return { ok: false, reason: `wall-clock ${Math.round(wallMin)}′ < 40′ — impossible d'être à la pause, clock ESPN suspect` };
+  }
+  if (wallMin > 80) {
+    return { ok: false, reason: `wall-clock ${Math.round(wallMin)}′ > 80′ — match terminé ou feed figé, publication interdite` };
+  }
+  return { ok: true, reason: `wall-clock cohérent (${Math.round(wallMin)}′ depuis kickoff)` };
+}
+
+/**
+ * Parse le kickoff ESPN en timestamp. Retourne null si non fiable.
+ * ESPN renvoie parfois "2026-09-06T1900Z" (sans deux-points) → Date.parse = NaN.
+ * Une date seule ("2026-09-06") est ignorée : elle donnerait un wall-clock faux.
+ */
+function parseKickoffUtc(raw: string | undefined): number | null {
+  if (!raw) return null;
+  // Format sans deux-points "T1900Z" → normaliser en "T19:00:00Z"
+  const normalized = /^(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})Z$/.test(raw)
+    ? raw.replace(/^(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})Z$/, '$1T$2:$3:00Z')
+    : raw;
+  // Date seule → inutilisable pour un wall-clock précis
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const t = Date.parse(normalized);
+  return Number.isNaN(t) ? null : t;
 }
 
 /**
