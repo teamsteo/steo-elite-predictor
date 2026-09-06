@@ -1,21 +1,61 @@
-name: Deploy to Vercel
+name: Deploy to Vercel (Manual Backup)
+
+# Workflow de secours : déploiement manuel Vercel quand l'auto-deploy
+# GitHub→Vercel ne fonctionne pas (webhook déconnecté, build Vercel échoué, etc.)
+#
+# ⚠️ En fonctionnement normal, Vercel auto-déploie à chaque push via son GitHub App.
+# Ce workflow n'est à utiliser QUE en cas de problème avec l'auto-deploy.
+#
+# Pour déclencher : Actions → "Deploy to Vercel (Manual Backup)" → Run workflow
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
+  # Pas de trigger push (redondant avec l'auto-deploy Vercel natif)
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Deploy to Vercel
+      - name: Verify required secrets
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ] || [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "❌ Secrets Vercel manquants !"
+            echo ""
+            echo "Pour configurer, va sur :"
+            echo "  Settings → Secrets and variables → Actions → New repository secret"
+            echo ""
+            echo "Tu as besoin de :"
+            echo "  - VERCEL_TOKEN     : https://vercel.com/account/tokens"
+            echo "  - VERCEL_ORG_ID    : https://vercel.com/dashboard → Settings → General → ID"
+            echo "  - VERCEL_PROJECT_ID: https://vercel.com/[org]/my-project → Settings → General → Project ID"
+            exit 1
+          fi
+          echo "✅ Tous les secrets Vercel sont configurés"
+
+      - name: Deploy to Vercel (production)
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           vercel-args: '--prod'
+
+      - name: Summary
+        run: |
+          echo "## 🚀 Déploiement Vercel (backup)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: https://my-project-zeta-five-85.vercel.app" >> $GITHUB_STEP_SUMMARY
