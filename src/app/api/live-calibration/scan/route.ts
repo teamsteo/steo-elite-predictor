@@ -19,7 +19,8 @@ import { sendTelegramPersonalMessage } from '@/lib/telegramService';
 import { fetchUnderstatMatch, buildCalibrationInput } from '@/lib/liveCalibration/understatFetcher';
 import { calibrate } from '@/lib/liveCalibration/calibrate';
 import { formatCalibrationTelegram } from '@/lib/liveCalibration/telegramFormatter';
-import { recordCalibration } from '@/lib/liveCalibration/store';
+import { recordCalibration, isAlreadyPublished, markPublished } from '@/lib/liveCalibration/store';
+import { isBettingWindow, bettingWindowRemainingMinutes } from '@/lib/liveCalibration/bettingWindow';
 
 const FOOTBALL_SPORTS = new Set(['Football', 'football']);
 const MIN_CONFIDENCE_TO_PUBLISH = 50;
@@ -50,26 +51,40 @@ export async function POST(request: NextRequest) {
     invalidateEspnCache();
     const matches = await getMatchesWithRealOdds(true);
 
-    // Filtrer : matchs de foot live à la mi-temps
-    const liveFootballHT = (matches || []).filter(
+    // ⏰ FENÊTRE DE PARI STRICTE — critique pour la rentabilité :
+    //   On ne calibre QUE si le match est dans la fenêtre [42′, 55′].
+    //   - clock < 42′ → 1ère MT pas finie, rien à recalibrer
+    //   - clock > 55′ → 2e MT déjà bien entamée, les cotes live ont bougé,
+    //     publier un value bet serait trompeur (impossible de parier au prix annoncé)
+    //   - match fini → jamais
+    const allLiveFootball = (matches || []).filter(
       (m: any) =>
         FOOTBALL_SPORTS.has(m.sport) &&
         m.isLive &&
-        !m.isFinished &&
-        m.period === 2 && // 2nd half started = HT was reached
-        m.clock &&
-        (m.clock.includes('45') || m.clock.includes('46') ||
-         m.clock.includes('47') || m.clock.includes('48') ||
-         m.clock.includes('49') || m.clock.includes('50')),
+        !m.isFinished,
     );
 
-    console.log(`⚽ ${liveFootballHT.length} match(s) live à la mi-temps détecté(s)`);
+    const windowResults = allLiveFootball.map((m: any) => ({
+      match: m,
+      window: isBettingWindow(m.clock, m.period, m.isFinished),
+    }));
+
+    const liveFootballHT = windowResults.filter(w => w.window.is_betting_window).map(w => w.match);
+
+    // Logs détaillés du tri temporel (diagnostique les retards cron GH Actions)
+    for (const w of windowResults) {
+      console.log(`⏰ ${w.match.homeTeam} vs ${w.match.awayTeam} : ${w.window.reason}`);
+    }
+
+    console.log(`⚽ ${liveFootballHT.length} match(s) dans la fenêtre de pari (sur ${allLiveFootball.length} foot live)`);
 
     if (liveFootballHT.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'Aucun match live à la mi-temps',
+        message: 'Aucun match dans la fenêtre de pari mi-temps',
         scanned: matches?.length || 0,
+        live_football: allLiveFootball.length,
+        in_betting_window: 0,
         calibrated: 0,
         published: 0,
       });
@@ -77,9 +92,19 @@ export async function POST(request: NextRequest) {
 
     const results: any[] = [];
     let publishedCount = 0;
+    let skippedDuplicates = 0;
 
     for (const match of liveFootballHT.slice(0, 5)) { // limite à 5 matchs par run
       try {
+        // 🔒 ANTI-DOUBLON : ne jamais republier un match déjà publié
+        // (les crons GH Actions passent toutes les 5-10 min, un match peut
+        //  rester dans la fenêtre [42′,55′] pour 2 runs consécutifs)
+        if (isAlreadyPublished(match.id)) {
+          skippedDuplicates++;
+          console.log(`⏭️ ${match.homeTeam} vs ${match.awayTeam} : déjà publié, skip`);
+          continue;
+        }
+
         console.log(`📡 Calibration : ${match.homeTeam} vs ${match.awayTeam}`);
 
         // Récupérer les xG Understat (ou fallback estimation)
@@ -100,6 +125,10 @@ export async function POST(request: NextRequest) {
         // Calibrer
         const output = calibrate(input);
 
+        // ⏰ Infos fenêtre de pari (pour le message Telegram et le bilan)
+        const window = isBettingWindow(match.clock, match.period, match.isFinished);
+        const remainingMin = bettingWindowRemainingMinutes(window.minutes, match.period);
+
         // 📊 Enregistrer dans le store (pour bilan quotidien Telegram)
         // On enregistre TOUTES les calibrations (même non publiées) pour que
         // le bilan puisse montrer "X matchs analysés à la mi-temps" même si 0 publication
@@ -111,26 +140,46 @@ export async function POST(request: NextRequest) {
           kickoff_utc: input.kickoff_utc,
           halftime_utc: input.halftime_utc,
           score_ht: input.score_ht,
-        }, output);
+        }, output, {
+          clock_at_calibration: window.minutes ?? undefined,
+          betting_window_remaining_min: remainingMin ?? undefined,
+        });
 
         results.push({
           match: `${match.homeTeam} vs ${match.awayTeam}`,
           league: match.league,
           confidence: output.confidence_index,
           value_bets_count: output.value_bets_detected.length,
+          clock_at_calibration: window.minutes,
+          betting_window_remaining_min: remainingMin,
         });
 
         // Publier si confiance suffisante
         if (output.confidence_index >= MIN_CONFIDENCE_TO_PUBLISH) {
-          const message = formatCalibrationTelegram(
-            match.homeTeam,
-            match.awayTeam,
-            match.league,
-            output,
-          );
-          const sent = await sendTelegramPersonalMessage(message);
-          if (sent) publishedCount++;
-          console.log(`✅ Publié : ${match.homeTeam} vs ${match.awayTeam} (confiance ${output.confidence_index})`);
+          // ⏰ Timeout dynamique selon le temps restant de la fenêtre de pari :
+          //   si la fenêtre ferme dans < 3 min, on NE PUBLIE PAS (le message
+          //   arriverait trop tard pour que l'utilisateur puisse parier)
+          if (remainingMin !== null && remainingMin < 3) {
+            console.log(`⏰ Skip publication : fenêtre de pari ferme dans ${remainingMin} min (trop tard pour parier)`);
+          } else {
+            const message = formatCalibrationTelegram(
+              match.homeTeam,
+              match.awayTeam,
+              match.league,
+              output,
+              {
+                clock_at_calibration: window.minutes ?? undefined,
+                betting_window_remaining_min: remainingMin ?? undefined,
+              },
+            );
+            const sent = await sendTelegramPersonalMessage(message);
+            if (sent) {
+              publishedCount++;
+              // 🔒 Marquer publié APRÈS envoi réussi (anti-doublon persistant)
+              markPublished(input.match_id);
+              console.log(`✅ Publié : ${match.homeTeam} vs ${match.awayTeam} (confiance ${output.confidence_index}, fenêtre ${remainingMin ?? '?'} min restantes)`);
+            }
+          }
         } else {
           console.log(`⏸️ Skip publication : confiance trop faible (${output.confidence_index} < ${MIN_CONFIDENCE_TO_PUBLISH})`);
         }
@@ -142,14 +191,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`🎯 [LIVE CALIBRATION SCAN] Terminé : ${results.length} calibré(s), ${publishedCount} publié(s)`);
+    console.log(`🎯 [LIVE CALIBRATION SCAN] Terminé : ${results.length} calibré(s), ${publishedCount} publié(s), ${skippedDuplicates} doublon(s) skip`);
 
     return NextResponse.json({
       success: true,
       scanned: matches?.length || 0,
-      live_at_halftime: liveFootballHT.length,
+      live_football: allLiveFootball.length,
+      in_betting_window: liveFootballHT.length,
       calibrated: results.length,
       published: publishedCount,
+      skipped_duplicates: skippedDuplicates,
       results,
     });
   } catch (e: any) {

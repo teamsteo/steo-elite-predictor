@@ -8,11 +8,17 @@
 
 import { LiveCalibrationOutput } from './types';
 
+interface WindowInfo {
+  clock_at_calibration?: number;
+  betting_window_remaining_min?: number;
+}
+
 export function formatCalibrationTelegram(
   homeTeam: string,
   awayTeam: string,
   league: string,
   output: LiveCalibrationOutput,
+  windowInfo?: WindowInfo,
 ): string {
   const lines: string[] = [];
 
@@ -24,6 +30,21 @@ export function formatCalibrationTelegram(
   lines.push('║                                       ║');
   lines.push('╚═══════════════════════════════════════╝');
   lines.push('');
+
+  // ⏰ FENÊTRE DE PARI — affichée EN PREMIER, c'est l'info la plus urgente
+  if (windowInfo?.betting_window_remaining_min !== undefined) {
+    const remaining = windowInfo.betting_window_remaining_min;
+    if (remaining > 0) {
+      lines.push(`⏰ <b>FENÊTRE DE PARI : ${remaining} min restantes</b>`);
+      lines.push(`<i>⚠️ Misez MAINTENANT si vous suivez — les cotes live bougent vite !</i>`);
+    } else {
+      lines.push(`⏰ <b>⚠️ FENÊTRE DE PARI PRESQUE FERMÉE</b>`);
+    }
+    if (windowInfo.clock_at_calibration !== undefined) {
+      lines.push(`<i>Calibration effectuée à la ${windowInfo.clock_at_calibration}e minute</i>`);
+    }
+    lines.push('');
+  }
 
   // Match info
   lines.push(`⚽ <b>${homeTeam} vs ${awayTeam}</b>`);

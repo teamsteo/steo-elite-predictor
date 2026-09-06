@@ -1,46 +1,30 @@
 name: Live Calibration Scan
 
-# Scan automatique des matchs football live à la mi-temps.
+# Scan automatique des matchs football live dans la fenêtre de pari mi-temps.
 # Déclenche le pipeline de recalibration sur Vercel, qui :
-#   1. Récupère les matchs ESPN à l'état "live + 2e mi-temps démarrée"
-#   2. Pour chaque match, fetch Understat xG + applique pipeline bayésien
-#   3. Publie les value bets (confidence >= 50) sur Telegram DM
+#   1. Récupère les matchs ESPN live
+#   2. Filtre la FENÊTRE DE PARI [42′, 55′] (mi-temps + début 2e MT)
+#   3. Pour chaque match dans la fenêtre : fetch Understat xG + pipeline bayésien
+#   4. Publie les value bets (confidence >= 50) sur Telegram DM
+#   5. 🔒 ANTI-DOUBLON : jamais 2 publications pour le même match
 #
-# Cron planifié aux heures de mi-temps typiques (UTC) :
-#   - Weekend (Ven/Sam/Dim) : après-midi et soirée
-#   - Semaine : soirées (Ligue des Champions, Europa League, coupes)
+# Stratégie cron : runs toutes les 10 min pendant les plages de matchs.
+# Pourquoi si fréquent ? GitHub Actions peut avoir 5-15 min de retard.
+# Avec l'anti-doublon côté serveur, les runs redondants sont des no-op
+# quasi-gratuits (~3s de runtime), mais garantissent qu'ON NE RATE JAMAIS
+# la fenêtre de pari d'un match.
 #
-# Note: GitHub Actions cron peut avoir ~5-15 min de retard sur les heures
-# de pointe. Le module Vercel filtre lui-même les matchs à la mi-temps,
-# donc si aucun match n'est à la MT au moment du scan → no-op silencieux.
+# Plages couvertes (UTC) :
+#   - Ven/Sam/Dim 12:00-20:50 (weekend : PL, Liga, Serie A, Bundesliga, L1)
+#   - Mar/Mer/Jeu 17:00-20:50 (Ligue des Champions, Europa League)
+#   - Lun exclu (rares matchs) — à ajouter manuellement via workflow_dispatch
 
 on:
   schedule:
-    # ─── WEEKEND (Ven=5, Sam=6, Dim=0) ───
-    # Samedi après-midi (kickoffs 12:30, 14:00, 15:00 → MT vers 13:15, 14:45, 15:45)
-    - cron: '15 13 * * 6'
-    - cron: '45 13 * * 6'
-    - cron: '15 15 * * 6'
-    - cron: '45 15 * * 6'
-    # Samedi soir (kickoffs 17:00, 18:45, 20:00 → MT vers 17:45, 19:30, 20:45)
-    - cron: '45 17 * * 6'
-    - cron: '30 19 * * 6'
-    - cron: '45 20 * * 6'
-    # Dimanche (kickoffs 13:00, 14:00, 15:30, 16:00, 18:45, 20:45)
-    - cron: '50 13 * * 0'
-    - cron: '50 14 * * 0'
-    - cron: '20 16 * * 0'
-    - cron: '50 16 * * 0'
-    - cron: '30 19 * * 0'
-    - cron: '30 20 * * 0'
-    # Vendredi soir (Ligue 1, Bundesliga, La Liga matchs)
-    - cron: '45 18 * * 5'
-    - cron: '30 20 * * 5'
-    # ─── SEMAINE (Lun=1, Mar=2, Mer=3, Jeu=4) ───
-    # Ligue des Champions / Europa League (mardi/mercredi/jeudi soir)
-    - cron: '45 17 * * 2,3,4'
-    - cron: '30 19 * * 2,3,4'
-    - cron: '30 20 * * 2,3,4'
+    # Weekend : toutes les 10 min de 12:00 à 20:50 UTC
+    - cron: '*/10 12-20 * * 5,6,0'
+    # Semaine (UCL/UEL mardi-mercredi-jeudi) : toutes les 10 min de 17:00 à 20:50
+    - cron: '*/10 17-20 * * 2,3,4'
   workflow_dispatch:
     inputs:
       dry_run:

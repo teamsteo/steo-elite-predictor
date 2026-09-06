@@ -13,6 +13,8 @@ import { predictGoalsEnriched, type GoalsPredictionResult } from './dixonColesMo
 import { getMatchTeamStats } from './teamStatsService';
 import SupabaseStore, { type DbPrediction } from './db-supabase';
 import { getDailyCalibrations, type StoredCalibration } from './liveCalibration/store';
+import { updateFinalScore } from './liveCalibration/store';
+import { fetchFinalScoresBatch } from './liveCalibration/finalScores';
 
 // Configuration Telegram
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -2585,12 +2587,12 @@ function formatActualResult(result?: string | null, homeScore?: number | null, a
  */
 /**
  * Récupère les calibrations live du jour (ou d'une date passée en param).
- * Wrapper autour du store in-memory `liveCalibration/store.ts`.
+ * Wrapper synchrone autour du store in-memory `liveCalibration/store.ts`.
  *
  * Le bilan quotidien (cron 08:00 UTC) porte sur la veille, donc on passe
  * la date d'hier par défaut si dateISO n'est pas fourni.
  */
-async function getDailyLiveCalibrations(dateISO?: string): Promise<StoredCalibration[]> {
+function getDailyLiveCalibrations(dateISO?: string): StoredCalibration[] {
   const targetDate = dateISO || (() => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -2802,16 +2804,39 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   // 🎯 RÉAJUSTEMENTS LIVE (IN-PLAY CALIBRATION)
   // =============================================
   // Section dédiée au module Live Calibration : affiche les matchs
-  // analysés à la mi-temps avec value bets détectés.
+  // analysés à la mi-temps avec value bets détectés ET leur résultat
+  // final (won/lost) pour mesurer la performance réelle du module.
   // Source : src/lib/liveCalibration/store.ts (cache in-memory)
   try {
     const liveCalibrations = await getDailyLiveCalibrations(dateISO);
     if (liveCalibrations.length > 0) {
+      // 📈 1. Fetch des scores finaux ESPN pour évaluer les value bets
+      //      (uniquement pour les matchs sans final_score déjà connu)
+      const toFetch = liveCalibrations.filter(c => !c.final_score);
+      if (toFetch.length > 0) {
+        const scores = await fetchFinalScoresBatch(toFetch.map(c => ({
+          match_id: c.match_id,
+          league: c.league,
+          kickoff_utc: c.kickoff_utc,
+        })));
+        for (const [matchId, score] of scores) {
+          updateFinalScore(matchId, score);
+        }
+        console.log(`📈 [BILAN LIVE] ${scores.size}/${toFetch.length} scores finaux récupérés`);
+      }
+
+      // Refetch après update (les entrées ont été mutées)
+      const enriched = getDailyLiveCalibrations(dateISO);
+      const published = enriched.filter(c => c.confidence_index >= 50);
+      const skipped = enriched.length - published.length;
+
+      // 📈 Performance des value bets live
+      const evaluated = published.filter(c => c.value_bets_outcome && c.value_bets_outcome.length > 0);
+      const vbWon = evaluated.filter(c => c.value_bets_outcome![0] === 'won').length;
+      const vbLost = evaluated.filter(c => c.value_bets_outcome![0] === 'lost').length;
+
       message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
       message += '🎯 <b>RÉAJUSTEMENTS LIVE (MI-TEMPS)</b>\n\n';
-
-      const published = liveCalibrations.filter(c => c.confidence_index >= 50);
-      const skipped = liveCalibrations.length - published.length;
 
       // Stats globales
       const avgConf = published.length > 0
@@ -2819,13 +2844,26 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
         : 0;
       const totalVBs = published.reduce((acc, c) => acc + c.value_bets_count, 0);
 
-      message += `📊 ${liveCalibrations.length} match${liveCalibrations.length > 1 ? 's' : ''} analysé${liveCalibrations.length > 1 ? 's' : ''} à la MT`;
+      message += `📊 ${enriched.length} match${enriched.length > 1 ? 's' : ''} analysé${enriched.length > 1 ? 's' : ''} à la MT`;
       message += `  ·  📨 ${published.length} publié${published.length > 1 ? 's' : ''}`;
-      if (skipped > 0) message += `  ·  ⏸️ ${skipped} skip (confiance insuffisante)`;
+      if (skipped > 0) message += `  ·  ⏸️ ${skipped} skip`;
       message += '\n';
       if (published.length > 0) {
         message += `🎯 Confiance moyenne: <b>${avgConf}/100</b>`;
         message += `  ·  💎 ${totalVBs} value bet${totalVBs > 1 ? 's' : ''}\n`;
+      }
+
+      // 📈 Bilan win/loss des value bets live (si évalués)
+      if (evaluated.length > 0) {
+        const perfEmoji = vbWon >= vbLost ? '💰' : '📉';
+        message += `${perfEmoji} <b>Performance value bets live</b> : ✅ ${vbWon} gagné${vbWon > 1 ? 's' : ''} / ❌ ${vbLost} perdu${vbLost > 1 ? 's' : ''}`;
+        if (vbWon + vbLost > 0) {
+          const hitRate = Math.round((vbWon / (vbWon + vbLost)) * 100);
+          message += ` (${hitRate}%)`;
+        }
+        message += '\n';
+      } else if (published.length > 0) {
+        message += `<i>⏳ Résultats finaux pas encore disponibles (matchs non terminés ou ligues non-trackées)</i>\n`;
       }
       message += '\n';
 
@@ -2837,7 +2875,12 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
           const confBar = c.confidence_index >= 85 ? '🟢' :
                           c.confidence_index >= 70 ? '🟡' :
                           c.confidence_index >= 50 ? '🟠' : '🔴';
-          message += `${confBar} <b>${c.home_team} ${c.score_ht.home}-${c.score_ht.away} ${c.away_team}</b>\n`;
+          message += `${confBar} <b>${c.home_team} ${c.score_ht.home}-${c.score_ht.away} ${c.away_team}</b>`;
+          // Score final si connu
+          if (c.final_score) {
+            message += ` → <b>FINAL ${c.final_score.home}-${c.final_score.away}</b>`;
+          }
+          message += '\n';
           message += `    ${c.league} · MT ${new Date(c.halftime_utc).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}\n`;
           message += `    λ 2e MT: ${c.home_team} ${c.lambda_home_2nd_half.toFixed(2)} · ${c.away_team} ${c.lambda_away_2nd_half.toFixed(2)}\n`;
           if (c.top_value_bet) {
@@ -2845,14 +2888,21 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
                           c.top_value_bet.recommendation === 'LOW_STAKE' ? '🟡' : '🟠';
             message += `    ${recBar} Top VB: <b>${c.top_value_bet.market.replace(/_/g, ' ').toUpperCase()}</b> · `;
             message += `edge +${c.top_value_bet.edge_pct.toFixed(1)}% · `;
-            message += `cote ${c.top_value_bet.bookmaker_odds.toFixed(2)} (fair ${c.top_value_bet.fair_odds.toFixed(2)})\n`;
+            message += `cote ${c.top_value_bet.bookmaker_odds.toFixed(2)} (fair ${c.top_value_bet.fair_odds.toFixed(2)})`;
+            // Outcome du value bet
+            if (c.value_bets_outcome && c.value_bets_outcome.length > 0) {
+              const outcome = c.value_bets_outcome[0];
+              const outcomeEmoji = outcome === 'won' ? '✅ GAGNÉ' : outcome === 'lost' ? '❌ PERDU' : '➖ VOID';
+              message += ` → <b>${outcomeEmoji}</b>`;
+            }
+            message += '\n';
           }
           message += '\n';
         }
         if (published.length > 5) {
           message += `<i>... et ${published.length - 5} autre${published.length - 5 > 1 ? 's' : ''} (résumé abrégé)</i>\n\n`;
         }
-      } else if (liveCalibrations.length > 0) {
+      } else if (enriched.length > 0) {
         message += `<i>Aucune calibration publiée (confiance < 50 sur tous les matchs analysés).</i>\n\n`;
       }
     }
