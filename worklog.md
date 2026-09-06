@@ -164,3 +164,30 @@ Stage Summary:
 - La chaîne de garanties est complète : isFinished → fenêtre clock [42′,55′] → wall-clock [40′,80′] → anti-doublon → skip si < 3 min restantes
 - La publication post-match est désormais impossible même avec un flux ESPN figé
 - Brique suivante proposée (non construite) : tracking des résultats (Brier score, ROI simulé, calibration réelle) pour répondre à "est-ce fiable" par la donnée
+
+---
+Task ID: 8
+Agent: main
+Task: Tracker de calibration (Brier/ROI/pick) + message indicatif privé Telegram
+
+Work Log:
+- Étendu store.ts : StoredValueBet (TOUS les value bets), model_outcome_probs (1/odds normalisées),
+  pre_match_outcome_probs, brier_model, brier_pre_match, model_pick_hit, tracked_at
+- computeBrier() multi-classes 1X2 (référence hasard=0.667, book pro≈0.19-0.22)
+- updateFinalScore() évalue maintenant TOUS les value bets (ROI 1u flat : won→odds-1, lost→-1)
+- Créé resultTracker.ts : trackResultsForDate() (idempotent) + formatResultsTelegram()
+  + getRollingAggregate() (cumul global fiabilité empirique)
+- Créé endpoint /api/live-calibration/track-results (auth CRON/LIVE_CALIB, ?date=, ?publish=, ?force=)
+  — message indicatif envoyé en DM privé UNIQUEMENT si du nouveau est résolu (anti-spam)
+- Créé workflow live-calibration-tracker.yml : crons 22:30 + 23:45 UTC quotidiens
+- Scan route : passe pre_match_probs au store (mesure l'apport réel de la recalibration)
+- Test end-to-end local avec VRAI match ESPN (Everton 2-2 Man Utd, id 401879291) :
+  confiance 61.8 → 4 value bets → 3✅ 1❌, P&L +3.15u ROI +78.8%,
+  Brier recalibré 0.512 vs pre-match 0.814 (recalibration utile +0.302)
+- tsc OK → push → Vercel READY → dispatch GH workflow (publish=false) : success, endpoint OK
+
+Stage Summary:
+- Le système mesure maintenant SA PROPRE fiabilité : Brier recalibré vs pre-match,
+  pick directionnel, ROI simulé des value bets, cumul roulant
+- Message indicatif privé automatique chaque soir (22:30/23:45 UTC) quand des matchs sont résolus
+- Réponse empirique à "est-ce fiable ?" disponible dans le message : % picks, Brier, ROI cumulé
