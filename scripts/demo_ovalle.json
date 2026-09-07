@@ -1,0 +1,17 @@
+{
+  "match": {
+    "home_team": "Provincial Ovalle",
+    "away_team": "Deportes Colina",
+    "league": "Chili Segunda División",
+    "minute": 46,
+    "score": { "home": 0, "away": 0 },
+    "anchor_minute": 38,
+    "anchor_score": { "home": 0, "away": 0 }
+  },
+  "pre_match": {
+    "odds": { "home": 2.55, "draw": 2.40, "away": 3.05 }
+  },
+  "live_odds": {
+    "home_win": 2.65, "draw": 2.15, "away_win": 3.40
+  }
+}

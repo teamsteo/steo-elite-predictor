@@ -1,0 +1,28 @@
+{
+  "match": {
+    "home_team": "Arsenal",
+    "away_team": "Chelsea",
+    "league": "Premier League",
+    "minute": 45,
+    "score": { "home": 1, "away": 0 }
+  },
+  "stats": {
+    "xg": { "home": 0.92, "away": 0.38 },
+    "shots": { "home": 9, "away": 4 },
+    "shots_on_target": { "home": 4, "away": 1 },
+    "big_chances": { "home": 2, "away": 0 },
+    "penalties": { "home": 0, "away": 0 },
+    "possession_pct": { "home": 58, "away": 42 },
+    "field_tilt_pct": { "home": 61, "away": 39 },
+    "corners": { "home": 4, "away": 1 },
+    "cards": { "home_yellow": 0, "away_yellow": 2, "home_red": 0, "away_red": 0 }
+  },
+  "pre_match": {
+    "odds": { "home": 1.95, "draw": 3.60, "away": 4.00, "over_2_5": 1.80, "under_2_5": 2.05 }
+  },
+  "live_odds": {
+    "home_win": 1.72, "draw": 3.40, "away_win": 6.50,
+    "over_2_5": 2.30, "under_2_5": 1.65,
+    "btts_yes": 2.40, "btts_no": 1.60
+  }
+}
