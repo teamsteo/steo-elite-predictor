@@ -36,12 +36,15 @@ export function calibrate(input: LiveCalibrationInput): LiveCalibrationOutput {
   );
 
   // 3. Bayesian Dixon-Coles update
+  // Temps restant = 90 - minutes observées (45 à la mi-temps ; s'adapte si
+  // l'analyse est déclenchée à une autre minute, ex. capture manuelle à 30' ou 60')
+  const remainingMinutes = Math.max(1, 90 - input.first_half.duration_minutes);
   const lambdaUpdate = updateLambdas(
     input.pre_match_model,
     filteredXG,
     gameState,
     input.first_half.duration_minutes,
-    45, // remaining minutes (2nd half)
+    remainingMinutes,
   );
 
   // 4. Fair odds via Poisson bivariée + correction DC

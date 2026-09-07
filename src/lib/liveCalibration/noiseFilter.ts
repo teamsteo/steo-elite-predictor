@@ -108,9 +108,14 @@ function bayesianShrinkage(
   beta: number = 0.6,
 ): number {
   const priorRate = priorLambdaPer90 / 90; // xG par minute
+  // Convex mix : (α * prior_total + β * observed_total) / (α + β)
+  //   prior_total    = priorRate * observedMinutes  (xG attendus sur la fenêtre)
+  //   observed_total = observedXG                   (xG routine observés)
+  // ⚠️ Le dénominateur est (α + β), PAS (α + β) * minutes — sinon le résultat
+  // est un taux/min et le signal live est écrasé ~45× (bug corrigé 2026-09).
   const priorContribution = alpha * priorRate * observedMinutes;
   const observedContribution = beta * observedXG;
-  const totalWeight = alpha * observedMinutes + beta * observedMinutes;
+  const totalWeight = alpha + beta;
   return (priorContribution + observedContribution) / totalWeight;
 }
 
