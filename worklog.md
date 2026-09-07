@@ -239,3 +239,22 @@ Stage Summary:
 - Outil réutilisable : npx tsx scripts/manual_prono.ts <input.json> (exemple : scripts/prono_input_example.json, démos : demo_ovalle.json, demo_paysandu.json)
 - Workflow utilisateur établi : captures Betclic (score+cotes) → mode score seul ; + captures SofaScore (xG/tirs/possession) → mode complet haute précision
 - Production : bug shrinkage corrigé et déployé — les recalibrations auto du scan HT seront nettement plus réactives au signal live (à re-valider via backtest + Brier des 2-3 prochaines semaines)
+
+---
+Task ID: 4
+Agent: Super Z (main)
+Task: Premier prono live réel à partir des captures FlashScore de l'utilisateur (2 matchs en cours)
+
+Work Log:
+- Lu 8 captures FlashScore upload/ : identifié 2 matchs LIVE du 07.09 soir
+  1. Cerro Porteño 0-0 Nacional Asunción (Paraguay Clausura, stats 35e : xG 0.17/0.16, tirs 4/5, possession 48/52, 0 big chance, corners 2/2)
+  2. Barracas Central 0-0 Argentinos Juniors (Argentine, 5e : xG 0.01/0.00, quasi vide)
+- Croisé avec captures Betclic précédentes : Cerro live 28' = 2.50/2.45/3.10 (ancre) ; Barracas VRAI pre-match = 4.05/2.85/2.03
+- Créé scripts/cerro_nacional_35min.json (mode COMPLET avec stats) et scripts/barracas_argentinos_5min.json (mode complet, données mininales)
+- Vérifié via ESPN que les matchs étaient encore en cours à 22:12 UTC (Cerro 41', Barracas 12', tous 0-0) → rafraîchi les pronos à 41'/12'
+- Prono Cerro 41' : Cerro 36.5% fair 2.69 (cote 2.50) / X 33% fair 3.03 (cote 2.45) / Nacional 29.9% fair 3.35 — AUCUNE value (edges négatifs), confidence 65 MEDIUM, match ouvert équilibré
+- Prono Barracas 12' : trop tôt (confidence 24 LOW) → rester sur le pré-match : Argentinos favori ~49% fair 2.00
+
+Stage Summary:
+- Circuit complet captures → analyse → prono validé en conditions réelles sur matchs en direct
+- Fenêtre idéale confirmée : user doit renvoyer captures (score + stats + cotes) à la mi-temps pour l'analyse pleine précision
