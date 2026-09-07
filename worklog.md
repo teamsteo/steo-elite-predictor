@@ -218,3 +218,24 @@ Stage Summary:
 - L'historique de fiabilité (Brier, ROI, picks) est maintenant PERMANENT (bucket Supabase Storage)
 - Résilience : calibration persistée dès le scan HT → trackable le soir même même après redéploiement
 - Aucune nouvelle variable d'environnement requise (NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY existants)
+
+---
+Task ID: 3
+Agent: Super Z (main)
+Task: Analyse de captures d'écran de matchs live via le pipeline ML — création de l'outil manual_prono + correction bug critique shrinkage
+
+Work Log:
+- Répondu OUI à la question utilisateur : captures live analysables via le pipeline de calibration
+- Créé scripts/manual_prono.ts : CLI qui ingère un JSON rempli depuis captures (score, minute, stats, cotes pre-match, cotes live) et exécute le pipeline complet (noiseFilter → gameStateBias → BDC → fair odds → confidence → value bets)
+- 2 modes : COMPLET (stats xG/tirs/possession depuis SofaScore/FotMob) et SCORE SEUL (captures Betclic sans stats, update Poisson-Gamma sur buts neutralisés game state)
+- estimatePreMatchFromOdds : de-vig 1X2 + inversion O/U 2.5 → lambda_total (recherche binaire, direction CORRIGÉE — était inversée) + supremacy par skew 1X2
+- Mode anchor (anchor_minute + anchor_score) : anti double-comptage quand pre_match.odds provient d'une capture LIVE (seuls les buts depuis l'ancre sont observés)
+- DÉCOUVERT + CORRIGÉ BUG CRITIQUE PRODUCTION (commit ed34f47, poussé → Vercel) : bayesianShrinkage divisait par (α+β)*45 au lieu de (α+β) → xG shrinké ~45× trop petit (0.02 au lieu de 0.75) → le signal live était quasi ignoré depuis le déploiement du module. Le module prod utilise maintenant la vraie observation 1re MT.
+- calibrate() : temps restant dynamique (90 - durée observée) au lieu de 45 codé en dur
+- Testé sur captures réelles upload/ : Ovalle 0-0 Colina (HT, prono X 41.6% fair 2.41 vs cote 2.15, pas de value) et Paysandu 1-2 Brusque (ancre 37' 0-2, prono Brusque 66.3% fair 1.51 vs cote 2.10, edge +39% — sur-réaction marché détectée)
+- tsc --noEmit : OK
+
+Stage Summary:
+- Outil réutilisable : npx tsx scripts/manual_prono.ts <input.json> (exemple : scripts/prono_input_example.json, démos : demo_ovalle.json, demo_paysandu.json)
+- Workflow utilisateur établi : captures Betclic (score+cotes) → mode score seul ; + captures SofaScore (xG/tirs/possession) → mode complet haute précision
+- Production : bug shrinkage corrigé et déployé — les recalibrations auto du scan HT seront nettement plus réactives au signal live (à re-valider via backtest + Brier des 2-3 prochaines semaines)
