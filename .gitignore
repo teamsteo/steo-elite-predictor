@@ -53,3 +53,9 @@ server.log
 tool-results/
 # ML virtual environment
 ml/venv/
+
+# Backtest sandbox (copies dérivées de src/lib/liveCalibration, régénérables)
+scripts/backtest_env/lib_fixed/
+scripts/backtest_env/lib_buggy/
+scripts/backtest_env/*.log
+
