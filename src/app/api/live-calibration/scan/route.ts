@@ -13,7 +13,7 @@
  *   - Cron GitHub Actions aux heures de mi-temps typiques
  *   - Appel direct avec token
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { getMatchesWithRealOdds, invalidateEspnCache } from '@/lib/combinedDataService';
 import { sendTelegramPersonalMessage } from '@/lib/telegramService';
 import { fetchUnderstatMatch, buildCalibrationInput } from '@/lib/liveCalibration/understatFetcher';
@@ -98,125 +98,41 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const results: any[] = [];
-    let publishedCount = 0;
-    let skippedDuplicates = 0;
+    // 🚀 RÉPONSE IMMÉDIATE + calibration en arrière-plan (after, Next 15).
+    //
+    // Avant : tout le pipeline (ESPN + Understat ×N + calibration + Telegram
+    // + sleep 35s entre matchs) s'exécutait DANS la requête HTTP. Dès qu'UN
+    // match était calibré, la durée dépassait le plafond serverless de 60s
+    // (plan Hobby — le maxDuration:120 du vercel.json y est ignoré) →
+    // FUNCTION_INVOCATION_TIMEOUT (504) → le cron GH Actions était marqué
+    // FAILED alors que le message Telegram était déjà parti (run du
+    // 2026-09-08 19:47 UTC : 504 à 62s, publication reçue). Aggravant :
+    // l'ancien code dormait 35s même après le DERNIER match, et avec 2+
+    // matchs le 2e n'était jamais traité (fonction tuée pendant le sleep
+    // du 1er).
+    //
+    // Maintenant : on répond 200 dès le fetch ESPN (~10-20s), et le loop de
+    // calibration tourne via after() — la fonction reste vivante après la
+    // réponse (le travail background partage le même plafond 60s, d'où le
+    // budget temps interne de processMatches).
+    const queue = liveFootballHT.slice(0, 5).map((m: any) => `${m.homeTeam} vs ${m.awayTeam}`);
+    console.log(`🚀 ${queue.length} match(s) mis en file de calibration (arrière-plan)`);
 
-    for (const match of liveFootballHT.slice(0, 5)) { // limite à 5 matchs par run
+    after(async () => {
       try {
-        // 🔒 ANTI-DOUBLON : ne jamais republier un match déjà publié
-        // (les crons GH Actions passent toutes les 5-10 min, un match peut
-        //  rester dans la fenêtre [42′,55′] pour 2 runs consécutifs)
-        if (isAlreadyPublished(match.id)) {
-          skippedDuplicates++;
-          console.log(`⏭️ ${match.homeTeam} vs ${match.awayTeam} : déjà publié, skip`);
-          continue;
-        }
-
-        console.log(`📡 Calibration : ${match.homeTeam} vs ${match.awayTeam}`);
-
-        // Récupérer les xG Understat (ou fallback estimation)
-        const understatData = await fetchUnderstatMatch(
-          match.homeTeam,
-          match.awayTeam,
-          match.league,
-          match.date,
-        );
-
-        // Construire le pre-match model à partir des cotes ESPN
-        const preMatchModel = derivePreMatchModel(match);
-
-        // Construire l'input
-        const input = buildCalibrationInput(match, understatData, preMatchModel);
-        if (!input) continue;
-
-        // Calibrer
-        const output = calibrate(input);
-
-        // ⏰ Infos fenêtre de pari (pour le message Telegram et le bilan)
-        const window = isBettingWindow(match.clock, match.period, match.isFinished);
-        const remainingMin = bettingWindowRemainingMinutes(window.minutes, match.period);
-
-        // 📊 Enregistrer dans le store (pour bilan quotidien Telegram)
-        // On enregistre TOUTES les calibrations (même non publiées) pour que
-        // le bilan puisse montrer "X matchs analysés à la mi-temps" même si 0 publication
-        const stored: StoredCalibration = recordCalibration({
-          match_id: input.match_id,
-          home_team: input.home_team,
-          away_team: input.away_team,
-          league: input.league,
-          kickoff_utc: input.kickoff_utc,
-          halftime_utc: input.halftime_utc,
-          score_ht: input.score_ht,
-        }, output, {
-          clock_at_calibration: window.minutes ?? undefined,
-          betting_window_remaining_min: remainingMin ?? undefined,
-          // 📊 Probas pre-match pour mesurer l'apport de la recalibration (Brier comparé)
-          pre_match_probs: preMatchModel.predicted_outcome_probs,
-        });
-
-        // 💾 Snapshot permanent (fire-and-forget) : survit aux redéploiements,
-        // permet au tracker du soir de retrouver la calibration même si
-        // l'instance Vercel a été recyclée entre la MT et 22:30 UTC.
-        persistCalibrationSnapshot(stored);
-
-        results.push({
-          match: `${match.homeTeam} vs ${match.awayTeam}`,
-          league: match.league,
-          confidence: output.confidence_index,
-          value_bets_count: output.value_bets_detected.length,
-          clock_at_calibration: window.minutes,
-          betting_window_remaining_min: remainingMin,
-        });
-
-        // Publier si confiance suffisante
-        if (output.confidence_index >= MIN_CONFIDENCE_TO_PUBLISH) {
-          // ⏰ Timeout dynamique selon le temps restant de la fenêtre de pari :
-          //   si la fenêtre ferme dans < 3 min, on NE PUBLIE PAS (le message
-          //   arriverait trop tard pour que l'utilisateur puisse parier)
-          if (remainingMin !== null && remainingMin < 3) {
-            console.log(`⏰ Skip publication : fenêtre de pari ferme dans ${remainingMin} min (trop tard pour parier)`);
-          } else {
-            const message = formatCalibrationTelegram(
-              match.homeTeam,
-              match.awayTeam,
-              match.league,
-              output,
-              {
-                clock_at_calibration: window.minutes ?? undefined,
-                betting_window_remaining_min: remainingMin ?? undefined,
-              },
-            );
-            const sent = await sendTelegramPersonalMessage(message);
-            if (sent) {
-              publishedCount++;
-              // 🔒 Marquer publié APRÈS envoi réussi (anti-doublon persistant)
-              markPublished(input.match_id);
-              console.log(`✅ Publié : ${match.homeTeam} vs ${match.awayTeam} (confiance ${output.confidence_index}, fenêtre ${remainingMin ?? '?'} min restantes)`);
-            }
-          }
-        } else {
-          console.log(`⏸️ Skip publication : confiance trop faible (${output.confidence_index} < ${MIN_CONFIDENCE_TO_PUBLISH})`);
-        }
-
-        // Délai entre matchs pour respecter rate limit Understat
-        await sleep(35_000);
+        await processMatches(liveFootballHT.slice(0, 5));
       } catch (e: any) {
-        console.error(`❌ Erreur calibration ${match.homeTeam} vs ${match.awayTeam}:`, e.message);
+        console.error('❌ [LIVE CALIBRATION SCAN] Erreur arrière-plan:', e.message);
       }
-    }
-
-    console.log(`🎯 [LIVE CALIBRATION SCAN] Terminé : ${results.length} calibré(s), ${publishedCount} publié(s), ${skippedDuplicates} doublon(s) skip`);
+    });
 
     return NextResponse.json({
       success: true,
+      mode: 'background',
       scanned: matches?.length || 0,
       live_football: allLiveFootball.length,
       in_betting_window: liveFootballHT.length,
-      calibrated: results.length,
-      published: publishedCount,
-      skipped_duplicates: skippedDuplicates,
-      results,
+      queued_matches: queue,
     });
   } catch (e: any) {
     console.error('❌ Live calibration scan error:', e);
@@ -225,6 +141,146 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+/**
+ * 🔄 Pipeline de calibration par match — exécuté en arrière-plan (after()).
+ *
+ * ⏱️ BUDGET TEMPS : le travail background partage le plafond serverless de
+ * 60s (plan Hobby) avec la phase inline (fetch ESPN, qui part à ~10-20s).
+ * Budget 38s → on arrête proprement au-delà : les matchs déjà traités sont
+ * publiés (Telegram + anti-doublon), les suivants sont repris par le
+ * prochain run cron (toutes les 10 min) tant que la fenêtre [42′,55′]
+ * est encore ouverte.
+ */
+async function processMatches(matches: any[]): Promise<void> {
+  const BG_BUDGET_MS = 38_000;         // marge sous le plafond 60s (Hobby)
+  const INTER_MATCH_DELAY_MS = 12_000; // rate-limit Understat (35s → 12s)
+  const MIN_RESERVE_MS = 8_000;        // réserve minimale pour traiter 1 match
+  const deadline = Date.now() + BG_BUDGET_MS;
+
+  let publishedCount = 0;
+  let skippedDuplicates = 0;
+  const results: any[] = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+
+    // ⏱️ Plus de budget → rend la main, le cron suivant reprendra.
+    if (deadline - Date.now() < MIN_RESERVE_MS) {
+      console.log(`⏱️ Budget arrière-plan épuisé — ${matches.length - i} match(s) reporté(s) au prochain run`);
+      break;
+    }
+
+    try {
+      // 🔒 ANTI-DOUBLON : ne jamais republier un match déjà publié
+      // (les crons GH Actions passent toutes les 5-10 min, un match peut
+      //  rester dans la fenêtre [42′,55′] pour 2 runs consécutifs)
+      if (isAlreadyPublished(match.id)) {
+        skippedDuplicates++;
+        console.log(`⏭️ ${match.homeTeam} vs ${match.awayTeam} : déjà publié, skip`);
+        continue;
+      }
+
+      console.log(`📡 Calibration : ${match.homeTeam} vs ${match.awayTeam}`);
+
+      // Récupérer les xG Understat (ou fallback estimation)
+      const understatData = await fetchUnderstatMatch(
+        match.homeTeam,
+        match.awayTeam,
+        match.league,
+        match.date,
+      );
+
+      // Construire le pre-match model à partir des cotes ESPN
+      const preMatchModel = derivePreMatchModel(match);
+
+      // Construire l'input
+      const input = buildCalibrationInput(match, understatData, preMatchModel);
+      if (!input) continue;
+
+      // Calibrer
+      const output = calibrate(input);
+
+      // ⏰ Infos fenêtre de pari (pour le message Telegram et le bilan)
+      const window = isBettingWindow(match.clock, match.period, match.isFinished);
+      const remainingMin = bettingWindowRemainingMinutes(window.minutes, match.period);
+
+      // 📊 Enregistrer dans le store (pour bilan quotidien Telegram)
+      // On enregistre TOUTES les calibrations (même non publiées) pour que
+      // le bilan puisse montrer "X matchs analysés à la mi-temps" même si 0 publication
+      const stored: StoredCalibration = recordCalibration({
+        match_id: input.match_id,
+        home_team: input.home_team,
+        away_team: input.away_team,
+        league: input.league,
+        kickoff_utc: input.kickoff_utc,
+        halftime_utc: input.halftime_utc,
+        score_ht: input.score_ht,
+      }, output, {
+        clock_at_calibration: window.minutes ?? undefined,
+        betting_window_remaining_min: remainingMin ?? undefined,
+        // 📊 Probas pre-match pour mesurer l'apport de la recalibration (Brier comparé)
+        pre_match_probs: preMatchModel.predicted_outcome_probs,
+      });
+
+      // 💾 Snapshot permanent (fire-and-forget) : survit aux redéploiements,
+      // permet au tracker du soir de retrouver la calibration même si
+      // l'instance Vercel a été recyclée entre la MT et 22:30 UTC.
+      persistCalibrationSnapshot(stored);
+
+      results.push({
+        match: `${match.homeTeam} vs ${match.awayTeam}`,
+        league: match.league,
+        confidence: output.confidence_index,
+        value_bets_count: output.value_bets_detected.length,
+        clock_at_calibration: window.minutes,
+        betting_window_remaining_min: remainingMin,
+      });
+
+      // Publier si confiance suffisante
+      if (output.confidence_index >= MIN_CONFIDENCE_TO_PUBLISH) {
+        // ⏰ Timeout dynamique selon le temps restant de la fenêtre de pari :
+        //   si la fenêtre ferme dans < 3 min, on NE PUBLIE PAS (le message
+        //   arriverait trop tard pour que l'utilisateur puisse parier)
+        if (remainingMin !== null && remainingMin < 3) {
+          console.log(`⏰ Skip publication : fenêtre de pari ferme dans ${remainingMin} min (trop tard pour parier)`);
+        } else {
+          const message = formatCalibrationTelegram(
+            match.homeTeam,
+            match.awayTeam,
+            match.league,
+            output,
+            {
+              clock_at_calibration: window.minutes ?? undefined,
+              betting_window_remaining_min: remainingMin ?? undefined,
+            },
+          );
+          const sent = await sendTelegramPersonalMessage(message);
+          if (sent) {
+            publishedCount++;
+            // 🔒 Marquer publié APRÈS envoi réussi (anti-doublon persistant)
+            markPublished(input.match_id);
+            console.log(`✅ Publié : ${match.homeTeam} vs ${match.awayTeam} (confiance ${output.confidence_index}, fenêtre ${remainingMin ?? '?'} min restantes)`);
+          }
+        }
+      } else {
+        console.log(`⏸️ Skip publication : confiance trop faible (${output.confidence_index} < ${MIN_CONFIDENCE_TO_PUBLISH})`);
+      }
+
+      // Délai entre matchs (rate limit Understat) — UNIQUEMENT s'il reste
+      // un match à traiter ET du budget (l'ancien code dormait 35s même
+      // après le DERNIER match → à lui seul, timeout 60s sur run à 1 match).
+      if (i < matches.length - 1) {
+        const wait = Math.min(INTER_MATCH_DELAY_MS, deadline - Date.now() - MIN_RESERVE_MS);
+        if (wait > 2_000) await sleep(wait);
+      }
+    } catch (e: any) {
+      console.error(`❌ Erreur calibration ${match.homeTeam} vs ${match.awayTeam}:`, e.message);
+    }
+  }
+
+  console.log(`🎯 [LIVE CALIBRATION SCAN] Terminé : ${results.length} calibré(s), ${publishedCount} publié(s), ${skippedDuplicates} doublon(s) skip`);
 }
 
 /**
