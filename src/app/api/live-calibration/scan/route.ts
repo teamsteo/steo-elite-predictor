@@ -26,6 +26,41 @@ import { isBettingWindow, bettingWindowRemainingMinutes } from '@/lib/liveCalibr
 const FOOTBALL_SPORTS = new Set(['Football', 'football']);
 const MIN_CONFIDENCE_TO_PUBLISH = 50;
 
+// ============================================
+// 🚨 ALERTE OPS — visibilité des échecs d'arrière-plan
+// ============================================
+// Depuis le passage en mode background (after), la réponse HTTP part 200
+// AVANT la calibration : le cron GH Actions est donc vert même si le
+// pipeline d'arrière-plan plante. Sans cette alerte, un échec ne laisserait
+// AUCUNE trace observable (les console.error ne sont lus par personne).
+// Throttle en mémoire : 1 alerte max par signature / 45 min — évite le spam
+// si Understat est down pendant plusieurs runs cron consécutifs.
+const ALERT_THROTTLE_MS = 45 * 60_000;
+const alertThrottle = new Map<string, number>();
+
+function escHtml(s: string): string {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function notifyOpsFailure(signature: string, detail: string): Promise<void> {
+  const last = alertThrottle.get(signature) ?? 0;
+  if (Date.now() - last < ALERT_THROTTLE_MS) {
+    console.log(`🔇 Alerte ops throttled (signature ${signature})`);
+    return;
+  }
+  alertThrottle.set(signature, Date.now());
+  try {
+    const sent = await sendTelegramPersonalMessage(
+      `🚨 <b>[LIVE CALIB] Échec arrière-plan</b>\n\n${detail}\n\n<i>Le scan a répondu 200 (mode background) — cette alerte est la seule trace visible de l'échec.</i>`,
+      { disable_notification: false },
+    );
+    console.log(sent ? '📣 Alerte ops envoyée sur Telegram DM' : '⚠️ Alerte ops NON envoyée (Telegram indisponible)');
+  } catch (e: any) {
+    // On n'escalade jamais une erreur d'alerte : best-effort uniquement.
+    console.error('❌ Alerte ops non envoyée:', e.message);
+  }
+}
+
 export async function GET(request: NextRequest) {
   return POST(request);
 }
@@ -123,6 +158,11 @@ export async function POST(request: NextRequest) {
         await processMatches(liveFootballHT.slice(0, 5));
       } catch (e: any) {
         console.error('❌ [LIVE CALIBRATION SCAN] Erreur arrière-plan:', e.message);
+        // 🚨 Alerte Telegram : le cron GH Actions voit un 200, il faut prévenir.
+        await notifyOpsFailure(
+          `fatal:${String(e.message || 'unknown').slice(0, 80)}`,
+          `💥 Le pipeline d'arrière-plan a planté : <code>${escHtml(String(e.message || 'unknown').slice(0, 200))}</code>\nMatchs en file : ${queue.length}`,
+        );
       }
     });
 
@@ -162,6 +202,7 @@ async function processMatches(matches: any[]): Promise<void> {
   let publishedCount = 0;
   let skippedDuplicates = 0;
   const results: any[] = [];
+  const failures: { match: string; error: string }[] = [];
 
   for (let i = 0; i < matches.length; i++) {
     const match = matches[i];
@@ -277,10 +318,27 @@ async function processMatches(matches: any[]): Promise<void> {
       }
     } catch (e: any) {
       console.error(`❌ Erreur calibration ${match.homeTeam} vs ${match.awayTeam}:`, e.message);
+      failures.push({
+        match: `${match.homeTeam} vs ${match.awayTeam}`,
+        error: String(e.message || 'erreur inconnue').slice(0, 160),
+      });
     }
   }
 
-  console.log(`🎯 [LIVE CALIBRATION SCAN] Terminé : ${results.length} calibré(s), ${publishedCount} publié(s), ${skippedDuplicates} doublon(s) skip`);
+  // 🚨 Alerte consolidée (1 message max par run) si au moins un match a échoué.
+  // Les reports pour budget épuisé ne sont PAS une erreur (reprise au run
+  // suivant) → pas d'alerte pour eux.
+  if (failures.length > 0) {
+    const lines = failures.slice(0, 5)
+      .map(f => `• ${escHtml(f.match)} — <code>${escHtml(f.error)}</code>`);
+    const more = failures.length > 5 ? `\n… +${failures.length - 5} autre(s)` : '';
+    await notifyOpsFailure(
+      `matches:${failures.length}:${failures[0].error.slice(0, 60)}`,
+      `⚠️ ${failures.length} match(s) n'ont pas pu être calibré(s) :\n${lines.join('\n')}${more}`,
+    );
+  }
+
+  console.log(`🎯 [LIVE CALIBRATION SCAN] Terminé : ${results.length} calibré(s), ${publishedCount} publié(s), ${skippedDuplicates} doublon(s) skip, ${failures.length} échec(s)`);
 }
 
 /**
