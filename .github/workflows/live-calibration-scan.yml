@@ -82,7 +82,10 @@ jobs:
             -d '{}' || echo "CURL_ERROR")
 
           # Extract status code
-          HTTP_STATUS=$(echo "$RESPONSE" | grep -oE 'HTTP_STATUS:[0-9]+' | cut -d: -f2)
+          # `|| true` : sous set -euo pipefail, un grep sans match (curl error
+          # → RESPONSE=CURL_ERROR) tuerait le script ICI, avant le traitement
+          # d'erreur propre plus bas (HTTP_STATUS vide → exit 1 propre).
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -oE 'HTTP_STATUS:[0-9]+' | cut -d: -f2 || true)
           BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
 
           echo "HTTP status: $HTTP_STATUS"
