@@ -574,3 +574,22 @@ Work Log:
 Stage Summary:
 - GitLab = miroir exact de GitHub main (9f7620c), écrasé automatiquement à chaque mise à jour validée
 - Leçons : (1) restauration d'environnement possible entre les tours → TOUJOURS revérifier git rev-parse main vs origin/main avant toute opération git ; (2) GitHub = source de vérité, GitLab = backup indépendant
+
+---
+Task ID: 14
+Agent: Super Z (main)
+Task: Nouvelle section Telegram BADJAN (foot du jour, risque ≤45%, favoris à domicile)
+
+Work Log:
+- Création src/lib/badjanService.ts (fichier ISOLÉ) : BADJAN_MAX_RISK=45, filterBadjanMatches (pur), formatBadjanMessage, publishBadjanToTelegram (retour {success, picks})
+- Filtres : foot uniquement ('Football'/'soccer'), riskPercentage défini ≤45, predictedResult='home' + cote domicile strictement la plus basse du 1X2 (marché confirme), cotes réelles (isEstimated exclu), garde-fou cote ≥1.10, dedup équipes+date, tri risque croissant puis heure
+- AUCUNE sauvegarde Supabase, AUCUN bilan (spécification) — les crons verify ne verront jamais ces picks ; xG Dixon-Coles affiché seulement si déjà calculé par le pipeline (zéro calcul ajouté)
+- Câblage cron route : case 'telegram-badjan' dans GET ET POST (bloc mince déléguant à la lib), import isolé, validActions mis à jour (GET+POST)
+- vercel.json : cron /api/cron?action=telegram-badjan à 45 7 * * * (07:45 UTC, créneau libre entre valuebets 07:15 et results 08:00)
+- Tests scripts/test_badjan.ts : 27/27 (0 réseau, 0 DB) — bornes 45/45.1, favori contredit par marché, nul plus bas, NaN/undefined, dedup, tri, format
+- tsc --noEmit : 0 erreur
+
+Stage Summary:
+- BADJAN publié chaque jour à 07:45 UTC sur le canal Telegram : foot du jour, risque ≤45%, uniquement favoris à domicile, publication seule (ni bilan, ni sauvegarde)
+- Si 0 match éligible → pas de publication (pas de message inutile)
+- Zéro impact sur les sections existantes (nouveau fichier + cases isolées)

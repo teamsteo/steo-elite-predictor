@@ -72,6 +72,10 @@
       "schedule": "15 7 * * *"
     },
     {
+      "path": "/api/cron?action=telegram-badjan",
+      "schedule": "45 7 * * *"
+    },
+    {
       "path": "/api/cron?action=telegram-combo",
       "schedule": "30 7 * * *"
     },

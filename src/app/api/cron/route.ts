@@ -39,6 +39,7 @@ import {
   isOddsInRange
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache, detectValueBets } from '@/lib/combinedDataService';
+import { publishBadjanToTelegram } from '@/lib/badjanService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
@@ -3307,6 +3308,28 @@ export async function GET(request: NextRequest) {
         }
         break;
         
+      case 'telegram-badjan':
+        // BADJAN — section dédiée : foot du jour, risque ≤45%, favoris à domicile
+        // ⚠️ Spécification : AUCUNE sauvegarde DB, AUCUN bilan — publication seule
+        try {
+          console.log('🏈 BADJAN: récupération des matchs du pipeline (force refresh)...');
+          const badjanMatches = await getMatchesWithRealOdds(true);
+          const badjanResult = await publishBadjanToTelegram(badjanMatches);
+          result = {
+            telegram: {
+              success: badjanResult.success,
+              picks: badjanResult.picks,
+              message: badjanResult.success
+                ? `🏈 Badjan publié (${badjanResult.picks} match(s))`
+                : `Badjan: rien publié (${badjanResult.message || '0 match éligible'})`,
+            },
+          };
+        } catch (e: any) {
+          console.error('❌ Erreur BADJAN:', e.message);
+          result = { telegram: { success: false, error: 'Erreur interne' } };
+        }
+        break;
+        
       case 'telegram-results':
         // Publier le bilan quotidien des pronostics (prédictions vs résultats réels)
         // ⚠️ DÉCOUPLÉ: verifyAllResults() peut crasher, le bilan doit QUAND MÊME être publié
@@ -3607,7 +3630,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-corrupted', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier', 'backfill-mlb'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-badjan', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-corrupted', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier', 'backfill-mlb'] },
           { status: 400 }
         );
     }
@@ -4127,6 +4150,27 @@ export async function POST(request: NextRequest) {
         }
         break;
 
+      case 'telegram-badjan':
+        // [POST] BADJAN — même logique que le GET (foot du jour, risque ≤45%, favoris domicile)
+        try {
+          console.log('🏈 [POST] BADJAN: récupération des matchs du pipeline (force refresh)...');
+          const badjanMatches = await getMatchesWithRealOdds(true);
+          const badjanResult = await publishBadjanToTelegram(badjanMatches);
+          result = {
+            telegram: {
+              success: badjanResult.success,
+              picks: badjanResult.picks,
+              message: badjanResult.success
+                ? `🏈 [POST] Badjan publié (${badjanResult.picks} match(s))`
+                : `Badjan: rien publié (${badjanResult.message || '0 match éligible'})`,
+            },
+          };
+        } catch (e: any) {
+          console.error('❌ [POST] Erreur BADJAN:', e.message);
+          result = { telegram: { success: false, error: 'Erreur interne' } };
+        }
+        break;
+
       case 'telegram-results':
         try {
           // 🔧 AUTO-FIX: corriger les predicted_result corrompus AVANT le bilan
@@ -4467,7 +4511,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-combo', 'telegram-results', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'mlb-palier', 'backfill-mlb'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-badjan', 'telegram-combo', 'telegram-results', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'mlb-palier', 'backfill-mlb'] },
           { status: 400 }
         );
     }
