@@ -65,3 +65,6 @@ __pycache__/
 backups/
 # Credentials miroirs GitLab/Bitbucket (jamais versionnés)
 scripts/.backup_env
+
+# Log du miroir GitLab (hook pre-push)
+scripts/gitlab-mirror.log

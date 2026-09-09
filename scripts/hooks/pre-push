@@ -1,0 +1,45 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════
+# PRE-PUSH HOOK — Miroir GitLab automatique (steo-elite-predictor)
+# Déclenché à CHAQUE `git push` (donc après chaque mise à jour validée)
+# → écrase GitLab main avec le main local (force), NON BLOQUANT :
+#   un échec GitLab n'empêche JAMAIS le push GitHub.
+# Installation : git config core.hooksPath scripts/hooks
+# Credentials : scripts/.backup_env (non versionné)
+# ═══════════════════════════════════════════════════════════════════
+
+# Garde anti-récursion : le push GitLab lancé ci-dessous re-déclencherait
+# ce hook → on sort immédiatement si on est déjà dans un push miroir.
+if [ -n "${GITLAB_MIRROR_INNER:-}" ]; then
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)" || exit 0
+
+ENV_FILE="scripts/.backup_env"
+[ -f "$ENV_FILE" ] || exit 0
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+[ -n "${GITLAB_URL:-}" ] || exit 0
+
+PUSH_URL="$GITLAB_URL"
+if [ -n "${GITLAB_TOKEN:-}" ]; then
+  PUSH_URL=$(printf '%s' "$GITLAB_URL" | sed -E "s|https://|https://oauth2:${GITLAB_TOKEN}@|")
+fi
+
+OUT=$(GITLAB_MIRROR_INNER=1 git push "$PUSH_URL" main --force 2>&1)
+RC=$?
+
+TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+SHA=$(git rev-parse --short main 2>/dev/null)
+if [ "$RC" -eq 0 ]; then
+  echo "[gitlab-mirror] ✅ $TS — GitLab écrasé et synchronisé sur $SHA"
+  echo "$TS OK $SHA" >> scripts/gitlab-mirror.log
+else
+  # Ne JAMAIS bloquer le push GitHub, mais signaler clairement
+  echo "[gitlab-mirror] ⚠️ $TS — échec sync GitLab (code $RC) — push GitHub continue" >&2
+  echo "$OUT" | sed -E "s|oauth2:[^@]+@|oauth2:***@|g" >&2
+  echo "$TS FAIL $SHA" >> scripts/gitlab-mirror.log
+fi
+
+exit 0

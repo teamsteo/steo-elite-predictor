@@ -558,3 +558,19 @@ Stage Summary:
 - Backup local opérationnel et répétable ; push GitLab prêt — il manque uniquement GITLAB_URL + GITLAB_TOKEN (PAT scope write_repository) de l'utilisateur
 - Risque ban GitHub : quasi nul (repo privé, PAT perso, ~quelques pushs/jour, Actions ~5-10 min/jour vs quota 2000 min/mois)
 - Risque ban Vercel : quota, pas ban ; point structurel = clause non-commercial du plan Hobby + 22 crons déclarés (limite Hobby = 2 → si tous tournent, plan Pro)
+
+---
+Task ID: 13
+Agent: Super Z (main)
+Task: Sauvegarde GitLab opérationnelle + restauration après restauration d'environnement
+
+Work Log:
+- Découverte critique : environnement local restauré depuis un instantané 00h59 UTC (fin P1) — main local = 3d00699 (commit parasite), P2/P3/P4/Task12 absents du disque
+- GitHub intact (origin/main = 9f7620c) → récupération par git fetch + git reset --hard origin/main (protocol établi), fichiers non suivis préservés (scripts/.backup_env, .env)
+- Premier push miroir GitLab réussi : 4e7aef6 → 9f7620c (force), vérifié par triple ls-remote local=GitHub=GitLab
+- Sauvegarde automatique : hook git pre-push versionné (scripts/hooks/pre-push) + core.hooksPath=scripts/hooks → à CHAQUE push GitHub, GitLab main est écrasé avec le main local (force, non bloquant, anti-récursion GITLAB_MIRROR_INNER, log scripts/gitlab-mirror.log, token masqué)
+- Alternative cron rejetée : service de tâches planifiées indisponible (403) ; le hook est plus fiable (déclenchement exact au push, zéro infra)
+
+Stage Summary:
+- GitLab = miroir exact de GitHub main (9f7620c), écrasé automatiquement à chaque mise à jour validée
+- Leçons : (1) restauration d'environnement possible entre les tours → TOUJOURS revérifier git rev-parse main vs origin/main avant toute opération git ; (2) GitHub = source de vérité, GitLab = backup indépendant
