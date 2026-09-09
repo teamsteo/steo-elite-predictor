@@ -1,80 +1,51 @@
 /**
- * BetExplorer NFL Odds Scraper
- * 
- * Source: https://www.betexplorer.com/american-football/
- * 
- * BetExplorer offre:
- * - Cotes Moneyline, Spread, Over/Under
- * - Comparaison multi-bookmakers
- * - Archives historiques (backtesting)
- * - Évolution des cotes (Odds Movement)
+ * BetExplorer NFL Odds Scraper — VRAIES cotes via ZAI page_reader
+ * ================================================================
+ *
+ * ⚠️ P2 (2026-09-09) : ce module générait AVANT des cotes 100% SIMULÉES
+ * (generateRealisticNFLOdds: DVOA inventés, bookmakers tirés au hasard)
+ * étiquetées `source: 'betexplorer'` — une fausse provenance dangereuse :
+ * détectValueBets aurait pu produire de faux value bets à partir de rien.
+ *
+ * Maintenant :
+ *   - Scraping RÉEL de https://www.betexplorer.com/next/american-football/
+ *     via ZAI page_reader (service distant — les IP Vercel ne touchent
+ *     jamais BetExplorer, anti-ban délégué ; même pattern que
+ *     betExplorerScraper.ts pour le football, prouvé en production).
+ *   - Échec de scraping → [] (dégradation honnête), JAMAIS de données
+ *     fabriquées. Les archives retournt [] tant que le scraping des
+ *     saisons passées n'est pas implémenté.
+ *
+ * NFL = moneyline 2 issues (pas de nul en saison régulière) → 2 cotes.
  */
+
+import ZAI from 'z-ai-web-dev-sdk';
 
 // Cache
 const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
-// URLs BetExplorer
-const BETEXPLORER_BASE = 'https://www.betexplorer.com';
-const BETEXPLORER_NFL = '/american-football/usa/nfl/';
-const BETEXPLORER_NCAA = '/american-football/usa/ncaa/';
-
-// Bookmakers populaires pour NFL
-const NFL_BOOKMAKERS = [
-  'DraftKings',
-  'FanDuel', 
-  'BetMGM',
-  'Caesars',
-  'PointsBet',
-  'Bet365',
-  'Bovada',
-  'MyBookie',
-];
+// URL BetExplorer NFL (prochains matchs, toutes compétitions US)
+const BETEXPLORER_NFL_URL = 'https://www.betexplorer.com/next/american-football/';
 
 /**
- * Structure d'une cote NFL depuis BetExplorer
+ * Structure honnête d'une cote NFL réellement scrapée.
+ * (Ancien type BetExplorerNFLOdds : moneyline/spread/total simulés — supprimé.)
  */
-interface BetExplorerNFLOdds {
+export interface BetExplorerNFLMatch {
   matchId: string;
   homeTeam: string;
   awayTeam: string;
+  /** ISO ou '' — jamais de date inventée si la page ne la donne pas */
   date: string;
-  time: string;
-  
-  // Moneyline (vainqueur)
-  moneyline: {
-    homeOdds: number;
-    awayOdds: number;
-    bestBookmaker: string;
-    oddsMovement: 'up' | 'down' | 'stable';
-  };
-  
-  // Spread (handicap)
-  spread: {
-    line: number;           // ex: -3.5
-    homeOdds: number;       // cote pour couvrir
-    awayOdds: number;
-    favorite: 'home' | 'away';
-    bestBookmaker: string;
-  };
-  
-  // Total points (Over/Under)
-  total: {
-    line: number;           // ex: 47.5
-    overOdds: number;
-    underOdds: number;
-    bestBookmaker: string;
-  };
-  
-  // Métadonnées
-  bookmakers: string[];     // Bookmakers disponibles
-  lastUpdate: string;
+  /** Moneyline 2 issues (cotes décimales moyennes BetExplorer) */
+  oddsHome: number;
+  oddsAway: number;
+  bookmaker: string;
   source: 'betexplorer';
+  scrapedAt: string;
 }
 
-/**
- * Vérifie si le cache est valide
- */
 function isCacheValid(key: string): boolean {
   const cached = cache.get(key);
   if (!cached) return false;
@@ -82,257 +53,168 @@ function isCacheValid(key: string): boolean {
 }
 
 /**
- * Scrape les cotes NFL depuis BetExplorer
- * Note: En production, ceci nécessiterait un backend/proxy
+ * Parse le HTML BetExplorer « next/american-football ».
+ * Patterns miroir du parser football (betExplorerScraper.ts, prouvé en prod) :
+ *   - équipes : liens class="match-part..." dans les <tr>
+ *   - cotes   : attributs data-odd="1.85" (NFL → 2 valeurs attendues)
  */
-export async function scrapeBetExplorerNFL(): Promise<BetExplorerNFLOdds[]> {
+function parseNFLOddsFromHTML(html: string): BetExplorerNFLMatch[] {
+  const matches: BetExplorerNFLMatch[] = [];
+  const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+
+  for (const row of rows) {
+    try {
+      if (!row.includes('data-odd')) continue;
+
+      // Équipes (ordre HTML = domicile puis extérieur sur BetExplorer)
+      const teams: string[] = [];
+      const teamMatches = row.matchAll(/class="[^"]*match-part[^"]*"[^>]*>([^<]+)</g);
+      for (const m of teamMatches) teams.push(m[1].trim());
+      if (teams.length < 2) continue;
+
+      // Cotes moneyline
+      const oddsValues: number[] = [];
+      for (const m of row.matchAll(/data-odd="([0-9.]+)"/g)) {
+        const v = parseFloat(m[1]);
+        if (Number.isFinite(v) && v > 1.001) oddsValues.push(v);
+      }
+      // NFL 2 issues : exactement 2 cotes. Si >2 (page générique multi-marché),
+      // on ne retient que [première, dernière] = 1 et 2 d'un 1X2 sans nul
+      // — sinon on saute la ligne (prudence plutôt qu'invention).
+      if (oddsValues.length !== 2) continue;
+
+      // Date optionnelle : <td class="table-main__datetime">13.09. 18:15</td>
+      let date = '';
+      const dt = row.match(/table-main__datetime[^>]*>\s*(\d{1,2})\.(\d{1,2})\.\s*(\d{1,2}):(\d{2})/);
+      if (dt) {
+        const day = parseInt(dt[1], 10);
+        const month = parseInt(dt[2], 10);
+        const hh = parseInt(dt[3], 10);
+        const mm = parseInt(dt[4], 10);
+        const now = new Date();
+        let year = now.getFullYear();
+        // BetExplorer n'affiche pas l'année : si la date tombe > 6 mois dans
+        // le passé, c'est la saison suivante (janvier → matchs de décembre).
+        const candidate = new Date(Date.UTC(year, month - 1, day, hh, mm));
+        if (now.getTime() - candidate.getTime() > 180 * 24 * 3600 * 1000) {
+          year += 1;
+        }
+        date = new Date(Date.UTC(year, month - 1, day, hh, mm)).toISOString();
+      }
+
+      matches.push({
+        matchId: `betexplorer_nfl_${teams[0].slice(0, 12)}_${teams[1].slice(0, 12)}`.replace(/\W+/g, '_').toLowerCase(),
+        homeTeam: teams[0],
+        awayTeam: teams[1],
+        date,
+        oddsHome: oddsValues[0],
+        oddsAway: oddsValues[1],
+        bookmaker: 'BetExplorer (moyenne)',
+        source: 'betexplorer',
+        scrapedAt: new Date().toISOString(),
+      });
+    } catch {
+      // Ligne malformée → ignorée (le reste du parsing continue)
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Scrape les VRAIES cotes NFL depuis BetExplorer.
+ * Retourne [] si le scraping échoue (jamais de données simulées).
+ */
+export async function scrapeBetExplorerNFL(): Promise<BetExplorerNFLMatch[]> {
   const cacheKey = 'betexplorer_nfl_odds';
-  
+
   if (isCacheValid(cacheKey)) {
     return cache.get(cacheKey)!.data;
   }
-  
+
   try {
-    console.log('📊 BetExplorer: Récupération cotes NFL...');
-    
-    // En production, utiliser un scraper backend
-    // Pour l'instant, générer des cotes réalistes basées sur les stats
-    
-    const odds = generateRealisticNFLOdds();
-    
+    console.log('📊 BetExplorer: scraping cotes NFL (page_reader)...');
+
+    const zai = await ZAI.create();
+    const result = await zai.functions.invoke('page_reader', {
+      url: BETEXPLORER_NFL_URL,
+    });
+
+    if (result.code !== 200 || !result.data?.html) {
+      console.log('⚠️ BetExplorer NFL: page_reader indisponible — aucune cote (fallback honnête: [])');
+      return [];
+    }
+
+    const odds = parseNFLOddsFromHTML(result.data.html);
+
+    if (odds.length === 0) {
+      console.log('⚠️ BetExplorer NFL: 0 match parsé (structure HTML changée ?) — fallback honnête: []');
+      return [];
+    }
+
     cache.set(cacheKey, { data: odds, timestamp: Date.now() });
-    console.log(`✅ BetExplorer: ${odds.length} matchs avec cotes`);
-    
+    console.log(`✅ BetExplorer: ${odds.length} matchs NFL avec cotes réelles`);
     return odds;
   } catch (error) {
-    console.error('❌ Erreur BetExplorer:', error);
-    return generateRealisticNFLOdds();
-  }
-}
-
-/**
- * Génère des cotes NFL réalistes basées sur les stats d'équipes
- * En production, ces données viendraient du vrai scraping BetExplorer
- */
-function generateRealisticNFLOdds(): BetExplorerNFLOdds[] {
-  // Matchs typiques NFL avec vraies données
-  const matchups = [
-    { home: 'Kansas City Chiefs', away: 'Baltimore Ravens', homeDVOA: 28.5, awayDVOA: 23.4 },
-    { home: 'Buffalo Bills', away: 'Miami Dolphins', homeDVOA: 24.2, awayDVOA: 20.3 },
-    { home: 'San Francisco 49ers', away: 'Seattle Seahawks', homeDVOA: 26.1, awayDVOA: 8.2 },
-    { home: 'Philadelphia Eagles', away: 'Dallas Cowboys', homeDVOA: 22.8, awayDVOA: 18.5 },
-    { home: 'Detroit Lions', away: 'Green Bay Packers', homeDVOA: 19.7, awayDVOA: 12.8 },
-    { home: 'Houston Texans', away: 'Indianapolis Colts', homeDVOA: 14.8, awayDVOA: 4.2 },
-    { home: 'Cincinnati Bengals', away: 'Pittsburgh Steelers', homeDVOA: 15.2, awayDVOA: 8.5 },
-    { home: 'Los Angeles Rams', away: 'Arizona Cardinals', homeDVOA: 10.5, awayDVOA: -4.2 },
-  ];
-  
-  // Date de début de saison (septembre)
-  const seasonStart = new Date();
-  if (seasonStart.getMonth() < 8) {
-    seasonStart.setMonth(8);
-  } else {
-    seasonStart.setFullYear(seasonStart.getFullYear() + 1);
-    seasonStart.setMonth(8);
-  }
-  seasonStart.setDate(7);
-  
-  return matchups.map((match, idx) => {
-    const matchDate = new Date(seasonStart);
-    matchDate.setDate(matchDate.getDate() + idx);
-    matchDate.setHours(18, 0, 0, 0);
-    
-    // Calculer les probabilités basées sur DVOA
-    const dvoaDiff = match.homeDVOA - match.awayDVOA;
-    const homeWinProb = Math.min(0.80, Math.max(0.20, 0.5 + dvoaDiff * 0.015));
-    const awayWinProb = 1 - homeWinProb;
-    
-    // Convertir en cotes américaines puis décimales
-    const homeOdds = Number((1 / homeWinProb).toFixed(2));
-    const awayOdds = Number((1 / awayWinProb).toFixed(2));
-    
-    // Spread (handicap)
-    const spreadLine = Math.round(Math.abs(dvoaDiff) * 0.3 * 2) / 2; // 0.5 increments
-    const favorite = dvoaDiff > 0 ? 'home' : 'away';
-    const spreadHomeOdds = favorite === 'home' ? 1.91 : 1.91;
-    const spreadAwayOdds = favorite === 'away' ? 1.91 : 1.91;
-    
-    // Total points
-    const totalLine = Math.round(44 + (match.homeDVOA + match.awayDVOA) * 0.1);
-    const overOdds = 1.91;
-    const underOdds = 1.91;
-    
-    // Mouvement de cotes (simulation)
-    const movements: ('up' | 'down' | 'stable')[] = ['up', 'down', 'stable'];
-    const oddsMovement = movements[Math.floor(Math.random() * 3)];
-    
-    // Bookmaker aléatoire parmi les meilleurs
-    const bestBookmaker = NFL_BOOKMAKERS[Math.floor(Math.random() * NFL_BOOKMAKERS.length)];
-    
-    return {
-      matchId: `betexplorer_nfl_${idx}`,
-      homeTeam: match.home,
-      awayTeam: match.away,
-      date: matchDate.toISOString(),
-      time: '13:00 EST',
-      
-      moneyline: {
-        homeOdds,
-        awayOdds,
-        bestBookmaker,
-        oddsMovement,
-      },
-      
-      spread: {
-        line: favorite === 'home' ? -spreadLine : spreadLine,
-        homeOdds: spreadHomeOdds,
-        awayOdds: spreadAwayOdds,
-        favorite,
-        bestBookmaker: NFL_BOOKMAKERS[Math.floor(Math.random() * NFL_BOOKMAKERS.length)],
-      },
-      
-      total: {
-        line: totalLine,
-        overOdds,
-        underOdds,
-        bestBookmaker: NFL_BOOKMAKERS[Math.floor(Math.random() * NFL_BOOKMAKERS.length)],
-      },
-      
-      bookmakers: NFL_BOOKMAKERS.slice(0, 5 + Math.floor(Math.random() * 3)),
-      lastUpdate: new Date().toISOString(),
-      source: 'betexplorer',
-    };
-  });
-}
-
-/**
- * Récupère les archives historiques BetExplorer pour backtesting
- * Note: BetExplorer garde les cotes de clôture depuis plusieurs années
- */
-export async function getBetExplorerArchives(season: number): Promise<any[]> {
-  const cacheKey = `betexplorer_archives_${season}`;
-  
-  if (isCacheValid(cacheKey)) {
-    return cache.get(cacheKey)!.data;
-  }
-  
-  try {
-    console.log(`📚 BetExplorer Archives: Saison ${season}...`);
-    
-    // En production, scraper les vraies archives
-    // Pour l'instant, générer des données de test
-    const archives = generateArchiveData(season);
-    
-    cache.set(cacheKey, { data: archives, timestamp: Date.now() });
-    return archives;
-  } catch (error) {
-    console.error('❌ Erreur archives BetExplorer:', error);
+    console.error('❌ Erreur BetExplorer NFL (fallback honnête: []):', error);
     return [];
   }
 }
 
 /**
- * Génère des données d'archive pour backtesting
+ * Archives historiques BetExplorer pour backtesting.
+ * ⚠️ NON IMPLÉMENTÉ volontairement : l'ancien générateur aléatoire produisait
+ * de fausses archives (scores + cotes inventés) qui alimentaient
+ * analyzeOddsTrends — remplacé par un échec honnête tant que le scraping
+ * multi-pages des saisons passées n'est pas écrit.
  */
-function generateArchiveData(season: number): any[] {
-  const teams = [
-    'Kansas City Chiefs', 'Buffalo Bills', 'San Francisco 49ers', 
-    'Philadelphia Eagles', 'Baltimore Ravens', 'Detroit Lions',
-    'Dallas Cowboys', 'Miami Dolphins', 'Green Bay Packers', 'Cincinnati Bengals'
-  ];
-  
-  const archives: any[] = [];
-  
-  // Générer 17 semaines de matchs
-  for (let week = 1; week <= 17; week++) {
-    for (let game = 0; game < 5; game++) {
-      const homeIdx = (week + game) % teams.length;
-      const awayIdx = (week + game + 5) % teams.length;
-      
-      if (homeIdx === awayIdx) continue;
-      
-      const homeScore = Math.floor(Math.random() * 28) + 10;
-      const awayScore = Math.floor(Math.random() * 28) + 10;
-      
-      archives.push({
-        season,
-        week,
-        homeTeam: teams[homeIdx],
-        awayTeam: teams[awayIdx],
-        finalScore: { home: homeScore, away: awayScore },
-        
-        // Cotes de clôture
-        closingOdds: {
-          moneyline: {
-            home: Number((1.5 + Math.random()).toFixed(2)),
-            away: Number((1.8 + Math.random() * 1.5).toFixed(2)),
-          },
-          spread: {
-            line: Math.round((Math.random() - 0.5) * 14),
-            homeCovered: Math.random() > 0.5,
-          },
-          total: {
-            line: 42 + Math.floor(Math.random() * 12),
-            result: homeScore + awayScore,
-          },
-        },
-        
-        // Mouvement de cotes avant match
-        oddsMovement: {
-          earlyToClosing: Math.random() > 0.5 ? 'home_up' : 'away_up',
-          percentageMove: Math.round(Math.random() * 10),
-        },
-      });
-    }
-  }
-  
-  return archives;
+export async function getBetExplorerArchives(season: number): Promise<any[]> {
+  console.log(
+    `📚 BetExplorer Archives saison ${season}: non implémenté (retour [] — aucune donnée simulée)`
+  );
+  return [];
 }
 
 /**
- * Analyse les tendances de cotes pour une équipe
+ * Analyse les tendances de cotes pour une équipe.
+ * Ne fonctionne que si getBetExplorerArchives est implémenté — pour l'instant
+ * retourne systématiquement « Aucun match trouvé » (honnête).
  */
 export async function analyzeOddsTrends(team: string, seasons: number[] = [2023, 2024]): Promise<any> {
-  console.log(`📈 Analyse tendances cotes: ${team}...`);
-  
   const allArchives: any[] = [];
-  
+
   for (const season of seasons) {
     const archives = await getBetExplorerArchives(season);
     allArchives.push(...archives);
   }
-  
-  // Filtrer les matchs de l'équipe
+
   const teamGames = allArchives.filter(
     (g: any) => g.homeTeam === team || g.awayTeam === team
   );
-  
+
   if (teamGames.length === 0) {
     return { team, games: 0, message: 'Aucun match trouvé' };
   }
-  
-  // Calculer les statistiques
+
   let wins = 0;
   let covers = 0;
   let overs = 0;
-  let totalGames = teamGames.length;
-  
+  const totalGames = teamGames.length;
+
   for (const game of teamGames) {
     const isHome = game.homeTeam === team;
     const teamScore = isHome ? game.finalScore.home : game.finalScore.away;
     const oppScore = isHome ? game.finalScore.away : game.finalScore.home;
-    
+
     if (teamScore > oppScore) wins++;
-    
-    // ATS (Against The Spread)
+
     const spread = game.closingOdds.spread.line;
     const adjustedScore = isHome ? teamScore + spread : teamScore - spread;
     if (adjustedScore > oppScore) covers++;
-    
-    // Over/Under
+
     if (game.finalScore.home + game.finalScore.away > game.closingOdds.total.line) overs++;
   }
-  
+
   return {
     team,
     seasons,
@@ -356,33 +238,33 @@ export async function analyzeOddsTrends(team: string, seasons: number[] = [2023,
 }
 
 /**
- * Détecte les value bets en comparant les cotes BetExplorer avec nos prédictions
+ * Détecte les value bets MONEYLINE en comparant les vraies cotes BetExplorer
+ * avec nos prédictions. (Les blocs spread/total de l'ancienne version ont été
+ * retirés : ils comparaient nos insights à des lignes simulées.)
  */
 export function detectValueBets(
-  betExplorerOdds: BetExplorerNFLOdds[],
+  betExplorerOdds: BetExplorerNFLMatch[],
   ourPredictions: any[]
 ): any[] {
   const valueBets: any[] = [];
-  
+
   for (const odds of betExplorerOdds) {
-    // Trouver notre prédiction correspondante
     const prediction = ourPredictions.find(
-      (p: any) => 
+      (p: any) =>
         p.homeTeam === odds.homeTeam && p.awayTeam === odds.awayTeam
     );
-    
+
     if (!prediction) continue;
-    
-    // Calculer l'edge sur Moneyline
+
+    // Edge sur Moneyline (2 issues NFL)
     const ourHomeProb = prediction.projected?.homeWinProb || 0.5;
-    const impliedHomeProb = 1 / odds.moneyline.homeOdds;
+    const impliedHomeProb = 1 / odds.oddsHome;
     const homeEdge = (ourHomeProb - impliedHomeProb) * 100;
-    
+
     const ourAwayProb = prediction.projected?.awayWinProb || 0.5;
-    const impliedAwayProb = 1 / odds.moneyline.awayOdds;
+    const impliedAwayProb = 1 / odds.oddsAway;
     const awayEdge = (ourAwayProb - impliedAwayProb) * 100;
-    
-    // Détecter value bet si edge > 3%
+
     if (homeEdge > 3) {
       valueBets.push({
         match: `${odds.homeTeam} vs ${odds.awayTeam}`,
@@ -390,12 +272,12 @@ export function detectValueBets(
         ourProb: Math.round(ourHomeProb * 100),
         impliedProb: Math.round(impliedHomeProb * 100),
         edge: Math.round(homeEdge),
-        odds: odds.moneyline.homeOdds,
-        bookmaker: odds.moneyline.bestBookmaker,
-        recommendation: `Parier ${odds.homeTeam} @ ${odds.moneyline.homeOdds}`,
+        odds: odds.oddsHome,
+        bookmaker: odds.bookmaker,
+        recommendation: `Parier ${odds.homeTeam} @ ${odds.oddsHome}`,
       });
     }
-    
+
     if (awayEdge > 3) {
       valueBets.push({
         match: `${odds.homeTeam} vs ${odds.awayTeam}`,
@@ -403,43 +285,13 @@ export function detectValueBets(
         ourProb: Math.round(ourAwayProb * 100),
         impliedProb: Math.round(impliedAwayProb * 100),
         edge: Math.round(awayEdge),
-        odds: odds.moneyline.awayOdds,
-        bookmaker: odds.moneyline.bestBookmaker,
-        recommendation: `Parier ${odds.awayTeam} @ ${odds.moneyline.awayOdds}`,
-      });
-    }
-    
-    // Détecter value sur Spread
-    const spreadEdge = Math.abs(
-      prediction.insights?.spread?.line - odds.spread.line
-    );
-    if (spreadEdge > 1) {
-      valueBets.push({
-        match: `${odds.homeTeam} vs ${odds.awayTeam}`,
-        type: 'spread',
-        ourSpread: prediction.insights?.spread?.line,
-        bookSpread: odds.spread.line,
-        edge: spreadEdge,
-        recommendation: prediction.insights?.spread?.recommendation,
-      });
-    }
-    
-    // Détecter value sur Total
-    const totalEdge = Math.abs(
-      prediction.insights?.total?.line - odds.total.line
-    );
-    if (totalEdge > 2) {
-      valueBets.push({
-        match: `${odds.homeTeam} vs ${odds.awayTeam}`,
-        type: 'total',
-        ourTotal: prediction.insights?.total?.line,
-        bookTotal: odds.total.line,
-        edge: totalEdge,
-        recommendation: prediction.insights?.total?.recommendation,
+        odds: odds.oddsAway,
+        bookmaker: odds.bookmaker,
+        recommendation: `Parier ${odds.awayTeam} @ ${odds.oddsAway}`,
       });
     }
   }
-  
+
   return valueBets.sort((a, b) => b.edge - a.edge);
 }
 

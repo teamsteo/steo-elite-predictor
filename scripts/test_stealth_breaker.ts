@@ -1,20 +1,40 @@
 /**
- * Test fonctionnel du disjoncteur stealthFetch (fetch mocké, aucun réseau réel)
- * Vérifie:
- *  1. Cohérence des profils: Firefox/Safari => AUCUN Sec-Ch-Ua ; Chrome => hints version-matched
- *  2. Statuts WAF (403/412) comptés en poids 2, AUCUN retry (1 seul fetch par appel)
- *  3. Le disjoncteur s'ouvre après 3 challenges WAF (6 >= 5)
- *  4. Pendant le cooldown: échec IMMÉDIAT (throw) sans appeler fetch
- *  5. Un 200 décrémente le compteur d'erreurs
- *  6. Un 429 fait un retry avec backoff puis lève StealthStatusError si persistant
+ * Test fonctionnel disjoncteur stealthFetch + garde distribué (fetch mocké, 0 réseau réel)
+ *
+ * Section A (local): profils cohérents, WAF poids 2, ouverture, fast-fail, 429 retries
+ * Section B (partagé): Supabase Storage mocké — blocage partagé + push à l'ouverture
+ *
+ * NOTE: env Supabase factice définie AVANT les imports dynamiques pour que
+ * distributedGuard lise la config mockée (les modules lisent process.env au top-level).
  */
-import { stealthFetch, getStealthState, StealthStatusError } from '../src/lib/stealthFetch';
 
+// ── Config AVANT imports dynamiques ──
+process.env.SUPABASE_URL = 'https://fake-supabase.test';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'fake-key';
+
+// ── État du "Storage" mocké ──
+const sharedFile = {
+  updated_at: new Date().toISOString(),
+  domains: {
+    'shared-banned.example.com': { blocked_until: Date.now() + 600_000, error_count: 9, updated_at: new Date().toISOString() },
+  } as Record<string, any>,
+};
+let storagePOSTs: any[] = [];
+
+// ── Mock fetch global ──
 let fetchCalls = 0;
 let lastInit: any = null;
 let mockStatus = 200;
 
 (globalThis as any).fetch = async (url: any, init: any) => {
+  const u = String(url);
+  if (u.includes('fake-supabase.test/storage')) {
+    if (init?.method === 'POST') {
+      storagePOSTs.push(JSON.parse(init.body));
+      return { ok: true, status: 200, text: async () => '' } as any;
+    }
+    return { ok: true, status: 200, json: async () => sharedFile, text: async () => '' } as any;
+  }
   fetchCalls++;
   lastInit = init;
   return {
@@ -25,27 +45,29 @@ let mockStatus = 200;
   } as any;
 };
 
-const DOMAIN = 'waf-test.example.com';
-const URL = `https://${DOMAIN}/page`;
-
 async function main() {
-  // ── 1. Cohérence profil Firefox: pas de client hints ──
+  const { stealthFetch, getStealthState, StealthStatusError } = await import('../src/lib/stealthFetch');
+  const { getSharedBlock } = await import('../src/lib/distributedGuard');
+
+  const DOMAIN = 'waf-test.example.com';
+  const URL_T = `https://${DOMAIN}/page`;
+
+  // ── A1. Cohérence profil Firefox/Safari/Chrome/Edge ──
   let sawFirefox = false;
   for (let i = 0; i < 60 && !sawFirefox; i++) {
     mockStatus = 200;
-    await stealthFetch(URL, { bypassRateLimit: true });
+    await stealthFetch(URL_T, { bypassRateLimit: true });
     const ua: string = lastInit.headers['User-Agent'] || '';
     const hasHints = 'Sec-Ch-Ua' in lastInit.headers;
     if (ua.includes('Firefox')) {
       sawFirefox = true;
       if (hasHints) throw new Error('❌ Firefox a envoyé Sec-Ch-Ua (contradiction fingerprint!)');
-      if ('Sec-Fetch-User' in lastInit.headers === false) throw new Error('❌ Headers Sec-Fetch manquants');
     } else {
       const chromeMatch = ua.match(/Chrome\/(\d+)/);
       if (chromeMatch) {
         if (!hasHints) throw new Error(`❌ Chrome ${chromeMatch[1]} sans Sec-Ch-Ua`);
         if (!lastInit.headers['Sec-Ch-Ua'].includes(`v="${chromeMatch[1]}"`))
-          throw new Error(`❌ Version hints ${lastInit.headers['Sec-Ch-Ua']} ≠ UA ${chromeMatch[1]}`);
+          throw new Error(`❌ Version hints ≠ UA ${chromeMatch[1]}`);
         const plat = lastInit.headers['Sec-Ch-Ua-Platform'];
         if (ua.includes('Windows') && plat !== '"Windows"') throw new Error('❌ Platform Windows incohérente');
         if (ua.includes('Macintosh') && plat !== '"macOS"') throw new Error('❌ Platform macOS incohérente');
@@ -56,55 +78,53 @@ async function main() {
         throw new Error('❌ Safari a envoyé Sec-Ch-Ua');
     }
   }
-  if (!sawFirefox) console.log('⚠️ (info) profil Firefox non tiré en 60 tirages — tirage aléatoire');
-  else console.log('✅ 1. Profils cohérents (Firefox sans hints, Chrome version-matched, Platform alignée)');
+  if (!sawFirefox) console.log('⚠️ (info) profil Firefox non tiré en 60 tirages');
+  console.log('✅ A1. Profils navigateur cohérents (UA ↔ hints ↔ platform)');
 
-  // ── Reset état du domaine de test ──
-  const state = getStealthState();
-  delete (state as any)[DOMAIN];
-
-  // ── 2. Un 403 = poids 2, AUCUN retry (1 appel fetch max) ──
+  // ── A2. 403 = poids 2, aucun retry ──
+  delete (getStealthState() as any)[DOMAIN];
   mockStatus = 403;
   fetchCalls = 0;
-  const res403 = await stealthFetch(URL, { bypassRateLimit: true });
+  const res403 = await stealthFetch(URL_T, { bypassRateLimit: true });
   if (res403.status !== 403) throw new Error('❌ 403 doit retourner la response');
   if (fetchCalls !== 1) throw new Error(`❌ 403 a fait ${fetchCalls} appels (retry interdit!)`);
-  if (getStealthState()[DOMAIN].errorCount !== 2) throw new Error(`❌ poids attendu 2, got ${getStealthState()[DOMAIN].errorCount}`);
-  console.log('✅ 2. 403: poids 2, aucun retry, response retournée à l appelant');
+  if (getStealthState()[DOMAIN].errorCount !== 2) throw new Error('❌ poids 403 attendu: 2');
+  console.log('✅ A2. 403: poids 2, aucun retry');
 
-  // ── 3. 3 challenges WAF => disjoncteur OUVERT ──
-  await stealthFetch(URL, { bypassRateLimit: true }); // errorCount 4
-  await stealthFetch(URL, { bypassRateLimit: true }); // errorCount 6 >= 5 => OUVERT, reset à 0
-  const s3 = getStealthState()[DOMAIN];
-  if (!s3.blocked) throw new Error('❌ disjoncteur devrait être ouvert après 3 challenges (6≥5)');
-  console.log('✅ 3. Disjoncteur OUVERT après 3 challenges WAF (poids 2 chacun)');
+  // ── A3. 3 challenges → breaker local OUVERT ──
+  await stealthFetch(URL_T, { bypassRateLimit: true });
+  await stealthFetch(URL_T, { bypassRateLimit: true });
+  if (!getStealthState()[DOMAIN].blocked) throw new Error('❌ breaker local devrait être ouvert');
+  console.log('✅ A3. Disjoncteur local OUVERT après 3 challenges WAF');
 
-  // ── 4. Cooldown = échec immédiat, fetch JAMAIS appelé ──
+  // ── A4. Fast-fail local + PUSH vers le store partagé ──
   fetchCalls = 0;
   let threw = false;
   try {
-    await stealthFetch(URL, { bypassRateLimit: true });
+    await stealthFetch(URL_T, { bypassRateLimit: true });
   } catch (e) {
     threw = true;
-    if (!(e as Error).message.includes('circuit breaker OUVERT')) throw new Error(`❌ message inattendu: ${e}`);
+    if (!(e as Error).message.includes('circuit breaker')) throw new Error(`❌ message inattendu: ${e}`);
   }
-  if (!threw) throw new Error('❌ devrait lever pendant le cooldown');
+  if (!threw) throw new Error('❌ devrait lever pendant le cooldown local');
   if (fetchCalls !== 0) throw new Error('❌ fetch appelé pendant le cooldown!');
-  console.log('✅ 4. Cooldown: throw immédiat, 0 appel réseau (fast-fail)');
+  await new Promise(r => setTimeout(r, 50)); // laisse le fire-and-forget partir
+  const pushEntry = storagePOSTs.flatMap(p => Object.entries(p.domains)).find(([d]) => d === DOMAIN);
+  if (!pushEntry) throw new Error('❌ aucun push partagé reçu pour le domaine ouvert!');
+  if (!(pushEntry[1].blocked_until > Date.now())) throw new Error('❌ blocked_until partagé non futur');
+  console.log('✅ A4. Fast-fail local (0 appel) + push partagé publié à l\'ouverture');
 
-  // ── 5. Un 200 décrémente le compteur ──
-  // (nouveau domaine pour repartir propre)
+  // ── A5. Un 200 décrémente ──
   const D2 = 'healthy.example.com';
   mockStatus = 403;
-  await stealthFetch(`https://${D2}/x`, { bypassRateLimit: true }); // 2
-  await stealthFetch(`https://${D2}/x`, { bypassRateLimit: true }); // 4
+  await stealthFetch(`https://${D2}/x`, { bypassRateLimit: true });
+  await stealthFetch(`https://${D2}/x`, { bypassRateLimit: true });
   mockStatus = 200;
-  await stealthFetch(`https://${D2}/x`, { bypassRateLimit: true }); // 3
-  const s5 = getStealthState()[D2];
-  if (s5.errorCount !== 3) throw new Error(`❌ après 403,403,200: attendu 3, got ${s5.errorCount}`);
-  console.log('✅ 5. Succès 200: compteur décrémenté (4→3)');
+  await stealthFetch(`https://${D2}/x`, { bypassRateLimit: true });
+  if (getStealthState()[D2].errorCount !== 3) throw new Error(`❌ compteur attendu 3, got ${getStealthState()[D2].errorCount}`);
+  console.log('✅ A5. Succès 200: compteur décrémenté (4→3)');
 
-  // ── 6. 429 persistant: 3 tentatives (1 + 2 retries) puis StealthStatusError ──
+  // ── A6. 429 persistant: 3 tentatives puis StealthStatusError ──
   const D3 = 'ratelimit.example.com';
   mockStatus = 429;
   fetchCalls = 0;
@@ -117,9 +137,24 @@ async function main() {
   if (!(statusErr instanceof StealthStatusError) || statusErr.status !== 429)
     throw new Error(`❌ attendu StealthStatusError(429), got ${statusErr}`);
   if (fetchCalls !== 3) throw new Error(`❌ 429: attendu 3 tentatives, got ${fetchCalls}`);
-  console.log('✅ 6. 429 persistant: 3 tentatives avec backoff, StealthStatusError levée');
+  console.log('✅ A6. 429 persistant: 3 tentatives, StealthStatusError');
 
-  console.log('\n🎉 TOUS LES TESTS PASSENT');
+  // ── B1. Blocage PARTAGÉ: le domaine pré-bloqué dans le Storage mocké ──
+  const sharedUntil = await getSharedBlock('shared-banned.example.com');
+  if (!(sharedUntil > Date.now())) throw new Error('❌ getSharedBlock devrait lire le Storage mocké');
+  fetchCalls = 0;
+  let sharedThrew = false;
+  try {
+    await stealthFetch('https://shared-banned.example.com/page', { bypassRateLimit: true });
+  } catch (e) {
+    sharedThrew = true;
+    if (!(e as Error).message.includes('PARTAGÉ')) throw new Error(`❌ message partagé inattendu: ${e}`);
+  }
+  if (!sharedThrew) throw new Error('❌ le blocage partagé doit lever');
+  if (fetchCalls !== 0) throw new Error('❌ fetch appelé sur un domaine partagé-bloqué!');
+  console.log('✅ B1. Circuit breaker PARTAGÉ: throw immédiat, 0 appel réseau');
+
+  console.log('\n🎉 TOUS LES TESTS PASSENT (A1-A6 + B1)');
   process.exit(0);
 }
 

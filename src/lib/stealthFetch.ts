@@ -19,6 +19,8 @@
  * Ce module ne loggue RIEN en production (logs silencieux).
  */
 
+import { getSharedBlock, pushSharedBlock } from './distributedGuard';
+
 // ============================================
 // PROFILS NAVIGATEUR — UA + Client Hints COHÉRENTS
 // ============================================
@@ -202,6 +204,9 @@ function updateDomainState(domain: string, isError: boolean, weight: number = 1)
         BLOCK_DURATION_MIN_MS +
         Math.floor(Math.random() * (BLOCK_DURATION_MAX_MS - BLOCK_DURATION_MIN_MS));
       state.errorCount = 0;
+      // Publier l'ouverture vers le store PARTAGÉ (Supabase Storage, fire-and-forget)
+      // → les autres instances serverless cessent de marteler le domaine immédiatement
+      pushSharedBlock(domain, state.blockedUntil, 0);
     }
   } else {
     // Réduire le compteur d'erreurs après un succès
@@ -377,6 +382,16 @@ export async function stealthFetch(
   } = options || {};
 
   const domain = domainOverride || extractDomain(url);
+
+  // Disjoncteur PARTAGÉ (Supabase Storage, cache lecture 10 s, dégradation gracieuse)
+  // → une instance qui ouvre le breaker protège TOUTES les autres immédiatement
+  const sharedBlockedUntil = await getSharedBlock(domain);
+  if (sharedBlockedUntil > Date.now()) {
+    const remainingSec = Math.ceil((sharedBlockedUntil - Date.now()) / 1000);
+    throw new Error(
+      `stealthFetch: circuit breaker PARTAGÉ ouvert pour ${domain} (cooldown ${remainingSec}s restant)`
+    );
+  }
 
   // Circuit breaker — TOUJOURS vérifié, même avec bypassRateLimit (le bypass
   // ne concerne que le délai de politesse, jamais la protection du domaine)
