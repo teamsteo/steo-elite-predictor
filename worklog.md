@@ -344,3 +344,46 @@ Stage Summary:
   déjà sur ZAI page_reader (IP Vercel jamais exposées) — inchangés
 - Restant P2: enricher vide 0 octet, Upstash rate-limit partagé, cotes mockées NFL
   (betExplorerNFLScraper), conflit crons 05:00/05:15, vraies cotes pré-match NHL/MLB
+
+---
+Task ID: 9
+Agent: Super Z (main)
+Task: P2 anti-ban/fiabilité — cotes NFL réelles, breaker partagé 0€, enricher no-op, conflit crons
+
+Work Log:
+- DÉCOUVERTE: betExplorerNFLScraper.ts n'était importé par AUCUN fichier (code mort)
+  mais restait dangereux: cotes 100% simulées (DVOA inventés, bookmakers aléatoires)
+  étiquetées source:'betexplorer' + archives random alimentant detectValueBets
+- betExplorerNFLScraper.ts réécrit (commit d03c2c4):
+  * generateRealisticNFLOdds + generateArchiveData SUPPRIMÉS (jamais de données inventées)
+  * Scraping réel ZAI page_reader sur betexplorer.com/next/american-football/ (pattern
+    miroir du scraper football prouvé en prod ; 401 local = token ZAI absent en local,
+    page_reader fonctionne en prod — parser défensif multi-fallbacks écrit sur les
+    structures connues: tr/table-main, match-part, data-odd, 2 cotes NFL 2 issues)
+  * Échec/structure changée → [] honnête ; archives → [] tant que non implémenté
+  * detectValueBets: moneyline uniquement (spread/total simulés retirés)
+- distributedGuard.ts (NOUVEAU): breaker PARTAGÉ cross-instances via Supabase Storage
+  (bucket 'live-calibration' existant, objet guard/domain-breakers.json)
+  * Contrainte respectée: DDL impossible via REST → Storage (pattern Task 9 persist.) ;
+    0 € (pas d'Upstash) ; dégradation gracieuse totale
+  * Lecture: cache 10 s + dédoublonnage inflight, timeout 3 s → coût ~0 ms par requête
+  * Écriture: fire-and-forget à l'ouverture du breaker local, fusion conservatrice
+  * stealthFetch: check partagé avant chaque requête → une instance protège toutes
+- vercel.json: cron /api/cron?action=train-ml 05:15 SUPPRIMÉ — le training Python
+  GH 05:00 (P0: cible réelle, walk-forward, arbres exportés) est l'unique writer
+  ml_model ; le training TS écrasait edge_threshold/accuracy/last_trained en legacy.
+  Endpoint train-ml conservé pour dispatch manuel ; backtest dimanche 05:30 inchangé
+- ml/football_data_enricher.py: stub documenté avec plan de réactivation (fichier était
+  0 octet depuis des mois — no-op silencieux) ; étape retirée du workflow xgboost-training
+- Tests étendus (Storage mocké, 0 réseau): 7/7 — profils cohérents, WAF poids 2,
+  ouverture 3 challenges, fast-fail + push partagé, décrément 200, 429 retries,
+  blocage PARTAGÉ en lecture. tsc 0 erreur. Push d03c2c4 → Vercel auto-deploy
+
+Stage Summary:
+- Chaîne anti-ban complète: détection WAF stricte + fingerprint cohérent + breaker
+  LOCAL (3 challenges → cooldown jitter 8-14 min) + breaker PARTAGÉ (toutes instances)
+  + 0 fetch brut restant vers sites externes (5 migrés P1, scrapers web sur page_reader)
+- Fiabilité données: plus AUCUNE donnée simulée étiquetée source réelle (NFL/archives)
+- ML: single source of truth pour ml_model (Python 05:00), plus de conflit d'écriture
+- Restant (P3 éventuel): implémenter archives BetExplorer (backtest NFL), vraies cotes
+  pré-match NHL/MLB pour entraîner ces sports, implémenter enricher football-data.co.uk
