@@ -284,3 +284,20 @@ Stage Summary:
 - Hockey/baseball/tennis: non entraînés (garde-fou features constantes — leurs "cotes" étaient estimées depuis les scores, neutralisées → aucune feature informative) → besoin de vraies cotes pré-match pour ces sports
 - Prod: Vercel auto-deploy (health 200), cache ml_model 5 min, scoring = arbres rejoués ou heuristiques (jamais l'ancien scoring faux)
 - Restant P1/P2: circuit breaker 403, cohérence Sec-CH-UA/UA, 5 fetch bruts → stealthFetch, enricher vide (0 octet) à implémenter ou retirer, vraies cotes pré-match NHL/MLB, seuil confiance basketball à exiger précision > baseline
+
+---
+Task ID: 7 (suite)
+Agent: Super Z (main)
+Task: Fix build Vercel — erreur TypeScript résiduelle du P0
+
+Work Log:
+- Vercel build échec sur cbf18ea : unifiedMLService.ts:1254 « Type 'number | undefined' is not assignable to type 'number' »
+- Cause: dans le P0, XGBoostParams.best_edge_threshold passé en optionnel (le seuil global n'est plus exporté — remplacé par best_confidence_threshold par sport), mais getXGBoostStatus() l'assignait encore à un contrat number
+- Fix (commit 0c97c3f): fallback cohérent avec la branche non-entraînée → bestEdgeThreshold: xgb.best_edge_threshold ?? model.edge_threshold
+- tsc --noEmit : 0 erreur sur tout le projet (aucune autre erreur cachée derrière)
+- Nettoyage push: commit local cde1f86 refait proprement (worklog + scripts debug replay conservés, .pyc écarté, __pycache__/ ajouté au .gitignore)
+- Push cbf18ea..0c97c3f sur main → Vercel auto-deploy ; CI ML Pipeline déjà verte sur les commits P0 (5700ade, cbf18ea success)
+
+Stage Summary:
+- Build Vercel débloqué: le déploiement du P0 (retraining honnête + replay arbres) peut se finaliser
+- Aucun changement fonctionnel du modèle: fallback purement typage, comportement identique à l'ancienne valeur par défaut
