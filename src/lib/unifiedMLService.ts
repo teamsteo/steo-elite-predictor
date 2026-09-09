@@ -1251,7 +1251,7 @@ export function getXGBoostStatus(model: MLModel): {
     trained: true,
     totalSamples: xgb.total_samples,
     globalCvAccuracy: xgb.global_cv_accuracy,
-    bestEdgeThreshold: xgb.best_edge_threshold,
+    bestEdgeThreshold: xgb.best_edge_threshold ?? model.edge_threshold,
     sports: sportList,
     lastTrained: model.last_trained,
     version: model.version
