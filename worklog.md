@@ -258,3 +258,29 @@ Work Log:
 Stage Summary:
 - Circuit complet captures → analyse → prono validé en conditions réelles sur matchs en direct
 - Fenêtre idéale confirmée : user doit renvoyer captures (score + stats + cotes) à la mi-temps pour l'analyse pleine précision
+
+---
+Task ID: 7
+Agent: main
+Task: P0 — Fix poisoning ML + retraining propre + scoring prod fidèle
+
+Work Log:
+- ml/train_xgboost.py (commits 5700ade + cbf18ea):
+  - PURGE POISONING: cible unifiée target_home_win = résultat réel (draws exclus), faux picks neutralisés, dédup fixtures (5675 doublons retirés en prod)
+  - Validation honnête: TimeSeriesSplit walk-forward (train uniquement), holdout temporel 20% (seuil + Platt + métriques), baseline = classe majoritaire
+  - Platt scaling manuel fit sur holdout (marge brute), exporté seulement si Brier amélioré
+  - Ensemble LightGBM/CatBoost désactivé (ENSEMBLE_ENABLED=False, non rejouable en TS)
+  - Export arbres xgb_dump_v1: trees_to_dataframe (schéma 2.1.3: Gain=feuille) + auto-vérification replay vs predict_proba (seuil 1e-4) + offset data-driven (médiane logit-somme)
+  - Liste blanche PROD_COMPUTABLE_FEATURES (26 features: pas de dummies ligue, pas de xG post-match, pas de features temporelles)
+  - Débogages clés: comparaison float32 obligatoire (valeur ET seuil castés — frontières de split = valeurs de données); JSON dump arrondit à 9 chiffres mais < 1 ulp float32 → double-cast récupère l'exact
+- src/lib/unifiedMLService.ts: scoreWithXGBoost = replay fidèle des arbres (evalXGBTree avec Math.fround valeur+seuil, margin_offset, Platt optionnel sur marge). Ancienne moyenne pondérée d'importances SUPPRIMÉE (direction des effets fausse). Garde-fou trainUnifiedML anti-écrasement xgboost_params.
+- src/lib/adaptiveThresholdsML.ts: ajout heavy_favorite + underdog_match (alignement liste blanche)
+- CI (runs 34293607356 puis 34293976070, SUCCESS): retraining sur données Supabase réelles → export xgb-260909 OK, arbres football (offset 0.1221, diff 1.8e-7) + basketball (offset 0, diff 1.05e-7) exportés
+
+Stage Summary:
+- Métriques AVANT (fake): football CV 76.9%, précision 99.79%, edge +23pp
+- Métriques APRÈS (honnêtes): football CV walk-forward 59.8% ± 5.6%, holdout 303 matchs acc 69.6% / Brier 0.194, seuil 0.78 → précision 87.1% (holdout), edge +0.35pp vs baseline
+- Le vrai edge est PETIT (+0.35pp au niveau CV) — l'ancien +23pp était 100% artefact du poisoning
+- Hockey/baseball/tennis: non entraînés (garde-fou features constantes — leurs "cotes" étaient estimées depuis les scores, neutralisées → aucune feature informative) → besoin de vraies cotes pré-match pour ces sports
+- Prod: Vercel auto-deploy (health 200), cache ml_model 5 min, scoring = arbres rejoués ou heuristiques (jamais l'ancien scoring faux)
+- Restant P1/P2: circuit breaker 403, cohérence Sec-CH-UA/UA, 5 fetch bruts → stealthFetch, enricher vide (0 octet) à implémenter ou retirer, vraies cotes pré-match NHL/MLB, seuil confiance basketball à exiger précision > baseline

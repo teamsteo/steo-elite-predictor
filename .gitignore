@@ -59,3 +59,4 @@ scripts/backtest_env/lib_fixed/
 scripts/backtest_env/lib_buggy/
 scripts/backtest_env/*.log
 
+__pycache__/
