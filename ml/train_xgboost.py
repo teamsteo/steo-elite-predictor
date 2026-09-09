@@ -1979,6 +1979,13 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
     v3: inclut les arbres (replay TS), Platt holdout, métriques holdout,
     liste blanche de features. Garde-fou taille: si le payload dépasse 6MB,
     les dumps d'arbres les plus lourds sont retirés (prod → heuristiques).
+
+    v4 (P4 anti-régression): MERGE au lieu d'écrasement.
+    --sport baseball ne doit JAMAIS effacer la section football (et inversement):
+    on relit xgboost_params existant, on remplace uniquement les sports
+    entraînés dans ce run, les autres sections (arbres + métriques) sont
+    préservées à l'identique. Échec de lecture → comportement v3 (écrasement),
+    jamais de blocage du training.
     """
     xgboost_params = {
         "trained": True,
@@ -2019,6 +2026,46 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
         "training_timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
+    # ── MERGE anti-régression (v4): préserver les sports non entraînés ──
+    # Un run --sport baseball ne doit JAMAIS effacer la section football
+    # (arbres + métriques) écrite par les runs précédents, et inversement.
+    existing_sports = {}
+    prev_edge_threshold = None
+    try:
+        prev = sb.table("ml_model").select(
+            "xgboost_params, samples_used, accuracy, edge_threshold"
+        ).eq("id", "default_model").limit(1).execute()
+        rows = getattr(prev, "data", None) or []
+        if rows:
+            raw = rows[0].get("xgboost_params")
+            prev_params = json.loads(raw) if isinstance(raw, str) else (raw or {})
+            if isinstance(prev_params, dict):
+                existing_sports = prev_params.get("sports") or {}
+            prev_edge_threshold = rows[0].get("edge_threshold")
+    except Exception as e:
+        print(f"   ℹ️ Merge impossible ({type(e).__name__}) — export sans préservation")
+
+    trained_keys = set(xgboost_params["sports"].keys())
+    preserved = {k: v for k, v in existing_sports.items() if k not in trained_keys}
+    if preserved:
+        xgboost_params["sports"] = {**preserved, **xgboost_params["sports"]}
+        print(f"   🔗 Merge: {len(preserved)} section(s) préservée(s) [{', '.join(sorted(preserved))}]")
+
+    # Recalculer les agrégats de ligne sur l'ensemble des sports FUSIONNÉS
+    # (sinon un run mono-sport afficherait les stats du seul sport entraîné)
+    merged_sports = xgboost_params["sports"]
+    merged_cvs = [float(s["cv_accuracy"]) for s in merged_sports.values()
+                  if isinstance(s, dict) and s.get("cv_accuracy") is not None]
+    if merged_cvs:
+        merged_global_cv = sum(merged_cvs) / len(merged_cvs)
+        merged_total = sum(int(s.get("samples") or 0) for s in merged_sports.values()
+                           if isinstance(s, dict))
+        xgboost_params["global_cv_accuracy"] = round(merged_global_cv, 4)
+        xgboost_params["total_samples"] = merged_total
+    else:
+        merged_global_cv = global_cv
+        merged_total = total_samples
+
     # Garde-fou taille payload (row Supabase jsonb): < 6MB cible, 4MB plancher
     payload = json.dumps(xgboost_params, cls=NumpyEncoder)
     if len(payload) > 6 * 1024 * 1024:
@@ -2043,18 +2090,23 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
         "id": "default_model",
         "xgboost_params": payload,
         "version": f"xgb-{datetime.now(timezone.utc).strftime('%y%m%d')}",
-        "samples_used": int(total_samples),
-        "accuracy": int(round(global_cv * 100)),
+        "samples_used": int(merged_total),
+        "accuracy": int(round(merged_global_cv * 100)),
         "last_trained": datetime.now(timezone.utc).isoformat(),
     }
 
     # Mettre à jour les seuils basés sur les résultats XGBoost
     if results:
-        # Calculer le meilleur edge_threshold global
-        edges = [r["edge_vs_random"] for r in results.values() if r]
-        if edges:
-            best_edge = max(edges) / 100  # Convertir pp en ratio
-            update_data["edge_threshold"] = float(round(best_edge, 4))
+        # edge_threshold = métrique historique calibrée sur FOOTBALL (consommateur
+        # legacy). On ne la recalcule QUE si le football est entraîné dans ce run ;
+        # sinon on préserve la valeur existante (et on la restaure si absente).
+        if "football" in results:
+            edges = [r["edge_vs_random"] for r in results.values() if r]
+            if edges:
+                best_edge = max(edges) / 100  # Convertir pp en ratio
+                update_data["edge_threshold"] = float(round(best_edge, 4))
+        elif prev_edge_threshold is not None:
+            update_data["edge_threshold"] = prev_edge_threshold
 
     try:
         res = sb.table("ml_model").upsert(update_data, on_conflict="id").execute()

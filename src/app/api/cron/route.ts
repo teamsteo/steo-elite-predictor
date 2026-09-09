@@ -2057,6 +2057,44 @@ export async function GET(request: NextRequest) {
         result = { ping: pingResult };
         break;
 
+      case 'backfill-mlb': {
+        // P4 Phase 1 — backfill archives MLB (betExplorer via ZAI page_reader).
+        // Idempotent (upsert par match_id stable), additif (table matches uniquement).
+        // Nourrit le training XGBoost baseball (échantillons labellisés score+cotes).
+        try {
+          const { scrapeMlbResultsPage } = await import('@/lib/betExplorerBaseballScraper');
+          const mlbMatches = await scrapeMlbResultsPage();
+          let savedCount = 0;
+          if (mlbMatches.length > 0) {
+            savedCount = await SupabaseStore.upsertMatches(mlbMatches.map((m) => ({
+              id: m.matchId,
+              sport: 'baseball',
+              home_team: m.homeTeam,
+              away_team: m.awayTeam,
+              league: 'MLB',
+              date: m.date,
+              home_score: m.homeScore,
+              away_score: m.awayScore,
+              odds_home: m.oddsHome,
+              odds_away: m.oddsAway,
+              odds_draw: null,
+              status: 'completed',
+            })));
+          }
+          result = {
+            backfillMlb: {
+              success: true,
+              scraped: mlbMatches.length,
+              saved: savedCount,
+              sample: mlbMatches.slice(0, 3).map((m) => `${m.homeTeam} ${m.homeScore}:${m.awayScore} ${m.awayTeam} @${m.oddsHome.toFixed(2)}`),
+            },
+          };
+        } catch (e: any) {
+          result = { backfillMlb: { success: false, error: e.message } };
+        }
+        break;
+      }
+
       case 'db-status':
         // Statut détaillé de la base de données
         const dbStats = await SupabaseStore.getStats();
@@ -2455,13 +2493,18 @@ export async function GET(request: NextRequest) {
               id: mid,
               homeTeam: m.homeTeam,
               awayTeam: m.awayTeam,
-              sport: m.sport === 'Basketball' ? 'NBA' as const : 
-                     m.sport === 'Hockey' ? 'NHL' as const : 
+              sport: m.sport === 'Basketball' ? 'NBA' as const :
+                     m.sport === 'Hockey' ? 'NHL' as const :
                      m.sport === 'Baseball' ? 'MLB' as const : 'Foot' as const,
               league: m.league || 'Unknown',
               oddsHome: m.oddsHome,
               oddsDraw: m.oddsDraw || null,
               oddsAway: m.oddsAway,
+              // P4 consensus multi-books (si enrichi par combinedDataService)
+              consensusHome: (m as any).oddsConsensus?.best?.home,
+              consensusDraw: (m as any).oddsConsensus?.best?.draw ?? null,
+              consensusAway: (m as any).oddsConsensus?.best?.away,
+              consensusBookCount: (m as any).oddsConsensus?.bookCount,
             };
           });
           
@@ -2914,7 +2957,7 @@ export async function GET(request: NextRequest) {
           const comboInputs: any[] = upcomingWithOdds
             .filter((m: any) => {
               const sport = (m.sport || '').toLowerCase();
-              return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket');
+              return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket') || sport === 'baseball' || sport.includes('baseball');
             })
             .map((m: any) => {
               // 💎 Détecter value bet: comparer proba modèle vs proba impliquée (seuil 5%)
@@ -2929,7 +2972,7 @@ export async function GET(request: NextRequest) {
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
-                sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
+                sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : (m.sport || '').toLowerCase().includes('base') ? 'baseball' : 'football',
                 league: m.league || 'Unknown',
                 predictedResult: predResult,
                 winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
@@ -3564,7 +3607,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-corrupted', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-ml', 'update-stats', 'update-fundamentals', 'train-ml', 'backtest', 'ml-stats', 'sync-all', 'ping', 'db-status', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-kamikaze', 'telegram-combo', 'telegram-results', 'telegram-kamikaze-bilan', 'telegram-monthly', 'reset-mlb', 'reset-date', 'rebuild-bilan', 'reset-results', 'fix-corrupted', 'fix-data', 'fix-sport', 'fix-vn', 'rebuild-date', 'mlb-palier', 'backfill-mlb'] },
           { status: 400 }
         );
     }
@@ -3709,6 +3752,43 @@ export async function POST(request: NextRequest) {
         // Ping explicite de Supabase
         result = { ping: pingResult };
         break;
+
+      case 'backfill-mlb': {
+        // P4 Phase 1 — backfill archives MLB (betExplorer via ZAI page_reader).
+        // Idempotent (upsert par match_id stable), additif (table matches uniquement).
+        try {
+          const { scrapeMlbResultsPage } = await import('@/lib/betExplorerBaseballScraper');
+          const mlbMatches = await scrapeMlbResultsPage();
+          let savedCount = 0;
+          if (mlbMatches.length > 0) {
+            savedCount = await SupabaseStore.upsertMatches(mlbMatches.map((m) => ({
+              id: m.matchId,
+              sport: 'baseball',
+              home_team: m.homeTeam,
+              away_team: m.awayTeam,
+              league: 'MLB',
+              date: m.date,
+              home_score: m.homeScore,
+              away_score: m.awayScore,
+              odds_home: m.oddsHome,
+              odds_away: m.oddsAway,
+              odds_draw: null,
+              status: 'completed',
+            })));
+          }
+          result = {
+            backfillMlb: {
+              success: true,
+              scraped: mlbMatches.length,
+              saved: savedCount,
+              sample: mlbMatches.slice(0, 3).map((m) => `${m.homeTeam} ${m.homeScore}:${m.awayScore} ${m.awayTeam} @${m.oddsHome.toFixed(2)}`),
+            },
+          };
+        } catch (e: any) {
+          result = { backfillMlb: { success: false, error: e.message } };
+        }
+        break;
+      }
 
       case 'train-ml': {
         // Filet de sécurité P2: saute si modèle < 24h (training Python GH = unique
@@ -4276,7 +4356,7 @@ export async function POST(request: NextRequest) {
           const comboInputs: any[] = upcomingWithOdds
             .filter((m: any) => {
               const sport = (m.sport || '').toLowerCase();
-              return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket');
+              return sport === 'football' || sport.includes('foot') || sport === 'basketball' || sport.includes('basket') || sport === 'baseball' || sport.includes('baseball');
             })
             .map((m: any) => {
               // 💎 Détecter value bet inline
@@ -4291,7 +4371,7 @@ export async function POST(request: NextRequest) {
               return {
                 homeTeam: m.homeTeam,
                 awayTeam: m.awayTeam,
-                sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : 'football',
+                sport: (m.sport || '').toLowerCase().includes('basket') ? 'basketball' : (m.sport || '').toLowerCase().includes('base') ? 'baseball' : 'football',
                 league: m.league || 'Unknown',
                 predictedResult: predResult,
                 winProbability: m.winProbability || (m.riskPercentage !== undefined ? 100 - m.riskPercentage : 50),
@@ -4387,7 +4467,7 @@ export async function POST(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-combo', 'telegram-results', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'mlb-palier'] },
+          { error: 'Action non reconnue', validActions: ['precalc', 'verify', 'verify-evening', 'verify-morning', 'verify-night', 'update-stats', 'sync-ml', 'sync-all', 'ping', 'train-ml', 'backtest', 'ml-stats', 'test-espn', 'telegram-summary', 'telegram-valuebets', 'telegram-combo', 'telegram-results', 'reset-mlb', 'reset-date', 'cleanup-unpublished', 'rebuild-bilan', 'reset-results', 'mlb-palier', 'backfill-mlb'] },
           { status: 400 }
         );
     }

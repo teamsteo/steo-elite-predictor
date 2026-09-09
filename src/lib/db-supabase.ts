@@ -147,14 +147,14 @@ function normalizeConfidence(confidence: string): 'very_high' | 'high' | 'medium
 // ============================================
 
 export const SupabaseStore = {
-  
+
   /**
    * Vérifie si Supabase est disponible
    */
   async isAvailable(): Promise<boolean> {
     const supabase = getSupabase();
     if (!supabase) return false;
-    
+
     try {
       const { error } = await supabase.from('predictions').select('id').limit(1);
       return !error;
@@ -162,6 +162,64 @@ export const SupabaseStore = {
       return false;
     }
   },
+
+  /**
+   * P4 — Upsert de matchs historiques (backfill archives MLB betExplorer).
+   * Table `matches`, colonnes EXACTEMENT celles lues par ml/train_xgboost.py
+   * (Source 2: home_score + odds non null → échantillons labellisés).
+   * Additif: aucune autre écriture, aucun flux existant modifié.
+   */
+  async upsertMatches(rows: Array<{
+    id: string;
+    sport: string;
+    home_team: string;
+    away_team: string;
+    league: string;
+    date: string;
+    home_score: number;
+    away_score: number;
+    odds_home: number;
+    odds_away: number;
+    odds_draw?: number | null;
+    winner?: string;
+    status?: string;
+  }>): Promise<number> {
+    const supabase = getSupabase();
+    if (!supabase) return 0;
+    if (!rows || rows.length === 0) return 0;
+
+    let saved = 0;
+    for (const row of rows) {
+      try {
+        const { error } = await supabase
+          .from('matches')
+          .upsert(
+            {
+              id: row.id,
+              sport: row.sport,
+              home_team: row.home_team,
+              away_team: row.away_team,
+              league: row.league,
+              date: row.date,
+              home_score: row.home_score,
+              away_score: row.away_score,
+              odds_home: row.odds_home,
+              odds_away: row.odds_away,
+              odds_draw: row.odds_draw ?? null,
+              winner: row.winner || (row.home_score > row.away_score ? 'home' : row.away_score > row.home_score ? 'away' : 'draw'),
+              status: row.status || 'completed',
+            },
+            { onConflict: 'id' },
+          );
+        if (!error) saved++;
+        else console.warn(`⚠️ upsertMatches: ${row.id?.slice(0, 40)} → ${error.message}`);
+      } catch (e: any) {
+        console.warn(`⚠️ upsertMatches exception: ${e.message}`);
+      }
+    }
+    return saved;
+  },
+
   
   /**
    * Ping la base pour éviter la mise en pause

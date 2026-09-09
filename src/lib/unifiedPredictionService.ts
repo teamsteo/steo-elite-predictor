@@ -24,6 +24,7 @@ import { calibrateIsotonic, loadCalibrationMap, type CalibrationMap } from './ca
 import { alignWithMarket, type MarketAlignmentResult } from './marketAlignmentService';
 import { analyzeMatchImportance } from './matchImportanceService';
 import { getMatchTeamStats } from './teamStatsService';
+import { getSportModelQuality } from './unifiedMLService';
 
 // ============================================
 // TYPES
@@ -38,6 +39,13 @@ export interface UnifiedPredictionInput {
   oddsHome: number;
   oddsDraw: number | null;
   oddsAway: number;
+  // P4 Phase 2 — consensus multi-book (additif, optionnel):
+  // meilleur prix par issue + nombre de books. Utilisé pour l'edge (référence
+  // marché honnête) SEULEMENT si >= 3 books (garde-fou shouldUseConsensusEdge).
+  consensusHome?: number;
+  consensusDraw?: number | null;
+  consensusAway?: number;
+  consensusBookCount?: number;
 }
 
 export interface UnifiedPrediction {
@@ -252,6 +260,34 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   const impliedHome = (1 / oddsHome) / totalImplied;
   const impliedAway = (1 / oddsAway) / totalImplied;
   const impliedDraw = oddsDraw ? (1 / oddsDraw) / totalImplied : 0;
+
+  // 4.bis P4 Phase 2 — benchmark marché consensus (best price multi-books).
+  // Un parieur peut réellement obtenir le MEILLEUR prix du marché: l'edge honnête
+  // se calcule contre ce prix, pas contre la ligne DraftKings seule. Garde-fou:
+  // >= 3 books + kill-switch env (ODDS_CONSENSUS_EDGE=false pour désactiver).
+  let edgeBenchmarkHome = impliedHome;
+  let edgeBenchmarkAway = impliedAway;
+  let edgeBenchmarkDraw = impliedDraw;
+  const consensusInput = (match as any).consensusHome != null || (match as any).consensusAway != null
+    ? {
+        home: (match as any).consensusHome as number | undefined,
+        draw: (match as any).consensusDraw as number | null | undefined,
+        away: (match as any).consensusAway as number | undefined,
+        bookCount: (match as any).consensusBookCount as number | undefined,
+      }
+    : null;
+  if (consensusInput && consensusInput.home && consensusInput.away) {
+    const cTotal = (1 / consensusInput.home) + (1 / consensusInput.away) + (consensusInput.draw ? 1 / consensusInput.draw : 0);
+    if (cTotal > 0 && Number.isFinite(cTotal)) {
+      edgeBenchmarkHome = (1 / consensusInput.home) / cTotal;
+      edgeBenchmarkAway = (1 / consensusInput.away) / cTotal;
+      edgeBenchmarkDraw = consensusInput.draw ? (1 / consensusInput.draw) / cTotal : 0;
+      if (process.env.ODDS_CONSENSUS_EDGE !== 'false') {
+        sources.push('ConsensusBestPrice');
+        console.log(`📡 Edge vs consensus (${consensusInput.bookCount} books): best ${consensusInput.home.toFixed(2)}/${consensusInput.away.toFixed(2)} vs DK ${oddsHome.toFixed(2)}/${oddsAway.toFixed(2)}`);
+      }
+    }
+  }
   
   // 5. Dixon-Coles prediction (football only)
   let dixonColesResult: UnifiedPrediction['dixonColes'] | undefined;
@@ -427,11 +463,24 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   };
   
   // 8. Calculate ML adjustment (async - includes XGBoost if trained)
-  // ⚠️ P0 FIX: XGBoost désactivé pour basketball/hockey/baseball
-  // Le modèle basketball a 46.6% CV accuracy (pire que hasard),
-  // hockey 47.3% et baseball 49.5% (Brier ~0.25 = pile ou face).
-  // Seul football (76.9%) bénéficie réellement du ML.
-  const mlEnabled = sportType === 'football';
+  // ⚠️ P0 FIX (historique): XGBoost désactivé pour basketball/hockey/baseball
+  // (anciens modèles US: CV 46.6-49.5% = zéro edge → mode heuristiques).
+  // P4: le baseball peut être réactivé AUTOMATIQUEMENT si — et seulement si —
+  // une section baseball de QUALITÉ existe dans ml_model (arbres rejouables,
+  // CV ≥ 52%, edge > 0). Sinon comportement historique strict (zéro régression).
+  // Kill-switch: MLB_ML_DISABLED=true force l'ancien comportement sans redeploy.
+  let mlEnabled = sportType === 'football';
+  if (!mlEnabled && sportType === 'baseball' && process.env.MLB_ML_DISABLED !== 'true') {
+    try {
+      const quality = await getSportModelQuality('baseball');
+      mlEnabled = quality.ready;
+      if (quality.ready) {
+        console.log(`⚾ ML baseball ACTIVÉ (CV ${(quality.cvAccuracy! * 100).toFixed(1)}%, edge ${quality.edge!.toFixed(1)}pp)`);
+      }
+    } catch {
+      // modèle illisible → comportement historique
+    }
+  }
   const mlAdjustment = mlEnabled
     ? await calculateMLAdjustment(featureVector, sportType)
     : { probabilityAdjustment: 0, confidenceAdjustment: 0, recommendedBet: 'neutral' as const, xgboostUsed: false, xgboostScore: undefined };
@@ -512,9 +561,11 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   finalAwayProb /= Math.max(EPS, totalProb);
   
   // 10. Calculate edge (FIX C2: model prob vs market implied prob — can be positive)
-  const homeEdge = finalHomeProb - impliedHome;
-  const drawEdge = finalDrawProb - impliedDraw;
-  const awayEdge = finalAwayProb - impliedAway;
+  // P4 Phase 2: le benchmark marché = best price consensus quand disponible
+  // (>= 3 books), sinon la ligne DraftKings primaire (comportement historique).
+  const homeEdge = finalHomeProb - edgeBenchmarkHome;
+  const drawEdge = finalDrawProb - edgeBenchmarkDraw;
+  const awayEdge = finalAwayProb - edgeBenchmarkAway;
 
   // Update feature vector with final probabilities for XGBoost scoring
   featureVector.edge = Math.max(homeEdge, awayEdge, drawEdge);

@@ -353,6 +353,11 @@ export async function POST(request: NextRequest) {
         oddsHome: m.oddsHome,
         oddsDraw: m.oddsDraw || null,
         oddsAway: m.oddsAway,
+        // P4 consensus multi-books (si enrichi par combinedDataService)
+        consensusHome: (m as any).oddsConsensus?.best?.home,
+        consensusDraw: (m as any).oddsConsensus?.best?.draw ?? null,
+        consensusAway: (m as any).oddsConsensus?.best?.away,
+        consensusBookCount: (m as any).oddsConsensus?.bookCount,
       };
     });
 

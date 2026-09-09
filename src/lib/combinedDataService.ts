@@ -9,6 +9,7 @@
 
 import { stealthFetch } from './stealthFetch';
 import { trackOddsForToday } from './oddsTrackingService';
+import { fetchDailyConsensus, findConsensus } from './oddsConsensus';
 
 // Configuration The Odds API
 const ODDS_API_KEY = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
@@ -532,6 +533,35 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
       }
     }
     
+    // ── P4 Phase 2: consensus multi-bookmakers (MLB) — ADDITIF ──
+    // Les cotes primaires (ESPN/DraftKings) restent inchangées; on attache un
+    // champ `oddsConsensus` (best/median/bookCount) aux matchs couverts.
+    // Kill-switch: ODDS_CONSENSUS_DISABLED=true. Échec → jamais bloquant.
+    if (process.env.ODDS_CONSENSUS_DISABLED !== 'true') {
+      try {
+        const consensusApiKey = process.env.ODDS_API_KEY;
+        if (consensusApiKey) {
+          const consensusMap = await fetchDailyConsensus('baseball_mlb', consensusApiKey);
+          if (consensusMap.size > 0) {
+            let enrichedConsensus = 0;
+            for (const match of allMatches) {
+              if (match.sport !== 'Baseball') continue;
+              const consensus = findConsensus(consensusMap, match.homeTeam, match.awayTeam);
+              if (consensus) {
+                (match as any).oddsConsensus = consensus;
+                enrichedConsensus++;
+              }
+            }
+            if (enrichedConsensus > 0) {
+              console.log(`📡 [CONSENSUS] ${enrichedConsensus} matchs MLB enrichis (médiane + best price multi-books)`);
+            }
+          }
+        }
+      } catch (e: any) {
+        console.log(`📡 [CONSENSUS] enrichissement MLB ignoré (non bloquant): ${e.message}`);
+      }
+    }
+
     // Filtrer pour garder UNIQUEMENT les matchs à venir d'aujourd'hui
     // ⚠️ Les matchs terminés ne doivent PAS être publiés comme pronostics
     // ⚠️ Les matchs de DEMAIN sont exclus des publications quotidiennes

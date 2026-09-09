@@ -1,11 +1,30 @@
+/**
+ * comboService.ts — P4 Phase 5 : sélection DÉTERMINISTE + LLM narratif uniquement
+ *
+ * FAIBLESSE VISÉE : l'ancien combo déléguait LA SÉLECTION au LLM (non déterministe,
+ * qualité variable selon le contexte du prompt du jour). Un LLM n'a aucune
+ * légitimité pour choisir des paris — c'est un problème de calcul.
+ *
+ * NOUVEAU SPLIT DES RÔLES :
+ *  - SÉLECTION : algorithme déterministe pur (score composite edge × kelly ×
+ *    confiance, diversification ligue, plafond de cote combinée) — testable,
+ *    reproductible, auditable.
+ *  - LLM : RÉDACTION uniquement (nom + accroche). Échec LLM → libellés
+ *    déterministes, jamais de blocage.
+ *
+ * ANTI-RÉGRESSION : signature `generateComboWithLLM(valueBets)` et type
+ * `ComboResult` inchangés (consommateurs cron + DB + Telegram intacts).
+ * Le fallback complet est déterministe: le combo part MÊME si le LLM est down.
+ */
+
 import ZAI from 'z-ai-web-dev-sdk';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types (contrats inchangés pour les consommateurs) ──────────────────────
 
 export interface ComboMatch {
   homeTeam: string;
   awayTeam: string;
-  sport: string; // 'football' or 'basketball'
+  sport: string; // 'football' | 'basketball' | 'baseball'
   league: string;
   predictedResult: 'home' | 'draw' | 'away';
   winProbability: number; // 0-100
@@ -74,183 +93,192 @@ function oddsForResult(match: ComboMatch, result: string): number {
   return match.oddsDraw ?? 1;
 }
 
-// ─── System Prompt ───────────────────────────────────────────────────────────
+const CONFIDENCE_WEIGHT: Record<string, number> = { high: 1.25, medium: 1.0, low: 0.6 };
 
-const SYSTEM_PROMPT = `Tu es un expert analyste de paris sportifs spécialisé dans les combos (parlay) intelligents. Tu analyses des value bets détectées et tu dois composer le combo le plus malin possible.
-
-RÈGLES STRICTES :
-1. Sélectionne 2 ou 3 matchs PARMI les value bets proposés.
-2. Tu ne peux utiliser QUE des matchs de football ou de basketball.
-3. Pour chaque match, conserve le résultat prédit tel quel — ne change PAS le predictedResult.
-4. Privilégie la diversité des sports (mélanger football + basketball est un plus).
-5. Évite de combiner des matchs qui se chevauchent trop dans le temps.
-6. Le nom du combo doit être accrocheur, max 50 caractères.
-7. Le nom doit être en FRANÇAIS.
-8. Fournis un raisonnement global ET un raisonnement par sélection.
-9. Évalue le niveau de risque global du combo.
-10. Si moins de 2 value bets sont disponibles, retourne {"skip": true}.
-
-Tu dois répondre UNIQUEMENT en JSON valide avec cette structure exacte :
-{
-  "name": "Nom du combo",
-  "reasoning": "Explication globale du combo",
-  "riskLevel": "low" | "medium" | "high",
-  "legs": [
-    {
-      "homeTeam": "...",
-      "awayTeam": "...",
-      "sport": "...",
-      "league": "...",
-      "predictedResult": "home" | "draw" | "away",
-      "betLabel": "Victoire Équipe X",
-      "winProbability": 65,
-      "odds": 1.85,
-      "confidence": "high" | "medium" | "low",
-      "reasoning": "Pourquoi ce match a été sélectionné"
-    }
-  ]
+/**
+ * Score composite déterministe d'une value bet:
+ *   edge relatif × kelly × confiance. Kelly est déjà proportionnel à
+ *   edge/variance — le produit pénalise les edges de faible qualité.
+ */
+export function compositeScore(m: ComboMatch): number {
+  const odds = oddsForResult(m, m.predictedResult);
+  if (odds <= 1.01) return 0;
+  const impliedProb = 1 / odds;
+  const modelProb = Math.min(0.99, Math.max(0.01, m.winProbability / 100));
+  // Edge relatif: (model - implied) / implied — comparable entre cotes
+  const relativeEdge = (modelProb - impliedProb) / impliedProb;
+  const kelly = m._kellyStake && m._kellyStake > 0 ? Math.min(m._kellyStake, 5) : 0.5;
+  const conf = CONFIDENCE_WEIGHT[m.confidence] ?? 1.0;
+  // Pénalité risque (au-delà de 50% de risque, la variance explose)
+  const riskPenalty = m.riskPercentage > 50 ? 0.7 : 1.0;
+  return relativeEdge * kelly * conf * riskPenalty;
 }
 
-Ne fais JAMAIS de commentaires en dehors du JSON. Réponds UNIQUEMENT avec du JSON valide.`;
+/** Sélection déterministe du combo (2-3 legs) avec diversification */
+export function selectComboDeterministic(valueBets: ComboMatch[]): ComboMatch[] | null {
+  const eligible = valueBets.filter((m) => m.valueBetDetected);
+  if (eligible.length < 2) return null;
 
-// ─── Main Function ───────────────────────────────────────────────────────────
+  const scored = eligible
+    .map((m) => ({ m, score: compositeScore(m) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length < 2) return null;
+
+  const selected: ComboMatch[] = [];
+  const usedLeagues = new Set<string>();
+  let combinedOdds = 1;
+  const MAX_COMBINED_ODDS = 20;
+  const MAX_LEGS = 3;
+
+  // 1. Meilleur pick global
+  // 2. Diversification: meilleur pick d'une AUTRE ligue si dispo
+  // 3. Complément: meilleur pick restant compatible avec le plafond de cote
+  for (const phase of [0, 1, 2]) {
+    const candidate = scored.find(({ m }) => {
+      if (selected.includes(m)) return false;
+      const nextOdds = combinedOdds * oddsForResult(m, m.predictedResult);
+      if (nextOdds > MAX_COMBINED_ODDS) return false;
+      if (phase === 1 && usedLeagues.has(m.league)) return false; // diversification
+      return true;
+    });
+    if (!candidate) continue;
+    selected.push(candidate.m);
+    usedLeagues.add(candidate.m.league);
+    combinedOdds *= oddsForResult(candidate.m, candidate.m.predictedResult);
+    if (selected.length >= MAX_LEGS) break;
+  }
+
+  return selected.length >= 2 ? selected : null;
+}
+
+// ─── LLM narratif (optionnel — fallback déterministe) ───────────────────────
+
+function deterministicName(legs: ComboMatch[], combinedOdds: number): string {
+  const sports = new Set(legs.map((l) => l.sport));
+  const sportLabel =
+    sports.size > 1 ? 'Multi-Sports' :
+    sports.has('baseball') ? 'MLB' :
+    sports.has('basketball') ? 'Basket' : 'Foot';
+  return `${sportLabel} Express x${combinedOdds.toFixed(1)}`.slice(0, 50);
+}
+
+function deterministicReasoning(legs: ComboMatch[]): string {
+  return legs
+    .map((l) => {
+      const odds = oddsForResult(l, l.predictedResult);
+      const edge = l._mlEdge ? ` (edge ${(l._mlEdge * 100).toFixed(1)}%)` : '';
+      return `${l.homeTeam} vs ${l.awayTeam} : ${betLabelForResult(l, l.predictedResult)} @${odds.toFixed(2)}${edge}`;
+    })
+    .join(' · ');
+}
+
+async function narrateWithLLM(
+  legs: ComboMatch[],
+  combinedOdds: number,
+): Promise<{ name: string; reasoning: string } | null> {
+  try {
+    const zai = await ZAI.create();
+    const legSummary = legs.map((l) => {
+      const odds = oddsForResult(l, l.predictedResult);
+      return `- ${l.homeTeam} vs ${l.awayTeam} (${l.league}) : ${betLabelForResult(l, l.predictedResult)} @${odds.toFixed(2)}`;
+    }).join('\n');
+
+    const response = await zai.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Tu es rédacteur pour un service de pronostics sportifs. On te donne la composition ' +
+            'FINALE et DÉFINITIVE d\'un combo. Ta mission est UNIQUEMENT rédactionnelle: ' +
+            '1) un nom accrocheur en FRANÇAIS (max 50 caractères) 2) un raisonnement global ' +
+            'de 2-3 phrases expliquant la logique du combo. N\'invente AUCUN match ni AUCUNE ' +
+            'cote: reprends exactement ceux fournis. Réponds en JSON: {"name":"...","reasoning":"..."}',
+        },
+        {
+          role: 'user',
+          content: `Combo à cote combinée ${combinedOdds.toFixed(2)} :\n${legSummary}`,
+        },
+      ],
+      thinking: { type: 'disabled' },
+    });
+
+    const raw =
+      typeof response === 'string'
+        ? response
+        : (response as any).choices?.[0]?.message?.content ?? (response as any).content ?? '';
+
+    let jsonStr = raw.trim();
+    const fence = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fence) jsonStr = fence[1].trim();
+    const parsed = JSON.parse(jsonStr);
+    if (typeof parsed?.name === 'string' && typeof parsed?.reasoning === 'string') {
+      return { name: parsed.name.slice(0, 50), reasoning: parsed.reasoning };
+    }
+    return null;
+  } catch {
+    return null; // LLM down → fallback déterministe (jamais bloquant)
+  }
+}
+
+// ─── Point d'entrée (signature inchangée) ───────────────────────────────────
 
 export async function generateComboWithLLM(
   valueBets: ComboMatch[],
 ): Promise<ComboResult | null> {
   try {
-    // Filter to only value bets in football/basketball
-    const eligible = valueBets.filter(
-      (m) =>
-        m.valueBetDetected &&
-        (m.sport === 'football' || m.sport === 'basketball'),
-    );
+    // 1. SÉLECTION DÉTERMINISTE (le LLM ne choisit plus rien)
+    const selected = selectComboDeterministic(valueBets);
+    if (!selected) return null;
 
-    if (eligible.length < 2) {
-      return null;
-    }
-
-    // Build user message with match data
-    const matchData = eligible.map((m, i) => ({
-      index: i,
-      homeTeam: m.homeTeam,
-      awayTeam: m.awayTeam,
-      sport: m.sport,
-      league: m.league,
-      predictedResult: m.predictedResult,
-      winProbability: m.winProbability,
-      oddsHome: m.oddsHome,
-      oddsAway: m.oddsAway,
-      oddsDraw: m.oddsDraw,
-      riskPercentage: m.riskPercentage,
-      valueBetType: m.valueBetType,
-      confidence: m.confidence,
-      date: m.date,
-      mlEdge: m._mlEdge ?? null,
-      kellyStake: m._kellyStake ?? null,
-      mlReasoning: m._mlReasoning ?? [],
-    }));
-
-    const userMessage = `Voici les value bets disponibles aujourd'hui. Analyse-les et compose le meilleur combo de 2-3 matchs :
-
-${JSON.stringify(matchData, null, 2)}`;
-
-    // Call LLM via z-ai-web-dev-sdk
-    const zai = await ZAI.create();
-    const response = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage },
-      ],
-      thinking: { type: 'disabled' },
-    });
-
-    // Extract text from response
-    const raw =
-      typeof response === 'string'
-        ? response
-        : (response as any).choices?.[0]?.message?.content ??
-          (response as any).content ??
-          JSON.stringify(response);
-
-    // Parse JSON — try to extract from potential markdown code blocks
-    let jsonStr = raw.trim();
-    const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenceMatch) {
-      jsonStr = fenceMatch[1].trim();
-    }
-
-    // Handle skip signal
-    const parsed = JSON.parse(jsonStr);
-    if (parsed.skip === true) {
-      return null;
-    }
-
-    // Validate legs exist
-    if (!Array.isArray(parsed.legs) || parsed.legs.length < 2 || parsed.legs.length > 3) {
-      return null;
-    }
-
-    // Enrich legs with computed values and resolve from source data
-    const legs = parsed.legs.map((leg: any) => {
-      const source = eligible.find(
-        (m) =>
-          m.homeTeam === leg.homeTeam &&
-          m.awayTeam === leg.awayTeam &&
-          m.league === leg.league,
-      );
-
-      // Prefer source data for accuracy, fall back to LLM output
-      const predictedResult = source?.predictedResult ?? leg.predictedResult;
-      const winProbability = source?.winProbability ?? leg.winProbability;
-      const odds = source
-        ? oddsForResult(source, predictedResult)
-        : leg.odds;
-      const confidence = source?.confidence ?? leg.confidence;
-      const betLabel = source
-        ? betLabelForResult(source, predictedResult)
-        : leg.betLabel;
-
+    const legs = selected.map((m) => {
+      const source = m;
+      const odds = oddsForResult(source, source.predictedResult);
       return {
-        homeTeam: leg.homeTeam,
-        awayTeam: leg.awayTeam,
-        sport: leg.sport,
-        league: leg.league,
-        predictedResult,
-        betLabel,
-        winProbability,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        sport: m.sport,
+        league: m.league,
+        predictedResult: m.predictedResult,
+        betLabel: betLabelForResult(m, m.predictedResult),
+        winProbability: m.winProbability,
         odds,
-        confidence,
-        reasoning: leg.reasoning ?? '',
+        confidence: m.confidence,
+        reasoning: (m._mlReasoning ?? []).slice(0, 2).join(' | '),
       };
     });
 
-    // Compute derived metrics
-    const combinedOdds = legs.reduce((acc: number, leg: any) => acc * leg.odds, 1);
+    const combinedOdds = legs.reduce((acc, leg) => acc * leg.odds, 1);
     const combinedWinProbability = legs.reduce(
-      (acc: number, leg: any) => acc * (leg.winProbability / 100),
+      (acc, leg) => acc * (leg.winProbability / 100),
       1,
     );
     const expectedValue = combinedOdds * combinedWinProbability - 1;
 
-    const result: ComboResult = {
+    // 2. NARRATION (LLM best-effort, fallback déterministe)
+    const narrative =
+      (await narrateWithLLM(selected, combinedOdds)) ?? {
+        name: deterministicName(selected, combinedOdds),
+        reasoning: deterministicReasoning(selected),
+      };
+
+    const riskLevel: 'low' | 'medium' | 'high' =
+      combinedOdds <= 4 ? 'low' : combinedOdds <= 10 ? 'medium' : 'high';
+
+    return {
       comboId: generateComboId(),
-      name: (parsed.name ?? 'Combo Smart Bet').slice(0, 50),
-      reasoning: parsed.reasoning ?? '',
+      name: narrative.name,
+      reasoning: narrative.reasoning,
       legs,
       combinedOdds: Math.round(combinedOdds * 100) / 100,
-      combinedWinProbability:
-        Math.round(combinedWinProbability * 10000) / 10000,
-      riskLevel: ['low', 'medium', 'high'].includes(parsed.riskLevel)
-        ? parsed.riskLevel
-        : 'medium',
+      combinedWinProbability: Math.round(combinedWinProbability * 10000) / 10000,
+      riskLevel,
       expectedValue: Math.round(expectedValue * 10000) / 10000,
       publishedAt: new Date().toISOString(),
     };
-
-    return result;
   } catch (error) {
-    console.error('[ComboService] LLM combo generation failed:', error);
+    console.error('[ComboService] Génération combo échouée:', error);
     return null;
   }
 }

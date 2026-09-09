@@ -1319,13 +1319,42 @@ export async function refreshMLCache(): Promise<void> {
   patternsCache = [];
   modelCache = null;
   lastCacheUpdate = 0;
-  
+
   await Promise.all([
     loadMLPatterns(true),
     loadMLModel()
   ]);
-  
+
   console.log('🔄 UnifiedML: Cache rafraîchi');
+}
+
+/**
+ * P4 — Qualité de la section XGBoost d'un sport donné.
+ * Porte d'activation du ML pour les sports non-football: un modèle baseball
+ * n'est utilisé en prod QUE s'il a des arbres rejouables ET un CV ≥ 52%
+ * (baseline hasard 2 issues = 50%) ET un edge strictement positif.
+ * Retourne false si absent/sous-qualité → comportement historique (heuristiques).
+ * Le résultat suit le cache du modèle (pas de requête supplémentaire).
+ */
+export async function getSportModelQuality(
+  sport: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis',
+): Promise<{ ready: boolean; cvAccuracy?: number; edge?: number; reason: string }> {
+  const model = await loadMLModel();
+  const params: any = model?.xgboost_params;
+  if (!params?.trained) return { ready: false, reason: 'model_not_trained' };
+
+  const sportParams: any = params.sports?.[sport];
+  if (!sportParams) return { ready: false, reason: 'section_absente' };
+  if (!sportParams.tree_dump || sportParams.scoring !== 'trees') {
+    return { ready: false, cvAccuracy: sportParams.cv_accuracy, reason: 'arbres_absents' };
+  }
+
+  const cv = typeof sportParams.cv_accuracy === 'number' ? sportParams.cv_accuracy : 0;
+  const edge = typeof sportParams.edge_vs_random === 'number' ? sportParams.edge_vs_random : 0;
+  if (cv < 0.52) return { ready: false, cvAccuracy: cv, edge, reason: `cv_sous_seuil_52 (${(cv * 100).toFixed(1)}%)` };
+  if (edge <= 0) return { ready: false, cvAccuracy: cv, edge, reason: 'edge_non_positif' };
+
+  return { ready: true, cvAccuracy: cv, edge, reason: 'ok' };
 }
 
 // Export par défaut
@@ -1339,5 +1368,6 @@ export default {
   getUnifiedMLStats,
   refreshMLCache,
   scoreWithXGBoost,
-  getXGBoostStatus
+  getXGBoostStatus,
+  getSportModelQuality
 };

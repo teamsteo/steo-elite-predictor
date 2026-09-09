@@ -521,17 +521,17 @@ export async function getUnifiedMatchContext(params: {
 async function fetchInjuryData(
   homeTeam: string,
   awayTeam: string,
-  sport: 'football' | 'basketball',
+  sport: 'football' | 'basketball' | 'baseball' | 'hockey',
   leagueName?: string
 ): Promise<UnifiedMatchContext['injuries']> {
   const sourcesUsed: string[] = [];
-  
+
   try {
     // === PHASE 1: Source primaire (scraping dédié) ===
     let primaryHome: any[] = [];
     let primaryAway: any[] = [];
     let primaryImpact: { homeImpact: number; awayImpact: number; summary: string; keyAbsentees: { home: string[]; away: string[] } } = { homeImpact: 0, awayImpact: 0, summary: '', keyAbsentees: { home: [], away: [] } };
-    
+
     if (sport === 'basketball') {
       try {
         const result = await getNBAMatchInjuries(homeTeam, awayTeam);
@@ -542,6 +542,11 @@ async function fetchInjuryData(
       } catch (e) {
         console.log('⚠️ NBA Official injuries indisponible');
       }
+    } else if (sport === 'baseball' || sport === 'hockey') {
+      // P4: pas de source primaire dédiée baseball/hockey — la source ESPN
+      // (PHASE 2, API gratuite, cache 1h) couvre MLB/NHL. On saute l'appel
+      // Transfermarkt (scraping football) qui était déclenché à tort pour
+      // chaque match MLB/NHL: appel inutile + latence + risque ban gratuit.
     } else {
       try {
         const result = await getFootballInjuries(homeTeam, awayTeam);

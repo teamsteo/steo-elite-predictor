@@ -37,6 +37,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r ml/requirements.txt
 
+      - name: Football-data enrichment (P4 — best effort, jamais bloquant)
+        continue-on-error: true
+        run: |
+          # Réactive l'enrichissement P2-stub: CSV statiques gratuits
+          # football-data.co.uk → data/enrichment/training_enrichment.json
+          # (détection auto par train_xgboost.py; échec = training normal sans)
+          timeout 240 python ml/football_data_enricher.py || echo "⚠️ Enrichissement indisponible — training sans enrichissement"
+
       - name: Run ML Training
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
