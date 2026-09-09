@@ -48,6 +48,10 @@
       "schedule": "0 5 * * *"
     },
     {
+      "path": "/api/cron?action=train-ml",
+      "schedule": "15 5 * * *"
+    },
+    {
       "path": "/api/cron?action=backtest",
       "schedule": "30 5 * * 0"
     },

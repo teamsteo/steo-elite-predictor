@@ -17,7 +17,7 @@ import { updateStatsHistory, forceUpdateStats } from '@/lib/statsUpdater';
 import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
 import SupabaseStore, { type DbPrediction } from '@/lib/db-supabase';
 import { updateFundamentalsForToday } from '@/lib/fundamental-cron';
-import { trainUnifiedML, getUnifiedMLStats } from '@/lib/unifiedMLService';
+import { trainUnifiedML, getUnifiedMLStats, loadMLModel } from '@/lib/unifiedMLService';
 import { runBacktest, formatBacktestForTelegram } from '@/lib/backtestService';
 import { 
   publishDailySummaryToTelegram, 
@@ -1765,6 +1765,32 @@ async function runPrecalc(): Promise<{ success: boolean; count: number; errors: 
 }
 
 /**
+ * Garde-fou cron train-ml (P2) — le training Python GH Actions (04:37 UTC)
+ * est l'unique writer NORMATIF de ml_model (cible réelle, walk-forward, arbres
+ * exportés, cf. P0). Ce cron Vercel 05:15 ne sert que de FILET DE SÉCURITÉ :
+ * si le modèle a été entraîné il y a moins de 24h, on SAUTE (aucun conflit
+ * d'écriture). Passé 24h sans training GH (échec/queue saturée), le training
+ * TS prend le relais comme dégradation gracieuse (le garde-fou trainUnifiedML
+ * protège xgboost_params/arbres de tout écrasement).
+ */
+async function shouldSkipScheduledTraining(): Promise<{ skip: boolean; reason: string }> {
+  try {
+    const model = await loadMLModel();
+    const last = model?.last_trained ? new Date(model.last_trained).getTime() : 0;
+    const ageH = last ? (Date.now() - last) / 3_600_000 : Infinity;
+    if (ageH < 24) {
+      return { skip: true, reason: `modèle frais (${ageH.toFixed(1)}h) — training Python GH = unique writer normatif` };
+    }
+    return {
+      skip: false,
+      reason: `modèle âgé de ${Number.isFinite(ageH) ? ageH.toFixed(1) + 'h' : 'âge inconnu'} — fallback TS activé`,
+    };
+  } catch (e: any) {
+    return { skip: false, reason: `loadMLModel échoué (${e.message}) — fallback TS par prudence` };
+  }
+}
+
+/**
  * Entraînement du modèle ML unifié (persisté dans Supabase)
  */
 async function trainMLModel(): Promise<{ 
@@ -2059,8 +2085,18 @@ export async function GET(request: NextRequest) {
         }
         break;
         
-      case 'train-ml':
-        // Entraînement manuel du modèle ML
+      case 'train-ml': {
+        // Filet de sécurité P2: saute si modèle < 24h (training Python GH = unique
+        // writer normatif). force=1 pour forcer un training TS manuel.
+        const forceTrain = url.searchParams.get('force') === '1';
+        if (!forceTrain) {
+          const guard = await shouldSkipScheduledTraining();
+          if (guard.skip) {
+            result = { mlTraining: { success: true, skipped: true, reason: guard.reason } };
+            break;
+          }
+          console.log('🔄 train-ml fallback:', guard.reason);
+        }
         try {
           const mlTrainResult = await trainMLModel();
           result = { mlTraining: mlTrainResult };
@@ -2068,6 +2104,7 @@ export async function GET(request: NextRequest) {
           result = { mlTraining: { success: false, error: 'Erreur interne' } };
         }
         break;
+      }
         
       case 'backtest':
         // Backtest ML vs hasard
@@ -3673,8 +3710,18 @@ export async function POST(request: NextRequest) {
         result = { ping: pingResult };
         break;
 
-      case 'train-ml':
-        // Entraînement manuel du modèle ML
+      case 'train-ml': {
+        // Filet de sécurité P2: saute si modèle < 24h (training Python GH = unique
+        // writer normatif). force=1 pour forcer un training TS manuel.
+        const forceTrain = url.searchParams.get('force') === '1';
+        if (!forceTrain) {
+          const guard = await shouldSkipScheduledTraining();
+          if (guard.skip) {
+            result = { mlTraining: { success: true, skipped: true, reason: guard.reason } };
+            break;
+          }
+          console.log('🔄 train-ml fallback:', guard.reason);
+        }
         try {
           const mlTrainResult = await trainMLModel();
           result = { mlTraining: mlTrainResult };
@@ -3682,6 +3729,7 @@ export async function POST(request: NextRequest) {
           result = { mlTraining: { success: false, error: 'Erreur interne' } };
         }
         break;
+      }
         
       case 'backtest':
         // Backtest ML vs hasard

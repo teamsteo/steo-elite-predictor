@@ -2,8 +2,11 @@ name: ML Pipeline
 
 on:
   schedule:
-    # Jitter intégré: décalage aléatoire de 0-5 min pour éviter les patterns
-    - cron: '0 5 * * *'
+    # 04:37 UTC (off-peak) : les crons GitHub Actions à heure pile (:00) et 05:00 UTC
+    # sont massivement congestionnés → délais de queue observés de 4-5 h (runs
+    # 09:24/09:59 pour un 05:00 demandé). Minute impaire + heure creuse = file quasi
+    # nulle ; le training termine avant le fallback Vercel 05:15 et generate-daily 05:30.
+    - cron: '37 4 * * *'
   workflow_dispatch:
     inputs:
       sport:
