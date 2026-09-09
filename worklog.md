@@ -301,3 +301,46 @@ Work Log:
 Stage Summary:
 - Build Vercel débloqué: le déploiement du P0 (retraining honnête + replay arbres) peut se finaliser
 - Aucun changement fonctionnel du modèle: fallback purement typage, comportement identique à l'ancienne valeur par défaut
+
+---
+Task ID: 8
+Agent: Super Z (main)
+Task: P1 anti-ban — disjoncteur WAF + cohérence UA/client-hints + 5 fetch bruts via stealthFetch (0 € dépensé)
+
+Work Log:
+- Vérifié déploiement P0 en prod: /api/health HTTP 200 (supabase ok, espn ok)
+- stealthFetch.ts refait (commit a6782ad):
+  * Circuit breaker étendu: 403/406/412/418 (statuts WAF Cloudflare) comptés avec poids 2x
+    → 3 challenges suffisent à ouvrir le disjoncteur (vs 5 avant, et 403 était ignoré)
+  * AUCUN retry sur challenge WAF (insister durcit le profil de bannissement de l'IP)
+    → la response est retournée à l'appelant qui applique son fallback
+  * 429/5xx/erreurs réseau comptées aussi (avant: seules 429 + erreurs réseau; 5xx ignoré)
+  * Cooldown 8-14 min avec jitter (pattern d'attente fixe supprimé)
+  * Fast-fail pendant cooldown: checkCircuitBreaker systématique (même avec bypassRateLimit)
+    throw immédiat — l'ancien sleep jusqu'à 10 min était intenable en serverless
+  * StealthStatusError exportée (429/5xx épuisés), comptage sans double-comptage
+  * Profils navigateur cohérents (9 profils): Sec-CH-UA + Platform UNIQUEMENT pour Chromium,
+    version-matched avec l'UA (Chrome 124/125/126 Win/Mac, Edge 126 Win) ; Firefox/Safari
+    n'envoient AUCUN client hint (comportement réel des navigateurs) — fini le
+    Sec-CH-UA Chrome + UA Firefox + Platform Windows en dur
+  * Placeholder [VOTRE_URL_SUPABASE] retiré des RATE_LIMITS (config morte)
+- Migrations fetch brut → stealthFetch (suppression des UA auto-déclaratifs):
+  * nflAdvancedScraper.ts: scoreboard NFL ESPN (UA « SteoElite/1.0 » retiré)
+  * espnOddsService.ts: scoreboard NBA + NHL ({ next: { revalidate: 60 } } conservé)
+  * understatFetcher.ts: pages league + match (UA « SteoElitePredictor/1.0 + URL Vercel » retiré)
+- Bonus anti-ban: fix bug saison Understat (« year >= 8 » toujours vrai → saison fausse
+  pour matchs août-décembre = requêtes perdues pour rien ; mois >= 8 → saison YYYY, sinon YYYY-1)
+- Vérifié 17/17 appels stealthFetch dans 11 fichiers: tous en try/catch avec fallback
+  ([] / null / continue / cache conservé) — le fast-fail est sans risque de crash
+- Test fonctionnel scripts/test_stealth_breaker.ts (fetch mocké, 0 réseau): 6/6 passent
+  (a détecté + corrigé au passage: le breaker était skippé quand bypassRateLimit=true)
+- tsc --noEmit: 0 erreur ; push a6782ad → Vercel auto-deploy
+
+Stage Summary:
+- Chaîne anti-ban renforcée sans aucun coût: détection WAF stricte (3 challenges → cooldown
+  8-14 min), zero retry sur challenge, fingerprint navigateur totalement cohérent,
+  5 derniers fetch bruts sous protection stealthFetch (rotation + rate limit + disjoncteur)
+- Les scrapers web (fbref, transfermarkt, betExplorer, injury, basketballReference) restaient
+  déjà sur ZAI page_reader (IP Vercel jamais exposées) — inchangés
+- Restant P2: enricher vide 0 octet, Upstash rate-limit partagé, cotes mockées NFL
+  (betExplorerNFLScraper), conflit crons 05:00/05:15, vraies cotes pré-match NHL/MLB
