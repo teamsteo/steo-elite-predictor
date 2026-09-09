@@ -27,17 +27,28 @@ if [ -n "${GITLAB_TOKEN:-}" ]; then
   PUSH_URL=$(printf '%s' "$GITLAB_URL" | sed -E "s|https://|https://oauth2:${GITLAB_TOKEN}@|")
 fi
 
-OUT=$(GITLAB_MIRROR_INNER=1 git push "$PUSH_URL" main --force 2>&1)
-RC=$?
+# Push GitLab avec retries : GitLab.com bloque par intermittence les IP
+# datacenter (403 "Blocked") → on réessaie 3x pour tomber sur une IP saine.
+GITLAB_PUSH_RC=1
+OUT=""
+for ATTEMPT in 1 2 3; do
+  OUT=$(GITLAB_MIRROR_INNER=1 git push "$PUSH_URL" main --force 2>&1)
+  GITLAB_PUSH_RC=$?
+  [ "$GITLAB_PUSH_RC" -eq 0 ] && break
+  # 403 = IP bloquée temporairement → pause puis nouvelle tentative
+  if [ "$ATTEMPT" -lt 3 ]; then
+    sleep 15
+  fi
+done
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SHA=$(git rev-parse --short main 2>/dev/null)
-if [ "$RC" -eq 0 ]; then
+if [ "$GITLAB_PUSH_RC" -eq 0 ]; then
   echo "[gitlab-mirror] ✅ $TS — GitLab écrasé et synchronisé sur $SHA"
   echo "$TS OK $SHA" >> scripts/gitlab-mirror.log
 else
   # Ne JAMAIS bloquer le push GitHub, mais signaler clairement
-  echo "[gitlab-mirror] ⚠️ $TS — échec sync GitLab (code $RC) — push GitHub continue" >&2
+  echo "[gitlab-mirror] ⚠️ $TS — échec sync GitLab après 3 tentatives (code $GITLAB_PUSH_RC) — push GitHub continue" >&2
   echo "$OUT" | sed -E "s|oauth2:[^@]+@|oauth2:***@|g" >&2
   echo "$TS FAIL $SHA" >> scripts/gitlab-mirror.log
 fi
