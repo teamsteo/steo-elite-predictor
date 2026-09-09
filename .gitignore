@@ -60,3 +60,8 @@ scripts/backtest_env/lib_buggy/
 scripts/backtest_env/*.log
 
 __pycache__/
+
+# Backups locaux (archives + dumps DB)
+backups/
+# Credentials miroirs GitLab/Bitbucket (jamais versionnés)
+scripts/.backup_env

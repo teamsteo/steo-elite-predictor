@@ -15,10 +15,23 @@ BACKUP_DIR="$PROJECT_DIR/backups"
 LOCAL_ARCHIVE="$BACKUP_DIR/backup_${TIMESTAMP}.tar.gz"
 
 # ─── MIROIRS DISTANTS ───
-# Remplacez par vos tokens/clés réels
-GITLAB_URL=""        # Ex: gitlab.com/votre-user/steo-elite-predictor.git
-BITBUCKET_URL=""     # Ex: bitbucket.org/votre-user/steo-elite-predictor.git
-CODEBERG_URL=""      # Ex: codeberg.org/votre-user/steo-elite-predictor.git
+# Config via fichier non-versionné scripts/.backup_env (créer soi-même) :
+#   GITLAB_URL="https://gitlab.com/<user>/steo-elite-predictor.git"
+#   GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"   # scope write_repository
+# Ou via variables d'environnement au lancement :
+#   GITLAB_URL=... GITLAB_TOKEN=... bash scripts/backup-mirror.sh
+ENV_FILE="$PROJECT_DIR/scripts/.backup_env"
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+GITLAB_URL="${GITLAB_URL:-}"     # Ex: https://gitlab.com/<user>/steo-elite-predictor.git
+GITLAB_TOKEN="${GITLAB_TOKEN:-}" # Personal Access Token (scope write_repository) — JAMAIS persisté
+BITBUCKET_URL="${BITBUCKET_URL:-}"
+CODEBERG_URL="${CODEBERG_URL:-}"
 
 # ─── SUPABASE CREDS (pour dump DB) ───
 SB_URL="${NEXT_PUBLIC_SUPABASE_URL:-}"
@@ -51,13 +64,20 @@ echo "   ✅ Archive: $LOCAL_ARCHIVE ($LOCAL_SIZE)"
 # ═══ ÉTAPE 2: PUSH GITLAB ═══
 if [ -n "$GITLAB_URL" ]; then
   echo "[2/5] Push vers GitLab..."
-  # Ajouter remote si pas encore configuré
-  if ! git remote get-url gitlab 2>/dev/null; then
-    git remote add gitlab "$GITLAB_URL"
+  # Token injecté uniquement dans l'URL de push à la volée (jamais écrit dans .git/config)
+  GITLAB_PUSH_URL="$GITLAB_URL"
+  if [ -n "$GITLAB_TOKEN" ]; then
+    GITLAB_PUSH_URL=$(printf '%s' "$GITLAB_URL" | sed -E "s|https://|https://oauth2:${GITLAB_TOKEN}@|")
   fi
-  git push gitlab main --force 2>&1 | tail -3 && echo "   ✅ GitLab OK" || echo "   ⚠️ GitLab échoué"
+  if PUSH_OUTPUT=$(git push "$GITLAB_PUSH_URL" main --force 2>&1); then
+    echo "$PUSH_OUTPUT" | tail -3
+    echo "   ✅ GitLab OK"
+  else
+    echo "$PUSH_OUTPUT" | sed -E "s|oauth2:[^@]+@|oauth2:***@|g" | tail -5
+    echo "   ⚠️ GitLab échoué (vérifier URL/token scope write_repository)"
+  fi
 else
-  echo "[2/5] ⏭️ GitLab non configuré (GITLAB_URL vide)"
+  echo "[2/5] ⏭️ GitLab non configuré (GITLAB_URL vide — voir scripts/.backup_env)"
 fi
 
 # ═══ ÉTAPE 3: PUSH BITBUCKET ═══
