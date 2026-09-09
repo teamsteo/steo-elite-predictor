@@ -122,6 +122,12 @@ XGB_DEFAULT_PARAMS = {
 # Nombre de folds pour la cross-validation
 CV_FOLDS = 5
 
+# Ensemble LightGBM/CatBoost DÉSACTIVÉ (v3): le soft-voting n'est pas rejouable
+# côté prod TypeScript (le replay prod exécute les arbres XGBoost exportés).
+# Un ensemble adopté en training mais impossible à rejouer en prod = mismatch
+# train/prod — exactement la classe de bug que la v3 élimine.
+ENSEMBLE_ENABLED = False
+
 # ============================================================
 # SUPABASE CONNECTION
 # ============================================================
@@ -400,6 +406,70 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
     df["result_match"] = df["result_match"].fillna(False).astype(bool)
     df["match_date"] = pd.to_datetime(df["match_date"], errors="coerce")
 
+    # ═══════════════════════════════════════════════════════════════
+    # ANTI-POISONING v3: cible unique = victoire à domicile (outcome RÉEL)
+    # ═══════════════════════════════════════════════════════════════
+    # Bug historique: 3 définitions de cible incompatibles étaient mélangées —
+    #   Source 1 (predictions): "le pick était-il correct?" (pick jamais fourni en feature)
+    #   Source 2 (matches):     result_match=True TOUJOURS avec predicted_result=winner
+    #                           choisi post-hoc → des milliers de samples "toujours gagnants"
+    #                           → précision fake 99.79% (cf last_training_result.json)
+    #   CSV odds réels:         "le favori a-t-il gagné?"
+    # La cible est maintenant le RÉSULTAT réel du match: target_home_win ∈ {0,1},
+    # les matchs nuls (draw) sont exclus du training. Le pick n'intervient plus
+    # jamais dans le label.
+    def _outcome_of(row):
+        a = str(row.get("actual_result") or "").strip().lower()
+        if a in ("home", "away", "draw"):
+            return a
+        hs, as_ = row.get("home_score"), row.get("away_score")
+        try:
+            hs = int(hs) if hs is not None and not pd.isna(hs) else None
+            as_ = int(as_) if as_ is not None and not pd.isna(as_) else None
+        except (TypeError, ValueError):
+            return None
+        if hs is None or as_ is None:
+            return None
+        return "home" if hs > as_ else "away" if as_ > hs else "draw"
+
+    outcomes = df.apply(_outcome_of, axis=1)
+    df["target_home_win"] = [1.0 if o == "home" else 0.0 if o == "away" else np.nan for o in outcomes]
+
+    # Neutraliser les faux picks: seul Source 1 (predictions) contient de vrais
+    # picks pré-match. Sources 2/3 avaient un pick inventé post-hoc.
+    if "_source" in df.columns:
+        fake_pick_mask = df["_source"].notna()
+        df.loc[fake_pick_mask, "predicted_result"] = None
+        # astype(object) évite le FutureWarning pandas (NaN dans une colonne bool)
+        df["result_match"] = df["result_match"].astype("object")
+        df.loc[fake_pick_mask, "result_match"] = np.nan
+
+    # Déduplication fixture (priorité: predictions > matches > CSV — ordre de all_data)
+    before_dedup = len(df)
+    seen_fixtures = set()
+    keep_idx = []
+    for idx, row in df.iterrows():
+        key = (
+            str(row.get("sport", "")).lower(),
+            str(row.get("home_team", "")).strip().lower(),
+            str(row.get("away_team", "")).strip().lower(),
+            str(row.get("match_date", "")),
+        )
+        if key in seen_fixtures:
+            continue
+        seen_fixtures.add(key)
+        keep_idx.append(idx)
+    df = df.loc[keep_idx].copy()
+    if before_dedup - len(df) > 0:
+        print(f"   🧹 Dédup fixtures: {before_dedup - len(df)} doublons retirés")
+
+    # Exclure draws + lignes sans résultat vérifiable
+    n_draw = int((outcomes.loc[df.index] == "draw").sum()) if len(df) else 0
+    df = df[df["target_home_win"].notna()].copy()
+    n_dropped_no_outcome = before_dedup - n_draw - len(df)
+    print(f"   🎯 Cible home_win: {len(df)} échantillons décidés "
+          f"({n_draw} draws exclus, {max(n_dropped_no_outcome, 0)} sans résultat)")
+
     # Filtrer les lignes avec des odds valides
     df = df.dropna(subset=["odds_home", "odds_away"])
 
@@ -412,12 +482,11 @@ def load_training_data(sb: Client, sport: Optional[str] = None, min_samples: int
 
     print(f"   ✅ {len(df)} prédictions chargées (anti-leakage appliqué)")
 
-    # Stats par sport
+    # Stats par sport (taux de victoire domicile — la vraie distribution de la cible)
     for s in df["sport"].unique():
         sub = df[df["sport"] == s]
-        wins = sub["result_match"].sum()
-        wr = wins / len(sub) * 100 if len(sub) > 0 else 0
-        print(f"      {s}: {len(sub)} échantillons ({wr:.1f}% favori win rate)")
+        home_rate = sub["target_home_win"].mean() * 100 if len(sub) > 0 else 0
+        print(f"      {s}: {len(sub)} échantillons ({home_rate:.1f}% victoires domicile)")
 
     return df
 
@@ -772,22 +841,195 @@ def engineer_features(df: pd.DataFrame, enrichment=None) -> pd.DataFrame:
 
     return df
 
+# ── Liste blanche des features (v3) ─────────────────────────────
+# 1. Calculables AVANT le match (anti-leakage: pas de xG post-match, pas
+#    de home_score/away_score, pas de pred_*).
+# 2. Reproductibles À L'IDENTIQUE en production TypeScript (scoreWithXGBoost).
+#    Exclusions volontaires:
+#    - league_* / league_rare : dummies jamais calculées en prod → routing faux
+#    - day_of_week / month / is_weekend : date absente du feature vector prod
+#    - xg_home/xg_away/xg_diff/xg_total : xG RÉEL du match (post-match) = fuite
+#      pour les rows Source 2, et indisponible en prod
+#    - estimated_odds_flag : marqueur de source de données, absent en prod
+#    - overround : redondant avec prob_* et valeur différente en prod
+#    - clv_*, tactical_*, referee_*, match_tension : requièrent l'enrichissement
+#      (actuellement vide) et ne sont pas calculés en prod
+PROD_COMPUTABLE_FEATURES = [
+    "prob_home", "prob_away", "prob_draw",
+    "odds_ratio", "log_odds_ratio", "is_home_favorite", "favorite_strength",
+    "draw_signal", "heavy_favorite", "underdog_match",
+    "confidence_numeric", "odds_confidence", "favorite_confidence",
+    "is_football", "is_basketball", "is_hockey", "is_baseball", "is_tennis",
+    "weather_impact", "weather_risk",
+    "fatigue_diff", "fatigue_home", "fatigue_away",
+    "record_home_pct", "record_away_pct", "record_diff",
+]
+
 def get_feature_columns(df: pd.DataFrame) -> list:
-    """Retourne la liste des colonnes features (exclut target et métadonnées)."""
-    exclude_cols = {
-        "id", "sport", "home_team", "away_team", "league", "date", "match_date",
-        "predicted_result", "predicted_goals", "confidence",
-        "result_match", "actual_result", "home_score", "away_score",
-        "home_xg", "away_xg", "winner", "status", "total_goals", "_source",
-        "_estimated_odds", "checked_at", "created_at", "updated_at",
-        # Anti-leakage: features dérivées du résultat (pas disponibles avant le match)
-        "pred_home", "pred_away", "pred_draw", "pred_matches_favorite",
-    }
-    return [c for c in df.columns if c not in exclude_cols and df[c].dtype in [np.float64, np.int64, float, int, np.float32, np.int32, bool]]
+    """Features de la liste blanche présentes dans le DataFrame (train == prod)."""
+    return [c for c in PROD_COMPUTABLE_FEATURES if c in df.columns]
 
 # ============================================================
 # MODEL TRAINING
 # ============================================================
+
+# ── Helpers v3: export arbres + Platt holdout ──────────────────
+
+def _build_tree_from_df(nodes_df: pd.DataFrame, fmap: dict, node_id: int) -> dict:
+    """Construit récursivement l'arbre compact depuis trees_to_dataframe
+    (schéma XGBoost 2.x: colonnes Tree/Node/ID/Feature/Split/Yes/No/Missing/Gain;
+     valeur de feuille stockée dans Gain, Feature=='Leaf').
+    ⚠️ Les seuils/feuilles sont des float32 impressionés à 9 chiffres — l'erreur
+    (< ulp/2) est récupérée par le double-cast float32 côté replay."""
+    row = nodes_df[nodes_df["Node"] == node_id].iloc[0]
+    if str(row["Feature"]) == "Leaf":
+        return {"v": float(row["Gain"])}  # 2.1.x: valeur de feuille dans Gain
+    def child_id(col):
+        # colonnes Yes/No/Missing contiennent les id "tree-node" des enfants
+        ref = row[col]
+        return int(str(ref).split("-")[1])
+    return {
+        "f": fmap.get(str(row["Feature"]), -1),
+        "t": float(row["Split"]),
+        "y": _build_tree_from_df(nodes_df, fmap, child_id("Yes")),
+        "n": _build_tree_from_df(nodes_df, fmap, child_id("No")),
+        "m": _build_tree_from_df(nodes_df, fmap, child_id("Missing")),
+    }
+
+
+def _replay_margin(node: dict, x: list) -> float:
+    """Rejoue un arbre compact sur une ligne de features (par index).
+    ⚠️ XGBoost compare les splits en FLOAT32: la valeur est castée en float32
+    avant la comparaison (sinon les valeurs pile au seuil divergent)."""
+    if "v" in node:
+        return node["v"]
+    v = x[node["f"]] if 0 <= node["f"] < len(x) else None
+    if v is None or (isinstance(v, float) and math.isnan(v)):
+        return _replay_margin(node["m"], x)
+    # Double-cast float32: valeur ET seuil — XGBoost compare en float32.
+    # Le seuil JSON (9 chiffres) redevient exactement le float32 d'origine.
+    v32 = float(np.float32(v))
+    t32 = float(np.float32(node["t"]))
+    return _replay_margin(node["y"] if v32 < t32 else node["n"], x)
+
+
+def export_tree_dump(model, X_check, y_check) -> Optional[dict]:
+    """
+    Exporte les arbres XGBoost en JSON compact pour replay TypeScript,
+    avec AUTO-VÉRIFICATION: le replay Python du dump doit reproduire
+    predict_proba à 1e-4 près. Sinon l'export est annulé (prod = heuristiques).
+    """
+    try:
+        booster = model.get_booster()
+        feature_names = list(booster.feature_names or [])
+        if not feature_names:
+            print("      ⚠️ Pas de feature_names sur le booster — dump ignoré")
+            return None
+        fmap = {name: i for i, name in enumerate(feature_names)}
+        # ⚠️ trees_to_dataframe() (float32 exacts) au lieu de get_dump(json)
+        # dont les seuils arrondis à 9 chiffres font flipper les branches
+        # aux frontières de split (le seuil EST souvent une valeur de donnée).
+        tree_df = booster.trees_to_dataframe()
+        trees = [_build_tree_from_df(g, fmap, 0) for _, g in tree_df.groupby("Tree")]
+        if not trees:
+            return None
+
+        # ── Auto-vérification sur un échantillon du holdout ──
+        n_check = min(200, len(X_check))
+        Xv = X_check.head(n_check)
+        proba_ref = model.predict_proba(Xv)[:, 1]
+
+        # base_score → offset de marge (la convention varie selon la version XGBoost)
+        base_score = 0.5
+        try:
+            cfg = json.loads(booster.save_config())
+            base_score = float(cfg["learner"]["learner_model_param"]["base_score"])
+        except Exception:
+            pass
+        logit_base = math.log(max(base_score, 1e-6) / max(1 - base_score, 1e-6))
+
+        best = None
+        for offset in (0.0, logit_base):
+            max_diff = 0.0
+            for i in range(n_check):
+                xi = [float(v) for v in Xv.iloc[i].values]
+                margin = sum(_replay_margin(t, xi) for t in trees) + offset
+                p = 1.0 / (1.0 + math.exp(-max(min(margin, 30.0), -30.0)))
+                max_diff = max(max_diff, abs(p - float(proba_ref[i])))
+            print(f"      [dump-check] offset={offset:.6f} → diff max {max_diff:.3e}")
+            if best is None or max_diff < best[1]:
+                best = (offset, max_diff)
+        offset, max_diff = best
+
+        if max_diff > 1e-4:
+            print(f"      ⚠️ Replay dump ≠ predict_proba (diff max {max_diff:.2e}) — export arbres annulé")
+            return None
+
+        print(f"      🌳 Arbres exportés: {len(trees)} | offset marge {offset:.4f} | "
+              f"diff max replay {max_diff:.2e} ✅")
+        return {
+            "format": "xgb_dump_v1",
+            "features": feature_names,
+            "margin_offset": round(float(offset), 6),
+            "n_trees": len(trees),
+            "missing_policy": "zero",  # feature absente en prod = 0 (comme fillna(0) au training)
+            "trees": trees,
+        }
+    except Exception as e:
+        import traceback
+        print(f"      ⚠️ Export arbres échoué: {e}")
+        print(traceback.format_exc()[:300])
+        return None
+
+
+def _fit_platt_on_holdout(margins: np.ndarray, y_true: np.ndarray) -> Optional[dict]:
+    """
+    Platt scaling HONNÊTE: fit exclusivement sur le holdout temporel
+    (jamais in-sample comme avant). p_cal = sigmoid(A * margin + B).
+    Exporté seulement si ça améliore réellement le Brier du holdout.
+    """
+    try:
+        from scipy.optimize import minimize
+    except ImportError:
+        return None
+    y = np.asarray(y_true, dtype=float)
+    m = np.asarray(margins, dtype=float)
+    if len(y) < 100 or len(np.unique(y)) < 2:
+        return None
+    p_orig = 1.0 / (1.0 + np.exp(-np.clip(m, -30, 30)))
+    brier_orig = float(np.mean((p_orig - y) ** 2))
+
+    def nll(params):
+        a, b = params
+        p = 1.0 / (1.0 + np.exp(-np.clip(a * m + b, -30, 30)))
+        p = np.clip(p, 1e-7, 1 - 1e-7)
+        return -np.mean(y * np.log(p) + (1 - y) * np.log(1 - p))
+
+    res = minimize(nll, x0=[1.0, 0.0], method="Nelder-Mead",
+                   options={"maxiter": 500, "xatol": 1e-6, "fatol": 1e-8})
+    if not res.success or not np.all(np.isfinite(res.x)):
+        return None
+    a, b = float(res.x[0]), float(res.x[1])
+
+    # Calibration identitaire → rien à exporter
+    if abs(a - 1.0) < 0.02 and abs(b) < 0.02:
+        return {"a": 1.0, "b": 0.0, "applied": False,
+                "brier_original": round(brier_orig, 6),
+                "brier_calibrated": round(brier_orig, 6)}
+
+    p_cal = 1.0 / (1.0 + np.exp(-np.clip(a * m + b, -30, 30)))
+    brier_cal = float(np.mean((p_cal - y) ** 2))
+    if brier_cal >= brier_orig:
+        return {"a": 1.0, "b": 0.0, "applied": False,
+                "brier_original": round(brier_orig, 6),
+                "brier_calibrated": round(brier_cal, 6),
+                "reason": "no_improvement_on_holdout"}
+
+    return {"a": round(a, 6), "b": round(b, 6), "input": "margin", "applied": True,
+            "brier_original": round(brier_orig, 6),
+            "brier_calibrated": round(brier_cal, 6),
+            "improvement": round(brier_orig - brier_cal, 6)}
+
 
 def train_sport_model(
     df: pd.DataFrame,
@@ -804,12 +1046,14 @@ def train_sport_model(
     from sklearn.model_selection import cross_val_score, StratifiedKFold
 
     sport_df = df[df["sport"] == sport].copy()
+    # Double sécurité: la cible doit être définie (les draws sont déjà filtrés globalement)
+    sport_df = sport_df[sport_df["target_home_win"].notna()].copy()
 
     if len(sport_df) < min_samples:
         print(f"   ⏭️  {sport}: {len(sport_df)} échantillons (minimum: {min_samples}) — skip")
         return None
 
-    print(f"\n🏋️ Entraînement {sport.upper()} ({len(sport_df)} échantillons)...")
+    print(f"\n🏋️ Entraînement {sport.upper()} ({len(sport_df)} échantillons) [cible: victoire domicile]")
 
     # Features
     feature_cols = get_feature_columns(sport_df)
@@ -817,17 +1061,33 @@ def train_sport_model(
         print(f"   ⚠️ {sport}: Aucune feature disponible")
         return None
 
-    X = sport_df[feature_cols].fillna(0)
-    y = sport_df["result_match"].fillna(False).astype(int)
+    # ── SPLIT TEMPOREL v3 (anti-leakage) ──
+    # Tri chronologique: holdout = les 20% de matchs les PLUS RÉCENTS, jamais vus
+    # au training. Remplace l'ancien StratifiedKFold(shuffle=True) qui mélangeait
+    # des matchs de saisons différentes dans chaque fold (leakage temporel).
+    sport_df = sport_df.sort_values("match_date", kind="mergesort").reset_index(drop=True)
+    n_holdout = max(30, int(len(sport_df) * 0.2))
+    if len(sport_df) < 200:
+        n_holdout = max(20, int(len(sport_df) * 0.2))
+    split_idx = len(sport_df) - n_holdout
 
-    # Vérifier la distribution
-    pos_rate = y.mean()
-    print(f"   Distribution: {y.sum()}/{len(y)} wins ({pos_rate*100:.1f}%)")
-    print(f"   Features: {len(feature_cols)}")
+    X = sport_df[feature_cols].fillna(0)
+    y = sport_df["target_home_win"].astype(int)
+    X_train, y_train = X.iloc[:split_idx], y.iloc[:split_idx]
+    X_hold, y_hold = X.iloc[split_idx:], y.iloc[split_idx:]
+    y_train_arr = y_train.values
+    y_hold_arr = y_hold.values
+
+    # Vérifier la distribution (train uniquement)
+    pos_rate = y_train_arr.mean()
+    first_hold_date = sport_df["match_date"].iloc[split_idx]
+    hold_date_str = first_hold_date.date().isoformat() if pd.notna(first_hold_date) else "?"
+    print(f"   Distribution train: {int(y_train_arr.sum())}/{len(y_train_arr)} victoires home ({pos_rate*100:.1f}%)")
+    print(f"   Features: {len(feature_cols)} | Split temporel: {len(X_train)} train / {len(X_hold)} holdout (holdout ≥ {hold_date_str})")
 
     # Anti-modèle-inutile: si toutes les features sont constantes (std≈0), skip
     # Évite de pousser un modèle à 0 feature importance en production
-    feature_std = X.std()
+    feature_std = X_train.std()
     n_informative = int((feature_std > 0.01).sum())
     if n_informative < 3:
         print(f"   ⚠️ {sport}: seulement {n_informative} feature(s) avec variance > 0.01")
@@ -843,28 +1103,31 @@ def train_sport_model(
             print(f"      - {col}")
         return None
 
-    # Cross-validation
-    cv = StratifiedKFold(n_splits=min(CV_FOLDS, min(5, len(sport_df) // 10)), shuffle=True, random_state=42)
-    n_folds = cv.get_n_splits(X, y)
-
+    # Cross-validation TEMPORELLE (walk-forward, sur la période train uniquement)
+    from sklearn.model_selection import TimeSeriesSplit
+    n_folds = min(CV_FOLDS, max(2, len(X_train) // 100))
     model = XGBClassifier(**XGB_DEFAULT_PARAMS)
 
-    # CV scores
-    cv_scores = cross_val_score(model, X, y, cv=cv, scoring="accuracy")
-    mean_cv = cv_scores.mean()
-    std_cv = cv_scores.std()
+    cv_scores = []
+    if len(X_train) >= (n_folds + 1) * 50:
+        tscv = TimeSeriesSplit(n_splits=n_folds)
+        cv_scores = cross_val_score(model, X_train, y_train_arr, cv=tscv, scoring="accuracy")
+    mean_cv = float(np.mean(cv_scores)) if len(cv_scores) else 0.0
+    std_cv = float(np.std(cv_scores)) if len(cv_scores) else 0.0
 
-    print(f"   CV Accuracy: {mean_cv*100:.1f}% ± {std_cv*100:.1f}% (folds: {[f'{s*100:.1f}%' for s in cv_scores]})")
+    if len(cv_scores):
+        print(f"   CV walk-forward Accuracy: {mean_cv*100:.1f}% ± {std_cv*100:.1f}% (folds: {[f'{s*100:.1f}%' for s in cv_scores]})")
+    else:
+        print(f"   ⚠️ CV sautée (trop peu de données pour un split temporel fiable)")
 
-    # Random baseline
-    n_outcomes = SPORT_OUTCOMES.get(sport, 2)
-    random_baseline = 1.0 / n_outcomes
+    # Baseline honnête: classe majoritaire du train (jamais 1/3 théorique)
+    random_baseline = float(max(pos_rate, 1 - pos_rate))
 
     edge = (mean_cv - random_baseline) * 100
-    print(f"   Random baseline: {random_baseline*100:.1f}% | Edge: +{edge:.1f}pp")
+    print(f"   Baseline (classe majoritaire): {random_baseline*100:.1f}% | Edge CV: {edge:+.1f}pp")
 
-    # Entraîner sur tout le dataset
-    model.fit(X, y)
+    # Entraîner sur la période train UNIQUEMENT (le holdout reste vierge)
+    model.fit(X_train, y_train_arr)
 
     # Feature importances
     importance = model.feature_importances_
@@ -874,21 +1137,26 @@ def train_sport_model(
     for i, (fname, fimp) in enumerate(feature_imp[:10]):
         print(f"      {i+1:2d}. {fname}: {fimp:.4f}")
 
-    # Trouver le seuil de confiance optimal
-    # Test différents seuils de proba prédite pour maximiser la précision
-    y_proba = model.predict_proba(X)[:, 1]
+    # ── Probas HOLDOUT (jamais vues au training) ──
+    y_proba = model.predict_proba(X_hold)[:, 1]
+    holdout_acc = float(((y_proba > 0.5).astype(int) == y_hold_arr).mean())
+    holdout_brier = float(np.mean((y_proba - y_hold_arr) ** 2))
+    print(f"   📊 Holdout ({len(y_hold_arr)} matchs): accuracy {holdout_acc*100:.1f}% | Brier {holdout_brier:.4f}")
 
+    # Trouver le seuil de confiance optimal — sur HOLDOUT (honnête,
+    # remplace l'ancienne optimisation in-sample qui gonflait la précision)
     best_threshold = 0.5
     best_precision = 0
+    min_coverage = max(10, int(len(y_hold_arr) * 0.02))
     for t in np.arange(0.40, 0.80, 0.02):
         preds = (y_proba >= t).astype(int)
-        if preds.sum() > 0:
-            precision = (preds * y).sum() / preds.sum()
+        if preds.sum() >= min_coverage:
+            precision = (preds * y_hold_arr).sum() / preds.sum()
             if precision > best_precision:
                 best_precision = precision
                 best_threshold = t
 
-    print(f"   🎯 Meilleur seuil confiance: {best_threshold:.2f} (précision: {best_precision*100:.1f}%)")
+    print(f"   🎯 Seuil confiance (holdout): {best_threshold:.2f} (précision: {best_precision*100:.1f}%, couverture ≥ {min_coverage})")
 
     # ═══════════════════════════════════════════════════════════════
     # AXE OPTIMISATION: NATIVE XGBOOST CUSTOM OBJECTIVE
@@ -906,7 +1174,7 @@ def train_sport_model(
     # Effet: XGBoost natively évite les prédictions extrêmes mal fondées.
     # Une erreur à 0.85 coûte ~3x plus cher qu'une erreur à 0.55.
     custom_loss_info = None
-    if len(y) >= 100:
+    if len(y_train_arr) >= 100:
         try:
             from xgboost import XGBClassifier as XGBC, DMatrix
             print(f"   ⚖️ Native Custom Objective (asymmetric confidence penalty)...")
@@ -974,28 +1242,30 @@ def train_sport_model(
             custom_params.pop("objective", None)
             custom_params["eval_metric"] = "logloss"  # métrique d'affichage
             custom_model = XGBC(**custom_params, objective=asymmetric_logloss_obj)
-            custom_model.fit(X, y, eval_set=[(X, y)], verbose=False)
-            y_proba_custom = custom_model.predict_proba(X)[:, 1]
+            custom_model.fit(X_train, y_train_arr, eval_set=[(X_train, y_train_arr)], verbose=False)
+
+            # Comparaison sur HOLDOUT (honnête — remplace l'ancienne comparaison in-sample)
+            y_proba_custom = custom_model.predict_proba(X_hold)[:, 1]
 
             # --- Comparer les distributions de proba ---
             orig_mean_conf = float(np.mean(np.where(y_proba > 0.5, y_proba, 1 - y_proba)))
             custom_mean_conf = float(np.mean(np.where(y_proba_custom > 0.5, y_proba_custom, 1 - y_proba_custom)))
 
-            # Faux confiant: proba > 0.65 mais classe réelle 0
-            false_confident_orig = int(((y_proba > 0.65) & (y == 0)).sum())
-            false_confident_custom = int(((y_proba_custom > 0.65) & (y == 0)).sum())
+            # Faux confiant: proba > 0.65 mais classe réelle 0 (holdout)
+            false_confident_orig = int(((y_proba > 0.65) & (y_hold_arr == 0)).sum())
+            false_confident_custom = int(((y_proba_custom > 0.65) & (y_hold_arr == 0)).sum())
 
-            # Faux confiant extreme: proba > 0.80 mais classe 0
-            false_confident_ext_orig = int(((y_proba > 0.80) & (y == 0)).sum())
-            false_confident_ext_custom = int(((y_proba_custom > 0.80) & (y == 0)).sum())
+            # Faux confiant extreme: proba > 0.80 mais classe 0 (holdout)
+            false_confident_ext_orig = int(((y_proba > 0.80) & (y_hold_arr == 0)).sum())
+            false_confident_ext_custom = int(((y_proba_custom > 0.80) & (y_hold_arr == 0)).sum())
 
-            # Brier scores (calibration)
-            brier_orig = float(np.mean((y_proba - y) ** 2))
-            brier_custom = float(np.mean((y_proba_custom - y) ** 2))
+            # Brier scores (holdout)
+            brier_orig = float(np.mean((y_proba - y_hold_arr) ** 2))
+            brier_custom = float(np.mean((y_proba_custom - y_hold_arr) ** 2))
 
-            # Accuracy globale (la custom loss peut coûter un peu d'accuracy)
-            acc_orig = float(((y_proba > 0.5).astype(int) == y).mean())
-            acc_custom = float(((y_proba_custom > 0.5).astype(int) == y).mean())
+            # Accuracy globale (holdout)
+            acc_orig = float(((y_proba > 0.5).astype(int) == y_hold_arr).mean())
+            acc_custom = float(((y_proba_custom > 0.5).astype(int) == y_hold_arr).mean())
 
             # Décider si le custom est adopté:
             # - réduit les fausses certitudes (sévérité extrême prioritaire)
@@ -1033,7 +1303,7 @@ def train_sport_model(
                 # Le modèle custom remplace l'original
                 model = custom_model
                 y_proba = y_proba_custom
-                print(f"      ✅ Custom Objective ADOPTÉ (native XGBoost)")
+                print(f"      ✅ Custom Objective ADOPTÉ (validé sur holdout)")
                 print(f"         Fausses certitudes (65%+): {false_confident_orig} → {false_confident_custom} "
                       f"(-{custom_loss_info['false_confident_reduction_pct']}%)")
                 print(f"         Fausses certitudes (80%+): {false_confident_ext_orig} → {false_confident_ext_custom} "
@@ -1061,12 +1331,13 @@ def train_sport_model(
     # Slippage moyen constaté: 2-5% sur les marchés liquides (Pinnacle)
     # On simule 3 scénarios: optimiste (1%), réaliste (3%), pessimiste (5%)
     backtesting_info = None
-    if "odds_home" in sport_df.columns and len(y) >= 50:
+    bt_df = sport_df.iloc[split_idx:].reset_index(drop=True)
+    if "odds_home" in bt_df.columns and len(y_hold_arr) >= 50:
         try:
-            print(f"   📉 Backtesting (slippage + CLV + drawdown + buckets)...")
+            print(f"   📉 Backtesting (holdout uniquement — slippage + CLV + drawdown + buckets)...", flush=True)
 
-            odds_h = sport_df["odds_home"].fillna(2.0).values
-            odds_a = sport_df["odds_away"].fillna(2.0).values
+            odds_h = bt_df["odds_home"].fillna(2.0).values
+            odds_a = bt_df["odds_away"].fillna(2.0).values
 
             # Pré-charger les CLV par équipe (une seule fois hors loop)
             clv_by_team = enrichment.get("clv_by_team", {}) if enrichment else {}
@@ -1114,7 +1385,7 @@ def train_sport_model(
                 clv_aligned_count = 0   # CLV aligné avec notre prédiction
 
                 # Parier uniquement quand le modèle est confiant + value bet
-                for i in range(len(y)):
+                for i in range(len(y_hold_arr)):
                     proba = y_proba[i]
                     if proba < best_threshold:
                         continue  # Skip les prédictions non confiantes
@@ -1122,7 +1393,7 @@ def train_sport_model(
                     # Déterminer la cote et le côté du pari
                     is_home_fav = odds_h[i] < odds_a[i]
                     base_odds = odds_h[i] if is_home_fav else odds_a[i]
-                    predicted_correct = bool(y.iloc[i] if hasattr(y, 'iloc') else y[i])
+                    predicted_correct = bool(y_hold_arr[i])
 
                     # Edge minimum requis pour parier
                     implied_prob = 1.0 / base_odds
@@ -1175,8 +1446,8 @@ def train_sport_model(
                     # ── CLV tracking (si disponible dans l'enrichment) ──
                     # Le CLV valide: si notre proba est du côté du steam move → edge confirmé
                     if clv_by_team:
-                        home_team = str(sport_df.iloc[i].get("home_team", ""))
-                        away_team = str(sport_df.iloc[i].get("away_team", ""))
+                        home_team = str(bt_df.iloc[i].get("home_team", ""))
+                        away_team = str(bt_df.iloc[i].get("away_team", ""))
                         # CLV du côté parié: si on parie home, on regarde le CLV de home_team
                         bet_team = home_team if is_home_fav else away_team
                         if bet_team in clv_by_team:
@@ -1267,63 +1538,33 @@ def train_sport_model(
             print(f"      ⚠️ Backtesting échoué: {e}")
             print(traceback.format_exc()[:500])
 
-    # ── PILIER 4: CALIBRATION (Platt Scaling) ──
+    # ── PILIER 4: CALIBRATION (Platt sur holdout — jamais in-sample) ──
+    # Ancien bug: CalibratedClassifierCV(cv='prefit') était fitté sur le TRAIN
+    # et évalué sur le train → coefficients A/B biaisés exportés en prod.
+    # v3: fit manuel sur la marge brute du holdout temporel uniquement.
     calibration_info = None
-    if len(y) >= 100:
+    platt_info = None
+    if len(y_hold_arr) >= 100:
         try:
-            from sklearn.calibration import CalibratedClassifierCV, calibration_curve
-
-            print(f"   📐 Calibration (Platt Scaling)...")
-            calibrated = CalibratedClassifierCV(model, method='sigmoid', cv='prefit')
-            calibrated.fit(X, y)
-            cal_proba = calibrated.predict_proba(X)[:, 1]
-
-            brier_orig = np.mean((y_proba - y) ** 2)
-            brier_cal = np.mean((cal_proba - y) ** 2)
-
-            frac_pos, mean_pred = calibration_curve(y, cal_proba, n_bins=10, strategy='uniform')
-
-            # Extract Platt scaling coefficients (A, B) for TypeScript runtime
-            # P_calibrated = 1 / (1 + exp(-(A * score + B)))
-            platt_a = 0.0
-            platt_b = 0.0
-            try:
-                # sklearn stores as calibrated.calibrated_classifiers_[0].a_, b_
-                platt_a = float(calibrated.calibrated_classifiers_[0].a_[0])
-                platt_b = float(calibrated.calibrated_classifiers_[0].b_[0])
-                # V-MED-10 FIX: Validate coefficients are finite
-                if not (np.isfinite(platt_a) and np.isfinite(platt_b)):
-                    print("      WARNING: Non-finite Platt coefficients, using fallback")
-                    platt_a, platt_b = 0.0, 0.0
-            except (AttributeError, IndexError):
-                # Fallback: extract from calibration curve slope
-                if len(mean_pred) >= 2:
-                    # Linear regression: actual = a * predicted + b
-                    x = np.array(mean_pred)
-                    y_arr = np.array(frac_pos)
-                    if len(x) > 0 and np.std(x) > 0:
-                        slope = np.corrcoef(x, y_arr)[0, 1] * (np.std(y_arr) / np.std(x))
-                        platt_a = float(slope)
-                        platt_b = float(np.mean(y_arr) - platt_a * np.mean(x))
-                        # V-MED-10 FIX: Validate fallback coefficients
-                        if not (np.isfinite(platt_a) and np.isfinite(platt_b)):
-                            platt_a, platt_b = 0.0, 0.0
-
-            calibration_info = {
-                "method": "platt_scaling",
-                "brier_score_original": round(float(brier_orig), 6),
-                "brier_score_calibrated": round(float(brier_cal), 6),
-                "improvement": round(float(brier_orig - brier_cal), 6),
-                "platt_a": round(float(platt_a), 6),
-                "platt_b": round(float(platt_b), 6),
-                "reliability_bins": {
-                    "predicted": [round(float(p), 4) for p in mean_pred.tolist()],
-                    "actual": [round(float(f), 4) for f in frac_pos.tolist()],
-                },
-            }
-            print(f"      Platt coefficients: A={platt_a:.4f}, B={platt_b:.4f}")
-            print(f"      Brier: {brier_orig:.4f} → {brier_cal:.4f} "
-                  f"({'✅ amélioré' if calibration_info['improvement'] > 0 else 'ℹ️ déjà calibré'})")
+            import xgboost as _xgb
+            booster = model.get_booster()
+            margins_hold = booster.predict(_xgb.DMatrix(X_hold), output_margin=True)
+            platt_info = _fit_platt_on_holdout(np.asarray(margins_hold, dtype=float), y_hold_arr)
+            if platt_info:
+                calibration_info = {
+                    "method": "platt_scaling_holdout_margin",
+                    "applied": bool(platt_info.get("applied")),
+                    "brier_score_original": platt_info["brier_original"],
+                    "brier_score_calibrated": platt_info["brier_calibrated"],
+                    "improvement": round(platt_info["brier_original"] - platt_info["brier_calibrated"], 6),
+                    "platt_a": platt_info["a"],
+                    "platt_b": platt_info["b"],
+                    "input": "margin",
+                    "note": "fit holdout temporel uniquement; appliqué sur la marge brute XGBoost en prod",
+                }
+                print(f"      Platt (holdout): A={platt_info['a']:.4f}, B={platt_info['b']:.4f}")
+                print(f"      Brier: {platt_info['brier_original']:.4f} → {platt_info['brier_calibrated']:.4f} "
+                      f"({'✅ appliqué' if platt_info.get('applied') else 'ℹ️ identité / pas d amélioration'})")
         except Exception as e:
             print(f"      ⚠️ Calibration échouée: {e}")
 
@@ -1445,14 +1686,14 @@ def train_sport_model(
             print(f"      ⚠️ Monte-Carlo échoué: {e}")
             print(traceback.format_exc()[:500])
 
-    # ── PILIER 5: PERFORMANCE PAR LIGUE (bankroll) ──
+    # ── PILIER 5: PERFORMANCE PAR LIGUE (bankroll, holdout uniquement) ──
     league_perf = {}
-    if "league" in sport_df.columns:
-        sport_leagues = sport_df["league"].value_counts()
-        for lg in sport_leagues[sport_leagues >= 15].index[:15]:
-            lg_mask = sport_df["league"] == lg
-            lg_y = y[lg_mask.values]
-            lg_proba = y_proba[lg_mask.values]
+    if "league" in bt_df.columns:
+        bt_leagues = bt_df["league"].value_counts()
+        for lg in bt_leagues[bt_leagues >= 15].index[:15]:
+            lg_mask = (bt_df["league"] == lg).values
+            lg_y = y_hold_arr[lg_mask]
+            lg_proba = y_proba[lg_mask]
             lg_preds = (lg_proba >= best_threshold).astype(int)
             lg_total = len(lg_y)
             lg_acc = (lg_preds == lg_y).sum() / lg_total if lg_total > 0 else 0
@@ -1474,15 +1715,24 @@ def train_sport_model(
 
     result = {
         "sport": sport,
+        "label": "home_win",
+        "label_semantics": "P(victoire domicile | match décidé, draws exclus)",
         "cv_accuracy": round(float(mean_cv), 4),
         "cv_std": round(float(std_cv), 4),
         "cv_scores": [round(float(s), 4) for s in cv_scores],
+        "cv_method": "timeseries_walk_forward_train_only" if len(cv_scores) else "skipped_insufficient_data",
+        "holdout_accuracy": round(float(holdout_acc), 4),
+        "holdout_brier": round(float(holdout_brier), 6),
+        "n_train": int(len(X_train)),
+        "n_holdout": int(len(X_hold)),
+        "temporal_split": True,
         "edge_vs_random": round(float(edge), 2),
-        "random_baseline": random_baseline,
+        "random_baseline": round(random_baseline, 4),
         "best_confidence_threshold": round(float(best_threshold), 2),
         "best_precision": round(float(best_precision), 4),
         "feature_importance": feature_importance_dict,
         "top_features": top_features,
+        "features": feature_cols,
         "samples": len(sport_df),
         "pos_rate": round(float(pos_rate), 4),
         "version": f"xgb-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
@@ -1492,6 +1742,8 @@ def train_sport_model(
     # Ajouter les piliers 4-5 + axes optimisation si disponibles
     if calibration_info:
         result["calibration"] = calibration_info
+    if platt_info:
+        result["platt"] = platt_info
     if league_perf:
         result["league_performance"] = league_perf
     if custom_loss_info:
@@ -1500,6 +1752,14 @@ def train_sport_model(
         result["backtesting"] = backtesting_info
     if monte_carlo_info:
         result["monte_carlo"] = monte_carlo_info
+
+    # ── Export arbres (replay fidèle en prod TS) ──
+    # Auto-vérifié: le replay du dump doit reproduire predict_proba sur le holdout.
+    # Si échec → pas de tree_dump → prod retombe sur les heuristiques (jamais
+    # l'ancienne moyenne pondérée directionnellement fausse).
+    tree_dump = export_tree_dump(model, X_hold, y_hold)
+    if tree_dump:
+        result["tree_dump"] = tree_dump
 
     return result
 
@@ -1705,15 +1965,23 @@ def train_ensemble(
 def export_to_supabase(sb: Client, results: dict, global_cv: float, total_samples: int):
     """
     Exporte les paramètres XGBoost dans la table ml_model.xgboost_params.
-    Met à jour aussi les seuils edge_threshold si XGBoost trouve mieux.
+    v3: inclut les arbres (replay TS), Platt holdout, métriques holdout,
+    liste blanche de features. Garde-fou taille: si le payload dépasse 6MB,
+    les dumps d'arbres les plus lourds sont retirés (prod → heuristiques).
     """
     xgboost_params = {
         "trained": True,
+        "scoring": "trees",
+        "training_version": 3,
+        "label": "home_win",
+        "label_semantics": "P(victoire domicile | match décidé, draws exclus)",
         "sports": {r["sport"]: {
             "cv_accuracy": r["cv_accuracy"],
+            "cv_method": r.get("cv_method"),
             "best_confidence_threshold": r["best_confidence_threshold"],
             "top_features": r["top_features"],
             "feature_importance": r["feature_importance"],
+            "features": r.get("features"),
             "samples": r["samples"],
             "edge_vs_random": r["edge_vs_random"],
             "version": r["version"],
@@ -1721,21 +1989,48 @@ def export_to_supabase(sb: Client, results: dict, global_cv: float, total_sample
             "custom_loss": r.get("custom_loss"),
             "backtesting": r.get("backtesting"),
             "calibration": r.get("calibration"),
+            "platt": r.get("platt"),
+            "tree_dump": r.get("tree_dump"),
+            "scoring": "trees" if r.get("tree_dump") else "none",
+            "holdout": {
+                "n_train": r.get("n_train"),
+                "n_holdout": r.get("n_holdout"),
+                "accuracy": r.get("holdout_accuracy"),
+                "brier": r.get("holdout_brier"),
+            },
+            "label": r.get("label"),
+            "label_semantics": r.get("label_semantics"),
             "league_performance": r.get("league_performance"),
             "ensemble": r.get("ensemble"),
         } for r in results.values() if r},
         "global_cv_accuracy": round(global_cv, 4),
         "total_samples": total_samples,
-        "best_edge_threshold": round(float(global_cv) - 0.33, 4),  # vs football 3-way baseline
         "training_timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    print(f"\n📤 Export vers Supabase ml_model.xgboost_params...")
+    # Garde-fou taille payload (row Supabase jsonb): < 6MB cible, 4MB plancher
+    payload = json.dumps(xgboost_params, cls=NumpyEncoder)
+    if len(payload) > 6 * 1024 * 1024:
+        print(f"   ⚠️ Payload {len(payload)/1e6:.1f}MB — réduction des dumps d'arbres les plus lourds")
+        sport_keys = sorted(
+            xgboost_params["sports"].keys(),
+            key=lambda k: -len(json.dumps(xgboost_params["sports"][k].get("tree_dump") or {}, cls=NumpyEncoder)),
+        )
+        for sk in sport_keys:
+            if len(payload) <= 4 * 1024 * 1024:
+                break
+            if xgboost_params["sports"][sk].get("tree_dump"):
+                xgboost_params["sports"][sk]["tree_dump"] = None
+                xgboost_params["sports"][sk]["scoring"] = "none"
+                print(f"      - arbres '{sk}' retirés (scoring → heuristiques)")
+                payload = json.dumps(xgboost_params, cls=NumpyEncoder)
+
+    print(f"\n📤 Export vers Supabase ml_model.xgboost_params (payload {len(payload)/1e6:.2f}MB)...")
 
     # Upsert dans ml_model
     update_data = {
         "id": "default_model",
-        "xgboost_params": json.dumps(xgboost_params, cls=NumpyEncoder),
+        "xgboost_params": payload,
         "version": f"xgb-{datetime.now(timezone.utc).strftime('%y%m%d')}",
         "samples_used": int(total_samples),
         "accuracy": int(round(global_cv * 100)),
@@ -1917,9 +2212,10 @@ def main():
         result = train_sport_model(df, sport, min_samples=args.min_samples, dry_run=args.dry_run, enrichment=enrichment)
         if result:
             # Phase 3: Try ensemble (XGBoost + LightGBM + CatBoost)
+            # v3: DÉSACTIVÉ par défaut (ENSEMBLE_ENABLED=False) — non rejouable côté prod TS
             sport_df = df[df["sport"] == sport].copy()
             ensemble_info = None
-            if not args.dry_run:
+            if ENSEMBLE_ENABLED and not args.dry_run:
                 try:
                     ensemble_info = train_ensemble(
                         sport_df=sport_df,

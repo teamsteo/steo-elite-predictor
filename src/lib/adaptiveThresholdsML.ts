@@ -810,6 +810,15 @@ export async function calculateMLAdjustment(
       // Sport-specific flags
       xgbFeatures[`is_${sport}`] = 1;
       xgbFeatures.draw_signal = sport === 'football' ? (features.drawProbability || 0) : 0;
+
+      // v3 — features dérivées alignées sur le training (list blanche train_xgboost.py)
+      // heavy_favorite: train = (odds < 1.4 du côté favori) ⇔ proba implicite > 1/1.4 ≈ 0.714
+      const heavyFavorite =
+        (isHomeFavorite === 1 && homeProb > 1 / 1.4) || (isHomeFavorite === 0 && awayProb > 1 / 1.4) ? 1 : 0;
+      xgbFeatures.heavy_favorite = heavyFavorite;
+      // underdog_match: train = (odds > 3.0 d'un côté) ⇔ proba implicite < 1/3
+      xgbFeatures.underdog_match = homeProb < 1 / 3 || awayProb < 1 / 3 ? 1 : 0;
+      // draw_signal / is_${sport} déjà au-dessus; overround volontairement exclu de la liste blanche
       
       // Edge as feature
       xgbFeatures.edge = features.edge || 0;

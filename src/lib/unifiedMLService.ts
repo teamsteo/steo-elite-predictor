@@ -69,7 +69,43 @@ export interface XGBoostParams {
   sports: Record<string, XGBoostSportParams>;
   global_cv_accuracy: number;
   total_samples: number;
-  best_edge_threshold: number;
+  best_edge_threshold?: number;
+  /** v3: méthode de scoring en prod — 'trees' = replay des arbres exportés */
+  scoring?: 'trees' | 'none';
+  training_version?: number;
+  label?: string;
+  label_semantics?: string;
+}
+
+/** Noeud d'arbre XGBoost compact (export ml/train_xgboost.py, format xgb_dump_v1) */
+export interface XGBTreeNode {
+  /** feuille: valeur de la marge */
+  v?: number;
+  /** noeud interne: index de la feature dans tree_dump.features */
+  f?: number;
+  /** seuil de split: go left si feature < t */
+  t?: number;
+  y?: XGBTreeNode;
+  n?: XGBTreeNode;
+  m?: XGBTreeNode;
+}
+
+export interface XGBTreeDump {
+  format: 'xgb_dump_v1';
+  features: string[];
+  margin_offset: number;
+  n_trees: number;
+  /** politique feature absente en prod: 'zero' = 0 (comme fillna(0) au training) */
+  missing_policy: 'zero';
+  trees: XGBTreeNode[];
+}
+
+export interface XGBPlattParams {
+  a: number;
+  b: number;
+  /** 'margin' = appliqué sur la marge brute (somme des feuilles) avant sigmoid */
+  input: 'margin';
+  applied: boolean;
 }
 
 export interface XGBoostSportParams {
@@ -80,6 +116,14 @@ export interface XGBoostSportParams {
   samples: number;
   version: string;
   trained_at: string;
+  /** v3 — replay fidèle du modèle entraîné */
+  scoring?: 'trees' | 'none';
+  tree_dump?: XGBTreeDump | null;
+  platt?: XGBPlattParams | null;
+  features?: string[];
+  label?: string;
+  label_semantics?: string;
+  holdout?: { n_train?: number; n_holdout?: number; accuracy?: number; brier?: number };
 }
 
 export interface TrainingResult {
@@ -962,6 +1006,18 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
     }
     
     // Mettre à jour le modèle
+    // GARDE-FOU v3: si loadMLModel a retourné le modèle par défaut (échec
+    // transient Supabase au chargement), ne JAMAIS sauvegarder — on écraserait
+    // xgboost_params (dont les arbres exportés) avec le defaultModel vide.
+    const modelLooksLikeDefault = !model.samples_used && !model.xgboost_params?.trained;
+    if (modelLooksLikeDefault) {
+      result.errors.push(
+        'UnifiedML: modèle source = défaut (ml_model illisible ?) — sauvegarde annulée pour protéger xgboost_params'
+      );
+      console.error('🛑 UnifiedML: sauvegarde annulée (modèle source = fallback défaut, possible échec Supabase au chargement)');
+      return result;
+    }
+
     const updatedModel: MLModel = {
       ...model,
       version: incrementVersion(model.version),
@@ -1006,6 +1062,49 @@ function incrementVersion(version: string): string {
  *
  * Retourne un score 0-1 et un ajustement de confiance basé sur le modèle.
  */
+/**
+ * scoreWithXGBoost — v3: REPLAY FIDÈLE des arbres XGBoost entraînés.
+ * ════════════════════════════════════════════════════════════════════
+ * Ancienne implémentation (RETIREE): moyenne pondérée des feature
+ * importances. Problèmes fatals:
+ *   1. Les importances (gain) sont toujours positives → la DIRECTION des
+ *      effets était ignorée: une prob_away élevée AUGMENTAIT le score
+ *      "home". Le scoring prod contredisait le modèle entraîné.
+ *   2. Une moyenne linéaire ne peut pas reproduire des arbres non linéaires.
+ *
+ * v3: ml/train_xgboost.py exporte les arbres (format xgb_dump_v1) avec
+ * auto-vérification (le replay Python reproduit predict_proba à 1e-4).
+ * Ici on rejoue exactement ces arbres:
+ *   margin = Σ feuilles des arbres + margin_offset
+ *   p = sigmoid(margin)  →  Platt optionnel: p = sigmoid(A·margin + B)
+ * Le score est une P(victoire domicile | match décidé), même cible qu'au
+ * training. Feature absente → 0 (identique au fillna(0) du training).
+ * Pas d'arbres exportés → isXGBoostTrained: false (heuristiques pures).
+ */
+function evalXGBTree(
+  node: XGBTreeNode,
+  features: Record<string, number>,
+  featureNames: string[],
+  usage: Map<string, number> | null
+): number {
+  if (node.v !== undefined) return node.v;
+  const name = node.f !== undefined ? featureNames[node.f] : undefined;
+  if (name === undefined) return 0;
+  if (usage) usage.set(name, (usage.get(name) || 0) + 1);
+  // Politique identique au training: fillna(0)
+  let v = features[name];
+  if (v === undefined || v === null || Number.isNaN(v)) v = 0;
+  // ⚠️ XGBoost compare les splits en FLOAT32 — Math.fround reproduit ce cast.
+  // Double-cast: la valeur ET le seuil (le seuil JSON à 9 chiffres redevient
+  // exactement le float32 d'origine, l'erreur étant < demi-ulp).
+  const v32 = Math.fround(v);
+  const t32 = Math.fround(node.t ?? 0);
+  // Convention XGBoost: gauche (y) si valeur < seuil
+  return v32 < t32
+    ? evalXGBTree(node.y!, features, featureNames, usage)
+    : evalXGBTree(node.n!, features, featureNames, usage);
+}
+
 export function scoreWithXGBoost(
   sport: string,
   features: Record<string, number>,
@@ -1025,7 +1124,7 @@ export function scoreWithXGBoost(
     cvAccuracy: 0,
     confidenceThreshold: 0.5,
     featureContributions: [],
-    recommendation: 'ML heuristique (pas de modèle XGBoost entraîné)'
+    recommendation: 'ML heuristique (pas de modèle XGBoost rejouable)'
   };
 
   if (!model.xgboost_params?.trained) {
@@ -1033,123 +1132,89 @@ export function scoreWithXGBoost(
   }
 
   const sportLower = sport.toLowerCase();
-  const sportParams = model.xgboost_params.sports?.[sportLower] || 
+  const sportParams = model.xgboost_params.sports?.[sportLower] ||
                      model.xgboost_params.sports?.[sport];
 
   if (!sportParams) {
     return defaultResponse;
   }
 
-  const featureImportance = sportParams.feature_importance || {};
-  if (Object.keys(featureImportance).length === 0) {
+  const dump = sportParams.tree_dump;
+  // Sans arbres exportés (ancien modèle v2 ou dump annulé au training),
+  // on refuse de scorer — l'ancienne moyenne pondérée était directionnellement fausse.
+  if (
+    !dump ||
+    dump.format !== 'xgb_dump_v1' ||
+    !Array.isArray(dump.trees) ||
+    dump.trees.length === 0 ||
+    !Array.isArray(dump.features) ||
+    dump.features.length === 0
+  ) {
     return defaultResponse;
   }
 
-  // Calculer le score pondéré par feature importances
-  let weightedScore = 0;
-  let totalWeight = 0;
-  const contributions: { feature: string; weight: number; value: number }[] = [];
-
-  for (const [featureName, importance] of Object.entries(featureImportance)) {
-    const value = features[featureName];
-
-    if (value === undefined || value === null) continue;
-
-    // FIX M5+H1: Normalisation par catégorie avec protection
-    // - prob_* : clamp [0,1] (déjà des probabilités)
-    // - odds_confidence, favorite_confidence : clamp [0,1] (produits de proba)
-    // - odds_ratio : sigmoid pour normaliser range infini
-    // - log_odds_ratio : sigmoid
-    // - favorite_strength : clamp [0,1] (déjà un écart)
-    // - *_diff, margin, spread : sigmoid
-    // - edge : clamp [-1,1] puis shift vers [0,1]
-    // - is_* : clamp [0,1]
-    // - draw_signal : clamp [0,1]
-    let normalizedValue = value;
-    if (featureName.startsWith('is_') || featureName === 'draw_signal') {
-      normalizedValue = Math.max(0, Math.min(1, value));
-    } else if (featureName === 'odds_ratio') {
-      // FIX M4: odds_ratio peut être très grand — sigmoid pour normaliser
-      normalizedValue = 1 / (1 + Math.exp(-(value - 1) * 2)); // centré autour de 1 (50/50)
-    } else if (featureName === 'log_odds_ratio') {
-      normalizedValue = 1 / (1 + Math.exp(-value * 2));
-    } else if (featureName === 'odds_confidence' || featureName === 'favorite_confidence' || featureName === 'favorite_strength') {
-      // FIX H1: Ces features sont déjà dans [0,1] — clamp direct, PAS d'inversion
-      normalizedValue = Math.max(0, Math.min(1, value));
-    } else if (featureName.startsWith('prob_') || featureName.includes('_score') || featureName.includes('_rating') || featureName === 'confidence_numeric') {
-      normalizedValue = Math.max(0, Math.min(1, value));
-    } else if (featureName === 'edge') {
-      // Edge peut être négatif ou positif — normaliser vers [0,1]
-      normalizedValue = Math.max(0, Math.min(1, value + 0.5)); // shift: -0.5→0, 0→0.5, +0.5→1
-    // Phase 3: Normalization for enrichment features
-    } else if (featureName === 'weather_impact') {
-      // Weather impact ranges from -1 (extreme negative) to +1 (perfect)
-      // Shift to [0,1]: -1→0, 0→0.5, +1→1
-      normalizedValue = Math.max(0, Math.min(1, value + 0.5));
-    } else if (featureName === 'weather_risk') {
-      // Weather risk: 0=low, 0.5=medium, 1=high — already in [0,1]
-      normalizedValue = Math.max(0, Math.min(1, value));
-    } else if (featureName.startsWith('fatigue_')) {
-      if (featureName === 'fatigue_diff') {
-        // Fatigue differential: -1 to +1, sigmoid normalization
-        normalizedValue = 1 / (1 + Math.exp(-value * 4));
-      } else {
-        // fatigue_home/away: 0 to 1 — already in [0,1]
-        normalizedValue = Math.max(0, Math.min(1, value));
-      }
-    } else if (featureName.startsWith('record_')) {
-      if (featureName === 'record_diff') {
-        // Record strength diff: -1 to +1, sigmoid normalization
-        normalizedValue = 1 / (1 + Math.exp(-value * 4));
-      } else {
-        // record_home_pct/away_pct: 0 to 1 — already in [0,1]
-        normalizedValue = Math.max(0, Math.min(1, value));
-      }
-    } else if (featureName.includes('_diff') || featureName.includes('margin') || featureName.includes('spread')) {
-      normalizedValue = 1 / (1 + Math.exp(-value * 2));
-    } else {
-      // Par défaut: clamp [0,1]
-      normalizedValue = Math.max(0, Math.min(1, value));
+  try {
+    // ── Replay des arbres ──
+    const usage = new Map<string, number>();
+    let margin = dump.margin_offset || 0;
+    for (const tree of dump.trees) {
+      margin += evalXGBTree(tree, features, dump.features, usage);
     }
 
-    const contribution = importance * normalizedValue;
-    weightedScore += contribution;
-    totalWeight += importance;
+    // ── Proba brute: sigmoid de la marge ──
+    const clampM = Math.max(-30, Math.min(30, margin));
+    let p = 1 / (1 + Math.exp(-clampM));
 
-    contributions.push({
-      feature: featureName,
-      weight: importance,
-      value: value
-    });
+    // ── Calibration Platt (fit holdout au training, optionnelle) ──
+    const platt = sportParams.platt;
+    if (platt && platt.applied && platt.input === 'margin' &&
+        typeof platt.a === 'number' && Number.isFinite(platt.a) && platt.a !== 0) {
+      const m2 = platt.a * margin + platt.b;
+      p = 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, m2))));
+    }
+
+    // Clamp de stabilité pour le downstream (comme l'ancien [0.05, 0.95])
+    const finalScore = Math.max(0.03, Math.min(0.97, p));
+
+    // ── Contributions: features réellement utilisées le long des chemins ──
+    const contributions = [...usage.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([feature, count]) => ({
+        feature,
+        weight: count / dump.trees.length,
+        value: features[feature] ?? 0,
+      }));
+
+    // ── Recommandation ──
+    const threshold = sportParams.best_confidence_threshold || 0.5;
+    const isAboveThreshold = finalScore >= threshold;
+    const holdoutAcc = sportParams.holdout?.accuracy ?? sportParams.cv_accuracy;
+    const reliability = holdoutAcc > 0.6 ? 'fiable' : 'prudent';
+    let recommendation = '';
+    if (isAboveThreshold && finalScore >= 0.7) {
+      recommendation = `🏆 XGBoost CONFORT home (${(finalScore * 100).toFixed(0)}%) — ${reliability}`;
+    } else if (isAboveThreshold) {
+      recommendation = `✅ XGBoost favorable home (${(finalScore * 100).toFixed(0)}%)`;
+    } else if (finalScore <= 1 - threshold && finalScore <= 0.3) {
+      recommendation = `🔻 XGBoost favorable away (${((1 - finalScore) * 100).toFixed(0)}%)`;
+    } else {
+      recommendation = `⚠️ XGBoost incertain (${(finalScore * 100).toFixed(0)}% home)`;
+    }
+
+    return {
+      score: finalScore,
+      isXGBoostTrained: true,
+      cvAccuracy: sportParams.cv_accuracy,
+      confidenceThreshold: sportParams.best_confidence_threshold,
+      featureContributions: contributions,
+      recommendation
+    };
+  } catch {
+    // Toute erreur de replay → fallback heuristique (jamais de score fantaisiste)
+    return defaultResponse;
   }
-
-  // Score final normalisé
-  const finalScore = totalWeight > 0 ? Math.max(0.05, Math.min(0.95, weightedScore / totalWeight)) : 0.5;
-
-  // Trier les contributions par importance
-  contributions.sort((a, b) => b.weight - a.weight);
-
-  // Générer une recommandation
-  const isAboveThreshold = finalScore >= sportParams.best_confidence_threshold;
-  let recommendation = '';
-  if (isAboveThreshold && finalScore >= 0.7) {
-    recommendation = `🏆 XGBoost CONFORT (${(finalScore * 100).toFixed(0)}%) — ${sportParams.cv_accuracy > 0.6 ? 'fiable' : 'prudent'}`;
-  } else if (isAboveThreshold) {
-    recommendation = `✅ XGBoost favorable (${(finalScore * 100).toFixed(0)}%)`;
-  } else {
-    recommendation = `⚠️ XGBoost incertain (${(finalScore * 100).toFixed(0)}%)`;
-  }
-
-  return {
-    score: finalScore,
-    isXGBoostTrained: true,
-    cvAccuracy: sportParams.cv_accuracy,
-    confidenceThreshold: sportParams.best_confidence_threshold,
-    featureContributions: contributions.slice(0, 5), // Top 5
-    recommendation
-  };
 }
-
 /**
  * Obtient les stats XGBoost pour affichage
  */
