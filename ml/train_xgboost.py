@@ -939,7 +939,13 @@ def export_tree_dump(model, X_check, y_check) -> Optional[dict]:
         Xv = X_check.head(n_check)
         proba_ref = model.predict_proba(Xv)[:, 1]
 
-        # base_score → offset de marge (la convention varie selon la version XGBoost)
+        # Sommes de feuilles par ligne (offset exclu)
+        sums = np.array([
+            sum(_replay_margin(t, [float(v) for v in Xv.iloc[i].values]) for t in trees)
+            for i in range(n_check)
+        ])
+
+        # base_score → offset nominal (la convention varie selon version/objectif)
         base_score = 0.5
         try:
             cfg = json.loads(booster.save_config())
@@ -948,12 +954,17 @@ def export_tree_dump(model, X_check, y_check) -> Optional[dict]:
             pass
         logit_base = math.log(max(base_score, 1e-6) / max(1 - base_score, 1e-6))
 
+        # Offset EMPIRIQUE (data-driven): médiane de logit(proba_ref) - sum_leaves.
+        # Couvre toutes les conventions (XGBoost 2.x auto base_score, objective
+        # custom qui ne dérive pas le base_score, etc.).
+        p_ref = np.clip(proba_ref, 1e-6, 1 - 1e-6)
+        offset_emp = float(np.median(np.log(p_ref / (1 - p_ref)) - sums))
+
         best = None
-        for offset in (0.0, logit_base):
+        for offset in (0.0, logit_base, offset_emp):
             max_diff = 0.0
             for i in range(n_check):
-                xi = [float(v) for v in Xv.iloc[i].values]
-                margin = sum(_replay_margin(t, xi) for t in trees) + offset
+                margin = sums[i] + offset
                 p = 1.0 / (1.0 + math.exp(-max(min(margin, 30.0), -30.0)))
                 max_diff = max(max_diff, abs(p - float(proba_ref[i])))
             print(f"      [dump-check] offset={offset:.6f} → diff max {max_diff:.3e}")
