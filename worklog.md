@@ -412,3 +412,59 @@ Stage Summary:
 - Arbitrage final: Python GH 04:37 = writer normatif ; Vercel 05:15 = fallback si
   modèle > 24h ; aucun écrasement possible grâce à la garde de fraîcheur
 - Health prod après P2: HTTP 200 (supabase ok, espn ok)
+
+---
+Task ID: 10
+Agent: Super Z (main)
+Task: P3 — audit + rework du combo journalier DM Telegram : combo groupé foot + MLB, fix « 0 matchs éligibles » structurel
+
+Work Log:
+- AUDIT /api/combo-private (route qui produisait le message « 0 matchs éligibles (minimum 3 requis) » collé par l'utilisateur):
+  * ROOT CAUSE (contradiction mathématique): MAX_RISK 25% + cote ≥10 + max 7 legs + min leg 1.15
+    → 10^(1/7) = 1.389/leg → proba implicite 72% → risque ≥28% JAMAIS ≤25%. Le fallback cotes
+    implicites calcule le risque DEPUIS les cotes → combo structurellement impossible, le blocage
+    était quotidien et définitif (9 matchs foot, 0 éligible)
+  * MLB/NBA/NHL ignorés: getMatchesWithRealOdds fetch déjà baseball/mlb + le pipeline ML scrape des
+    prédictions baseball en base, mais la route filtrait FOOTBALL_SPORTS uniquement
+  * ANTI-BAN: extension J+2..J+4 via fetch() brut — jusqu'à 72 requêtes ESPN parallèles non
+    protégées (contournait stealthFetch + rate limit + disjoncteur, violation de la règle P1)
+  * Bug lookup de date: clé `${league || ''}` côté set vs `p.league || 'Unknown'` côté get
+    → dates perdues pour les matchs sans ligue
+  * Matchs live/débutés sélectionnables (seul isFinished était filtré, pas isLive ni date > now)
+  * Constat P1/P2 à corriger dans les faits: les 3 fetch bruts ESPN de combinedDataService.ts
+    subsistent aussi (documentés, NON migrés ici — getMatchesWithRealOdds alimente TOUT le pipeline
+    quotidien, 102 appels parallèles à travers le disjoncteur = risque de cooldown global 8-14 min ;
+    migration dédiée à faire avec test de charge, pas en vitesse sur le P3)
+- NOUVEAU src/lib/comboGrouped.ts (moteur pur, testable):
+  * Caps de risque PAR SPORT alignés palier/selectTopDailyPredictions: foot 25%, MLB 30%
+  * Cote 10 = OBJECTIF de remplissage glouton (max 7 legs, cap cote 25), plus un prérequis bloquant
+    → dès 2 legs fiables: COMBO DU JOUR publié à sa cote réelle (fin du blocage « minimum 3 requis »)
+  * Phase 1 diversification: meilleur leg de CHAQUE sport disponible d'abord → combo groupé ⚽+⚾
+    quand les 2 sports sont dispo, mono-sport sinon (demande produit P3)
+  * Tier de recours étiqueté « RISQUE ÉTENDU ≤35% » plutôt que message sec
+  * impliedCandidate: margin/vig retirée + confiance honnête (medium avec cotes réelles, high ≤15%)
+  * Formatage Telegram adaptatif: COMBO GROUPÉ ⚽+⚾ / COMBO MULTI-JOURS FOOT / COMBO MULTI-JOURS MLB
+- route.ts réécrite:
+  * MLB depuis la BASE: getPredictionsByCreatedAt(today) → sport='baseball', pending, pas combo,
+    match pas débuté, risk ≤35 (demande utilisateur: « ajoute le mlb après que le pipeline ML ait
+    scrapé en base ») + MLB ESPN frais via getBatchPredictions (sport 'MLB' supporté par le pipeline)
+  * « Refaire l'analyse de tout »: getBatchPredictions relancé sur TOUS les candidats foot+MLB au
+    moment du combo (19:00), prédictions DB en complément dédupliqué (priorité ml > db > implied)
+  * Extension J+2/J+3 via stealthFetch (chunks de 12, maxRetries 1, [] honnête si disjoncteur)
+  * Dédup par équipes normalisées + date ; exclus isLive + matchs débutés ; fix lookup date
+- Test fonctionnel scripts/test_combo_grouped.ts (0 réseau): 30/30 passent — contradiction math
+  corrigée (7 favoris 25% → combo 7.43 publié), diversification 2 sports, caps par sport, tier
+  étendu, margin removal, dédup, formatage, cas limites (cap cote 25, 0/1 candidat)
+- tsc --noEmit: 0 erreur
+- Commit parasite UUID 27f0bd4 réapparu (modes 100644→100755 sur 17 fichiers, 0 contenu)
+  → retiré (git reset --mixed sur origin/main 2f173db) + git config core.fileMode false
+- scripts/test_zai_nfl_page.ts (diagnostic one-shot P2 oublié au commit Task 9) ajouté au repo
+
+Stage Summary:
+- Le combo journalier publie DÈS QUE 2 sélections fiables existent (foot et/ou MLB), à sa cote
+  réelle ; l'objectif cote 10 est rempli gloutonnement quand les candidats le permettent
+- MLB intégré au combo groupé (base pipeline ML + ESPN frais) — plus jamais de message structurel
+  « 0 matchs éligibles » quand des matchs existent: diagnostic détaillé (caps, meilleurs candidats
+  hors cap) sinon
+- Anti-ban: dernier fetch brut de la route supprimé (stealthFetch + chunks) ; restant documenté:
+  3 fetch bruts ESPN dans combinedDataService.ts (migration dédiée nécessaire, à ne pas faire à la légère)
