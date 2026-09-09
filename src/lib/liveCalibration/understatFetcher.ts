@@ -11,6 +11,7 @@
  */
 
 import { ShotEvent, LiveCalibrationInput, MomentumWindow } from './types';
+import { stealthFetch } from '../stealthFetch';
 
 const UNDERSTAT_BASE = 'https://understat.com';
 const CACHE_TTL_MS = 30 * 1000; // 30s
@@ -32,8 +33,11 @@ const LEAGUE_MAP: Record<string, string> = {
   'Ligue 1 Uber Eats': 'Ligue_1',
 };
 
-const USER_AGENT =
-  'Mozilla/5.0 (compatible; SteoElitePredictor/1.0; +https://my-project-zeta-five-85.vercel.app)';
+/**
+ * NOTE anti-ban : plus AUCUN User-Agent auto-déclaratif ici (l'ancien
+ * « SteoElitePredictor/1.0 + URL » était un signal de bot évident).
+ * stealthFetch fournit des profils navigateur cohérents + disjoncteur par domaine.
+ */
 
 /**
  * Tente de récupérer les stats xG Understat pour un match donné.
@@ -83,14 +87,15 @@ async function findMatchId(
   leagueCode: string,
   matchDate: string,
 ): Promise<string | null> {
-  // Understat URL: /league/2025/ ou /match/MATCHID
-  // Pour la saison en cours, on tente une recherche par date
-  const year = new Date(matchDate).getFullYear();
-  const seasonCode = year >= 8 ? `${year - 1}` : `${year}`; // saison commence en août
+  // Understat URL: /league/SEASON/ où SEASON = année de DÉBUT de saison
+  // (la saison « YYYY » couvre août YYYY → mai YYYY+1)
+  const d = new Date(matchDate);
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1; // 1-12
+  const seasonCode = month >= 8 ? `${year}` : `${year - 1}`; // saison commence en août
 
   const url = `${UNDERSTAT_BASE}/league/${leagueCode}/${seasonCode}`;
-  const response = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
+  const response = await stealthFetch(url, {
     signal: AbortSignal.timeout(8000),
   });
 
@@ -140,8 +145,7 @@ function normalize(s: string): string {
 
 async function fetchMatchDetails(matchId: string): Promise<any | null> {
   const url = `${UNDERSTAT_BASE}/match/${matchId}`;
-  const response = await fetch(url, {
-    headers: { 'User-Agent': USER_AGENT },
+  const response = await stealthFetch(url, {
     signal: AbortSignal.timeout(8000),
   });
 

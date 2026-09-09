@@ -8,6 +8,8 @@
  * Ces sources permettent d'obtenir des données NFL même hors saison ESPN
  */
 
+import { stealthFetch } from './stealthFetch';
+
 // Cache pour éviter les requêtes répétées
 const cache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
@@ -317,9 +319,8 @@ export async function getNFLMatches(): Promise<any[]> {
     
     if (isNFLSeason) {
       const dateStr = today.toISOString().split('-').join('').slice(0, 8);
-      const response = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${dateStr}`,
-        { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SteoElite/1.0)' } }
+      const response = await stealthFetch(
+        `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${dateStr}`
       );
       
       if (response.ok) {

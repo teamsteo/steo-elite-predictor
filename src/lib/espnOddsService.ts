@@ -345,7 +345,7 @@ async function fetchESPNNBA(oddsApiMap: Map<string, { home: number; draw: number
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowStr = tomorrow.toISOString().split('T')[0].replace(/-/g, '');
     
-    const response = await fetch(
+    const response = await stealthFetch(
       `https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${todayStr}-${tomorrowStr}`,
       { next: { revalidate: 60 } }
     );
@@ -440,7 +440,7 @@ async function fetchESPNNHL(oddsApiMap: Map<string, { home: number; draw: number
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0].replace(/-/g, '');
     
-    const response = await fetch(
+    const response = await stealthFetch(
       `https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard?dates=${todayStr}`,
       { next: { revalidate: 60 } }
     );
