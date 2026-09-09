@@ -387,3 +387,28 @@ Stage Summary:
 - ML: single source of truth pour ml_model (Python 05:00), plus de conflit d'écriture
 - Restant (P3 éventuel): implémenter archives BetExplorer (backtest NFL), vraies cotes
   pré-match NHL/MLB pour entraîner ces sports, implémenter enricher football-data.co.uk
+
+---
+Task ID: 9 (suite)
+Agent: Super Z (main)
+Task: Filet de sécurité training ML — conflit crons arbitré définitivement
+
+Work Log:
+- Vérif post-push: AUCUN run ML Pipeline programmé à 05:00 UTC ce matin ; les runs
+  « schedule » historiques partaient à 09:24 (J-1) et 09:59 (J-2) — congestion GitHub
+  Actions sur les crons heure pile (documentée chez GH). Supprimer le cron Vercel
+  05:15 (Task 9) avait donc retiré le seul filet si le schedule GH échoue
+- Correction (commit eaf1780):
+  * Cron GH déplacé 05:00 → 04:37 UTC (off-peak, minute impaire → file quasi nulle,
+    termine avant 05:15/05:30)
+  * Cron Vercel train-ml 05:15 RESTAURÉ en filet CONDITIONNEL:
+    shouldSkipScheduledTraining() — skip si last_trained < 24h (le training Python
+    reste l'unique writer normatif, zéro conflit) ; si modèle > 24h (échec GH),
+    training TS de secours (garde-fou trainUnifiedML protège les arbres)
+  * force=1 pour outrepasser manuellement
+- tsc 0 erreur, vercel.json + YAML validés, push eaf1780
+
+Stage Summary:
+- Arbitrage final: Python GH 04:37 = writer normatif ; Vercel 05:15 = fallback si
+  modèle > 24h ; aucun écrasement possible grâce à la garde de fraîcheur
+- Health prod après P2: HTTP 200 (supabase ok, espn ok)
