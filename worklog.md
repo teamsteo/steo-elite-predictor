@@ -541,3 +541,20 @@ Stage Summary:
   (appels parasites Transfermarkt MLB/NHL supprimés)
 - Prochain run GH 04:37: backfill-mlb 03:33 nourrit le training; si CV baseball ≥52% avec
   edge>0 → modèle auto-exporté (merge) → scoring prod auto-activé à la prédiction suivante
+
+---
+Task ID: 12
+Agent: Super Z (main)
+Task: Réponse risque de ban GitHub/Vercel + lancement sauvegarde GitLab
+
+Work Log:
+- Audit complet : aucun remote GitLab, aucun credential GitLab (env, .env, ~/.git-credentials, clés SSH) — backup-mirror.sh avait GITLAB_URL vide
+- Lancement sauvegarde locale OK : backups/backup_20260909_100326.tar.gz (2,4 Mo, 651 fichiers dont 439 src/)
+- Durcissement scripts/backup-mirror.sh : creds via scripts/.backup_env (non versionné) ou env vars, token GitLab injecté à la volée dans l'URL de push (jamais persisté dans .git/config), code de sortie du push vérifié correctement, token masqué dans les logs d'erreur
+- .gitignore : ajout backups/ et scripts/.backup_env
+- Commit 2be5003 poussé vers GitHub (origin/main a2b1ddb → 2be5003)
+
+Stage Summary:
+- Backup local opérationnel et répétable ; push GitLab prêt — il manque uniquement GITLAB_URL + GITLAB_TOKEN (PAT scope write_repository) de l'utilisateur
+- Risque ban GitHub : quasi nul (repo privé, PAT perso, ~quelques pushs/jour, Actions ~5-10 min/jour vs quota 2000 min/mois)
+- Risque ban Vercel : quota, pas ban ; point structurel = clause non-commercial du plan Hobby + 22 crons déclarés (limite Hobby = 2 → si tous tournent, plan Pro)
