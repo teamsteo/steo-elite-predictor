@@ -635,3 +635,26 @@ Stage Summary:
 - Bug combo edge (3300% → +33.0%) déployé en production
 - Miroir GitLab resynchronisé automatiquement par le hook pre-push
 - Leçon : la perte d'environnement entre tours nécessite de revérifier les fichiers non versionnés avant chaque opération Git
+
+---
+Task ID: 16
+Agent: Super Z (main)
+Task: Audit BADJAN (limite ?) + audit/correction Générateur de Combinés Sûrs (site)
+
+Work Log:
+- BADJAN : aucune limite codée (vérifié) — le petit nombre vient des filtres stricts. Diagnostic funnel pipeline réel (scripts/test_badjan_funnel.ts) : vendredi soir = 20 matchs pipeline → 5 foot → 1 éligible (Sevilla-Valencia 44%). Distribution risques foot : la majorité des favoris domicile sortent 45-70% de risque → exclus du ≤45%.
+- Commit parasite UUID (modes only) nettoyé via git reset --mixed origin/main (protocole établi)
+- AUDIT Générateur de Combinés Sûrs (page.tsx, onglet API du site) :
+  * ✅ Données = VRAI pipeline (/api/matches = getMatchesWithRealOdds + getBatchPredictions, même modèle que Telegram)
+  * ❌ BUG LOGIQUE : candidats générés pour TOUTES les issues (1/X/2) — predictedResult du modèle IGNORÉ → un "combiné sûr" pouvait contenir le côté opposé à la prédiction ML
+  * ❌ Comparateur de tri non-transitif (mélange d'échelles safety ~0.2-1.5 vs distance en cotes)
+- CORRECTION : moteur extrait dans src/lib/safeComboGenerator.ts (nouveau fichier isolé)
+  * FIX 1 : 1 pick par match = celui PRÉDIT par le pipeline (predictedResult ou predictedWinner tennis/MLB) ; fallback = favori marché si pas de prédiction
+  * FIX 2 : tri par rankScore = 60% avgSafety + 40% proximité normalisée (transitif)
+  * Forme de sortie identique (UI inchangée) ; page.tsx : 190 lignes inline retirées → import
+- Tests scripts/test_safe_combo.ts : 16/16 (alignement prédiction, fallback, tolérance ±20%, dedup, max 5, même-match interdit, draw sans cote, tri)
+- Régression : combo_grouped 30/30, badjan 27/27, combo_edge 11/11, tsc 0 erreur
+
+Stage Summary:
+- Le générateur du site utilise désormais les PRÉDICTIONS du pipeline ML (avant : favoris marchés arbitraires, parfois opposés au modèle)
+- BADJAN sans limite — nombre faible = sélectivité des filtres (foot + ≤45% + favori domicile confirmé + cotes réelles)
