@@ -619,3 +619,19 @@ Stage Summary:
 - Affichage combo corrigé : edge +33.0% au lieu de edge 3300.0% (l'utilisateur verra la différence au prochain cron combo 12:30 ou 17:00 UTC)
 - Garde-fou défensif > 100 protège contre toute future incohérence de convention
 - Aucune régression sur les autres sections (kamikaze, valuebets, top-championship n'utilisaient pas cette formule)
+
+---
+Task ID: 15 (suite)
+Agent: Super Z (main)
+Task: Restauration environnement + resync GitLab après reset
+
+Work Log:
+- Environnement local restauré depuis instantané (syndrome récurrent) — scripts/.backup_env, .env, backups récents, gitlab-mirror.log disparus du disque
+- État code OK : main = 0a902e3 (toutes les Tasks 13-15 présentes), core.hooksPath=scripts/hooks conservé, remote origin intact
+- Recréation scripts/.backup_env (chmod 600, gitignoré), push GitLab force avec retries (1er 403 absorbed, 2e OK)
+- Vérification triple SHA : local = GitHub = GitLab = 0a902e3 ✅
+
+Stage Summary:
+- Bug combo edge (3300% → +33.0%) déployé en production
+- Miroir GitLab resynchronisé automatiquement par le hook pre-push
+- Leçon : la perte d'environnement entre tours nécessite de revérifier les fichiers non versionnés avant chaque opération Git
