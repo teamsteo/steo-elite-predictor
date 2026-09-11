@@ -168,7 +168,13 @@ function deterministicReasoning(legs: ComboMatch[]): string {
   return legs
     .map((l) => {
       const odds = oddsForResult(l, l.predictedResult);
-      const edge = l._mlEdge ? ` (edge ${(l._mlEdge * 100).toFixed(1)}%)` : '';
+      // FIX Task 15: _mlEdge arrive déjà en points de % (ex: 33.0 pour 33%)
+      // depuis mlPrediction.edge = Math.round(bestEdge * 1000) / 10.
+      // L'ancien code (l._mlEdge * 100) produisait 3300% — absurde.
+      // Garde-fou : si > 100, c'est que la source a déjà multiplié (cohérence défensive).
+      const rawEdge = typeof l._mlEdge === 'number' && isFinite(l._mlEdge) ? l._mlEdge : 0;
+      const edgePct = rawEdge > 100 ? rawEdge / 100 : rawEdge;
+      const edge = edgePct > 0 ? ` (edge +${edgePct.toFixed(1)}%)` : '';
       return `${l.homeTeam} vs ${l.awayTeam} : ${betLabelForResult(l, l.predictedResult)} @${odds.toFixed(2)}${edge}`;
     })
     .join(' · ');

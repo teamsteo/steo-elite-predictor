@@ -593,3 +593,29 @@ Stage Summary:
 - BADJAN publié chaque jour à 07:45 UTC sur le canal Telegram : foot du jour, risque ≤45%, uniquement favoris à domicile, publication seule (ni bilan, ni sauvegarde)
 - Si 0 match éligible → pas de publication (pas de message inutile)
 - Zéro impact sur les sections existantes (nouveau fichier + cases isolées)
+
+---
+Task ID: 15
+Agent: Super Z (main)
+Task: Fix bug affichage edge combo (3300%, 2300%, 1700% absurdités)
+
+Work Log:
+- Diagnostic : dans src/lib/comboService.ts:171, deterministicReasoning affichait `(l._mlEdge * 100).toFixed(1)%`
+- Or _mlEdge arrive DÉJÀ en points de % depuis le pipeline unifié :
+  - src/lib/unifiedPredictionService.ts:827 → mlPrediction.edge = Math.round(bestEdge * 1000) / 10
+  - bestEdge = finalHomeProb - edgeBenchmarkHome (différence de probas 0-1) → 0.33 devient 33.0 (en %)
+  - src/app/api/combo-private/route.ts:235 → edge: p.mlPrediction.edge (33.0 propagé tel quel)
+- Donc 33.0 × 100 = 3300.0% ❌ (signalé par utilisateur sur message combo du 11/09)
+- Correction src/lib/comboService.ts:167-181 :
+  - rawEdge = l._mlEdge (typage strict number + isFinite)
+  - edgePct = rawEdge > 100 ? rawEdge / 100 : rawEdge (garde-fou défensif si une source future change de convention)
+  - format : "edge +33.0%" (signe + explicite pour clarté)
+- Tests scripts/test_combo_edge.ts : 11/11 (vérifie absence du bug dans le code actif + 6 cas pratiques + convention pipeline)
+- Régression : test_combo_grouped 30/30 + test_badjan 27/27 — aucun impact
+- tsc --noEmit : 0 erreur
+- Vérification exhaustive : aucun autre _mlEdge * 100 dans src/ → bug isolé à comboService.ts
+
+Stage Summary:
+- Affichage combo corrigé : edge +33.0% au lieu de edge 3300.0% (l'utilisateur verra la différence au prochain cron combo 12:30 ou 17:00 UTC)
+- Garde-fou défensif > 100 protège contre toute future incohérence de convention
+- Aucune régression sur les autres sections (kamikaze, valuebets, top-championship n'utilisaient pas cette formule)
