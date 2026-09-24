@@ -3,7 +3,9 @@
   "buildCommand": "bun run build",
   "installCommand": "bun install",
   "framework": "nextjs",
-  "regions": ["cdg1"],
+  "regions": [
+    "cdg1"
+  ],
   "functions": {
     "src/app/api/cron/**/*.ts": {
       "memory": 1024,
@@ -26,7 +28,10 @@
     {
       "source": "/api/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "s-maxage=300, stale-while-revalidate=600" }
+        {
+          "key": "Cache-Control",
+          "value": "s-maxage=300, stale-while-revalidate=600"
+        }
       ]
     }
   ],
@@ -122,6 +127,14 @@
     {
       "path": "/api/combo-private",
       "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-v3?mode=report",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-v3?mode=settle",
+      "schedule": "0 12 * * *"
     }
   ]
 }

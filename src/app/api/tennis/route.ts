@@ -27,6 +27,9 @@ import {
   Surface,
   Category
 } from '../../../lib/tennis-enhanced/smart-collector';
+// Import moteur V3 (stratégie 8 étapes, tennis-data.co.uk)
+import { getV3Predictions, toApiPrediction } from '../../../lib/tennis-v3/service';
+import { isPersistenceEnabled } from '../../../lib/tennis-v3/persistence';
 import { predictMatchOptimized } from '../../../lib/tennis-enhanced/optimized-predictor';
 import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor';
 import { 
@@ -89,6 +92,10 @@ let cachedPredictions: TennisPrediction[] = [];
 let lastFetchTime = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Cache dédié V3 (séparé pour ne pas perturber V2)
+let cachedV3: any[] = [];
+let lastFetchV3 = 0;
+
 // ============================================
 // GET - Récupérer les prédictions
 // ============================================
@@ -101,6 +108,48 @@ export async function GET(request: Request) {
     const version = searchParams.get('version') || 'v2'; // v2 | v1 | v0
     
     console.log(`🎾 API Tennis V2 2026: Requête reçue (version: ${version})`);
+
+    // ============ MOTEUR V3 (stratégie 8 étapes) ============
+    if (version === 'v3') {
+      const nowV3 = Date.now();
+      if (!forceRefresh && cachedV3.length > 0 && nowV3 - lastFetchV3 < CACHE_TTL) {
+        return NextResponse.json({
+          predictions: cachedV3,
+          stats: calculateStats(cachedV3),
+          generatedAt: new Date(lastFetchV3).toISOString(),
+          source: 'cache',
+          modelInfo: { version: 'V3', engine: 'tennis-v3 (Elo tennis-data.co.uk + 7 facteurs + vetos + value)', seeded: true },
+          version,
+        });
+      }
+      const matchesV3 = await collectMatches();
+      const v3 = await getV3Predictions(matchesV3);
+      const apiV3 = v3.predictions.map(toApiPrediction);
+      // filtres qualité identiques à V2 (tournois majeurs, matchs futurs)
+      const nowDateV3 = new Date();
+      const kept = apiV3.filter((p: any) => {
+        const md = new Date(p.date);
+        return md >= nowDateV3 || md.toDateString() === nowDateV3.toDateString();
+      });
+      cachedV3 = kept;
+      lastFetchV3 = nowV3;
+      return NextResponse.json({
+        predictions: kept,
+        stats: calculateStats(kept as any),
+        generatedAt: new Date().toISOString(),
+        source: 'v3',
+        modelInfo: {
+          version: 'V3',
+          engine: 'tennis-v3.0.0 — Elo 25% / Service-Retour 25% / Forme 15% / Surface 15% / Matchup 10% / H2H 5% / Conditions 5%',
+          data: v3.status,
+          unresolved: v3.unresolved.length,
+          persistence: isPersistenceEnabled() ? 'supabase' : 'memory-only',
+        },
+        quotaStatus: getQuotaStatus(),
+        version,
+      });
+    }
+    // ============ FIN V3 ============
     
     // Vérifier le cache
     const now = Date.now();

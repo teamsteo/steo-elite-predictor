@@ -680,3 +680,25 @@ Stage Summary:
 - 4 causes classées : (a) 0 match éligible [plausible, filtres très stricts], (b) throttling ESPN sur force-refresh, (c) quota Odds API → tout isEstimated → exclu, (d) crash attrapé par catch
 - Commit local 804f956 (diagnostic funnel permanent dans réponse cron) prêt à pousser — BESOIN : token GitHub avec droits write
 - Besoins utilisateur : (1) token GitHub write, (2) .env complet à re-fournir (3e restauration), (3) token GitLab à rotater (recréer scripts/.backup_env), (4) trigger manuel https://my-project-zeta-five-85.vercel.app/api/cron?secret=XXX&action=telegram-badjan pour réponse immédiate
+
+---
+Task ID: 17
+Agent: main
+Task: Évaluer stratégie tennis 8 étapes + audit ban-risque sources + implémentation moteur V3 sans régression + push Task 16 en attente
+
+Work Log:
+- Push OK du commit Task 16 (nouveau token GitHub write) : reset --mixed e6ca6f0 → re-commit propre 3551246 (protocole anti-parasites UUID)
+- AUDIT BAN-RISQUE (24/09) : Sackmann tennis_atp/tennis_wta/tennis_abstract/tennis_pointbypoint SUPPRIMÉS de GitHub public (le V2 en prod est cassé !) ; Tennis Abstract Elo CSV retirés (404, site UP) ; ATP Tour = 403 Cloudflare ; ESPN = 403 depuis sandbox (OK depuis Vercel) ; BetExplorer 200 ✅ ; tennis-data.co.uk VIVANT (maj 21/09/2026) avec ATP 2000-2026 + WTA 2007-2026, cotes clôture Pinnacle/B365, chemin xlsx obfusqué
+- SEED : scripts/build_tennis_seed.py → 29 756 matchs (2021-2026 ATP+WTA), Elo 538-style auto-calculé (K adaptatif, marge sets, Bo5 ×1.10, pistes surface), playerStats agrégés 5 ans, lastSeen, 150j matchs récents ; tennis-seed.json.gz 132 Ko + seed-b64.ts 172 Ko (bundling serverless sûr)
+- MOTEUR V3 (src/lib/tennis-v3/) : 7 facteurs pondérés (Elo 25%, dominance service/retour proxy 25%, forme pondérée adversaires 15%, surface 15%, matchup/contexte 10%, H2H 5%, conditions 5%) + amplification logistique k=6 + calibration tier (GS 0.9/Chall 0.78) + vetos DURS (walkover<14j, absence>60j, ≥4 matchs/7j, flags Supabase) + tiers 🟢≥70%+consensus5/7 🟡60-69 🔴NO BET + value (edge≥3%, divergence→8%, cotes [1.30-3.50], Kelly cap 5%)
+- DATA-SERVICE : seed normalisé (clés "alcaraz c."→"alcaraz-c"), xlsx courant ATP+WTA 1 dl/12h (2 req/jour → ban-risk ~nul), parseur xlsx jszip maison (sharedStrings+dates série Excel), Elo incrémental post-seed, résolution noms tennis-data↔BetExplorer par comparaison canonique (gère ambiguïtés Zverev/Muller → null si doute)
+- API : /api/tennis?version=v3 (v2 RESTE DÉFAUT → zéro régression) ; cron /api/cron/tennis-v3 (modes picks/report/settle, flag TENNIS_V3_TELEGRAM_ENABLED, publication 🟢 uniquement + funnel) ; vercel.json +2 crons (report 09:30 UTC, settle 12:00 UTC)
+- PERSISTANCE : supabase-tennis-v3.sql (tennis_v3_bets/calibration/flags, RLS service_role) ; fallback mémoire gracieux si pas de Supabase
+- TESTS : test_tennis_v3.ts 52/52 (Elo math, noms, facteurs, calibration, value, decide, vetos, xlsx réel, E2E seed) + smoke_tennis_v3.ts 5/5 (matchs réels Alcaraz/Sinner/Fritz/Zverev/Djokovic/Swiatek : résolution, vetos légitimes — Sinner absent 74j, Djokovic walkover récent) ; tsc 0 erreur
+- RÉGRESSION : badjan 27/27, funnel 10/10, safe_combo 16/16, combo_grouped 30/30, combo_edge 11/11
+
+Stage Summary:
+- V3 = réparation ET amélioration : source primaire tennis-data.co.uk (indépendante de Sackmann mort), 2 requêtes/jour max, Elo souverain auto-calculé
+- Stratégie 8 étapes implémentée fidèlement (poids exacts, vetos blessures/fatigue, value vs implicite, 3 tiers) — philos. réduire erreurs systématiques, pas "tout gagner"
+- Publication Telegram tennis RESTE OFF par défaut côté ancien stub ; nouveau cron tennis-v3 prêt, activable via env TENNIS_V3_TELEGRAM_ENABLED (défaut on) mais ne publie que des 🟢 stricts + rapport quotidien funnel
+- BESOINS UTILISATEUR : (1) exécuter supabase-tennis-v3.sql dans Supabase (tracking/calibration), (2) CRON_SECRET ou dashboard Vercel pour déclencher /api/cron/tennis-v3?mode=report (envoi DM Telegram réel depuis Vercel), (3) token GitLab à rotater si miroir souhaité
