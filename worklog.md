@@ -702,3 +702,26 @@ Stage Summary:
 - Stratégie 8 étapes implémentée fidèlement (poids exacts, vetos blessures/fatigue, value vs implicite, 3 tiers) — philos. réduire erreurs systématiques, pas "tout gagner"
 - Publication Telegram tennis RESTE OFF par défaut côté ancien stub ; nouveau cron tennis-v3 prêt, activable via env TENNIS_V3_TELEGRAM_ENABLED (défaut on) mais ne publie que des 🟢 stricts + rapport quotidien funnel
 - BESOINS UTILISATEUR : (1) exécuter supabase-tennis-v3.sql dans Supabase (tracking/calibration), (2) CRON_SECRET ou dashboard Vercel pour déclencher /api/cron/tennis-v3?mode=report (envoi DM Telegram réel depuis Vercel), (3) token GitLab à rotater si miroir souhaité
+
+---
+Task ID: 20
+Agent: Super Z (main)
+Task: Correction des irrégularités + suppression des parasites dangereux (audit sécurité utilisateur)
+
+Work Log:
+- DIAGNOSTIC : 3e commit parasite UUID 41be846 détecté en local (1457 fichiers, 508k insertions : repo2.tar.gz 26 Mo, 12 .pkl, scripts/add_gh_secret.py + push_fix.py avec tokens GitHub EN CLAIR) — JAMAIS poussé (origin/main resté propre à a35007f)
+- PURGE LOCALE : git reset --hard origin/main (a35007f) → reflog expire --expire=now --all → gc --prune=now --aggressive : l'objet 41be846 et ses blobs (tokens inclus) sont IRRÉCUPÉRABLES en local (vérifié git cat-file fatal)
+- Vérif disque post-reset : repo2.tar.gz, add_gh_secret.py, push_fix.py, scripts/.xlsx_cache/, *.pkl racine, .skysports_tennis.json.G7Ogkx tous SUPPRIMÉS ; git status propre
+- SCANS SÉCURITÉ (working tree complet y compris steo-src/_archived_trading/pronostics-app) : 0 token ghp_/github_pat_/glpat- réel (1 faux positif = placeholder glpat-xxxx dans commentaire backup-mirror.sh), 0 JWT Supabase eyJ codé en dur, 0 password/secret en dur
+- Archives versionnées inspectées (backups/*.tar.gz, download/backup_complete*.tar.gz, pronostics-app/backups/*.tar.gz = 5.6 Mo) : UNIQUEMENT du code source, aucun secret → NON touchées (consigne « ne touche pas ce qui est propre »), signalées en option
+- .gitignore durci (section SÉCURITÉ ANTI-PARASITES) : scripts/add_gh_secret.py, scripts/push_fix.py, /repo*.tar.gz, /*.pkl, scripts/.xlsx_cache/, .*.json.?????? — bloque les futurs parasites à la source
+- Commit sélectif e4ceb94 (uniquement .gitignore) poussé AVANT nettoyage du remote : a35007f..e4ceb94 main -> main ✅
+- .git/config nettoyé : remote origin SANS token dans l'URL (https://github.com/teamsteo/steo-elite-predictor.git) — grep ghp_ = 0
+- SANITÉ : tsc --noEmit 0 erreur ; régression anti_ban 15/15, tennis_v3 52/52, badjan_tennis 34/34
+- supabase-tennis-v3.sql (59 lignes, 3 tables + index + RLS service_role) collé EN CLAIR dans le chat pour exécution par l'utilisateur dans Supabase SQL Editor
+
+Stage Summary:
+- Local ET remote désormais alignés et sains : origin/main = e4ceb94 (a35007f + .gitignore durci), zéro secret sur disque, zéro objet parasite en .git
+- Tokens GitHub restants à révoquer PAR L'UTILISATEUR (ghp_j9CotY... celui partagé en chat + ghp_xWul... celui des scripts purgés) : seul geste qui ferme la porte définitivement
+- Futurs pushes : auth à fournir à la volée (URL one-off ou credential helper) — plus aucun token persisté dans .git/config
+- En attente utilisateur : exécuter supabase-tennis-v3.sql (tracking V3 + bilan cumulé), rotation token GitLab si miroir voulu
