@@ -92,10 +92,12 @@ function formatPick(p: ReturnType<typeof toApiPrediction>): string {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const secret = searchParams.get('secret');
   const mode = searchParams.get('mode') || 'picks';
 
-  if (!CRON_SECRET || !secret || !timingSafeEqual(secret, CRON_SECRET)) {
+  // Vercel Cron passe le secret via header Bearer ; les triggers manuels via ?secret=
+  const authHeader = request.headers.get('authorization');
+  const providedSecret = authHeader?.replace('Bearer ', '') || searchParams.get('secret');
+  if (!CRON_SECRET || !providedSecret || !timingSafeEqual(providedSecret, CRON_SECRET)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
