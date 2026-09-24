@@ -8,7 +8,11 @@
  * Endpoints (protégés par CRON_SECRET) :
  *   GET ?secret=X&mode=picks   → publie les 🟢 (défaut)
  *   GET ?secret=X&mode=report  → rapport complet (facteurs, vetos, funnel, data)
+ *   GET ?secret=X&mode=badjan  → section BADJAN TENNIS (format maison, 🟢 uniquement,
+ *                                 0 pick → silencieux comme BADJAN foot)  [cron 10:15]
  *   GET ?secret=X&mode=settle  → règle les paris trackés (résultats xlsx tennis-data)
+ *   GET ?secret=X&mode=bilan   → settle + BILAN J+1 de la section Badjan Tennis
+ *                                 (résultats, P&L, cumul V3)                 [cron 12:45]
  */
 
 import { NextResponse } from 'next/server';
@@ -20,9 +24,17 @@ import {
   isPersistenceEnabled,
   getUnsettledBets,
   settleBet,
+  getBetsForDate,
+  getOverallStats,
 } from '@/lib/tennis-v3/persistence';
+import {
+  formatBadjanTennisMessage,
+  formatBilanMessage,
+  BadjanTennisPick,
+} from '@/lib/tennis-v3/badjan-tennis';
 import { ensureFreshData, getRuntimeMatches } from '@/lib/tennis-v3/data-service';
 import { parseCanonical } from '@/lib/tennis-v3/name-utils';
+import { sendTelegramMessage, isDuplicate } from '@/lib/telegramService';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -69,6 +81,45 @@ function keyOf(nameOrKey: string): string {
   return parseCanonical(nameOrKey).key;
 }
 
+/** Convertit une prédiction API → input formatage BADJAN Tennis. */
+function toBadjanPick(p: ReturnType<typeof toApiPrediction>): BadjanTennisPick {
+  return {
+    player1: p.player1,
+    player2: p.player2,
+    tournament: p.tournament,
+    surface: p.surface,
+    round: p.round,
+    date: p.date,
+    pickName: p.prediction.winnerName,
+    odds: p.betting.winnerOdds,
+    probability: p.prediction.winProbability,
+    edge: p.v3.decision.value?.edge ?? null,
+    kelly: p.v3.decision.value?.kelly ?? null,
+    odds1: p.odds1,
+    odds2: p.odds2,
+  };
+}
+
+/** Règle tous les paris trackés déjà joués (mutualisé settle / bilan). */
+async function settleAllBets(): Promise<{ settled: number; checked: number }> {
+  if (!isPersistenceEnabled()) return { settled: 0, checked: 0 };
+  const unsettled = await getUnsettledBets();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  await ensureFreshData();
+  const runtime = getRuntimeMatches();
+  let settled = 0;
+  for (const bet of unsettled) {
+    if (bet.match_date && bet.match_date > yesterday) continue; // pas encore joué
+    const kw = keyOf(bet.pick_name);
+    const found = runtime.find((m) => m.date === bet.match_date && (m.w === kw || m.l === kw));
+    if (!found) continue;
+    const pickWon = found.w === kw;
+    await settleBet(bet.match_id, bet.pick, pickWon ? 'win' : 'loss');
+    settled++;
+  }
+  return { settled, checked: unsettled.length };
+}
+
 function formatPick(p: ReturnType<typeof toApiPrediction>): string {
   const v = p.v3.decision.value;
   const odds = p.betting.winnerOdds.toFixed(2);
@@ -102,29 +153,56 @@ export async function GET(request: Request) {
   }
 
   try {
-    // ---- mode settle : règlement des paris trackés ----
+    // ---- mode settle : règlement des paris trackés (sans publication) ----
     if (mode === 'settle') {
       if (!isPersistenceEnabled()) {
         return NextResponse.json({ success: true, message: 'Supabase non configuré — settlement ignoré', settled: 0 });
       }
-      const unsettled = await getUnsettledBets();
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      await ensureFreshData();
-      const runtime = getRuntimeMatches();
-      let settled = 0;
-      for (const bet of unsettled) {
-        if (bet.match_date && bet.match_date > yesterday) continue; // pas encore joué
-        const kw = keyOf(bet.pick_name);
-        const found = runtime.find((m) => m.date === bet.match_date && (m.w === kw || m.l === kw));
-        if (!found) continue;
-        const pickWon = found.w === kw;
-        await settleBet(bet.match_id, bet.pick, pickWon ? 'win' : 'loss');
-        settled++;
-      }
-      return NextResponse.json({ success: true, settled, checked: unsettled.length });
+      const { settled, checked } = await settleAllBets();
+      return NextResponse.json({ success: true, settled, checked });
     }
 
-    // ---- modes picks / report ----
+    // ---- mode bilan : settle + publication du bilan Badjan Tennis J+1 ----
+    if (mode === 'bilan') {
+      if (!isPersistenceEnabled()) {
+        return NextResponse.json({
+          success: true,
+          message: 'Supabase non configuré — bilan indisponible (aucune donnée trackée)',
+          published: 0,
+        });
+      }
+      const settlement = await settleAllBets();
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const bets = await getBetsForDate(yesterday);
+      // 0 pari tracké ce jour → silencieux (design BADJAN : pas de spam)
+      const overall = await getOverallStats();
+      const bilanMessage = formatBilanMessage(bets, overall);
+      let sent = false;
+      if (bilanMessage && TENNIS_V3_ENABLED) {
+        if (isDuplicate('badjan-tennis-bilan', bilanMessage)) {
+          sent = false;
+        } else {
+          sent = await sendTelegramMessage(bilanMessage);
+        }
+      }
+      return NextResponse.json({
+        success: true,
+        mode,
+        settlement,
+        betsForDate: bets.length,
+        published: bets.length,
+        sent,
+        overall: {
+          wins: overall.wins,
+          losses: overall.losses,
+          pending: overall.pending,
+          roiPct: Math.round(overall.roi * 1000) / 10,
+        },
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // ---- modes picks / report / badjan ----
     const matches = await collectMatches();
     const v3 = await getV3Predictions(matches);
     const api = v3.predictions.map(toApiPrediction);
@@ -156,6 +234,37 @@ export async function GET(request: Request) {
 
     const dateStr = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     let message = '';
+    let badjanSent = false;
+
+    if (mode === 'badjan') {
+      // ---- Section BADJAN TENNIS : format maison, 🟢 uniquement, silencieux si 0 ----
+      const badjanPicks = greens.map(toBadjanPick);
+      message = formatBadjanTennisMessage(badjanPicks);
+      if (message && TENNIS_V3_ENABLED) {
+        if (isDuplicate('badjan-tennis', message)) {
+          badjanSent = false;
+        } else {
+          badjanSent = await sendTelegramMessage(message);
+        }
+      }
+      return NextResponse.json({
+        success: true,
+        mode,
+        telegramEnabled: TENNIS_V3_ENABLED && tgEnabled(),
+        sent: badjanSent,
+        published: badjanPicks.length,
+        silentNoPick: badjanPicks.length === 0,
+        funnel: {
+          collected: matches.length,
+          predicted: api.length,
+          unresolved: v3.unresolved.length,
+          greens: greens.length,
+          yellows: yellows.length,
+        },
+        data: v3.status,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     if (mode === 'report') {
       const st = v3.status;

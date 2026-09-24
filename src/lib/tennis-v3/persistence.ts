@@ -139,6 +139,78 @@ export async function settleBet(matchId: string, pick: string, result: 'win' | '
   }
 }
 
+/** Récupère les paris d'une date donnée (YYYY-MM-DD) — pour le bilan J+1. */
+export async function getBetsForDate(matchDate: string): Promise<TrackedBet[]> {
+  const sb = getClient();
+  if (!sb) return [];
+  try {
+    const { data, error } = await sb
+      .from('tennis_v3_bets')
+      .select('*')
+      .eq('match_date', matchDate)
+      .order('created_at', { ascending: true })
+      .limit(100);
+    if (error) throw error;
+    return ((data || []) as any[]) as TrackedBet[];
+  } catch (e: any) {
+    console.error(`[TennisV3] ⚠️ load bets du ${matchDate} KO (${e?.message})`);
+    return [];
+  }
+}
+
+export interface V3OverallStats {
+  wins: number;
+  losses: number;
+  voids: number;
+  pending: number;
+  settled: number;
+  total: number;
+  profitUnits: number; // somme des P&L en unités (stake 1u, win → odds-1, loss → -1)
+  roi: number; // profitUnits / settled (fraction, ex 0.093 = +9.3%)
+  hitRate: number; // wins / (wins + losses) (fraction)
+}
+
+/** Statistiques cumulées V3 (jusqu'aux 500 derniers paris trackés). */
+export async function getOverallStats(): Promise<V3OverallStats> {
+  const empty: V3OverallStats = {
+    wins: 0, losses: 0, voids: 0, pending: 0, settled: 0, total: 0,
+    profitUnits: 0, roi: 0, hitRate: 0,
+  };
+  const sb = getClient();
+  if (!sb) return empty;
+  try {
+    const { data, error } = await sb
+      .from('tennis_v3_bets')
+      .select('result, odds')
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (error) throw error;
+    const stats = { ...empty };
+    for (const row of (data || []) as any[]) {
+      stats.total++;
+      const odds = Number(row.odds) || 0;
+      if (row.result === 'win') {
+        stats.wins++;
+        stats.profitUnits += odds > 1 ? odds - 1 : 0;
+      } else if (row.result === 'loss') {
+        stats.losses++;
+        stats.profitUnits -= 1;
+      } else if (row.result === 'void') {
+        stats.voids++;
+      } else {
+        stats.pending++;
+      }
+    }
+    stats.settled = stats.wins + stats.losses;
+    stats.roi = stats.settled > 0 ? stats.profitUnits / stats.settled : 0;
+    stats.hitRate = stats.settled > 0 ? stats.wins / stats.settled : 0;
+    return stats;
+  } catch (e: any) {
+    console.error(`[TennisV3] ⚠️ stats globales KO (${e?.message})`);
+    return empty;
+  }
+}
+
 // ---------------- calibration ----------------
 
 export interface StoredCalibration {

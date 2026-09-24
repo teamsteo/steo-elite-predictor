@@ -129,12 +129,12 @@
       "schedule": "0 19 * * *"
     },
     {
-      "path": "/api/cron/tennis-v3?mode=report",
-      "schedule": "30 9 * * *"
+      "path": "/api/cron/tennis-v3?mode=badjan",
+      "schedule": "15 10 * * *"
     },
     {
-      "path": "/api/cron/tennis-v3?mode=settle",
-      "schedule": "0 12 * * *"
+      "path": "/api/cron/tennis-v3?mode=bilan",
+      "schedule": "45 12 * * *"
     }
   ]
 }
