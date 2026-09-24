@@ -1,9 +1,10 @@
 /**
- * Smoke test site-layer V3 : simule la branche v3 de /api/tennis
- * fixtures TennisMatch → getV3Predictions (seed offline) → toApiPrediction → conversion site (×100)
+ * Smoke test site-layer V3 (Task 21) : fixtures TennisMatch → getV3Predictions (seed offline)
+ * → toSiteFormat (conversion partagée du pipeline site+Telegram)
  * Vérifie : probabilités affichées 50-100, kelly en %, shape compatible front.
  */
 import { getV3Predictions, toApiPrediction } from '../src/lib/tennis-v3/service';
+import { toSiteFormat } from '../src/lib/tennis-v3/pipeline';
 import { TennisMatch } from '../src/lib/tennis-enhanced/smart-collector';
 
 function fixture(p1: string, p2: string, tomorrow = true): TennisMatch {
@@ -32,20 +33,8 @@ async function main() {
     fixture('Iga Swiatek', 'Aryna Sabalenka'),
   ];
   const v3 = await getV3Predictions(matches);
-  const apiV3 = v3.predictions.map((p) => {
-    const api = toApiPrediction(p);
-    return {
-      ...api,
-      prediction: {
-        ...api.prediction,
-        winProbability: Math.round(api.prediction.winProbability * 100),
-      },
-      betting: {
-        ...api.betting,
-        kellyStake: Math.round((api.betting.kellyStake || 0) * 1000) / 10,
-      },
-    };
-  });
+  // Chemin exact du pipeline : API 0-1 d'abord, puis conversion affichage partagée
+  const apiV3 = v3.predictions.map((p) => toSiteFormat(toApiPrediction(p)));
 
   let fails = 0;
   const check = (cond: boolean, label: string) => {

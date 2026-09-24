@@ -744,3 +744,24 @@ Stage Summary:
 - Le site web affiche maintenant les prédictions V3 (mêmes que BADJAN Telegram) par défaut — sources tennis-data souveraines + anti-ban stealthFetch + vetos
 - Frontend inchangé (zéro régression UI), conversion d'unités isolée dans le site layer
 - V2/V1/V0 conservés en fallback explicite
+
+---
+Task ID: 21
+Agent: Super Z (main)
+Task: Pipeline V3 UNIQUE partagé site + Telegram (éviter le double traitement demandé par l'utilisateur)
+
+Work Log:
+- AUDIT duplication : /api/tennis (site) ET /api/cron/tennis-v3 (Telegram) faisaient CHACUN collectMatches() → getV3Predictions() → mapping — 2 chaînes identiques, 2× la charge BetExplorer, risque de divergence site/Telegram
+- NOUVEAU src/lib/tennis-v3/pipeline.ts : runV3Pipeline() = UNE collecte, UN calcul, UN format canonique (toApiPrediction 0-1) ; 2 niveaux de cache : L1 mémoire instance 5 min (absorbe trafic site) + L2 Supabase Storage PARTAGÉ inter-instances (bucket live-calibration, objet tennis-v3/daily-predictions.json, pattern distributedGuard réutilisé : x-upsert POST, timeouts 3/5 s, dégradation gracieuse si Storage absent)
+- GAIN ANTI-BAN : BetExplorer voit ~1 collecte / 15 min GLOBALEMENT au lieu de N × instances — le cron 10:15 réutilise la collecte déclenchée par une visite site (et inversement)
+- INVARIANT DEMANDÉ : ce que le site affiche = EXACTEMENT ce que BADJAN publie (mêmes matchs, mêmes cotes, mêmes 🟢)
+- toSiteFormat exporté (conversion affichage prob ×100 / kelly %) — toApiPrediction reste 0-1 pour le cron (formatPick/toBadjanPick intacts) ; V3Status typé précisément (fin des casts Record<string,unknown>)
+- CÂBLAGE : /api/tennis branche v3 → runV3Pipeline({forceRefresh}) + kept filter inchangé ; cron modes badjan/report/picks → runV3Pipeline() + funnel via meta (collectedCount/unresolvedCount/status) ; settle/bilan INCHANGÉS (chemin data-service résultats)
+- TESTS scripts/test_v3_pipeline.ts 32/32 : conversions (×100, kelly %, non-mutation), L1 (1 collecte/2 appels), L2 frais réutilisé (0 collecte, read-only), L2 périmé → collecte+write, maxAgeMs custom, forceRefresh bypass, inflight dedup concurrent, dégradation gracieuse sans Storage, format canonique API 0-1 vs site 0-100
+- smoke_site_v3.ts migré sur toSiteFormat (chemin pipeline exact) — E2E réel revalidé (Alcaraz 70%, xlsx 2 req stealthFetch)
+- RÉGRESSION : tsc 0 err, tennis_v3 52/52, badjan_tennis 34/34, anti_ban 15/15
+
+Stage Summary:
+- Architecture unifiée : site et Telegram = 2 consommateurs du même pipeline (fin du double traitement)
+- Charge BetExplorer réduite (~1 collecte/15 min partagée), cohérence garantie site ↔ Telegram
+- Aucune régression : conversions Telegram inchangées, settle/bilan inchangés, V2/V1/V0 fallbacks intacts

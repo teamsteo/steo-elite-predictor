@@ -17,8 +17,8 @@
 
 import { NextResponse } from 'next/server';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
-import { collectMatches } from '@/lib/tennis-enhanced/smart-collector';
-import { getV3Predictions, toApiPrediction, V3_MODEL_VERSION } from '@/lib/tennis-v3/service';
+import { toApiPrediction, V3_MODEL_VERSION } from '@/lib/tennis-v3/service';
+import { runV3Pipeline } from '@/lib/tennis-v3/pipeline';
 import {
   saveTrackedBets,
   isPersistenceEnabled,
@@ -203,10 +203,11 @@ export async function GET(request: Request) {
       });
     }
 
-    // ---- modes picks / report / badjan ----
-    const matches = await collectMatches();
-    const v3 = await getV3Predictions(matches);
-    const api = v3.predictions.map(toApiPrediction);
+    // ---- modes picks / report / badjan — via PIPELINE PARTAGÉ site + Telegram (Task 21) ----
+    // Mêmes données que /api/tennis : une seule collecte BetExplorer / 15 min (L2 Supabase Storage).
+    // BADJAN publie donc EXACTEMENT ce que le site affiche.
+    const pipe = await runV3Pipeline();
+    const api = pipe.predictions;
     const greens = api.filter((p) => p.v3.decision.tier === 'green' && p.v3.decision.betRecommended);
     const yellows = api.filter((p) => p.v3.decision.tier === 'yellow');
 
@@ -256,20 +257,20 @@ export async function GET(request: Request) {
         published: badjanPicks.length,
         silentNoPick: badjanPicks.length === 0,
         funnel: {
-          collected: matches.length,
+          collected: pipe.meta.collectedCount,
           predicted: api.length,
-          unresolved: v3.unresolved.length,
+          unresolved: pipe.meta.unresolvedCount,
           greens: greens.length,
           yellows: yellows.length,
         },
-        data: v3.status,
+        data: pipe.meta.status,
         antiBan: getAntiBanStatus(),
         timestamp: new Date().toISOString(),
       });
     }
 
     if (mode === 'report') {
-      const st = v3.status;
+      const st = pipe.meta.status;
       message = [
         `📊 <b>RAPPORT TENNIS V3 — ${esc(dateStr)}</b>`,
         ``,
@@ -280,8 +281,8 @@ export async function GET(request: Request) {
         `• Persistance: ${isPersistenceEnabled() ? 'Supabase ✅' : 'mémoire (Supabase non configuré)'}`,
         ``,
         `📈 <b>Funnel</b>`,
-        `• Matchs collectés (BetExplorer): ${matches.length}`,
-        `• Prédictions V3: ${api.length} (noms non résolus: ${v3.unresolved.length})`,
+        `• Matchs collectés (BetExplorer): ${pipe.meta.collectedCount}`,
+        `• Prédictions V3: ${api.length} (noms non résolus: ${pipe.meta.unresolvedCount})`,
         `• 🟢 candidats: ${greens.length} · 🟡 prudence: ${yellows.length} · 🔴 no-bet: ${api.length - greens.length - yellows.length}`,
         ``,
         greens.length > 0
@@ -317,13 +318,13 @@ export async function GET(request: Request) {
       sent,
       published: greens.length,
       funnel: {
-        collected: matches.length,
+        collected: pipe.meta.collectedCount,
         predicted: api.length,
-        unresolved: v3.unresolved.length,
+        unresolved: pipe.meta.unresolvedCount,
         greens: greens.length,
         yellows: yellows.length,
       },
-      data: v3.status,
+      data: pipe.meta.status,
       antiBan: getAntiBanStatus(),
       timestamp: new Date().toISOString(),
     });

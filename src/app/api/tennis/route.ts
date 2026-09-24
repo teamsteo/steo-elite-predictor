@@ -27,8 +27,8 @@ import {
   Surface,
   Category
 } from '../../../lib/tennis-enhanced/smart-collector';
-// Import moteur V3 (stratégie 8 étapes, tennis-data.co.uk)
-import { getV3Predictions, toApiPrediction } from '../../../lib/tennis-v3/service';
+// Import moteur V3 (stratégie 8 étapes, tennis-data.co.uk) — via PIPELINE partagé site+Telegram
+import { runV3Pipeline } from '../../../lib/tennis-v3/pipeline';
 import { isPersistenceEnabled } from '../../../lib/tennis-v3/persistence';
 import { predictMatchOptimized } from '../../../lib/tennis-enhanced/optimized-predictor';
 import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor';
@@ -93,8 +93,7 @@ let lastFetchTime = 0;
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 // Cache dédié V3 (séparé pour ne pas perturber V2)
-let cachedV3: any[] = [];
-let lastFetchV3 = 0;
+// (Task 21) le cache V3 est géré par le pipeline partagé tennis-v3/pipeline.ts
 
 // ============================================
 // GET - Récupérer les prédictions
@@ -111,56 +110,29 @@ export async function GET(request: Request) {
     
     console.log(`🎾 API Tennis: Requête reçue (version: ${version})`);
 
-    // ============ MOTEUR V3 (stratégie 8 étapes) ============
+    // ============ MOTEUR V3 (stratégie 8 étapes) — PIPELINE PARTAGÉ site + Telegram (Task 21) ============
+    // Une seule collecte/15 min partagée avec le cron BADJAN : ce que le site affiche =
+    // exactement ce que Telegram publie. L1 mémoire (5 min) + L2 Supabase Storage inter-instances.
     if (version === 'v3') {
-      const nowV3 = Date.now();
-      if (!forceRefresh && cachedV3.length > 0 && nowV3 - lastFetchV3 < CACHE_TTL) {
-        return NextResponse.json({
-          predictions: cachedV3,
-          stats: calculateStats(cachedV3),
-          generatedAt: new Date(lastFetchV3).toISOString(),
-          source: 'cache',
-          modelInfo: { version: 'V3', engine: 'tennis-v3 (Elo tennis-data.co.uk + 7 facteurs + vetos + value)', seeded: true },
-          version,
-        });
-      }
-      const matchesV3 = await collectMatches();
-      const v3 = await getV3Predictions(matchesV3);
-      // Conventions d'affichage site = V2 : winProbability 0-100 (V3 brut 0-1, conservé pour le cron BADJAN
-      // qui fait sa propre conversion), kellyStake en % — conversion FAITE ICI uniquement (site layer).
-      const apiV3 = v3.predictions.map((p) => {
-        const api = toApiPrediction(p);
-        return {
-          ...api,
-          prediction: {
-            ...api.prediction,
-            winProbability: Math.round(api.prediction.winProbability * 100),
-          },
-          betting: {
-            ...api.betting,
-            kellyStake: Math.round((api.betting.kellyStake || 0) * 1000) / 10,
-          },
-        };
-      });
-      // filtres qualité identiques à V2 (tournois majeurs, matchs futurs)
+      const out = await runV3Pipeline({ forceRefresh });
+      // filtres qualité identiques à V2 (matchs futurs / du jour)
       const nowDateV3 = new Date();
-      const kept = apiV3.filter((p: any) => {
+      const kept = out.site.filter((p: any) => {
         const md = new Date(p.date);
         return md >= nowDateV3 || md.toDateString() === nowDateV3.toDateString();
       });
-      cachedV3 = kept;
-      lastFetchV3 = nowV3;
       return NextResponse.json({
         predictions: kept,
         stats: calculateStats(kept as any),
-        generatedAt: new Date().toISOString(),
-        source: 'v3',
+        generatedAt: out.meta.collectedAt,
+        source: out.meta.source,
         modelInfo: {
           version: 'V3',
           engine: 'tennis-v3.0.0 — Elo 25% / Service-Retour 25% / Forme 15% / Surface 15% / Matchup 10% / H2H 5% / Conditions 5%',
-          data: v3.status,
-          unresolved: v3.unresolved.length,
+          data: out.meta.status,
+          unresolved: out.meta.unresolvedCount,
           persistence: isPersistenceEnabled() ? 'supabase' : 'memory-only',
+          pipeline: 'partagé site + Telegram — 1 collecte BetExplorer max / 15 min',
         },
         quotaStatus: getQuotaStatus(),
         version,
