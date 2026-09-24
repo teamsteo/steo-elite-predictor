@@ -68,3 +68,16 @@ scripts/.backup_env
 
 # Log du miroir GitLab (hook pre-push)
 scripts/gitlab-mirror.log
+
+# ═══ SÉCURITÉ ANTI-PARASITES (Task 20) ═══
+# Scripts avec credentials en dur — JAMAIS versionner (cause des commits
+# parasites UUID 224c705/7e3b084/41be846 refusés par GitHub Push Protection)
+scripts/add_gh_secret.py
+scripts/push_fix.py
+# Binaires lourds à la racine (repo*.tar.gz 26 Mo, .pkl junk des commits parasites)
+/repo*.tar.gz
+/*.pkl
+# Caches xlsx binaires régénérables
+scripts/.xlsx_cache/
+# Fichiers temporaires à suffixe aléatoire (artefacts crash, ex: .skysports_tennis.json.G7Ogkx)
+.*.json.??????
