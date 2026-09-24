@@ -39,7 +39,7 @@ import {
   isOddsInRange
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache, detectValueBets } from '@/lib/combinedDataService';
-import { publishBadjanToTelegram } from '@/lib/badjanService';
+import { publishBadjanToTelegram, analyzeBadjanFunnel } from '@/lib/badjanService';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
@@ -3315,18 +3315,20 @@ export async function GET(request: NextRequest) {
           console.log('🏈 BADJAN: récupération des matchs du pipeline (force refresh)...');
           const badjanMatches = await getMatchesWithRealOdds(true);
           const badjanResult = await publishBadjanToTelegram(badjanMatches);
+          const badjanFunnel = analyzeBadjanFunnel(badjanMatches);
           result = {
             telegram: {
               success: badjanResult.success,
               picks: badjanResult.picks,
+              funnel: badjanFunnel,
               message: badjanResult.success
                 ? `🏈 Badjan publié (${badjanResult.picks} match(s))`
-                : `Badjan: rien publié (${badjanResult.message || '0 match éligible'})`,
+                : `Badjan: rien publié (${badjanFunnel.reason || badjanResult.message || '0 match éligible'})`,
             },
           };
         } catch (e: any) {
           console.error('❌ Erreur BADJAN:', e.message);
-          result = { telegram: { success: false, error: 'Erreur interne' } };
+          result = { telegram: { success: false, error: 'Erreur interne', detail: e.message } };
         }
         break;
         
@@ -4156,18 +4158,20 @@ export async function POST(request: NextRequest) {
           console.log('🏈 [POST] BADJAN: récupération des matchs du pipeline (force refresh)...');
           const badjanMatches = await getMatchesWithRealOdds(true);
           const badjanResult = await publishBadjanToTelegram(badjanMatches);
+          const badjanFunnel = analyzeBadjanFunnel(badjanMatches);
           result = {
             telegram: {
               success: badjanResult.success,
               picks: badjanResult.picks,
+              funnel: badjanFunnel,
               message: badjanResult.success
                 ? `🏈 [POST] Badjan publié (${badjanResult.picks} match(s))`
-                : `Badjan: rien publié (${badjanResult.message || '0 match éligible'})`,
+                : `Badjan: rien publié (${badjanFunnel.reason || badjanResult.message || '0 match éligible'})`,
             },
           };
         } catch (e: any) {
           console.error('❌ [POST] Erreur BADJAN:', e.message);
-          result = { telegram: { success: false, error: 'Erreur interne' } };
+          result = { telegram: { success: false, error: 'Erreur interne', detail: e.message } };
         }
         break;
 

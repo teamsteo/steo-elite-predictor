@@ -140,6 +140,61 @@ export function filterBadjanMatches(matches: BadjanMatchInput[]): BadjanMatchInp
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// DIAGNOSTIC FUNNEL (pur, sans effet de bord — Task 16)
+// Permet de comprendre POURQUOI 0 pick (réponse JSON du cron,
+// jamais publiée sur Telegram). Miroir exact de filterBadjanMatches.
+// ═══════════════════════════════════════════════════════════════════
+
+export interface BadjanFunnel {
+  total: number;            // matchs pipeline reçus
+  foot: number;             // football uniquement
+  riskDefined: number;      // riskPercentage défini
+  riskOk: number;           // risque ≤ BADJAN_MAX_RISK
+  predictedHome: number;    // prédiction victoire domicile
+  marketConfirmed: number;  // cote 1 strictement la plus basse du 1X2
+  realOdds: number;         // cotes réelles (non estimées) = picks
+  reason?: string;          // première cause de vide (si 0 pick)
+}
+
+export function analyzeBadjanFunnel(matches: BadjanMatchInput[]): BadjanFunnel {
+  const all = matches || [];
+  const foot = all.filter(m => isFootballSport(m.sport));
+  const riskDefined = foot.filter(m => typeof m.riskPercentage === 'number' && isFinite(m.riskPercentage));
+  const riskOk = riskDefined.filter(m => m.riskPercentage! <= BADJAN_MAX_RISK);
+  const predictedHome = riskOk.filter(m => m.predictedResult === 'home');
+  const marketConfirmed = predictedHome.filter(m => {
+    const oh = m.oddsHome, oa = m.oddsAway, od = m.oddsDraw;
+    if (typeof oh !== 'number' || typeof oa !== 'number' || !isFinite(oh) || !isFinite(oa)) return false;
+    if (oh < BADJAN_MIN_FAVORITE_ODDS) return false;
+    if (oh >= oa) return false;
+    if (typeof od === 'number' && isFinite(od) && oh >= od) return false;
+    return true;
+  });
+  const realOdds = marketConfirmed.filter(m => !m.isEstimated);
+
+  let reason: string | undefined;
+  if (all.length === 0) reason = 'Pipeline 0 match (ESPN/Odds API injoignables ou throttling ?)';
+  else if (foot.length === 0) reason = '0 match de football dans le pipeline';
+  else if (riskDefined.length === 0) reason = 'Aucun riskPercentage calculé sur le foot';
+  else if (riskOk.length === 0) reason = `Tous les risques foot > ${BADJAN_MAX_RISK}%`;
+  else if (predictedHome.length === 0) reason = 'Aucune prédiction victoire domicile parmi risques ≤45%';
+  else if (marketConfirmed.length === 0) reason = 'Marché ne confirme aucun favori domicile (cote 1 pas la plus basse)';
+  else if (realOdds.length === 0) reason = 'Cotes estimées uniquement (Odds API absente ou quota épuisé ?)';
+  else reason = undefined;
+
+  return {
+    total: all.length,
+    foot: foot.length,
+    riskDefined: riskDefined.length,
+    riskOk: riskOk.length,
+    predictedHome: predictedHome.length,
+    marketConfirmed: marketConfirmed.length,
+    realOdds: realOdds.length,
+    reason,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // FORMAT BADJAN
 // ═══════════════════════════════════════════════════════════════════
 

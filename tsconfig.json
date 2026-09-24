@@ -48,6 +48,8 @@
     "pronostics-app",
     "pronostics-app/**",
     "pronostics-app-disabled",
-    "pronostics-app-disabled/**"
+    "pronostics-app-disabled/**",
+    "steo-src",
+    "steo-src/**"
   ]
 }
