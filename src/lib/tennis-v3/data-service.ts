@@ -15,6 +15,7 @@ import { V3Match, V3PlayerProfile, V3Seed, V3Surface } from './types';
 import { EloStore, newEloStore, applyMatch, ELO_BASE, surfaceRating } from './elo-engine';
 import { parseCanonical, buildSurnameIndex } from './name-utils';
 import { parseXlsx } from './xlsx-parser';
+import { stealthFetch } from '../stealthFetch';
 const TENNIS_DATA_BASE = 'https://www.tennis-data.co.uk/hrjk-85HytOjkhth76j_ygh4jf7';
 const XLSX_TTL = 12 * 60 * 60 * 1000; // 12h
 
@@ -116,12 +117,12 @@ async function fetchXlsxRows(category: 'atp' | 'wta'): Promise<any[]> {
       ? `${TENNIS_DATA_BASE}/${year}/${year}.xlsx`
       : `${TENNIS_DATA_BASE}/${year}w/${year}.xlsx`;
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-      },
+    // stealthFetch (Task 19) : profils navigateur cohérents + budget anti-ban
+    // (tennis-data: rafale 2/60s, plafond 8/jour) + disjoncteur WAF partagé.
+    // En cas de budget épuisé / breaker → catch ci-dessous → « seed seul ».
+    const res = await stealthFetch(url, {
       signal: AbortSignal.timeout(25000),
+      maxRetries: 1, // xlsx = gros fichier, pas de retry agressif
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const rows = await parseXlsx(Buffer.from(await res.arrayBuffer()));

@@ -35,6 +35,7 @@ import {
 import { ensureFreshData, getRuntimeMatches } from '@/lib/tennis-v3/data-service';
 import { parseCanonical } from '@/lib/tennis-v3/name-utils';
 import { sendTelegramMessage, isDuplicate } from '@/lib/telegramService';
+import { getAntiBanStatus } from '@/lib/stealthFetch';
 
 const CRON_SECRET = process.env.CRON_SECRET;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -262,6 +263,7 @@ export async function GET(request: Request) {
           yellows: yellows.length,
         },
         data: v3.status,
+        antiBan: getAntiBanStatus(),
         timestamp: new Date().toISOString(),
       });
     }
@@ -322,6 +324,7 @@ export async function GET(request: Request) {
         yellows: yellows.length,
       },
       data: v3.status,
+      antiBan: getAntiBanStatus(),
       timestamp: new Date().toISOString(),
     });
   } catch (e: any) {

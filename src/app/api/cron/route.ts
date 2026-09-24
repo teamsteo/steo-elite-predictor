@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PredictionStore } from '@/lib/store';
+import { getAntiBanStatus } from '@/lib/stealthFetch';
 import { ExpertAdviceStore } from '@/lib/expertAdviceStore';
 import { updateStatsHistory, forceUpdateStats } from '@/lib/statsUpdater';
 import { syncPredictionsToML } from '@/lib/unifiedPredictionTracker';
@@ -3647,6 +3648,7 @@ export async function GET(request: NextRequest) {
       version: CRON_VERSION,
       duration: `${duration}ms`,
       supabase: supabasePing,
+      antiBan: getAntiBanStatus(),
       ...result
     });
 
@@ -4528,6 +4530,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
       duration: `${duration}ms`,
       supabase: pingResult,
+      antiBan: getAntiBanStatus(),
       ...result
     });
 

@@ -15,6 +15,12 @@
  */
 
 // ============================================
+// IMPORTS — bouclier anti-ban central (Task 19)
+// ============================================
+
+import { stealthFetch } from '../stealthFetch';
+
+// ============================================
 // TYPES & INTERFACES
 // ============================================
 
@@ -308,18 +314,17 @@ async function fetchFromBetExplorer(): Promise<TennisMatch[]> {
   try {
     // URL tennis BetExplorer
     const url = 'https://www.betexplorer.com/next/tennis/';
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': getRandomUserAgent(),
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'no-cache',
-      },
+
+    // Task 19 : passage par le bouclier central stealthFetch — profils navigateur
+    // cohérents (UA ↔ client hints), budget anti-ban (rafale 20/60s, plafond
+    // 300/jour), disjoncteur WAF PARTAGÉ inter-instances (Supabase Storage).
+    // La logique métier locale (canRequestBetExplorer / detectBan / circuit
+    // breaker 30 min + fallback demo) reste la PREMIÈRE couche, inchangée.
+    const response = await stealthFetch(url, {
       redirect: 'follow',
+      headers: {
+        'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
     });
     
     // Mettre à jour le state

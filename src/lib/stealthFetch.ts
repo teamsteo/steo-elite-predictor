@@ -104,11 +104,140 @@ const domainStates = new Map<string, DomainState>();
 
 const RATE_LIMITS: Record<string, number> = {
   // Délai minimum entre 2 requêtes vers le même domaine (ms)
-  'site.api.espn.com': 300,        // ESPN: assez permissif mais ne pas abuser
+  'site.api.espn.com': 450,        // ESPN: throttling mesuré ~35 req rapprochées → 403 (Task 16/19)
   'api.the-odds-api.com': 2000,    // Odds API: quota strict (500/mois)
+  'www.tennis-data.co.uk': 2000,   // tennis-data: site statique, on reste très doux
+  'tennis-data.co.uk': 2000,       // variante sans www (même hôte réel)
+  'www.betexplorer.com': 500,      // BetExplorer: politesse standard
+  'www.fbref.com': 1500,           // FBref: site lourd, rester discret
+  'fbref.com': 1500,
 };
 
 const DEFAULT_RATE_LIMIT = 500; // 500ms par défaut entre requêtes
+
+// ============================================
+// POLITIQUES ANTI-BAN PAR DOMAINE (Task 19)
+// ============================================
+// Budget de rafale (fenêtre glissante) + plafond journalier (jour UTC).
+// Objectif : rester TRÈS en dessous des seuils de bannissement observés
+// (ESPN ~35 requêtes rapprochées) tout en laissant passer le trafic légitime
+// (BADJAN force-refresh = ~108 fetchs espacés par le rate limit).
+
+export interface DomainPolicy {
+  /** Délai min entre 2 requêtes (override RATE_LIMITS) */
+  minDelayMs?: number;
+  /** Max de requêtes dans burstWindowMs (fenêtre glissante) */
+  burstMax?: number;
+  /** Fenêtre glissante du budget de rafale (défaut 60s) */
+  burstWindowMs?: number;
+  /** Plafond dur par jour UTC — au-delà → fast-fail (les fallbacks prennent le relais) */
+  dailyCap?: number;
+  /** Attente max d'un slot de rafale avant fast-fail (budget serverless) */
+  maxQueueWaitMs?: number;
+}
+
+/**
+ * Politiques par domaine. Un domaine absent = protection de base uniquement
+ * (rate limit par défaut + circuit breaker + WAF).
+ */
+export const DOMAIN_POLICIES: Record<string, DomainPolicy> = {
+  // ESPN : ~35 req rapprochées → 403 (mesuré). 80/min + espacement 450ms
+  // couvre le force-refresh BADJAN (~108 fetchs ≈ 50s) avec marge de sécurité.
+  'site.api.espn.com': { minDelayMs: 450, burstMax: 80, burstWindowMs: 60_000, dailyCap: 400 },
+  // Odds API : le quota mensuel est géré par oddsQuotaManager — ici anti-rafale local.
+  'api.the-odds-api.com': { minDelayMs: 2000, burstMax: 10, burstWindowMs: 60_000, dailyCap: 40 },
+  // tennis-data (V3 tennis) : xlsx ATP+WTA, TTL 12h → usage réel ≤ 4/jour. Cap dur 8.
+  'www.tennis-data.co.uk': { minDelayMs: 2000, burstMax: 2, burstWindowMs: 60_000, dailyCap: 8 },
+  'tennis-data.co.uk': { minDelayMs: 2000, burstMax: 2, burstWindowMs: 60_000, dailyCap: 8 },
+  // BetExplorer (tennis + multisports) : collecteur = 1-2 pages/jour, scraper = qqs pages.
+  'www.betexplorer.com': { minDelayMs: 500, burstMax: 20, burstWindowMs: 60_000, dailyCap: 300 },
+  'betexplorer.com': { minDelayMs: 500, burstMax: 20, burstWindowMs: 60_000, dailyCap: 300 },
+};
+
+const DEFAULT_BURST_WINDOW_MS = 60_000;
+const DEFAULT_MAX_QUEUE_WAIT_MS = 2500; // au-delà → fast-fail, les fallbacks prennent le relais
+
+/**
+ * Levé quand un budget (rafale ou journalier) est épuisé — fast-fail VOLONTAIRE :
+ * marteler le domaine durcirait le profil de bannissement. L'appelant applique
+ * son fallback (cache, estimation, source secondaire).
+ */
+export class GuardBudgetError extends Error {
+  constructor(public readonly domain: string, reason: string) {
+    super(`stealthFetch: budget anti-ban épuisé pour ${domain} — ${reason}`);
+    this.name = 'GuardBudgetError';
+  }
+}
+
+// État budget par domaine
+const burstLog = new Map<string, number[]>();
+const dailyCount = new Map<string, { day: string; count: number }>();
+
+function utcDay(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Budget de rafale + plafond journalier — vérifié AVANT chaque requête.
+ * Si un slot de rafale se libère rapidement (≤ maxQueueWaitMs), on patiente
+ * brièvement ; sinon fast-fail immédiat (jamais de sleep long en serverless).
+ */
+async function enforceBudget(domain: string): Promise<void> {
+  const policy = DOMAIN_POLICIES[domain];
+  if (!policy) return;
+
+  // 1. Plafond journalier (jour UTC)
+  if (policy.dailyCap) {
+    const dc = dailyCount.get(domain);
+    if (dc && dc.day === utcDay() && dc.count >= policy.dailyCap) {
+      throw new GuardBudgetError(domain, `plafond journalier ${policy.dailyCap} requêtes atteint`);
+    }
+  }
+
+  // 2. Rafale (fenêtre glissante)
+  if (policy.burstMax) {
+    const window = policy.burstWindowMs || DEFAULT_BURST_WINDOW_MS;
+    const maxWait = policy.maxQueueWaitMs ?? DEFAULT_MAX_QUEUE_WAIT_MS;
+    const now = Date.now();
+    let stamps = (burstLog.get(domain) || []).filter((t) => now - t < window);
+    if (stamps.length >= policy.burstMax) {
+      const waitMs = stamps[0] + window - now;
+      if (waitMs <= maxWait) {
+        // Slot proche : on patiente (avec léger jitter anti-pattern)
+        await sleep(Math.max(1, waitMs + Math.floor(Math.random() * 40)));
+        const now2 = Date.now();
+        stamps = (burstLog.get(domain) || []).filter((t) => now2 - t < window);
+        if (stamps.length >= policy.burstMax) {
+          throw new GuardBudgetError(domain, `rafale ${policy.burstMax}/${Math.round(window / 1000)}s toujours saturée`);
+        }
+      } else {
+        throw new GuardBudgetError(
+          domain,
+          `rafale ${policy.burstMax}/${Math.round(window / 1000)}s saturée (attente ${Math.round(waitMs / 1000)}s > budget ${maxWait}ms)`
+        );
+      }
+    }
+  }
+}
+
+/** Compte une requête DÉMARRÉE vers le domaine (succès ou échec — le domaine la voit). */
+function recordRequest(domain: string): void {
+  const policy = DOMAIN_POLICIES[domain];
+  if (!policy) return;
+  if (policy.burstMax) {
+    const window = policy.burstWindowMs || DEFAULT_BURST_WINDOW_MS;
+    const now = Date.now();
+    const stamps = (burstLog.get(domain) || []).filter((t) => now - t < window);
+    stamps.push(now);
+    burstLog.set(domain, stamps);
+  }
+  // Compteur journalier SUIVI dès qu'une politique existe (télémétrie
+  // always-on) ; le PLAFOND n'est vérifié que si policy.dailyCap est défini.
+  const day = utcDay();
+  const dc = dailyCount.get(domain);
+  if (!dc || dc.day !== day) dailyCount.set(domain, { day, count: 1 });
+  else dc.count++;
+}
 
 const MAX_ERRORS_BEFORE_BLOCK = 5;
 // Cooldown avec jitter (8-14 min) pour ne pas dessiner un pattern d'attente fixe
@@ -174,7 +303,7 @@ function checkCircuitBreaker(domain: string): void {
 
 async function waitForRateLimit(domain: string): Promise<void> {
   const state = domainStates.get(domain);
-  const minDelay = RATE_LIMITS[domain] || DEFAULT_RATE_LIMIT;
+  const minDelay = DOMAIN_POLICIES[domain]?.minDelayMs ?? RATE_LIMITS[domain] ?? DEFAULT_RATE_LIMIT;
 
   if (state && state.lastRequest > 0) {
     const elapsed = Date.now() - state.lastRequest;
@@ -397,10 +526,17 @@ export async function stealthFetch(
   // ne concerne que le délai de politesse, jamais la protection du domaine)
   checkCircuitBreaker(domain);
 
+  // Budgets anti-ban (rafale glissante + plafond journalier) — TOUJOURS vérifiés :
+  // dépasser un budget martèle le domaine et durcit le profil de bannissement.
+  await enforceBudget(domain);
+
   // Rate limiting — délai de politesse (peut être bypassé à la demande)
   if (!bypassRateLimit) {
     await waitForRateLimit(domain);
   }
+
+  // La requête DÉMARRE maintenant : elle compte dans les budgets (succès ou échec)
+  recordRequest(domain);
 
   // Construire les headers stealth + custom — UN SEUL profil cohérent par requête
   // (UA, client hints et platform du même navigateur, jamais mélangés)
@@ -446,4 +582,69 @@ export function getStealthState(): Record<string, Omit<DomainState, 'blockedUnti
     };
   });
   return result;
+}
+
+// ============================================
+// TÉLÉMÉTRIE ANTI-BAN (Task 19) — observabilité
+// ============================================
+
+export interface AntiBanDomainStatus {
+  totalRequests: number;
+  errorCount: number;
+  blocked: boolean;
+  blockedRemainingSec: number;
+  todayCount: number;
+  dailyCap: number | null;
+  burstLast60s: number;
+  burstMax: number | null;
+  minDelayMs: number;
+}
+
+/**
+ * État anti-ban consolidé par domaine (télémétrie + budgets + disjoncteur).
+ * Exposé dans les réponses cron et l'endpoint /api/anti-ban/status.
+ */
+export function getAntiBanStatus(): Record<string, AntiBanDomainStatus> {
+  const result: Record<string, AntiBanDomainStatus> = {};
+  const today = utcDay();
+  const domains = new Set<string>([
+    ...Array.from(domainStates.keys()),
+    ...Object.keys(DOMAIN_POLICIES),
+  ]);
+  const now = Date.now();
+  for (const domain of domains) {
+    const st = domainStates.get(domain);
+    const policy = DOMAIN_POLICIES[domain] || {};
+    const dc = dailyCount.get(domain);
+    const stamps = (burstLog.get(domain) || []).filter((t) => now - t < (policy.burstWindowMs || DEFAULT_BURST_WINDOW_MS));
+    result[domain] = {
+      totalRequests: st?.totalRequests || 0,
+      errorCount: st?.errorCount || 0,
+      blocked: st ? st.blockedUntil > now : false,
+      blockedRemainingSec: st && st.blockedUntil > now ? Math.ceil((st.blockedUntil - now) / 1000) : 0,
+      todayCount: dc && dc.day === today ? dc.count : 0,
+      dailyCap: policy.dailyCap ?? null,
+      burstLast60s: stamps.length,
+      burstMax: policy.burstMax ?? null,
+      minDelayMs: policy.minDelayMs ?? RATE_LIMITS[domain] ?? DEFAULT_RATE_LIMIT,
+    };
+  }
+  return result;
+}
+
+// ============================================
+// HOOKS DE TEST (ne jamais utiliser en production)
+// ============================================
+
+/** @internal Réinitialise tout l'état interne — tests uniquement. */
+export function __resetAntiBanStateForTests(): void {
+  domainStates.clear();
+  burstLog.clear();
+  dailyCount.clear();
+}
+
+/** @internal Remplace les politiques — tests uniquement. */
+export function __setPoliciesForTests(policies: Record<string, DomainPolicy>): void {
+  for (const k of Object.keys(DOMAIN_POLICIES)) delete DOMAIN_POLICIES[k];
+  Object.assign(DOMAIN_POLICIES, policies);
 }
