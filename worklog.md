@@ -725,3 +725,22 @@ Stage Summary:
 - Tokens GitHub restants à révoquer PAR L'UTILISATEUR (ghp_j9CotY... celui partagé en chat + ghp_xWul... celui des scripts purgés) : seul geste qui ferme la porte définitivement
 - Futurs pushes : auth à fournir à la volée (URL one-off ou credential helper) — plus aucun token persisté dans .git/config
 - En attente utilisateur : exécuter supabase-tennis-v3.sql (tracking V3 + bilan cumulé), rotation token GitLab si miroir voulu
+
+---
+Task ID: 20-bis
+Agent: Super Z (main)
+Task: Propager les mises à jour tennis V3 au site web (section Tennis affichait V2 par défaut)
+
+Work Log:
+- AUDIT : le site (TennisSection dans page.tsx) appelle /api/tennis SANS paramètre → défaut 'v2' (moteur Sackmann dégradé). Le V3 était branché mais uniquement via ?version=v3 explicite
+- CHANGEMENT 1 : défaut /api/tennis 'v2' → 'v3' (moteur souverain aligné BADJAN Telegram) ; v2/v1/v0 restent accessibles explicitement (zéro régression appelants existants)
+- CHANGEMENT 2 : conversion d'unités site-layer dans la branche v3 uniquement — winProbability 0-1 → 0-100 et kellyStake 0-1 → % (conventions d'affichage V2 du front). toApiPrediction reste en 0-1 CAR formatPick (cron report) et toBadjanPick/formatBadjanTennisMessage (BADJAN) font leur propre ×100 — toute modif dans toApiPrediction aurait cassé le canal Telegram (régression évitée)
+- CHANGEMENT 3 : getModelInfo version 'tennis-v3.0.0' + availableVersions.v3 DÉFAUT documenté
+- Compat vérifiée : TennisPredictionCard n'utilise PAS analysis (string V3 ok) ; merge combinés allActiveMatches utilise matchId/player1/player2/odds1/odds2/tournament/date (tous présents) ; calculateStats partagé V2/V3 ; methodology jamais renvoyé par l'API (état front null pré-existant, inchangé)
+- SMOKE E2E RÉEL scripts/smoke_site_v3.ts : 3 fixtures réelles (Alcaraz-Sinner 70%/30%, Djokovic-Fritz 54%, Swiatek-Sabalenka 57%) → xlsx réels téléchargés via stealthFetch (2 req), runtime 4283 matchs, mapping site validé (prob 50-100, kelly %, shape front)
+- TESTS : tsc 0 err ; tennis_v3 52/52 ; badjan_tennis 34/34 ; anti_ban 15/15
+
+Stage Summary:
+- Le site web affiche maintenant les prédictions V3 (mêmes que BADJAN Telegram) par défaut — sources tennis-data souveraines + anti-ban stealthFetch + vetos
+- Frontend inchangé (zéro régression UI), conversion d'unités isolée dans le site layer
+- V2/V1/V0 conservés en fallback explicite

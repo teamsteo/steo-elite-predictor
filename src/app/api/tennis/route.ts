@@ -105,9 +105,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get('filter') || 'all';
     const forceRefresh = searchParams.get('refresh') === 'true';
-    const version = searchParams.get('version') || 'v2'; // v2 | v1 | v0
+    // Défaut = v3 (moteur souverain Elo tennis-data + 7 facteurs + vetos, aligné BADJAN Telegram).
+    // v2/v1/v0 restent accessibles explicitement (?version=v2) — zéro régression pour les appelants existants.
+    const version = searchParams.get('version') || 'v3'; // v3 (défaut) | v2 | v1 | v0
     
-    console.log(`🎾 API Tennis V2 2026: Requête reçue (version: ${version})`);
+    console.log(`🎾 API Tennis: Requête reçue (version: ${version})`);
 
     // ============ MOTEUR V3 (stratégie 8 étapes) ============
     if (version === 'v3') {
@@ -124,7 +126,22 @@ export async function GET(request: Request) {
       }
       const matchesV3 = await collectMatches();
       const v3 = await getV3Predictions(matchesV3);
-      const apiV3 = v3.predictions.map(toApiPrediction);
+      // Conventions d'affichage site = V2 : winProbability 0-100 (V3 brut 0-1, conservé pour le cron BADJAN
+      // qui fait sa propre conversion), kellyStake en % — conversion FAITE ICI uniquement (site layer).
+      const apiV3 = v3.predictions.map((p) => {
+        const api = toApiPrediction(p);
+        return {
+          ...api,
+          prediction: {
+            ...api.prediction,
+            winProbability: Math.round(api.prediction.winProbability * 100),
+          },
+          betting: {
+            ...api.betting,
+            kellyStake: Math.round((api.betting.kellyStake || 0) * 1000) / 10,
+          },
+        };
+      });
       // filtres qualité identiques à V2 (tournois majeurs, matchs futurs)
       const nowDateV3 = new Date();
       const kept = apiV3.filter((p: any) => {
@@ -518,8 +535,9 @@ function calculateStats(predictions: TennisPrediction[]) {
 
 function getModelInfo() {
   return {
-    version: 'tennis-v2.0-2026',
+    version: 'tennis-v3.0.0',
     availableVersions: {
+      v3: 'DÉFAUT — Elo tennis-data.co.uk + 7 facteurs + vetos + value (aligné BADJAN Telegram)',
       v2: 'Moteur 2026 avec classements live, forme réelle, auto-apprentissage',
       v1: 'Moteur optimisé original avec cache intelligent',
       v0: 'Moteur basique fallback',
