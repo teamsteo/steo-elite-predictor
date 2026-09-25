@@ -487,11 +487,16 @@ function calculateStats(predictions: TennisPrediction[]) {
   
   return {
     total: predictions.length,
+    // Champs plats consommés par le frontend (stats.atp, stats.wta, stats.challenger)
+    atp: predictions.filter(p => (p.category || '').toLowerCase() === 'atp').length,
+    wta: predictions.filter(p => (p.category || '').toLowerCase() === 'wta').length,
+    challenger: predictions.filter(p => (p.category || '').toLowerCase() === 'challenger').length,
+    itf: predictions.filter(p => (p.category || '').toLowerCase() === 'itf').length,
     byCategory: {
-      atp: predictions.filter(p => p.category === 'atp').length,
-      wta: predictions.filter(p => p.category === 'wta').length,
-      challenger: predictions.filter(p => p.category === 'challenger').length,
-      itf: predictions.filter(p => p.category === 'itf').length,
+      atp: predictions.filter(p => (p.category || '').toLowerCase() === 'atp').length,
+      wta: predictions.filter(p => (p.category || '').toLowerCase() === 'wta').length,
+      challenger: predictions.filter(p => (p.category || '').toLowerCase() === 'challenger').length,
+      itf: predictions.filter(p => (p.category || '').toLowerCase() === 'itf').length,
     },
     byTier: {
       grand_slam: predictions.filter(p => p.tournamentTier === 'grand_slam').length,
@@ -501,11 +506,12 @@ function calculateStats(predictions: TennisPrediction[]) {
       challenger: predictions.filter(p => p.tournamentTier.includes('challenger')).length,
       itf: predictions.filter(p => p.tournamentTier === 'itf').length,
     },
+    // Surfaces normalisées en minuscules (l'API renvoie 'Hard'/'Clay' capitalisés via surfaceOf) — 'indoor'/'carpet' regroupés côté UI
     bySurface: {
-      hard: predictions.filter(p => p.surface === 'hard').length,
-      clay: predictions.filter(p => p.surface === 'clay').length,
-      grass: predictions.filter(p => p.surface === 'grass').length,
-      indoor: predictions.filter(p => p.surface === 'indoor').length,
+      hard: predictions.filter(p => (p.surface || '').toLowerCase() === 'hard').length,
+      clay: predictions.filter(p => (p.surface || '').toLowerCase() === 'clay').length,
+      grass: predictions.filter(p => (p.surface || '').toLowerCase() === 'grass').length,
+      indoor: predictions.filter(p => ['indoor', 'carpet'].includes((p.surface || '').toLowerCase())).length,
     },
     byConfidence: {
       very_high: predictions.filter(p => p.prediction.confidence === 'very_high').length,

@@ -3122,14 +3122,16 @@ function TennisSection() {
     hard: '#3b82f6',
     clay: '#f97316',
     grass: '#22c55e',
-    carpet: '#8b5cf6'
+    carpet: '#8b5cf6',
+    indoor: '#8b5cf6'
   };
 
   const surfaceLabels: Record<string, string> = {
     hard: 'Dur',
     clay: 'Terre battue',
     grass: 'Gazon',
-    carpet: 'Indoor'
+    carpet: 'Indoor',
+    indoor: 'Indoor'
   };
 
   const confidenceColors: Record<string, string> = {
@@ -3384,6 +3386,7 @@ function ChallengesSection() {
     valueBetsFound: number;
     highConfidenceCount: number;
     averageValueGap: number;
+    averageEdge?: number;
   } | null>(null);
 
   useEffect(() => {
@@ -3477,7 +3480,7 @@ function ChallengesSection() {
               <div style={{ fontSize: '9px', color: '#888' }}>Haute Conf.</div>
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>+{summary.averageValueGap}%</div>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>+{summary.averageEdge != null ? summary.averageEdge : summary.averageValueGap || 0}%</div>
               <div style={{ fontSize: '9px', color: '#888' }}>Value Moy.</div>
             </div>
           </div>
@@ -3514,33 +3517,45 @@ function ChallengesSection() {
       {/* Challenges Cards */}
       {!loading && !error && challenges.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          {challenges.map((challenge, idx) => (
+          {challenges.map((challenge, idx) => {
+            // Structure API plate (/api/challenges) : recommandation = camp "underdog" (value bet)
+            const isHome = (challenge.recommendation || 'home') === 'home';
+            const underdog: string = challenge.recommendedTeam || (isHome ? challenge.homeTeam : challenge.awayTeam) || '—';
+            const favorite: string = isHome ? challenge.awayTeam : challenge.homeTeam;
+            const underdogOdds: number = isHome ? challenge.oddsHome : challenge.oddsAway;
+            const favoriteOdds: number = isHome ? challenge.oddsAway : challenge.oddsHome;
+            const valueGap: number = Math.round((challenge.edge || 0) * 10) / 10;
+            const ourProbability: number = challenge.winProbability || 0;
+            const impliedProbability: number = underdogOdds > 0 ? Math.round((100 / underdogOdds) * 10) / 10 : 0;
+            const confidenceLevel: string = challenge.confidence || challenge.confidenceLevel || 'low';
+            const sportIcon = challenge.league === 'MLB' ? '⚾' : challenge.league === 'NBA' ? '🏀' : challenge.league === 'NHL' ? '🏒' : challenge.league === 'NFL' ? '🏈' : '⚽';
+            return (
             <div key={challenge.id} style={{
               background: 'linear-gradient(135deg, #1a1a1a 0%, #1a0a0a 100%)',
               borderRadius: '12px',
               padding: '14px',
-              border: challenge.confidenceLevel === 'high' ? '1px solid #22c55e50' : '1px solid #ef444430'
+              border: confidenceLevel === 'high' ? '1px solid #22c55e50' : '1px solid #ef444430'
             }}>
               {/* Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
                 <div>
                   <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff' }}>
-                    {challenge.challenge.underdog}
+                    {underdog}
                   </div>
                   <div style={{ fontSize: '11px', color: '#888' }}>
-                    vs {challenge.challenge.favorite} • {challenge.match.tournament}
+                    vs {favorite} • {sportIcon} {challenge.league || challenge.sport || '—'} • {challenge.displayDate || ''}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#22c55e' }}>
-                    @{challenge.challenge.underdogOdds.toFixed(2)}
+                    @{Number(underdogOdds || 0).toFixed(2)}
                   </div>
                   <div style={{ 
                     fontSize: '10px', 
-                    color: getConfidenceColor(challenge.confidenceLevel),
+                    color: getConfidenceColor(confidenceLevel),
                     fontWeight: 'bold'
                   }}>
-                    {challenge.confidenceLevel.toUpperCase()}
+                    {String(confidenceLevel).toUpperCase()}
                   </div>
                 </div>
               </div>
@@ -3549,19 +3564,19 @@ function ChallengesSection() {
               <div style={{ marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', marginBottom: '4px' }}>
                   <span style={{ color: '#888' }}>Probabilités</span>
-                  <span style={{ color: '#22c55e', fontWeight: 'bold' }}>+{challenge.challenge.valueGap}% value</span>
+                  <span style={{ color: '#22c55e', fontWeight: 'bold' }}>+{valueGap}% value</span>
                 </div>
                 <div style={{ height: '6px', background: '#333', borderRadius: '3px', overflow: 'hidden' }}>
                   <div style={{ 
                     height: '100%', 
-                    width: `${Math.min(100, challenge.challenge.ourProbability)}%`, 
+                    width: `${Math.min(100, Math.max(0, ourProbability))}%`, 
                     background: 'linear-gradient(90deg, #ef4444 0%, #22c55e 100%)',
                     borderRadius: '3px'
                   }} />
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', color: '#666', marginTop: '2px' }}>
-                  <span>Bookmaker: {challenge.challenge.impliedProbability}%</span>
-                  <span>Notre analyse: {challenge.challenge.ourProbability}%</span>
+                  <span>Bookmaker: {impliedProbability}%</span>
+                  <span>Notre analyse: {ourProbability}%</span>
                 </div>
               </div>
 
@@ -3591,8 +3606,8 @@ function ChallengesSection() {
                 borderTop: '1px solid #333'
               }}>
                 <div style={{ display: 'flex', gap: '12px', fontSize: '10px', color: '#888' }}>
-                  <span>{getRiskIcon(challenge.riskLevel)} {challenge.riskLevel}</span>
-                  <span>🎾 {challenge.match.surface}</span>
+                  <span>{getRiskIcon(challenge.riskLevel)} {challenge.riskLevel || 'n/a'}</span>
+                  <span>{sportIcon} {challenge.expectedValue != null ? `EV +${Number(challenge.expectedValue).toFixed(1)}%` : ''}</span>
                 </div>
                 <div style={{ 
                   background: '#ef444420',
@@ -3602,11 +3617,12 @@ function ChallengesSection() {
                   color: '#ef4444',
                   fontWeight: 'bold'
                 }}>
-                  Score: {challenge.valueScore}/100
+                  Score: {challenge.valueScore ?? '—'}/100
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -6651,7 +6667,7 @@ function ResultsSection() {
   const v3EraData: { startDate: string; total: number; completed: number; pending: number; wins: number; losses: number; winRate: number; bySport: Record<string, any> } | null = (stats as any)?.v3Era || null;
   const eraDateLabel = v3EraData?.startDate ? v3EraData.startDate.split('-').reverse().slice(0, 2).join('/') : '25/09';
   const periodLabels: Record<string, { label: string; icon: string; date: string }> = {
-    ...(v3EraData ? { era: { label: '🚀 Ère V3', icon: '🚀', date: `Nouvelle stratégie — depuis le ${eraDateLabel}` } } : {}),
+    ...(v3EraData ? { era: { label: 'Ère V3', icon: '🚀', date: `Nouvelle stratégie — depuis le ${eraDateLabel}` } } : {}),
     yesterday: { label: isHistorySource ? 'Hier' : "Aujourd'hui", icon: '📅', date: isHistorySource ? 'Pronostics de la veille' : 'Pronostics du jour' },
     week: { label: 'Semaine', icon: '📆', date: '7 derniers jours' },
     month: { label: 'Mois', icon: '🗓️', date: '30 derniers jours' },
