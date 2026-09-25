@@ -23,6 +23,7 @@ import { predictMatchV2, fetchATPRankings2026, fetchWTARankings2026, getModelPer
 import { 
   collectMatches, 
   getTournamentImportanceFactor,
+  getCollectorStatus,
   TournamentTier,
   Surface,
   Category
@@ -144,6 +145,15 @@ export async function GET(request: Request) {
         predictions: kept,
         stats: calculateStats(kept as any),
         v3Stats,
+        // Funnel + collecteur (diagnostic Task 24 — additif, consommateurs existants inchangés)
+        funnel: {
+          collected: out.meta.collectedCount,
+          predicted: out.site.length,
+          kept: kept.length,
+          unresolved: out.meta.unresolvedCount,
+          collectedAt: out.meta.collectedAt,
+        },
+        collector: getCollectorStatus(),
         generatedAt: out.meta.collectedAt,
         source: out.meta.source,
         modelInfo: {

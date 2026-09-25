@@ -87,7 +87,7 @@ export async function GET() {
   return NextResponse.json({
     status,
     timestamp,
-    version: '2026.04.03-v1',
+    version: '2026.09.25-v2', // marqueur deploy Task 24 (fix parseur BetExplorer)
     app: 'Steo Élite Sports Predictor',
     checks
   }, { 
