@@ -268,30 +268,29 @@ function recordError(error: string): void {
 }
 
 /**
- * Détecte un contenu de ban/challenge. Retourne l'indicateur trouvé (ou null).
- * ⚠️ Les challenges Cloudflare « managed » répondent parfois en HTTP 200 —
- * d'où l'analyse du contenu en plus des codes HTTP.
+ * Détecte un contenu de challenge/ban — UNIQUEMENT consultée quand une page
+ * HTTP 200 n'a produit AUCUN match au parsing. Liste resserrée aux marqueurs
+ * univoques de challenge : les chaînes génériques (« blocked », « cloudflare »,
+ * « please wait »…) produisaient des faux positifs (Task 24).
  */
 function findBanIndicator(response: Response, html: string): string | null {
   // Codes HTTP suspects
   if (response.status === 403) return 'HTTP 403';
   if (response.status === 429) return 'HTTP 429';
   
-  // Contenu suspect
-  const banIndicators = [
-    'access denied',
-    'blocked',
+  // Marqueurs univoques de pages de challenge (title/body connu)
+  const challengeMarkers = [
+    'just a moment', // Cloudflare
+    'attention required', // Cloudflare
+    'checking your browser',
     'captcha',
-    'cloudflare',
-    'rate limit',
-    'too many requests',
-    'security check',
-    'please wait',
-    'enable javascript',
+    'access denied',
+    'request unsuccessful', // Cloudflare cf-error
+    'cf-browser-verification',
   ];
   
   const lowerHtml = html.toLowerCase();
-  return banIndicators.find(indicator => lowerHtml.includes(indicator)) || null;
+  return challengeMarkers.find(indicator => lowerHtml.includes(indicator)) || null;
 }
 
 /** Extrait <title> + un extrait texte de la page reçue (diagnostic). */
@@ -368,24 +367,27 @@ async function fetchFromBetExplorer(): Promise<TennisMatch[]> {
     
     const html = await response.text();
     
-    // Détecter un challenge/ban (HTTP 200 inclus — Cloudflare managed challenge)
-    const indicator = findBanIndicator(response, html);
-    if (indicator) {
-      const evidence = captureBanEvidence(html);
-      markAsBanned(`Détection automatique (${indicator}, HTTP ${response.status})`, indicator, evidence);
-      return [];
-    }
-    
-    // Parser le HTML
+    // Task 24 — PARSE-D'ABORD : une page qui parse (>0 matchs) est bonne, point.
+    // La détection de challenge ne concerne que les pages 200-imparables.
+    // (Faux positif résolu : le bandeau géolocalisé « vérification d'âge »
+    // contient des chaînes génériques qui tuaient le collecteur à tort.)
     const matches = parseBetExplorerHTML(html);
     
-    // Reset error count si succès
     if (matches.length > 0) {
       antiBanState.errorCount = 0;
       console.log(`[TennisCollector] ✅ BetExplorer: ${matches.length} matchs récupérés`);
+      return matches;
     }
     
-    return matches;
+    // 200 mais 0 match parsé → distinguer challenge (bloque 30 min) vs vraie page vide (rien à faire)
+    const indicator = findBanIndicator(response, html);
+    if (indicator) {
+      const evidence = captureBanEvidence(html);
+      markAsBanned(`Page non parsable + indicateur "${indicator}" (HTTP ${response.status})`, indicator, evidence);
+    } else {
+      console.log(`[TennisCollector] ⚪ HTTP ${response.status} mais 0 match parsé (pas d'indicateur de challenge — calendrier probablement vide)`);
+    }
+    return [];
     
   } catch (error) {
     recordError(String(error));
