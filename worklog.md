@@ -818,3 +818,21 @@ Stage Summary:
 - Cause de l'absence de publication identifiée : changement de markup BetExplorer, PAS un problème anti-ban ni de calendrier
 - Correctif prêt et validé sur données réelles ; dès le push+deploy : site Tennis repeuplé (refresh L1/L2 auto en ≤15 min) et BADJAN Tennis reprend demain 10:15 UTC
 - Le compteur V3 démarre réellement à zéro (0 pick tracké avant le fix) — cohérent avec la lecture claire « Ère V3 » du Task 23
+
+---
+Task ID: 24-bis
+Agent: Super Z (main)
+Task: Déploiement + résolution complète du silence tennis (token fourni par l'utilisateur)
+
+Work Log:
+- PUSH (token utilisateur one-off, jamais persisté) : 03aa143 → 4f87876 → f566684 → 4831faa → 2df8d35 ; purge d'un commit parasite de sync auto (b90fce3, auteur Z User container — HTML fixture + worklog aspirés, jamais poussé) ; fixture HTML ajoutée au .gitignore
+- Incident maîtrisé : TS1161 (regex </title> non échappé) poussé par erreur à cause d'un pipe head masquant le code de sortie — corrigé dans le commit suivant, protocole renforcé (exit codes explicites)
+- DIAGNOSTIC PROD via nouveau champ collector : prod recevait la VRAIE page BetExplorer (title « Upcoming Tennis matches with odds ») mais avec un bandeau géolocalisé « Verificação de idade » contenant la chaîne générique 'blocked' → faux positif detectBan → ban permanent → 0 matchs depuis des jours (explication complète v3Stats.total=0)
+- FIX FINAL (2df8d35) : parse-d'abord (page qui parse = légitime), findBanIndicator resserrée aux marqueurs univoques de challenge (just a moment / attention required / checking your browser / captcha / access denied / request unsuccessful / cf-browser-verification) et consultée SEULEMENT si 0 match parsé
+- VÉRIFICATION PROD : funnel {collected: 71, predicted: 25, unresolved: 46} — Medvedev 84% 🟢 Hangzhou, Rublev 80% 🟢, Marozsan 71% 🟢, Mannarino/Shapovalov 🟡 Chengdu... — L2 partagée repeuplée → BADJAN reprend au cron 10:15 UTC
+- RÉGRESSION finale : tsc 0 err, parser BetExplorer 11/11, tennis_v3 52/52, anti_ban 15/15, badjan_tennis 34/34
+
+Stage Summary:
+- Chaîne complète restaurée : BetExplorer → parse 2026 → V3 → site (25 prédictions affichées) + Telegram BADJAN (cron 10:15 UTC, mêmes données)
+- Collecteur auto-guérissant (ban temporaire 30 min, plus de mort permanente par instance) + observabilité (funnel + collector status dans /api/tennis)
+- Rappel sécurité : token GitHub fourni dans le chat → à révoquer/rotationner par l'utilisateur
