@@ -492,6 +492,49 @@ export async function GET(request: Request) {
         }
       }
       
+      // ── Tennis V3 : stats cumulées depuis Supabase (tennis_v3_bets — même source que BADJAN Telegram) ──
+      let tennis: any = null;
+      try {
+        const { getOverallStats } = await import('@/lib/tennis-v3/persistence');
+        const ts = await getOverallStats();
+        tennis = {
+          total: ts.total,
+          wins: ts.wins,
+          losses: ts.losses,
+          voids: ts.voids,
+          pending: ts.pending,
+          settled: ts.settled,
+          hitRate: Math.round((ts.hitRate || 0) * 100),
+          roi: Math.round((ts.roi || 0) * 1000) / 10,
+          profitUnits: Math.round((ts.profitUnits || 0) * 100) / 100,
+        };
+      } catch (e) {
+        console.log('⚠️ Stats tennis V3 indisponibles:', e);
+      }
+
+      // ── Évolution 7 jours (timeline) — agrégation par jour UTC depuis le store temps réel ──
+      let recentDaily: { date: string; wins: number; losses: number; total: number }[] = [];
+      try {
+        const storeData = await PredictionStore.loadAsync();
+        const byDay = new Map<string, { wins: number; losses: number; total: number }>();
+        const nowMs = Date.now();
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(nowMs - i * 86400000);
+          byDay.set(d.toISOString().split('T')[0], { wins: 0, losses: 0, total: 0 });
+        }
+        for (const p of ((storeData as any)?.predictions || []) as any[]) {
+          const day = String(p.matchDate || '').split('T')[0];
+          const entry = byDay.get(day);
+          if (!entry) continue;
+          entry.total++;
+          if (p.status === 'completed' && p.resultMatch === true) entry.wins++;
+          else if (p.status === 'completed' && p.resultMatch === false) entry.losses++;
+        }
+        recentDaily = Array.from(byDay.entries()).map(([date, v]) => ({ date, ...v }));
+      } catch (e) {
+        console.log('⚠️ recentDaily indisponible:', e);
+      }
+
       const info = await PredictionStore.getInfoAsync();
       const integrity = await PredictionStore.verifyIntegrityAsync();
       
@@ -509,6 +552,10 @@ export async function GET(request: Request) {
         },
         // Expert Advisor ratio (nouveau)
         expertAdvisor: stats?.overall?.expertAdvisor || null,
+        // Tennis V3 (cumul — même source que BADJAN Telegram)
+        tennis,
+        // Évolution 7 jours (wins/losses/total par jour UTC)
+        recentDaily,
         // Filtre actif
         filter: sport ? { sport } : null,
         // Infos générales

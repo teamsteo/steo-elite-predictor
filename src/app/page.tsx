@@ -4357,8 +4357,8 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         {/* <NavButton icon="🏈" label="NFL" active={activeSection === 'nfl'} onClick={() => setActiveSection('nfl')} color="#3b82f6" /> */}
         <NavButton icon="🏒" label="NHL" active={activeSection === 'nhl'} onClick={() => setActiveSection('nhl')} color="#06b6d4" />
         <NavButton icon="⚾" label="MLB" active={activeSection === 'mlb'} onClick={() => setActiveSection('mlb')} color="#dc2626" />
-        {/* Tennis - MASQUÉ (utiliser Telegram pour les prédictions) */}
-        {/* <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" /> */}
+        {/* Tennis - RÉACTIVÉ (moteur V3 souverain aligné BADJAN Telegram) */}
+        <NavButton icon="🎾" label="Tennis" active={activeSection === 'tennis'} onClick={() => setActiveSection('tennis')} color="#a855f7" />
         <NavButton icon="🔥" label="Challenges" active={activeSection === 'challenges'} onClick={() => setActiveSection('challenges')} color="#ef4444" />
         {/* Expert ML - MASQUÉ en mode apprentissage jusqu'à 70% de réussite sur 7 jours */}
         {/* <NavButton icon="🎯" label="Expert ML" active={activeSection === 'expert'} onClick={() => setActiveSection('expert')} color="#14b8a6" /> */}
@@ -4739,10 +4739,10 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
           <MLBSection />
         )}
 
-        {/* Section Tennis - MASQUÉ (utiliser Telegram pour les prédictions) */}
-        {/* {activeSection === 'tennis' && (
+        {/* Section Tennis - RÉACTIVÉE (moteur V3 souverain, mêmes prédictions que BADJAN Telegram) */}
+        {activeSection === 'tennis' && (
           <TennisSection />
-        )} */}
+        )}
 
         {/* Section Challenges Négligés */}
         {activeSection === 'challenges' && (
@@ -6580,7 +6580,10 @@ function ResultsSection() {
           overall: data.overall,
           bySport: data.bySport || { football: { total: 0, wins: 0, losses: 0, winRate: 0 }, basketball: { total: 0, wins: 0, losses: 0, winRate: 0 }, hockey: { total: 0, wins: 0, losses: 0, winRate: 0 } },
           expertAdvisor: data.expertAdvisor || null,
-        });
+          recentDaily: data.recentDaily || null,
+          tennis: data.tennis || null,
+          source: data.source || null,
+        } as any);
       }
       setLastUpdate(new Date());
     } catch (error) {
@@ -6592,9 +6595,22 @@ function ResultsSection() {
 
   useEffect(() => { void (async () => { await fetchStats(); })(); }, [fetchStats]);
 
+  // Auto-sélection de la première période avec des données (évite un onglet vide par défaut)
+  useEffect(() => {
+    if (!stats) return;
+    const has = (k: 'daily' | 'weekly' | 'monthly') => ((stats as any)[k]?.totalPredictions || 0) > 0;
+    if (activePeriod === 'yesterday' && !has('daily')) {
+      if (has('weekly')) setActivePeriod('week');
+      else if (has('monthly')) setActivePeriod('month');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stats]);
+
   const periodKey = activePeriod === 'yesterday' ? 'daily' : activePeriod === 'week' ? 'weekly' : 'monthly';
+  // Le chemin "stats_history" calcule daily = hier ; le chemin temps réel calcule daily = aujourd'hui → label honnête selon la source
+  const isHistorySource = (stats as any)?.source === 'github_stats_history';
   const periodLabels: Record<string, { label: string; icon: string; date: string }> = {
-    yesterday: { label: 'Hier', icon: '📅', date: 'Pronostics de la veille' },
+    yesterday: { label: isHistorySource ? 'Hier' : "Aujourd'hui", icon: '📅', date: isHistorySource ? 'Pronostics de la veille' : 'Pronostics du jour' },
     week: { label: 'Semaine', icon: '📆', date: '7 derniers jours' },
     month: { label: 'Mois', icon: '🗓️', date: '30 derniers jours' },
   };
@@ -6607,44 +6623,81 @@ function ResultsSection() {
 
   const rateColor = (rate: number) => rate >= 60 ? '#22c55e' : rate >= 45 ? '#eab308' : '#ef4444';
 
+  // FIX INCOHÉRENCE : le filtre sport respecte désormais la période sélectionnée (bySport de la période,
+  // plus le bySport global all-time) et les dénominateurs sont alignés sur la jauge (wins / complétés)
   const getFilteredStats = () => {
     if (!stats || !stats[periodKey]) return null;
-    if (activeSport === 'all') return stats[periodKey];
-    if (stats.bySport && stats.bySport[activeSport]) {
-      const s = stats.bySport[activeSport];
-      return { totalPredictions: s.total || 0, completed: s.total || 0, wins: s.wins || 0, losses: s.losses || 0, winRate: s.winRate || 0 };
-    }
-    return stats[periodKey];
+    const base = stats[periodKey];
+    if (activeSport === 'all') return base;
+    const s = (base as any)?.bySport?.[activeSport];
+    if (!s) return { totalPredictions: 0, completed: 0, pending: 0, wins: 0, losses: 0, winRate: 0 };
+    const wins = s.wins || 0;
+    const losses = s.losses || 0;
+    const completed = wins + losses;
+    const total = s.total || 0;
+    return {
+      totalPredictions: total,
+      completed,
+      pending: Math.max(total - completed, 0),
+      wins,
+      losses,
+      winRate: completed > 0 ? Math.round((wins / completed) * 100) : 0,
+    };
   };
   const periodStats = getFilteredStats();
+  // Sécurise tous les affichages même si la période est absente
+  const ps = (periodStats as any) || { totalPredictions: 0, completed: 0, pending: 0, wins: 0, losses: 0, winRate: 0 };
   const expertStats = stats?.expertAdvisor || stats?.overall?.expertAdvisor || null;
+  const tennisStats: { total: number; wins: number; losses: number; voids: number; pending: number; settled: number; hitRate: number; roi: number; profitUnits: number } | null = (stats as any)?.tennis || null;
 
-  // ── Data for charts ──
+  // ── Data for charts (PÉRIODE-AWARE : bySport de la période, Tennis = cumul V3 tracké Supabase) ──
+  const sportColors: Record<string, string> = { football: '#22c55e', basketball: '#f97316', hockey: '#3b82f6', tennis: '#a855f7' };
+  const periodBySport = ((stats as any)?.[periodKey]?.bySport || {}) as Record<string, any>;
   const sportData = [
-    { name: 'Football', fullName: '⚽ Football', wins: stats?.bySport?.football?.wins || 0, losses: stats?.bySport?.football?.losses || 0, total: stats?.bySport?.football?.total || 0, rate: stats?.bySport?.football?.winRate || 0 },
-    { name: 'Basketball', fullName: '🏀 Basketball', wins: stats?.bySport?.basketball?.wins || 0, losses: stats?.bySport?.basketball?.losses || 0, total: stats?.bySport?.basketball?.total || 0, rate: stats?.bySport?.basketball?.winRate || 0 },
-    { name: 'Hockey', fullName: '🏒 Hockey', wins: stats?.bySport?.hockey?.wins || 0, losses: stats?.bySport?.hockey?.losses || 0, total: stats?.bySport?.hockey?.total || 0, rate: stats?.bySport?.hockey?.winRate || 0 },
+    { name: 'Football', fullName: '⚽ Football', wins: periodBySport.football?.wins || 0, losses: periodBySport.football?.losses || 0, total: periodBySport.football?.total || 0, rate: periodBySport.football?.winRate || 0 },
+    { name: 'Basketball', fullName: '🏀 Basketball', wins: periodBySport.basketball?.wins || 0, losses: periodBySport.basketball?.losses || 0, total: periodBySport.basketball?.total || 0, rate: periodBySport.basketball?.winRate || 0 },
+    { name: 'Hockey', fullName: '🏒 Hockey', wins: periodBySport.hockey?.wins || 0, losses: periodBySport.hockey?.losses || 0, total: periodBySport.hockey?.total || 0, rate: periodBySport.hockey?.winRate || 0 },
   ].filter(s => s.total > 0);
+  // Tennis = cumul V3 (indépendant des périodes — même source que BADJAN Telegram)
+  if (tennisStats && tennisStats.settled > 0) {
+    sportData.push({ name: 'Tennis', fullName: '🎾 Tennis (cumul V3)', wins: tennisStats.wins, losses: tennisStats.losses, total: tennisStats.settled, rate: tennisStats.hitRate });
+  }
 
   const betTypeData: { name: string; winRate: number; total: number; sport: string }[] = [];
-  if (stats?.bySport?.football?.total > 0) {
-    const d = stats.bySport.football.details || {};
+  if (periodBySport.football?.total > 0) {
+    const d = periodBySport.football.details || {};
     if (d.resultats?.total > 0) betTypeData.push({ name: '1N2', winRate: d.resultats.winRate, total: d.resultats.total, sport: 'football' });
     if (d.buts?.total > 0) betTypeData.push({ name: 'Buts O/U', winRate: d.buts.winRate, total: d.buts.total, sport: 'football' });
     if (d.btts?.total > 0) betTypeData.push({ name: 'BTTS', winRate: d.btts.winRate, total: d.btts.total, sport: 'football' });
   }
-  if (stats?.bySport?.basketball?.total > 0) {
-    const d = stats.bySport.basketball.details || {};
+  if (periodBySport.basketball?.total > 0) {
+    const d = periodBySport.basketball.details || {};
     if (d.resultats?.total > 0) betTypeData.push({ name: 'Vainqueur', winRate: d.resultats.winRate, total: d.resultats.total, sport: 'basketball' });
     if (d.buts?.total > 0) betTypeData.push({ name: 'Points O/U', winRate: d.buts.winRate, total: d.buts.total, sport: 'basketball' });
   }
-  if (stats?.bySport?.hockey?.total > 0) {
-    const d = stats.bySport.hockey.details || {};
+  if (periodBySport.hockey?.total > 0) {
+    const d = periodBySport.hockey.details || {};
     if (d.resultats?.total > 0) betTypeData.push({ name: 'Vainqueur NHL', winRate: d.resultats.winRate, total: d.resultats.total, sport: 'hockey' });
     if (d.buts?.total > 0) betTypeData.push({ name: 'Buts O/U', winRate: d.buts.winRate, total: d.buts.total, sport: 'hockey' });
   }
 
+  // FIX TIMELINE : utilise recentDaily (agrégé serveur sur les 7 derniers jours) ; fallback ancien calcul
   const timelineData = (() => {
+    const rd = (stats as any)?.recentDaily;
+    if (Array.isArray(rd) && rd.length > 0) {
+      return rd.map((d: any) => {
+        const dt = new Date(`${d.date}T00:00:00Z`);
+        return {
+          date: d.date,
+          shortDate: dt.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', timeZone: 'UTC' }),
+          wins: d.wins || 0,
+          losses: d.losses || 0,
+          total: d.total || 0,
+          rate: d.total > 0 ? Math.round(((d.wins || 0) / d.total) * 100) : 0,
+        };
+      });
+    }
+    // Fallback historique : periodStats.predictions (chemin stats_history uniquement)
     const days: { date: string; shortDate: string; wins: number; losses: number; total: number; rate: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(); d.setDate(d.getDate() - i);
@@ -6652,7 +6705,7 @@ function ResultsSection() {
       const shortDate = d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric' });
       days.push({ date: dateStr, shortDate, wins: 0, losses: 0, total: 0, rate: 0 });
     }
-    const preds = periodStats?.predictions || [];
+    const preds = (periodStats as any)?.predictions || [];
     preds.forEach((p: any) => {
       const matchDate = (p.matchDate || p.date || '').split('T')[0];
       const day = days.find(d => d.date === matchDate);
@@ -6661,11 +6714,6 @@ function ResultsSection() {
     days.forEach(d => { d.rate = d.total > 0 ? Math.round((d.wins / d.total) * 100) : 0; });
     return days;
   })();
-
-  const totalWins = sportData.reduce((a, s) => a + s.wins, 0);
-  const totalLosses = sportData.reduce((a, s) => a + s.losses, 0);
-  const totalPredictions = totalWins + totalLosses;
-  const globalRate = totalPredictions > 0 ? Math.round((totalWins / totalPredictions) * 100) : 0;
 
   // ── LOADING ──
   if (loading) {
@@ -6677,8 +6725,9 @@ function ResultsSection() {
     );
   }
 
-  // ── EMPTY STATE ──
+  // ── EMPTY STATE ── (seulement si AUCUNE donnée sur la période ET aucun pari tennis tracké)
   if (!periodStats || periodStats.totalPredictions === 0) {
+    if (!(tennisStats && tennisStats.total > 0)) {
     return (
       <div style={{ background: '#0d0d0f', borderRadius: '16px', padding: '20px', border: '1px solid #8b5cf620' }}>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '12px', flexWrap: 'wrap' }}>
@@ -6703,17 +6752,19 @@ function ResultsSection() {
         </div>
       </div>
     );
+    }
   }
 
   // ── MAIN RENDER ──
   return (
     <div style={{ background: '#0d0d0f', borderRadius: '16px', padding: '20px', border: '1px solid #8b5cf620' }}>
-      {/* ── KPI HEADER ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
+      {/* ── KPI HEADER ── (toutes les tuiles dérivent de la PÉRIODE + SPORT filtrés — cohérentes avec la jauge) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '16px' }}>
         {[
-          { label: 'Taux Global', value: `${globalRate}%`, icon: '🎯', color: rateColor(globalRate), sub: `${totalPredictions} pronostics` },
-          { label: 'Victoires', value: `${totalWins}`, icon: '✅', color: '#22c55e', sub: `${globalRate}% réussite` },
-          { label: 'Défaites', value: `${totalLosses}`, icon: '❌', color: '#ef4444', sub: totalPredictions > 0 ? `${Math.round(totalLosses / totalPredictions * 100)}%` : '0%' },
+          { label: 'Taux Global', value: `${ps.winRate}%`, icon: '🎯', color: rateColor(ps.winRate), sub: `${ps.completed} vérifiés` },
+          { label: 'Victoires', value: `${ps.wins}`, icon: '✅', color: '#22c55e', sub: `${ps.totalPredictions} pronostics` },
+          { label: 'Défaites', value: `${ps.losses}`, icon: '❌', color: '#ef4444', sub: ps.completed > 0 ? `${Math.round((ps.losses / ps.completed) * 100)}%` : '0%' },
+          { label: 'Tennis V3', value: tennisStats ? `${tennisStats.hitRate}%` : 'N/A', icon: '🎾', color: tennisStats ? rateColor(tennisStats.hitRate) : '#666', sub: tennisStats ? `ROI ${tennisStats.roi >= 0 ? '+' : ''}${tennisStats.roi}% • ${tennisStats.settled} paris` : 'Aucun pari tracké' },
           { label: 'Expert Advisor', value: expertStats ? `${expertStats.winRate}%` : 'N/A', icon: '🧠', color: expertStats ? rateColor(expertStats.winRate) : '#666', sub: expertStats ? `${expertStats.total} conseils` : 'Non dispo' },
         ].map((kpi, i) => (
           <div key={i} style={{ background: '#12121f', borderRadius: '12px', padding: '14px', border: `1px solid ${kpi.color}25`, textAlign: 'center' }}>
@@ -6727,16 +6778,16 @@ function ResultsSection() {
 
       {/* ── WIN RATE GAUGE ── */}
       <div style={{ background: 'linear-gradient(135deg, #12121f 0%, #1a1530 100%)', borderRadius: '14px', padding: '24px', marginBottom: '16px', textAlign: 'center', border: '1px solid #8b5cf625', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px', borderRadius: '50%', background: `${rateColor(periodStats.winRate)}08` }} />
-        <div style={{ position: 'absolute', bottom: '-30px', left: '-30px', width: '100px', height: '100px', borderRadius: '50%', background: `${rateColor(periodStats.winRate)}06` }} />
+        <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px', borderRadius: '50%', background: `${rateColor(ps.winRate)}08` }} />
+        <div style={{ position: 'absolute', bottom: '-30px', left: '-30px', width: '100px', height: '100px', borderRadius: '50%', background: `${rateColor(ps.winRate)}06` }} />
         <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
           Taux de Réussite {sportLabels[activeSport].label !== 'Tous' ? sportLabels[activeSport].label : 'Global'} — {periodLabels[activePeriod].label}
         </div>
-        <div style={{ fontSize: '64px', fontWeight: 900, color: rateColor(periodStats.winRate), lineHeight: 1, marginBottom: '4px' }}>
-          {periodStats.winRate}%
+        <div style={{ fontSize: '64px', fontWeight: 900, color: rateColor(ps.winRate), lineHeight: 1, marginBottom: '4px' }}>
+          {ps.winRate}%
         </div>
         <div style={{ fontSize: '13px', color: '#666', marginTop: '8px' }}>
-          {periodStats.wins}/{periodStats.completed} pronostics vérifiés
+          {ps.wins}/{ps.completed} pronostics vérifiés
         </div>
         {lastUpdate && (
           <div style={{ fontSize: '10px', color: '#444', marginTop: '6px' }}>
@@ -6744,7 +6795,7 @@ function ResultsSection() {
           </div>
         )}
         <div style={{ marginTop: '16px', background: '#1a1a2a', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
-          <div style={{ width: `${periodStats.winRate}%`, height: '100%', borderRadius: '6px', background: `linear-gradient(90deg, ${rateColor(periodStats.winRate)}, ${rateColor(periodStats.winRate)}aa)`, transition: 'width 0.8s ease' }} />
+          <div style={{ width: `${ps.winRate}%`, height: '100%', borderRadius: '6px', background: `linear-gradient(90deg, ${rateColor(ps.winRate)}, ${rateColor(ps.winRate)}aa)`, transition: 'width 0.8s ease' }} />
         </div>
       </div>
 
@@ -6770,7 +6821,7 @@ function ResultsSection() {
           {[
             { key: 'overview', label: '🏆 Vue d\'ensemble' },
             { key: 'sport', label: '📊 Par Sport' },
-            { key: 'bettype', label: '🎯 Types de Paris' },
+            ...(betTypeData.length > 0 ? [{ key: 'bettype', label: '🎯 Types de Paris' }] : []),
             { key: 'timeline', label: '📅 Évolution' },
           ].map(tab => (
             <button key={tab.key} onClick={() => setChartTab(tab.key as any)} style={{ flex: 1, padding: '10px 8px', borderRadius: '8px', border: 'none', background: chartTab === tab.key ? '#8b5cf6' : 'transparent', color: chartTab === tab.key ? '#fff' : '#888', cursor: 'pointer', fontSize: '11px', fontWeight: 600, transition: 'all 0.2s', whiteSpace: 'nowrap' }}>
@@ -6788,7 +6839,7 @@ function ResultsSection() {
           </div>
           {sportData.map((s, i) => {
             const pct = s.total > 0 ? (s.wins / s.total) * 100 : 0;
-            const sportColor = sportLabels[s.name.toLowerCase() === 'football' ? 'football' : s.name.toLowerCase() === 'basketball' ? 'basketball' : 'hockey']?.color || '#888';
+            const sportColor = sportColors[s.name.toLowerCase()] || '#888';
             return (
               <div key={i} style={{ marginBottom: '12px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
@@ -6813,7 +6864,7 @@ function ResultsSection() {
       {chartTab === 'sport' && sportData.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px', marginBottom: '16px' }}>
           {sportData.map((s, i) => {
-            const sportColor = sportLabels[s.name.toLowerCase() === 'football' ? 'football' : s.name.toLowerCase() === 'basketball' ? 'basketball' : 'hockey']?.color || '#888';
+            const sportColor = sportColors[s.name.toLowerCase()] || '#888';
             return (
               <div key={i} style={{ background: '#12121f', borderRadius: '12px', padding: '16px', border: `1px solid ${sportColor}25` }}>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: sportColor, marginBottom: '10px' }}>{s.name}</div>
@@ -6822,9 +6873,9 @@ function ResultsSection() {
                 <div style={{ marginTop: '10px', background: '#1a1a2a', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
                   <div style={{ width: `${s.rate}%`, height: '100%', background: sportColor, borderRadius: '4px', transition: 'width 0.6s ease' }} />
                 </div>
-                {s.name === 'Football' && stats?.bySport?.football?.details && (
+                {s.name === 'Football' && periodBySport.football?.details && (
                   <div style={{ marginTop: '10px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
-                    {([['1N2', stats.bySport.football.details.resultats], ['Buts', stats.bySport.football.details.buts], ['BTTS', stats.bySport.football.details.btts]] as [string, any][]).map(([label, d]) =>
+                    {([['1N2', periodBySport.football.details.resultats], ['Buts', periodBySport.football.details.buts], ['BTTS', periodBySport.football.details.btts]] as [string, any][]).map(([label, d]) =>
                       d && d.total > 0 ? (
                         <div key={label} style={{ background: '#0d0d0f', borderRadius: '6px', padding: '6px', textAlign: 'center' }}>
                           <div style={{ fontSize: '14px', fontWeight: 700, color: rateColor(d.winRate) }}>{d.winRate}%</div>
@@ -6897,15 +6948,15 @@ function ResultsSection() {
       {/* ── STATS RÉSUMÉ ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
         <div style={{ background: '#12121f', borderRadius: '10px', padding: '14px', border: '1px solid #8b5cf620', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>{periodStats.totalPredictions}</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#fff' }}>{ps.totalPredictions}</div>
           <div style={{ fontSize: '10px', color: '#666', fontWeight: 600 }}>Total Pronostics</div>
         </div>
         <div style={{ background: '#12121f', borderRadius: '10px', padding: '14px', border: '1px solid #eab30820', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#eab308' }}>{periodStats.pending || 0}</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#eab308' }}>{ps.pending || 0}</div>
           <div style={{ fontSize: '10px', color: '#666', fontWeight: 600 }}>En Attente</div>
         </div>
         <div style={{ background: '#12121f', borderRadius: '10px', padding: '14px', border: '1px solid #22c55e20', textAlign: 'center' }}>
-          <div style={{ fontSize: '22px', fontWeight: 800, color: '#22c55e' }}>{periodStats.completed}</div>
+          <div style={{ fontSize: '22px', fontWeight: 800, color: '#22c55e' }}>{ps.completed}</div>
           <div style={{ fontSize: '10px', color: '#666', fontWeight: 600 }}>Vérifiés</div>
         </div>
       </div>

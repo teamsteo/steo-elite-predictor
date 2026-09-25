@@ -765,3 +765,22 @@ Stage Summary:
 - Architecture unifiée : site et Telegram = 2 consommateurs du même pipeline (fin du double traitement)
 - Charge BetExplorer réduite (~1 collecte/15 min partagée), cohérence garantie site ↔ Telegram
 - Aucune régression : conversions Telegram inchangées, settle/bilan inchangés, V2/V1/V0 fallbacks intacts
+
+---
+Task ID: 22
+Agent: Super Z (main)
+Task: Réactiver l'onglet Tennis (masqué à l'époque des mauvais pronostics) + corriger les incohérences de l'onglet Statistiques
+
+Work Log:
+- AUDIT prod /api/results?action=stats : source = prediction_store_realtime (stats_history.json périmé avril 2026, 0 dailyStats) ; sum(bySport)=386 ≠ 528 total (142 sports 'other' exclus) ; daily=0 aujourd'hui alors que weekly=16/monthly=162
+- DIAGNOSTIC 6 INCOHÉRENCES front ResultsSection : (1) filtre sport lisait bySport ALL-TIME au lieu du bySport de la période → « Foot+Hier » affichait les stats all-time ; (2) KPI Taux Global/Victoires/Défaites figés sur le cumul bySport, contredisant la jauge (periodStats) ; (3) dénominateurs incohérents jauge wins/complétés vs bySport wins/total ; (4) timeline « Évolution 7 jours » TOUJOURS VIDE en prod (periodStats.predictions n'existe pas dans PeriodStats du store) ; (5) onglet « Hier » = en réalité aujourd'hui (source temps réel) et empty-state masquait TOUT le contenu quand daily=0 ; (6) tennis absent des stats malgré le tracking Supabase tennis_v3_bets
+- DÉMASQUAGE TENNIS (2 endroits page.tsx) : NavButton 🎾 sidebar + rendu {activeSection === 'tennis' && <TennisSection />} — le composant fetch /api/tennis (moteur V3, défaut depuis Task 20-bis, pipeline unique Task 21) → le site affiche les mêmes prédictions que BADJAN Telegram
+- API /api/results enrichie (additif, zéro régression) : (a) champ tennis = getOverallStats() Supabase tennis_v3_bets (hitRate/roi convertis fraction→%, profitUnits, settled/pending/voids — même source que le bilan J+1 BADJAN) ; (b) champ recentDaily = agrégation serveur 7 derniers jours UTC (wins/losses/total par jour depuis PredictionStore.loadAsync())
+- FRONT ResultsSection corrigé : getFilteredStats period-aware (bySport de stats[periodKey], dérivation completed=wins+losses, pending=total-completed, winRate=wins/complétés aligné jauge) ; KPI header dérivé de ps (période+sport filtrés) + nouvelle tuile 🎾 Tennis V3 (hitRate + ROI + nb paris) + grille auto-fit 5 tuiles ; sportData/betTypeData/détails football depuis bySport de la période (+ barre Tennis cumul V3) ; timeline utilise recentDaily (fallback ancien calcul conservé) ; labels période honnêtes selon source (Aujourd'hui en temps réel, Hier en stats_history) ; auto-sélection première période avec données (fin de l'écran vide par défaut) ; empty-state seulement si période vide ET tennis vide ; onglet « Types de Paris » masqué si pas de détails (évite onglet mort)
+- sportColors map (football/basket/hockey/tennis #a855f7) remplace les ternaires imbriqués ; periodStats.* → ps.* dans jauge + résumé (garde-fou si période absente)
+- TESTS : tsc --noEmit 0 erreur ; régression tennis_v3 52/52, badjan_tennis 34/34, anti_ban 15/15
+
+Stage Summary:
+- Onglet Tennis 🎾 visible dans la sidebar → affiche le moteur V3 (mêmes picks 🟢 que BADJAN Telegram, pipeline unique)
+- Onglet Stats cohérent : KPI/jauge/filtres/graphiques dérivent tous de la période+sport sélectionnés, timeline 7 jours fonctionnelle, tennis V3 visible (tuile + barres) depuis la table tennis_v3_bets partagée avec Telegram
+- API additive uniquement (tennis, recentDaily) — ExportManager/AnalyticsDashboard et appelants existants inchangés
