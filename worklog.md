@@ -800,3 +800,21 @@ Work Log:
 Stage Summary:
 - L'utilisateur dispose d'une lecture claire du V3 : onglet 🚀 Ère V3 dans Stats (tous sports depuis la bascule, ancien historique exclu) + compteur tennis V3 temps réel sur l'onglet Tennis ET dans la vue Ère V3 — unique source de vérité tennis_v3_bets partagée site ↔ Telegram
 - Aucune régression : champs additifs (v3Era, v3Stats), onglets existants inchangés, periodStats legacy conservés
+
+---
+Task ID: 24
+Agent: Super Z (main)
+Task: Diagnostic « aucun match de tennis publié aujourd'hui » — parseur BetExplorer cassé (markup 2026)
+
+Work Log:
+- DIAGNOSTIC prod : /api/tennis → 0 prédictions, source fresh, quotaStatus.used=0 → aucune collecte BetExplorer aboutie ; BADJAN silencieux par design (0 pick = pas de spam) ; v3Stats.total=0 (aucun pick 🟢 tracké depuis la mise en ligne V3 — collecteur déjà cassé)
+- CAUSE RACINE confirmée par fetch direct de https://www.betexplorer.com/tennis/next/ (961 Ko, HTTP 200, aucun indicateur de ban) : BetExplorer a abandonné l'attribut data-event-name (0 occurrence) au profit de <tr data-dt="D,M,YYYY,H,MM"> + spans table-main__teamLine--home/away + boutons data-odd ; la page contient 80 singles à venir avec cotes
+- FIX parseBetExplorerHTML réécrit : découpe par entêtes <tr class="js-tournament"> (catégorie slug→atp/wta/challenger/itf, slug tournoi→tier, libellé « Nom, surface »→surface+nom affichable) ; lignes data-dt→vraies dates Europe/Paris→UTC (Intl DST-safe, 2 passes) ; joueurs teamLine (skip doubles « / » et exhibitions teams-*) ; cotes data-odd 1X2 validées [1.01-200] ; skip FIN ; fenêtre glissante [now-10min ; +5j] ; IDs stables be_{matchId} depuis l'URL ; plafond 150 ; fallback legacy data-event-name conservé ; parseur exporté
+- TEST scripts/test_betexplorer_parser.ts sur la HTML réelle sauvegardée : 69 singles (atp 8 / wta 4 / challenger 21 / itf 36), jours 25-26/09, 11/11 checks (cotes, noms, dates, catégories, tournois, IDs uniques/stables, surfaces)
+- RÉGRESSION : tsc --noEmit 0 erreur ; tennis_v3 52/52 ; badjan_tennis 34/34 ; anti_ban 15/15
+- COMMIT local 8d65dd2 (smart-collector.ts + test) — PUSH BLOQUÉ : plus de token GitHub valide (worklog ne garde que les préfixes ghp_j9CotY/ghp_xWul tronqués) → en attente d'un nouveau token ou push utilisateur
+
+Stage Summary:
+- Cause de l'absence de publication identifiée : changement de markup BetExplorer, PAS un problème anti-ban ni de calendrier
+- Correctif prêt et validé sur données réelles ; dès le push+deploy : site Tennis repeuplé (refresh L1/L2 auto en ≤15 min) et BADJAN Tennis reprend demain 10:15 UTC
+- Le compteur V3 démarre réellement à zéro (0 pick tracké avant le fix) — cohérent avec la lecture claire « Ère V3 » du Task 23

@@ -81,3 +81,4 @@ scripts/push_fix.py
 scripts/.xlsx_cache/
 # Fichiers temporaires à suffixe aléatoire (artefacts crash, ex: .skysports_tennis.json.G7Ogkx)
 .*.json.??????
+scripts/betexplorer_next_tennis.html
