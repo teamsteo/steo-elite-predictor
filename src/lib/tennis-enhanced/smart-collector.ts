@@ -166,6 +166,11 @@ interface AntiBanState {
   lastRequestTime: number;
   isBanned: boolean;
   banReason: string;
+  // Diagnostic Task 24 : quoi a déclenché la détection, et à quoi ressemblait la page
+  lastBanIndicator: string;
+  lastBanTitle: string;
+  lastBanSnippet: string;
+  lastBanAt: string;
 }
 
 let antiBanState: AntiBanState = {
@@ -176,6 +181,10 @@ let antiBanState: AntiBanState = {
   lastRequestTime: 0,
   isBanned: false,
   banReason: '',
+  lastBanIndicator: '',
+  lastBanTitle: '',
+  lastBanSnippet: '',
+  lastBanAt: '',
 };
 
 // Odds API state
@@ -259,12 +268,14 @@ function recordError(error: string): void {
 }
 
 /**
- * Détecte un ban de BetExplorer
+ * Détecte un contenu de ban/challenge. Retourne l'indicateur trouvé (ou null).
+ * ⚠️ Les challenges Cloudflare « managed » répondent parfois en HTTP 200 —
+ * d'où l'analyse du contenu en plus des codes HTTP.
  */
-function detectBan(response: Response, html: string): boolean {
+function findBanIndicator(response: Response, html: string): string | null {
   // Codes HTTP suspects
-  if (response.status === 403) return true;
-  if (response.status === 429) return true;
+  if (response.status === 403) return 'HTTP 403';
+  if (response.status === 429) return 'HTTP 429';
   
   // Contenu suspect
   const banIndicators = [
@@ -280,18 +291,37 @@ function detectBan(response: Response, html: string): boolean {
   ];
   
   const lowerHtml = html.toLowerCase();
-  return banIndicators.some(indicator => lowerHtml.includes(indicator));
+  return banIndicators.find(indicator => lowerHtml.includes(indicator)) || null;
+}
+
+/** Extrait <title> + un extrait texte de la page reçue (diagnostic). */
+function captureBanEvidence(html: string): { title: string; snippet: string } {
+  const title = (html.match(/<title[^>]*>([^<]{0,150})</title>/i)?.[1] || '').trim();
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { title, snippet: text.slice(0, 240) };
 }
 
 /**
- * Marque comme banni et active le backup
+ * Bloque temporairement BetExplorer (auto-guérison : nouvelles tentatives
+ * après blockDuration). Le ban PERMANENT (isBanned) est réservé aux cas
+ * manifestes répétés — un challenge HTTP 200 ne doit pas tuer le collecteur
+ * pour la vie de l'instance (bug Task 24 : tennis silencieux des jours).
  */
-function markAsBanned(reason: string): void {
-  antiBanState.isBanned = true;
+function markAsBanned(reason: string, indicator: string, evidence: { title: string; snippet: string }): void {
   antiBanState.banReason = reason;
   antiBanState.blockedUntil = Date.now() + ANTI_BAN_CONFIG.blockDuration;
-  console.log(`[TennisCollector] 🚫 BANNI de BetExplorer: ${reason}`);
-  console.log(`[TennisCollector] 🔄 Activation du backup Odds API...`);
+  // isBanned volontairement NON positionné : retry après cooldown (auto-guérison)
+  antiBanState.lastBanIndicator = indicator;
+  antiBanState.lastBanTitle = evidence.title;
+  antiBanState.lastBanSnippet = evidence.snippet;
+  antiBanState.lastBanAt = new Date().toISOString();
+  console.log(`[TennisCollector] 🚫 BetExplorer bloqué 30 min: ${reason} | indicateur="${indicator}" | title="${evidence.title}"`);
+  console.log(`[TennisCollector] 📄 Extrait reçu: ${evidence.snippet.slice(0, 120)}`);
 }
 
 // ============================================
@@ -338,9 +368,11 @@ async function fetchFromBetExplorer(): Promise<TennisMatch[]> {
     
     const html = await response.text();
     
-    // Détecter un ban
-    if (detectBan(response, html)) {
-      markAsBanned(`Détection automatique (HTTP ${response.status})`);
+    // Détecter un challenge/ban (HTTP 200 inclus — Cloudflare managed challenge)
+    const indicator = findBanIndicator(response, html);
+    if (indicator) {
+      const evidence = captureBanEvidence(html);
+      markAsBanned(`Détection automatique (${indicator}, HTTP ${response.status})`, indicator, evidence);
       return [];
     }
     
@@ -733,6 +765,10 @@ export function getCollectorStatus(): CollectorStatus {
       dailyRequests: antiBanState.dailyRequests,
       maxDailyRequests: ANTI_BAN_CONFIG.maxDailyRequests,
       isBanned: antiBanState.isBanned,
+      lastBanIndicator: antiBanState.lastBanIndicator,
+      lastBanTitle: antiBanState.lastBanTitle,
+      lastBanSnippet: antiBanState.lastBanSnippet,
+      lastBanAt: antiBanState.lastBanAt,
     },
     oddsApi: {
       available: !!ODDS_API_KEY,
