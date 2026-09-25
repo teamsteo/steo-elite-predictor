@@ -784,3 +784,19 @@ Stage Summary:
 - Onglet Tennis 🎾 visible dans la sidebar → affiche le moteur V3 (mêmes picks 🟢 que BADJAN Telegram, pipeline unique)
 - Onglet Stats cohérent : KPI/jauge/filtres/graphiques dérivent tous de la période+sport sélectionnés, timeline 7 jours fonctionnelle, tennis V3 visible (tuile + barres) depuis la table tennis_v3_bets partagée avec Telegram
 - API additive uniquement (tennis, recentDaily) — ExportManager/AnalyticsDashboard et appelants existants inchangés
+
+---
+Task ID: 23
+Agent: Super Z (main)
+Task: Lecture claire du V3 — compteur « Ère V3 » séparé de l'ancien historique + suivi tennis V3 en évidence
+
+Work Log:
+- API /api/results : nouvelle constante V3_ERA_START = '2026-09-25' (date de bascule de stratégie) ; champ v3Era calculé en UNE seule lecture PredictionStore.loadAsync() partagée avec recentDaily (perf) : total/completed/pending/wins/losses/winRate (wins/complétés) + bySport local (football/basketball/hockey/tennis, winRate par sport = wins/settled) — l'historique antérieur au 25/09 (anciens moteurs) est EXCLU du compteur
+- API /api/tennis (branche v3) : champ v3Stats = getOverallStats() Supabase tennis_v3_bets (hitRate/roi fraction→%, profitUnits, settled/pending/voids) — même compteur que le bilan J+1 BADJAN Telegram ; import getOverallStats ajouté à isPersistenceEnabled
+- FRONT ResultsSection : période 'era' ajoutée au sélecteur — onglet « 🚀 Ère V3 » placé EN PREMIER (n'existe que si v3Era renvoyé), periodKey era→v3Era, gauge/KPI/graphiques/filtre sport fonctionnent via le même mécanisme (bySport de l'ère) ; panneau dédié sous la jauge quand era actif : « 🎾 Suivi réel Tennis V3 — même compteur que BADJAN Telegram » (settled/ROI/P&L unités/en cours) + note de démarrage si aucun pari tracké ; title jauge null-safe (?.label)
+- FRONT TennisSection : bannière « 📊 Performances V3 — suivi réel » sous le header (Réussite/ROI/P&L/Réglés-Total, code couleur) alimentée par data.v3Stats ; état de démarrage explicite tant que 0 pari tracké ; state v3Stats déclaré AVANT le useEffect (ordre hooks propre)
+- TESTS : tsc --noEmit 0 erreur ; régression tennis_v3 52/52, badjan_tennis 34/34, anti_ban 15/15
+
+Stage Summary:
+- L'utilisateur dispose d'une lecture claire du V3 : onglet 🚀 Ère V3 dans Stats (tous sports depuis la bascule, ancien historique exclu) + compteur tennis V3 temps réel sur l'onglet Tennis ET dans la vue Ère V3 — unique source de vérité tennis_v3_bets partagée site ↔ Telegram
+- Aucune régression : champs additifs (v3Era, v3Stats), onglets existants inchangés, periodStats legacy conservés

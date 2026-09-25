@@ -29,7 +29,7 @@ import {
 } from '../../../lib/tennis-enhanced/smart-collector';
 // Import moteur V3 (stratégie 8 étapes, tennis-data.co.uk) — via PIPELINE partagé site+Telegram
 import { runV3Pipeline } from '../../../lib/tennis-v3/pipeline';
-import { isPersistenceEnabled } from '../../../lib/tennis-v3/persistence';
+import { isPersistenceEnabled, getOverallStats } from '../../../lib/tennis-v3/persistence';
 import { predictMatchOptimized } from '../../../lib/tennis-enhanced/optimized-predictor';
 import { predictMatch } from '../../../lib/tennis-enhanced/enhanced-predictor';
 import { 
@@ -121,9 +121,29 @@ export async function GET(request: Request) {
         const md = new Date(p.date);
         return md >= nowDateV3 || md.toDateString() === nowDateV3.toDateString();
       });
+      // Suivi des performances V3 (tennis_v3_bets Supabase — même table que le bilan J+1 BADJAN Telegram)
+      let v3Stats: any = null;
+      try {
+        const ts = await getOverallStats();
+        v3Stats = {
+          total: ts.total,
+          wins: ts.wins,
+          losses: ts.losses,
+          voids: ts.voids,
+          pending: ts.pending,
+          settled: ts.settled,
+          hitRate: Math.round((ts.hitRate || 0) * 100),
+          roi: Math.round((ts.roi || 0) * 1000) / 10,
+          profitUnits: Math.round((ts.profitUnits || 0) * 100) / 100,
+        };
+      } catch (e) {
+        console.log('⚠️ v3Stats indisponibles:', e);
+      }
+
       return NextResponse.json({
         predictions: kept,
         stats: calculateStats(kept as any),
+        v3Stats,
         generatedAt: out.meta.collectedAt,
         source: out.meta.source,
         modelInfo: {

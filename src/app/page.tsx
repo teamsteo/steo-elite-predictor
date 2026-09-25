@@ -3064,6 +3064,8 @@ function TennisSection() {
   const [activeFilter, setActiveFilter] = useState<'all' | 'atp' | 'wta' | 'recommended'>('all');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [methodology, setMethodology] = useState<any>(null);
+  // Suivi réel des performances V3 (tennis_v3_bets Supabase — même compteur que BADJAN Telegram)
+  const [v3Stats, setV3Stats] = useState<any>(null);
 
   useEffect(() => {
     const fetchTennis = async () => {
@@ -3077,6 +3079,9 @@ function TennisSection() {
         }
         if (data.stats) {
           setStats(data.stats);
+        }
+        if (data.v3Stats) {
+          setV3Stats(data.v3Stats);
         }
         if (data.methodology) {
           setMethodology(data.methodology);
@@ -3176,6 +3181,39 @@ function TennisSection() {
           </p>
         </div>
       </div>
+
+      {/* Performances V3 — suivi réel (même compteur que BADJAN Telegram) */}
+      {v3Stats && v3Stats.total > 0 ? (
+        <div style={{
+          background: 'linear-gradient(135deg, #2a1a3a 0%, #1a1a2a 100%)',
+          borderRadius: '10px',
+          padding: '12px',
+          marginBottom: '12px',
+          border: '1px solid #a855f740'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '4px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 700, color: '#a855f7' }}>📊 Performances V3 — suivi réel</span>
+            <span style={{ fontSize: '9px', color: '#777' }}>bilan automatique J+1</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', textAlign: 'center' }}>
+            {[
+              { v: `${v3Stats.hitRate}%`, l: 'Réussite', c: v3Stats.hitRate >= 55 ? '#22c55e' : v3Stats.hitRate >= 45 ? '#eab308' : '#ef4444' },
+              { v: `${v3Stats.roi >= 0 ? '+' : ''}${v3Stats.roi}%`, l: 'ROI', c: v3Stats.roi >= 0 ? '#22c55e' : '#ef4444' },
+              { v: `${v3Stats.profitUnits >= 0 ? '+' : ''}${v3Stats.profitUnits}u`, l: 'P&L', c: v3Stats.profitUnits >= 0 ? '#22c55e' : '#ef4444' },
+              { v: `${v3Stats.settled}/${v3Stats.total}`, l: 'Réglés/Total', c: '#fff' },
+            ].map((it, i) => (
+              <div key={i} style={{ background: '#0d0d0f', borderRadius: '8px', padding: '8px 4px' }}>
+                <div style={{ fontSize: '16px', fontWeight: 800, color: it.c }}>{it.v}</div>
+                <div style={{ fontSize: '8px', color: '#777', fontWeight: 600 }}>{it.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: '#12121f', borderRadius: '10px', padding: '10px 12px', marginBottom: '12px', border: '1px solid #a855f720', fontSize: '10px', color: '#888', textAlign: 'center' }}>
+          🚀 Nouvelle stratégie V3 — le compteur de performances démarre avec les premiers paris trackés (picks 10:15 UTC, bilan J+1 12:45 UTC)
+        </div>
+      )}
 
       {/* Stats */}
       {stats && (
@@ -6561,7 +6599,7 @@ function BankrollSection() {
 // Pipeline ML unifié · Données Supabase · Visualisations pro
 // ═══════════════════════════════════════════════════════════════
 function ResultsSection() {
-  const [activePeriod, setActivePeriod] = useState<'yesterday' | 'week' | 'month'>('yesterday');
+  const [activePeriod, setActivePeriod] = useState<'era' | 'yesterday' | 'week' | 'month'>('yesterday');
   const [activeSport, setActiveSport] = useState<'all' | 'football' | 'basketball' | 'hockey'>('all');
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -6582,6 +6620,7 @@ function ResultsSection() {
           expertAdvisor: data.expertAdvisor || null,
           recentDaily: data.recentDaily || null,
           tennis: data.tennis || null,
+          v3Era: data.v3Era || null,
           source: data.source || null,
         } as any);
       }
@@ -6606,10 +6645,13 @@ function ResultsSection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats]);
 
-  const periodKey = activePeriod === 'yesterday' ? 'daily' : activePeriod === 'week' ? 'weekly' : 'monthly';
+  const periodKey = activePeriod === 'era' ? 'v3Era' : activePeriod === 'yesterday' ? 'daily' : activePeriod === 'week' ? 'weekly' : 'monthly';
   // Le chemin "stats_history" calcule daily = hier ; le chemin temps réel calcule daily = aujourd'hui → label honnête selon la source
   const isHistorySource = (stats as any)?.source === 'github_stats_history';
+  const v3EraData: { startDate: string; total: number; completed: number; pending: number; wins: number; losses: number; winRate: number; bySport: Record<string, any> } | null = (stats as any)?.v3Era || null;
+  const eraDateLabel = v3EraData?.startDate ? v3EraData.startDate.split('-').reverse().slice(0, 2).join('/') : '25/09';
   const periodLabels: Record<string, { label: string; icon: string; date: string }> = {
+    ...(v3EraData ? { era: { label: '🚀 Ère V3', icon: '🚀', date: `Nouvelle stratégie — depuis le ${eraDateLabel}` } } : {}),
     yesterday: { label: isHistorySource ? 'Hier' : "Aujourd'hui", icon: '📅', date: isHistorySource ? 'Pronostics de la veille' : 'Pronostics du jour' },
     week: { label: 'Semaine', icon: '📆', date: '7 derniers jours' },
     month: { label: 'Mois', icon: '🗓️', date: '30 derniers jours' },
@@ -6781,7 +6823,7 @@ function ResultsSection() {
         <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '120px', height: '120px', borderRadius: '50%', background: `${rateColor(ps.winRate)}08` }} />
         <div style={{ position: 'absolute', bottom: '-30px', left: '-30px', width: '100px', height: '100px', borderRadius: '50%', background: `${rateColor(ps.winRate)}06` }} />
         <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
-          Taux de Réussite {sportLabels[activeSport].label !== 'Tous' ? sportLabels[activeSport].label : 'Global'} — {periodLabels[activePeriod].label}
+          Taux de Réussite {sportLabels[activeSport].label !== 'Tous' ? sportLabels[activeSport].label : 'Global'} — {periodLabels[activePeriod]?.label || ''}
         </div>
         <div style={{ fontSize: '64px', fontWeight: 900, color: rateColor(ps.winRate), lineHeight: 1, marginBottom: '4px' }}>
           {ps.winRate}%
@@ -6798,6 +6840,34 @@ function ResultsSection() {
           <div style={{ width: `${ps.winRate}%`, height: '100%', borderRadius: '6px', background: `linear-gradient(90deg, ${rateColor(ps.winRate)}, ${rateColor(ps.winRate)}aa)`, transition: 'width 0.8s ease' }} />
         </div>
       </div>
+
+      {/* ── ÈRE V3 : SUIVI RÉEL TENNIS (même compteur que BADJAN Telegram) ── */}
+      {activePeriod === 'era' && tennisStats && tennisStats.total > 0 && (
+        <div style={{ background: 'linear-gradient(135deg, #1a1530 0%, #12121f 100%)', borderRadius: '14px', padding: '16px', marginBottom: '16px', border: '1px solid #a855f740' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '6px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#a855f7' }}>🎾 Suivi réel Tennis V3 — même compteur que BADJAN Telegram</span>
+            <span style={{ background: rateColor(tennisStats.hitRate), color: '#fff', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 700 }}>{tennisStats.hitRate}% réussite</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', textAlign: 'center' }}>
+            {[
+              { v: tennisStats.settled, l: 'Paris réglés', c: '#fff' },
+              { v: `${tennisStats.roi >= 0 ? '+' : ''}${tennisStats.roi}%`, l: 'ROI', c: tennisStats.roi >= 0 ? '#22c55e' : '#ef4444' },
+              { v: `${tennisStats.profitUnits >= 0 ? '+' : ''}${tennisStats.profitUnits}u`, l: 'P&L unités', c: tennisStats.profitUnits >= 0 ? '#22c55e' : '#ef4444' },
+              { v: tennisStats.pending, l: 'En cours', c: '#eab308' },
+            ].map((it, i) => (
+              <div key={i} style={{ background: '#0d0d0f', borderRadius: '8px', padding: '10px' }}>
+                <div style={{ fontSize: '20px', fontWeight: 800, color: it.c }}>{it.v}</div>
+                <div style={{ fontSize: '9px', color: '#555', fontWeight: 600 }}>{it.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {activePeriod === 'era' && (!tennisStats || tennisStats.total === 0) && (
+        <div style={{ background: '#12121f', borderRadius: '12px', padding: '14px', marginBottom: '16px', border: '1px solid #a855f720', fontSize: '11px', color: '#888', textAlign: 'center' }}>
+          🚀 Le compteur V3 démarre — les premiers paris tennis seront trackés automatiquement (publication 10:15 UTC, bilan J+1 12:45 UTC). L&apos;historique d&apos;avant la bascule est exclu de cette vue.
+        </div>
+      )}
 
       {/* ── FILTRES ── */}
       <div style={{ display: 'flex', justifyContent: 'center', gap: '4px', marginBottom: '10px', flexWrap: 'wrap' }}>

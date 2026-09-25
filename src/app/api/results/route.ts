@@ -512,17 +512,23 @@ export async function GET(request: Request) {
         console.log('⚠️ Stats tennis V3 indisponibles:', e);
       }
 
-      // ── Évolution 7 jours (timeline) — agrégation par jour UTC depuis le store temps réel ──
+      // ── Lecture UNIQUE du store : timeline 7 jours + compteur « Ère V3 » ──
+      // (V3_ERA_START = bascule de stratégie — l'historique antérieur aux anciens moteurs est exclu du compteur V3)
+      const V3_ERA_START = '2026-09-25';
       let recentDaily: { date: string; wins: number; losses: number; total: number }[] = [];
+      let v3Era: any = null;
       try {
         const storeData = await PredictionStore.loadAsync();
+        const allPreds = ((storeData as any)?.predictions || []) as any[];
+
+        // (a) Évolution 7 jours (timeline) — agrégation par jour UTC
         const byDay = new Map<string, { wins: number; losses: number; total: number }>();
         const nowMs = Date.now();
         for (let i = 6; i >= 0; i--) {
           const d = new Date(nowMs - i * 86400000);
           byDay.set(d.toISOString().split('T')[0], { wins: 0, losses: 0, total: 0 });
         }
-        for (const p of ((storeData as any)?.predictions || []) as any[]) {
+        for (const p of allPreds) {
           const day = String(p.matchDate || '').split('T')[0];
           const entry = byDay.get(day);
           if (!entry) continue;
@@ -531,8 +537,45 @@ export async function GET(request: Request) {
           else if (p.status === 'completed' && p.resultMatch === false) entry.losses++;
         }
         recentDaily = Array.from(byDay.entries()).map(([date, v]) => ({ date, ...v }));
+
+        // (b) Ère V3 — uniquement les pronostics depuis la bascule (lecture claire de la nouvelle stratégie)
+        const eraPreds = allPreds.filter((p: any) => String(p.matchDate || '').split('T')[0] >= V3_ERA_START);
+        const eraCompleted = eraPreds.filter((p: any) => p.status === 'completed');
+        const eraWins = eraCompleted.filter((p: any) => p.resultMatch === true).length;
+        const eraLosses = eraCompleted.filter((p: any) => p.resultMatch === false).length;
+        const eraBySport: Record<string, { total: number; wins: number; losses: number; winRate: number }> = {};
+        for (const p of eraPreds) {
+          const sRaw = String(p.sport || '').toLowerCase();
+          const key = sRaw.includes('foot') || sRaw.includes('soccer') ? 'football'
+            : sRaw.includes('basket') || sRaw.includes('nba') ? 'basketball'
+            : sRaw.includes('hockey') || sRaw.includes('nhl') ? 'hockey'
+            : sRaw.includes('tennis') ? 'tennis'
+            : 'other';
+          if (key === 'other') continue;
+          if (!eraBySport[key]) eraBySport[key] = { total: 0, wins: 0, losses: 0, winRate: 0 };
+          eraBySport[key].total++;
+          if (p.status === 'completed') {
+            if (p.resultMatch === true) eraBySport[key].wins++;
+            else if (p.resultMatch === false) eraBySport[key].losses++;
+          }
+        }
+        for (const k of Object.keys(eraBySport)) {
+          const s = eraBySport[k];
+          const settled = s.wins + s.losses;
+          s.winRate = settled > 0 ? Math.round((s.wins / settled) * 100) : 0;
+        }
+        v3Era = {
+          startDate: V3_ERA_START,
+          total: eraPreds.length,
+          completed: eraCompleted.length,
+          pending: eraPreds.filter((p: any) => p.status === 'pending').length,
+          wins: eraWins,
+          losses: eraLosses,
+          winRate: (eraWins + eraLosses) > 0 ? Math.round((eraWins / (eraWins + eraLosses)) * 100) : 0,
+          bySport: eraBySport,
+        };
       } catch (e) {
-        console.log('⚠️ recentDaily indisponible:', e);
+        console.log('⚠️ recentDaily/v3Era indisponibles:', e);
       }
 
       const info = await PredictionStore.getInfoAsync();
@@ -554,6 +597,8 @@ export async function GET(request: Request) {
         expertAdvisor: stats?.overall?.expertAdvisor || null,
         // Tennis V3 (cumul — même source que BADJAN Telegram)
         tennis,
+        // Compteur « Ère V3 » — pronostics depuis la bascule de stratégie (historique ancien exclu)
+        v3Era,
         // Évolution 7 jours (wins/losses/total par jour UTC)
         recentDaily,
         // Filtre actif
