@@ -296,7 +296,7 @@ function findBanIndicator(response: Response, html: string): string | null {
 
 /** Extrait <title> + un extrait texte de la page reçue (diagnostic). */
 function captureBanEvidence(html: string): { title: string; snippet: string } {
-  const title = (html.match(/<title[^>]*>([^<]{0,150})</title>/i)?.[1] || '').trim();
+  const title = (html.match(/<title[^>]*>([^<]{0,150})<\/title>/i)?.[1] || '').trim();
   const text = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -739,6 +739,11 @@ export interface CollectorStatus {
     dailyRequests: number;
     maxDailyRequests: number;
     isBanned: boolean;
+    /** Diagnostic Task 24 : dernier déclencheur de détection de challenge/ban */
+    lastBanIndicator: string;
+    lastBanTitle: string;
+    lastBanSnippet: string;
+    lastBanAt: string;
   };
   oddsApi: {
     available: boolean;
