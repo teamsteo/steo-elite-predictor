@@ -362,33 +362,166 @@ async function fetchFromBetExplorer(): Promise<TennisMatch[]> {
 }
 
 /**
- * Parse le HTML de BetExplorer
+ * Convertit l'heure affichée par BetExplorer (fuseau Europe/Paris, CET/CEST)
+ * en Date UTC. Deux passes pour gérer proprement la frontière DST.
  */
-function parseBetExplorerHTML(html: string): TennisMatch[] {
-  const matches: TennisMatch[] = [];
-  
+function parisOffsetMinutes(at: Date): number {
   try {
-    // Regex pour extraire les matchs
-    const matchRegex = /<tr[^>]*class="[^"]*match[^"]*"[^>]*>[\s\S]*?<td[^>]*class="[^"]*player[^"]*"[^>]*>([^<]+)<\/td>[\s\S]*?<td[^>]*class="[^"]*player[^"]*"[^>]*>([^<]+)<\/td>[\s\S]*?<td[^>]*class="[^"]*odds[^"]*"[^>]*>([\d.]+)<\/td>[\s\S]*?<td[^>]*class="[^"]*odds[^"]*"[^>]*>([\d.]+)<\/td>/gi;
-    
-    // Regex alternative plus flexible
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Paris', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+    const p: Record<string, string> = {};
+    for (const { type, value } of dtf.formatToParts(at)) p[type] = value;
+    const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute);
+    return Math.round((asUTC - at.getTime()) / 60000);
+  } catch {
+    return 120; // CEST par défaut si Intl indisponible
+  }
+}
+
+function betexplorerDateToUtc(y: number, mo: number, d: number, h: number, mi: number): Date {
+  let guess = Date.UTC(y, mo - 1, d, h, mi);
+  for (let i = 0; i < 2; i++) {
+    guess -= parisOffsetMinutes(new Date(guess)) * 60000;
+  }
+  return new Date(guess);
+}
+
+/**
+ * Parse le HTML de BetExplorer
+ *
+ * ⚠️ Markup 2026-09 : BetExplorer a abandonné l'attribut data-event-name.
+ * Nouvelle structure (vérifiée sur la page réelle /tennis/next/) :
+ *   - entête tournoi : <tr class="js-tournament"> … href="/tennis/{cat}/{slug}/" …
+ *     libellé texte « Challenger Men - Singles: Buenos Aires 3, clay »
+ *   - ligne match : <tr data-fro=".." data-dt="D,M,YYYY,H,MM" data-dt-now="..">
+ *       joueurs dans <span class="table-main__teamLine--home/--away">
+ *       cotes dans <button data-odd="1.85"> (2 premières = 1X2)
+ *       statut fini : <span class="table-main__time--fin">FIN</span>
+ *   - exhibitions type Laver Cup sous /tennis/teams-men|women/ (hors Elo → ignorées)
+ */
+export function parseBetExplorerHTML(html: string): TennisMatch[] {
+  const matches: TennisMatch[] = [];
+
+  try {
+    const now = Date.now();
+    // Découpe par tournoi : chaque entête js-tournament introduit une section
+    const sections = html.split(/<tr class="js-tournament">/);
+
+    for (let s = 1; s < sections.length && matches.length < 150; s++) {
+      const section = sections[s];
+      const headEnd = section.indexOf('</tr>');
+      if (headEnd === -1) continue;
+      const head = section.slice(0, headEnd);
+      const body = section.slice(headEnd);
+
+      const catTour = head.match(/href="\/tennis\/([a-z0-9-]+)\/([a-z0-9-]+)\//);
+      if (!catTour) continue;
+      const catSlug = catTour[1];
+      const tourSlug = catTour[2];
+
+      // Doubles (2 joueurs par camp, non couverts par l'Elo singles) + exhibitions → ignorés
+      if (catSlug.includes('doubles') || catSlug.startsWith('teams-')) continue;
+      const category: Category | null = catSlug.startsWith('atp') ? 'atp'
+        : catSlug.startsWith('wta') ? 'wta'
+        : catSlug.includes('challenger') ? 'challenger'
+        : catSlug.includes('itf') ? 'itf'
+        : null;
+      if (!category) continue;
+
+      // Libellé du tournoi (dernier texte de l'entête) : « WTA - Singles: Singapore, hard »
+      const labelMatch = head.match(/>([^<>]{5,150})<\/a>/);
+      const label = labelMatch ? labelMatch[1].trim() : '';
+
+      // Surface : suffixe du libellé (« , hard ») sinon heuristique sur le slug
+      let surface: Surface = detectSurfaceImproved(tourSlug);
+      const surfMatch = label.match(/,\s*(hard|clay|grass|indoor|carpet)\s*$/i);
+      if (surfMatch) surface = (surfMatch[1].toLowerCase() === 'carpet' ? 'indoor' : surfMatch[1].toLowerCase()) as Surface;
+
+      // Nom affichable : après « : » si présent, sans le suffixe surface
+      let tourName = label;
+      const colon = label.lastIndexOf(':');
+      if (colon !== -1) tourName = label.slice(colon + 1).trim();
+      tourName = tourName.replace(/,\s*(hard|clay|grass|indoor|carpet)\s*$/i, '').trim() || 'Tennis';
+
+      // Lignes de match de la section
+      const rowRe = /<tr[^>]*\bdata-dt="(\d{1,2}),(\d{1,2}),(\d{4}),(\d{1,2}),(\d{1,2})"[^>]*>([\s\S]*?)<\/tr>/g;
+      let row: RegExpExecArray | null;
+      while ((row = rowRe.exec(body)) !== null && matches.length < 150) {
+        const [, dd, mo, yyyy, hh, mi, inner] = row;
+        if (/table-main__time--fin/i.test(inner)) continue; // terminé
+
+        const home = inner.match(/teamLine--home[^>]*>(?:<strong>)?([^<]+)/);
+        const away = inner.match(/teamLine--away[^>]*>(?:<strong>)?([^<]+)/);
+        if (!home || !away) continue;
+        const player1 = home[1].trim();
+        const player2 = away[1].trim();
+        if (!player1 || !player2) continue;
+        if (player1.includes(' / ') || player2.includes(' / ')) continue; // ceinture + bretelles doubles
+
+        // Cotes 1X2 : les 2 premiers data-odd de la ligne
+        const oddsArr = Array.from(inner.matchAll(/data-odd="([\d.]+)"/g))
+          .map((m) => parseFloat(m[1]))
+          .filter((o) => Number.isFinite(o) && o >= 1.01 && o <= 200);
+        if (oddsArr.length < 2) continue;
+
+        // ID stable depuis l'URL du match (…/{slug}/{matchId}/)
+        const hrefMatch = inner.match(/href="(\/tennis\/[^"]+)"/);
+        const mid = hrefMatch ? (hrefMatch[1].match(/\/([A-Za-z0-9]{5,12})\/?$/) || [])[1] : undefined;
+
+        // Vraie date/heure (Europe/Paris → UTC) ; fenêtre glissante [maintenant-10min ; +5 j]
+        const date = betexplorerDateToUtc(+yyyy, +mo, +dd, +hh, +mi);
+        if (date.getTime() < now - 10 * 60000 || date.getTime() > now + 5 * 86400e3) continue;
+
+        matches.push({
+          id: mid ? `be_${mid}` : `betexplorer_${now}_${matches.length}`,
+          player1,
+          player2,
+          player1Id: generatePlayerId(player1),
+          player2Id: generatePlayerId(player2),
+          tournament: tourName,
+          tournamentId: tourSlug,
+          tournamentTier: detectTournamentTier(tourSlug, category),
+          surface,
+          round: 'Match',
+          date,
+          odds1: oddsArr[0],
+          odds2: oddsArr[1],
+          bookmaker: 'BetExplorer',
+          category,
+          status: 'scheduled',
+          source: 'betexplorer',
+        });
+      }
+    }
+
+    if (matches.length > 0) {
+      const byCat = matches.reduce<Record<string, number>>((acc, m) => {
+        acc[m.category] = (acc[m.category] || 0) + 1;
+        return acc;
+      }, {});
+      console.log(`[TennisCollector] 🧩 Parsing markup 2026: ${matches.length} singles (doubles/exhibitions/FIN ignorés) —`, JSON.stringify(byCat));
+      return matches;
+    }
+
+    // Fallback ancien markup (data-event-name) si BetExplorer revenait en arrière
     const altMatchRegex = /data-event-name="([^"]+)"[\s\S]*?data-odd="([\d.]+)"[\s\S]*?data-odd="([\d.]+)"/gi;
-    
+
     let match;
     let matchIndex = 0;
-    
-    // Essayer d'abord avec data attributes
+
     while ((match = altMatchRegex.exec(html)) !== null && matchIndex < 20) {
       const eventName = match[1];
       const odds1 = parseFloat(match[2]);
       const odds2 = parseFloat(match[3]);
-      
+
       // Séparer les joueurs
       const players = eventName.split(' - ');
       if (players.length === 2) {
         const player1 = players[0].trim();
         const player2 = players[1].trim();
-        
+
         matches.push({
           id: `betexplorer_${Date.now()}_${matchIndex}`,
           player1,
@@ -411,46 +544,11 @@ function parseBetExplorerHTML(html: string): TennisMatch[] {
         matchIndex++;
       }
     }
-    
-    // Si pas de matchs avec data attributes, essayer l'autre méthode
-    if (matches.length === 0) {
-      // Chercher tous les éléments de match potentiels
-      const simpleMatchRegex = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*-\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g;
-      
-      while ((match = simpleMatchRegex.exec(html)) !== null && matches.length < 20) {
-        const player1 = match[1].trim();
-        const player2 = match[2].trim();
-        
-        // Éviter les faux positifs
-        if (player1.length < 3 || player2.length < 3) continue;
-        if (player1.includes('Match') || player2.includes('Match')) continue;
-        
-        matches.push({
-          id: `betexplorer_${Date.now()}_${matches.length}`,
-          player1,
-          player2,
-          player1Id: generatePlayerId(player1),
-          player2Id: generatePlayerId(player2),
-          tournament: 'Tennis Match',
-          tournamentId: 'tennis',
-          tournamentTier: 'unknown',
-          surface: 'hard',
-          round: 'Match',
-          date: new Date(),
-          odds1: 1.85,
-          odds2: 1.85,
-          bookmaker: 'BetExplorer',
-          category: 'atp',
-          status: 'scheduled',
-          source: 'betexplorer',
-        });
-      }
-    }
-    
+
   } catch (error) {
     console.error('[TennisCollector] Erreur parsing HTML:', error);
   }
-  
+
   return matches;
 }
 
