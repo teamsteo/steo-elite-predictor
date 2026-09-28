@@ -893,3 +893,30 @@ Stage Summary:
 - Tennis V3: cœur Elo validé 70% précision, compteur live trop jeune pour ROI
 - Classement rendements foot corrigé livré (CSV)
 - EN ATTENTE: push du commit 86bd86f dès réception d'un token GitHub valide
+
+---
+Task ID: 27
+Agent: Super Z (main)
+Task: Politique VN (nul=victoire) + vérification BADJAN tennis/foot + logique BADJAN foot enrichie (ratio domicile + H2H)
+
+Work Log:
+- POLITIQUE VN (décision utilisateur): on propose 2 pronostics par match — risqué V (victoire pure) et fiable VN (Victoire ou Nul, double chance). Le bilan suit le VN: un NUL = GAGNÉ, on ne perd que si l'équipe prédite s'incline
+- src/lib/resultPolicy.ts créé: vnResultMatch() centralisée (home/away + draw=gagné ; draw prono inchangé ; sports US non concernés)
+- cron/route.ts verifyFootballResults: les 3 chemins (ESPN, TheSportsDB, football-data.org) appliquent la politique VN via vnResultMatch()
+- AUTO-FIX inversé (remplace l'AUTO-FIX HONNÊTE Task 26): les nuls marqués PERDUS → remis GAGNÉS au prochain cron (répare l'historique réglé en 1X2 strict)
+- Action fix-vn existante (draw=WIN) redevient cohérente avec la politique — inchangée
+- Bilan Telegram + getPeriodStats lisent result_match stocké → cohérents automatiquement après auto-fix; tag "(V/N)" déjà présent dans le message résultats pour les nuls gagnés
+- VÉRIF OP BADJAN (prod, 23h30 UTC): tennis V3 vivant (BetExplorer available, isBanned=false, 150 matchs collectés, 40 prédictions, cache frais 1 min; 0 🟢 aujourd'hui → BADJAN silencieux by design, compteur V3: 1 pari tracké en attente); foot BADJAN 07h45: 12 pronostics Nations League sauvegardés, tous hors critères (aucun favori domicile confirmé marché) → silence normal
+- BADJAN FOOT ENRICHI (spéc utilisateur): en plus de domicile+favori, le pick doit avoir ratio victoires domicile ≥50% (saison) ET ratio victoires H2H ≥50% (seuils constants exportées BADJAN_MIN_HOME_WIN_RATIO / BADJAN_MIN_H2H_WIN_RATIO, échantillons min 2)
+- Data source 100% gratuite: ESPN site.api.espn.com — home record via /teams/{id}/schedule (homeAway+winner), H2H via /summary?event= (seasonseries head-to-head), fallback ligue domestique via team.defaultLeague (coupe d'Europe → ligue nationale pour l'échantillon domicile)
+- combinedDataService: transmet leagueKey (slug ESPN) + espnEventId + homeTeamId/awayTeamId sur chaque match (additif)
+- badjanService: enrichAndFilterBadjan() async (cache 6h, timeout 8s, fail-closed: stats indisponibles → rejet), funnel enrichi (candidates/statsChecked/statsUnavailable/homeRatioRejected/h2hRejected/finalPicks/rejectionDetails), message Telegram affiche "🏠 Domicile (saison): 3V-1N-0D → 75% V" + "⚔️ H2H: 2V-1N-1D → 50% V"
+- publishBadjanToTelegram retourne le funnel enrichi; 2 sites cron (GET/POST telegram-badjan) l'exposent
+- TESTS: scripts/test_task27_vn_badjan.ts 21/21 (politique VN 9, ratios 7, live ESPN Bournemouth 0V-2N-1D domicile + 1V-4D H2H cohérents avec record total); scripts/test_task27_integration.ts sur 9 matchs réels à venir (cotes synthétiques): funnel correct, Atlético 75% domicile + 50% H2H = pick, Villarreal 33% domicile rejeté, Galatasaray 0% H2H rejeté, 6 H2H vides rejetés fail-closed
+- RÉGRESSION: tsc 0 erreur, build OK, badjan 27/27, badjan_tennis 34/34, anti_ban 15/15, tennis_v3 52/52
+
+Stage Summary:
+- Politique V/VN appliquée: nul=gagné (VN) sur toute la chaîne de vérification foot + auto-fix historique au prochain cron
+- BADJAN foot ne publie désormais que des favoris domicile à fort ratio domicile ET H2H vérifiés sur données ESPN réelles (0 €, cache, fail-closed)
+- BADJAN tennis et foot opérationnels (silences = 0 éligible, by design)
+- Note honnêteté: le bilan calcule les gains des nuls à la cote 1X2 enregistrée (police utilisateur assumée); passer aux cotes double chance serait plus conservateur — non implémenté sans validation

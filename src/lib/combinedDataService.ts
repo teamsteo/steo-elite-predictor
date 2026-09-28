@@ -387,22 +387,22 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
       fetchPromises.push(
         fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${yesterdayStr}`)
           .then(r => r.json())
-          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'yesterday' }))
-          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+          .then(data => ({ sport: sport.name, mainSport: sport.sport, leagueKey: sport.key, isInternational: sport.isInternational || false, data, dateType: 'yesterday' }))
+          .catch(e => ({ sport: sport.name, mainSport: sport.sport, leagueKey: sport.key, isInternational: sport.isInternational || false, data: null, error: e }))
       );
       // Aujourd'hui
       fetchPromises.push(
         fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${todayStr}`)
           .then(r => r.json())
-          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'today' }))
-          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+          .then(data => ({ sport: sport.name, mainSport: sport.sport, leagueKey: sport.key, isInternational: sport.isInternational || false, data, dateType: 'today' }))
+          .catch(e => ({ sport: sport.name, mainSport: sport.sport, leagueKey: sport.key, isInternational: sport.isInternational || false, data: null, error: e }))
       );
       // Demain
       fetchPromises.push(
         fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport.key}/scoreboard?dates=${tomorrowStr}`)
           .then(r => r.json())
-          .then(data => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data, dateType: 'tomorrow' }))
-          .catch(e => ({ sport: sport.name, mainSport: sport.sport, isInternational: sport.isInternational || false, data: null, error: e }))
+          .then(data => ({ sport: sport.name, mainSport: sport.sport, leagueKey: sport.key, isInternational: sport.isInternational || false, data, dateType: 'tomorrow' }))
+          .catch(e => ({ sport: sport.name, mainSport: sport.sport, leagueKey: sport.key, isInternational: sport.isInternational || false, data: null, error: e }))
       );
     }
     
@@ -496,6 +496,11 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
           id: `espn_${event.id}`,
           homeTeam,
           awayTeam,
+          // 🆔 IDs ESPN bruts — utilisés par BADJAN pour les stats domicile + H2H (endpoints gratuits)
+          espnEventId: event.id,
+          homeTeamId: home?.team?.id,
+          awayTeamId: away?.team?.id,
+          espnLeagueSlug: (result as any).leagueKey || '',
           sport: mainSport,
           league: event.competition?.name || event.league?.name || leagueName,
           date: event.date,

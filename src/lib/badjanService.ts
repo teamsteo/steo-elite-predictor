@@ -140,6 +140,290 @@ export function filterBadjanMatches(matches: BadjanMatchInput[]): BadjanMatchInp
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ENRICHISSEMENT BADJAN (Task 27) — ratio domicile + ratio H2H
+// ═══════════════════════════════════════════════════════════════════
+// Spécification utilisateur : en plus de jouer à DOMICILE et d'être FAVORI,
+// le pick doit avoir :
+//   1. un BON RATIO DE VICTOIRE À DOMICILE (saison en cours, ESPN schedule)
+//   2. un BON RATIO EN H2H (confrontations directes, ESPN summary/seasonseries)
+// Sources 100% gratuites (site.api.espn.com — déjà utilisées par le pipeline).
+// Fail-closed : si les stats sont indisponibles, le pick est REJETÉ
+// (BADJAN ne publie que ce qu'il peut vérifier). Cache mémoire 6h.
+
+export const BADJAN_MIN_HOME_WIN_RATIO = 0.5; // ≥ 50% de victoires à domicile
+export const BADJAN_MIN_H2H_WIN_RATIO = 0.5;  // ≥ 50% de victoires en H2H
+export const BADJAN_MIN_HOME_GAMES = 2;       // échantillon minimum à domicile
+export const BADJAN_MIN_H2H_GAMES = 2;        // échantillon minimum H2H
+const ESPN_TIMEOUT_MS = 8000;
+const STATS_CACHE_TTL_MS = 6 * 3600 * 1000;
+
+export interface BadjanHomeRecord {
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+}
+
+export interface BadjanH2HRecord {
+  total: number;
+  wins: number;   // victoires de l'équipe à domicile du pick
+  draws: number;
+  losses: number; // défaites face à l'adversaire du jour
+}
+
+export interface BadjanStats {
+  home: BadjanHomeRecord;
+  homeWinRatio: number; // 0..1
+  h2h: BadjanH2HRecord;
+  h2hWinRatio: number;  // 0..1
+}
+
+export interface EnrichedBadjanMatch extends BadjanMatchInput {
+  badjanStats?: BadjanStats;
+}
+
+async function espnJson(url: string): Promise<any | null> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(ESPN_TIMEOUT_MS),
+      headers: { accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+const homeRecordCache = new Map<string, { data: BadjanHomeRecord | null; ts: number }>();
+const h2hCache = new Map<string, { data: BadjanH2HRecord | null; ts: number }>();
+
+function cacheGet<T>(cache: Map<string, { data: T | null; ts: number }>, key: string): T | null | undefined {
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() - hit.ts > STATS_CACHE_TTL_MS) {
+    cache.delete(key);
+    return undefined;
+  }
+  return hit.data;
+}
+
+function cacheSet<T>(cache: Map<string, { data: T | null; ts: number }>, key: string, data: T | null): void {
+  cache.set(key, { data, ts: Date.now() });
+}
+
+/**
+ * Ratio de victoires À DOMICILE de l'équipe (ESPN schedule, gratuit).
+ * 1. Échantillon de la compétition du match (saison en cours).
+ * 2. Fallback: si cet échantillon est trop faible (coupe d'Europe, coupe
+ *    nationale — 0/1 match domicile), on utilise la LIGUE DOMESTIQUE de
+ *    l'équipe (ESPN team → defaultLeague) — échantillon bien plus riche.
+ */
+export async function fetchBadjanHomeRecord(leagueSlug: string, teamId: string): Promise<BadjanHomeRecord | null> {
+  if (!leagueSlug || !teamId) return null;
+  const record = await fetchHomeRecordForSlug(leagueSlug, teamId);
+  if (record && record.played >= BADJAN_MIN_HOME_GAMES) return record;
+
+  // Fallback ligue domestique (Task 27): compétitions à peu de matchs domicile
+  try {
+    const defaultSlug = await fetchDefaultLeagueSlug(leagueSlug, teamId);
+    if (defaultSlug && defaultSlug !== leagueSlug) {
+      const fallback = await fetchHomeRecordForSlug(defaultSlug, teamId);
+      if (fallback && fallback.played > 0) return fallback;
+    }
+  } catch { /* non bloquant */ }
+  return record;
+}
+
+async function fetchHomeRecordForSlug(leagueSlug: string, teamId: string): Promise<BadjanHomeRecord | null> {
+  const cacheKey = `${leagueSlug}#${teamId}`;
+  const cached = cacheGet(homeRecordCache, cacheKey);
+  if (cached !== undefined) return cached;
+
+  const data = await espnJson(`https://site.api.espn.com/apis/site/v2/sports/${leagueSlug}/teams/${teamId}/schedule`);
+  const record: BadjanHomeRecord = { played: 0, wins: 0, draws: 0, losses: 0 };
+  try {
+    const events = data?.events || [];
+    for (const ev of events) {
+      const comps = ev?.competitions?.[0]?.competitors || [];
+      const ours = comps.find((c: any) => String(c?.team?.id) === String(teamId) && c?.homeAway === 'home');
+      if (!ours) continue; // on ne compte que les matchs joués à domicile
+      if (ours.winner !== true && ours.winner !== false) continue; // pas encore joué
+      record.played++;
+      if (ours.winner === true) record.wins++;
+      else {
+        // nul si aucun competitor gagnant, défaite si l'adversaire a gagné
+        const oppWon = comps.some((c: any) => c !== ours && c?.winner === true);
+        if (oppWon) record.losses++; else record.draws++;
+      }
+    }
+  } catch {
+    cacheSet(homeRecordCache, cacheKey, null);
+    return null;
+  }
+  cacheSet(homeRecordCache, cacheKey, record);
+  return record;
+}
+
+const defaultLeagueCache = new Map<string, { data: string | null; ts: number }>();
+
+/** Ligue domestique de l'équipe (ESPN team.defaultLeague) → slug 'soccer/{slug}'. */
+async function fetchDefaultLeagueSlug(leagueSlug: string, teamId: string): Promise<string | null> {
+  const cacheKey = `${leagueSlug}#${teamId}`;
+  const hit = defaultLeagueCache.get(cacheKey);
+  if (hit && (Date.now() - hit.ts) <= STATS_CACHE_TTL_MS) return hit.data;
+  if (hit) defaultLeagueCache.delete(cacheKey);
+  const data = await espnJson(`https://site.api.espn.com/apis/site/v2/sports/${leagueSlug}/teams/${teamId}`);
+  const slug: string | null = (data?.team?.defaultLeague?.slug || data?.team?.leagueAbbrev || null) as string | null;
+  const out: string | null = slug ? `soccer/${slug}` : null;
+  defaultLeagueCache.set(cacheKey, { data: out, ts: Date.now() });
+  return out;
+}
+
+/**
+ * Ratio de victoires en H2H (confrontations directes) pour l'équipe à domicile du pick.
+ * Source: GET /sports/{slug}/summary?event={id} → seasonseries (gratuit ESPN).
+ */
+export async function fetchBadjanH2H(leagueSlug: string, eventId: string, homeTeamId: string): Promise<BadjanH2HRecord | null> {
+  if (!leagueSlug || !eventId || !homeTeamId) return null;
+  const cacheKey = `${leagueSlug}#${eventId}`;
+  const cached = cacheGet(h2hCache, cacheKey);
+  if (cached !== undefined) return cached;
+
+  const data = await espnJson(`https://site.api.espn.com/apis/site/v2/sports/${leagueSlug}/summary?event=${eventId}`);
+  const record: BadjanH2HRecord = { total: 0, wins: 0, draws: 0, losses: 0 };
+  try {
+    const series = (data?.seasonseries || []).find((s: any) => s?.type === 'head-to-head') || data?.seasonseries?.[0];
+    const events = series?.events || [];
+    for (const ev of events) {
+      if (String(ev?.id) === String(eventId)) continue;      // le match du jour ne compte pas
+      if (ev?.statusType?.completed !== true) continue;      // seulement les matchs joués
+      const comps = ev?.competitors || [];
+      const ours = comps.find((c: any) => String(c?.team?.id) === String(homeTeamId));
+      if (!ours) continue; // confrontation sur terrain neutre sous autre identité → ignorée
+      record.total++;
+      if (ours.winner === true) record.wins++;
+      else if (comps.some((c: any) => c !== ours && c?.winner === true)) record.losses++;
+      else record.draws++;
+    }
+  } catch {
+    cacheSet(h2hCache, cacheKey, null);
+    return null;
+  }
+  cacheSet(h2hCache, cacheKey, record);
+  return record;
+}
+
+/**
+ * Évaluation PURE des ratios (testable sans réseau).
+ * Retourne pass=false + reason si un critère n'est pas satisfait.
+ */
+export function evaluateBadjanRatios(
+  home: BadjanHomeRecord | null,
+  h2h: BadjanH2HRecord | null
+): { pass: boolean; reason?: string; stats?: BadjanStats } {
+  if (!home || !isFinite(home.played)) return { pass: false, reason: 'stats domicile indisponibles (ESPN)' };
+  if (home.played < BADJAN_MIN_HOME_GAMES) {
+    return { pass: false, reason: `échantillon domicile insuffisant (${home.played} match${home.played > 1 ? 's' : ''} < ${BADJAN_MIN_HOME_GAMES})` };
+  }
+  const homeWinRatio = home.wins / home.played;
+  if (homeWinRatio < BADJAN_MIN_HOME_WIN_RATIO) {
+    return { pass: false, reason: `ratio domicile trop faible (${Math.round(homeWinRatio * 100)}% V < ${Math.round(BADJAN_MIN_HOME_WIN_RATIO * 100)}%)` };
+  }
+  if (!h2h || !isFinite(h2h.total)) return { pass: false, reason: 'stats H2H indisponibles (ESPN)' };
+  if (h2h.total < BADJAN_MIN_H2H_GAMES) {
+    return { pass: false, reason: `échantillon H2H insuffisant (${h2h.total} confrontation${h2h.total > 1 ? 's' : ''} < ${BADJAN_MIN_H2H_GAMES})` };
+  }
+  const h2hWinRatio = h2h.wins / h2h.total;
+  if (h2hWinRatio < BADJAN_MIN_H2H_WIN_RATIO) {
+    return { pass: false, reason: `ratio H2H trop faible (${Math.round(h2hWinRatio * 100)}% V < ${Math.round(BADJAN_MIN_H2H_WIN_RATIO * 100)}%)` };
+  }
+  return {
+    pass: true,
+    stats: { home, homeWinRatio, h2h, h2hWinRatio },
+  };
+}
+
+export interface BadjanFunnelEnriched extends BadjanFunnel {
+  candidates: number;         // après le filtre de base (foot + risque + favori domicile)
+  statsChecked: number;       // stats ESPN récupérées (2 req/candidat)
+  statsUnavailable: number;   // rejetés: ESPN injoignable / IDs manquants
+  homeRatioRejected: number;  // rejetés: ratio domicile < seuil (ou échantillon)
+  h2hRejected: number;        // rejetés: ratio H2H < seuil (ou échantillon)
+  finalPicks: number;         // picks finaux enrichis
+  rejectionDetails: string[]; // motifs individuels (max 10, pour diagnostic)
+}
+
+/**
+ * Chaîne complète BADJAN : filtre de base (sync) + enrichissement stats + filtres ratios.
+ * Fail-closed : sans stats vérifiables → rejet.
+ */
+export async function enrichAndFilterBadjan(matches: BadjanMatchInput[]): Promise<{ picks: EnrichedBadjanMatch[]; funnel: BadjanFunnelEnriched }> {
+  const base = filterBadjanMatches(matches);
+  const funnel: BadjanFunnelEnriched = {
+    ...analyzeBadjanFunnel(matches),
+    candidates: base.length,
+    statsChecked: 0,
+    statsUnavailable: 0,
+    homeRatioRejected: 0,
+    h2hRejected: 0,
+    finalPicks: 0,
+    rejectionDetails: [],
+  };
+
+  if (base.length === 0) {
+    if (!funnel.reason) funnel.reason = '0 candidat après filtre de base BADJAN';
+    return { picks: [], funnel };
+  }
+
+  // Récupération parallèle des stats (2 req max par candidat, cachées 6h)
+  const settled = await Promise.all(base.map(async (m) => {
+    const leagueSlug: string = (m as any).espnLeagueSlug || '';
+    const homeTeamId: string = String((m as any).homeTeamId || '');
+    const eventId: string = String((m as any).espnEventId || '');
+    if (!leagueSlug || !homeTeamId || !eventId) {
+      return { match: m, home: null, h2h: null, missing: true };
+    }
+    const [home, h2h] = await Promise.all([
+      fetchBadjanHomeRecord(leagueSlug, homeTeamId),
+      fetchBadjanH2H(leagueSlug, eventId, homeTeamId),
+    ]);
+    return { match: m as EnrichedBadjanMatch, home, h2h, missing: !home || !h2h };
+  }));
+
+  const picks: EnrichedBadjanMatch[] = [];
+  for (const s of settled) {
+    if (!s.home || !s.h2h) {
+      funnel.statsUnavailable++;
+      if (funnel.rejectionDetails.length < 10) {
+        funnel.rejectionDetails.push(`${s.match.homeTeam} vs ${s.match.awayTeam}: stats ESPN indisponibles`);
+      }
+      continue;
+    }
+    funnel.statsChecked++;
+    const evalRes = evaluateBadjanRatios(s.home, s.h2h);
+    if (!evalRes.pass || !evalRes.stats) {
+      const isHomeIssue = evalRes.reason?.includes('domicile');
+      if (isHomeIssue) funnel.homeRatioRejected++; else funnel.h2hRejected++;
+      if (funnel.rejectionDetails.length < 10) {
+        funnel.rejectionDetails.push(`${s.match.homeTeam} vs ${s.match.awayTeam}: ${evalRes.reason}`);
+      }
+      continue;
+    }
+    s.match.badjanStats = evalRes.stats;
+    picks.push(s.match);
+  }
+
+  funnel.finalPicks = picks.length;
+  if (picks.length === 0) {
+    funnel.reason = funnel.statsUnavailable > 0 && funnel.statsChecked === 0
+      ? 'Stats ESPN indisponibles pour tous les candidats'
+      : `Aucun candidat ne passe les ratios (domicile ≥ ${Math.round(BADJAN_MIN_HOME_WIN_RATIO * 100)}% V, H2H ≥ ${Math.round(BADJAN_MIN_H2H_WIN_RATIO * 100)}% V)`;
+  }
+  return { picks, funnel };
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // DIAGNOSTIC FUNNEL (pur, sans effet de bord — Task 16)
 // Permet de comprendre POURQUOI 0 pick (réponse JSON du cron,
 // jamais publiée sur Telegram). Miroir exact de filterBadjanMatches.
@@ -198,12 +482,12 @@ export function analyzeBadjanFunnel(matches: BadjanMatchInput[]): BadjanFunnel {
 // FORMAT BADJAN
 // ═══════════════════════════════════════════════════════════════════
 
-export function formatBadjanMessage(picks: BadjanMatchInput[]): string {
+export function formatBadjanMessage(picks: EnrichedBadjanMatch[]): string {
   let message = '';
   message += '╔════════════════════════╗\n';
   message += `║ 🏠 <b>BADJAN — Favoris à domicile</b> ║\n`;
   message += '╚════════════════════════╝\n\n';
-  message += `✅ <b>${picks.length} match${picks.length > 1 ? 's' : ''}</b> — risque ≤ ${BADJAN_MAX_RISK} % · favoris à domicile\n\n`;
+  message += `✅ <b>${picks.length} match${picks.length > 1 ? 's' : ''}</b> — risque ≤ ${BADJAN_MAX_RISK} % · favori domicile · ≥${Math.round(BADJAN_MIN_HOME_WIN_RATIO * 100)}% V domicile · ≥${Math.round(BADJAN_MIN_H2H_WIN_RATIO * 100)}% V H2H\n\n`;
 
   for (let i = 0; i < picks.length; i++) {
     const m = picks[i];
@@ -227,6 +511,15 @@ export function formatBadjanMessage(picks: BadjanMatchInput[]): string {
     if (m.recommendation && m.recommendation !== 'N/A') message += ` — <b>${m.recommendation}</b>`;
     message += '\n';
 
+    // 🆕 Critères BADJAN vérifiés (Task 27): ratio domicile + H2H
+    if (m.badjanStats) {
+      const st = m.badjanStats;
+      const h = st.home;
+      const h2 = st.h2h;
+      message += `🏠 Domicile (saison): <b>${h.wins}V-${h.draws}N-${h.losses}D</b> → ${Math.round(st.homeWinRatio * 100)}% V\n`;
+      message += `⚔️ H2H: <b>${h2.wins}V-${h2.draws}N-${h2.losses}D</b> → ${Math.round(st.h2hWinRatio * 100)}% V (${h2.total} confrontation${h2.total > 1 ? 's' : ''})\n`;
+    }
+
     if (winProb !== undefined) message += `💥 Chance: <b>${Math.round(winProb)}%</b> · Risque: <b>${Math.round(m.riskPercentage ?? 100 - winProb)}%</b>\n`;
 
     // Bloc Dixon-Coles UNIQUEMENT si déjà calculé par le pipeline (zéro calcul ajouté)
@@ -243,7 +536,7 @@ export function formatBadjanMessage(picks: BadjanMatchInput[]): string {
   }
 
   message += '━━━━━━━━━━━━━━━━━━━━━\n';
-  message += `🏠 <b>Badjan</b> — sélection uniquement des favoris jouant à domicile.\n`;
+  message += `🏠 <b>Badjan</b> — favori domicile avec ratio domicile et H2H vérifiés.\n`;
   message += `Un favori domicile reste toujours favorite : pariez responsable.\n`;
 
   return message;
@@ -253,14 +546,24 @@ export function formatBadjanMessage(picks: BadjanMatchInput[]): string {
 // PUBLICATION BADJAN (Telegram uniquement — pas de DB, pas de bilan)
 // ═══════════════════════════════════════════════════════════════════
 
+export interface BadjanPublishResult {
+  success: boolean;
+  picks: number;
+  message?: string;
+  funnel?: BadjanFunnelEnriched;
+}
+
 export async function publishBadjanToTelegram(matches: BadjanMatchInput[]): Promise<BadjanPublishResult> {
   const { sendTelegramMessage, isDuplicate } = await import('./telegramService');
 
-  const picks = filterBadjanMatches(matches);
+  // 🆕 Chaîne complète (Task 27): filtre de base + stats domicile/H2H (fail-closed)
+  const { picks: enrichedPicks, funnel } = await enrichAndFilterBadjan(matches);
+  const picks = enrichedPicks;
 
   if (picks.length === 0) {
-    console.log('🏈 BADJAN: 0 match éligible (foot + risque ≤45% + favori domicile) — aucune publication');
-    return { success: false, picks: 0, message: 'Aucun match éligible' };
+    console.log(`🏈 BADJAN: 0 match éligible (foot + risque ≤45% + favori domicile + ratios domicile/H2H) — ${funnel.reason || 'aucune raison'}`);
+    for (const d of funnel.rejectionDetails) console.log(`   ↳ ${d}`);
+    return { success: false, picks: 0, message: 'Aucun match éligible', funnel };
   }
 
   const message = formatBadjanMessage(picks);
@@ -274,7 +577,7 @@ export async function publishBadjanToTelegram(matches: BadjanMatchInput[]): Prom
   // Message trop long → découpe propre aux frontières de matchs
   if (message.length <= TELEGRAM_MAX_LENGTH) {
     const ok = await sendTelegramMessage(message);
-    return { success: ok, picks: picks.length, message: ok ? 'Publié' : 'Erreur envoi' };
+    return { success: ok, picks: picks.length, message: ok ? 'Publié' : 'Erreur envoi', funnel };
   }
 
   const header = `🏠 <b>BADJAN — Favoris à domicile</b> (${picks.length} matchs)\n\n`;
@@ -298,5 +601,5 @@ export async function publishBadjanToTelegram(matches: BadjanMatchInput[]): Prom
     allOk = allOk && ok;
   }
 
-  return { success: allOk, picks: picks.length, message: `Publié en ${part} partie(s)` };
+  return { success: allOk, picks: picks.length, message: `Publié en ${part} partie(s)`, funnel };
 }

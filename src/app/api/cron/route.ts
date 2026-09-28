@@ -41,6 +41,7 @@ import {
 } from '@/lib/telegramService';
 import { getMatchesWithRealOdds, invalidateEspnCache, detectValueBets } from '@/lib/combinedDataService';
 import { publishBadjanToTelegram, analyzeBadjanFunnel } from '@/lib/badjanService';
+import { vnResultMatch } from '@/lib/resultPolicy';
 import { getBatchPredictions, type UnifiedPredictionInput } from '@/lib/unifiedPredictionService';
 import { timingSafeEqual } from '@/lib/timingSafeEqual';
 
@@ -61,6 +62,16 @@ function normalizePredictionType(type?: string): 'home' | 'away' | 'draw' {
   // Types étendus (over_2.5, under_2.5, btts_yes, btts_no) → par défaut 'home'
   return 'home';
 }
+
+/**
+ * 🎯 POLITIQUE VN (décision utilisateur) — football uniquement.
+ * On propose 2 pronostics par match : le risqué V (victoire pure) et le
+ * fiable VN (Victoire ou Nul — double chance). Le bilan suit le VN :
+ * un NUL = GAGNÉ. On ne perd que si l'équipe prédite S'INCLINE.
+ * Les pronostics 'draw' gardent leur logique propre (gagnés seulement si nul).
+ * (Sports US sans nul : jamais appelés avec actual='draw' — inchangés.)
+ * → Implémentation centralisée dans src/lib/resultPolicy.ts (Task 27)
+ */
 
 /**
  * Ping la base Supabase (Historique ML) pour la garder active
@@ -534,35 +545,34 @@ async function verifyFootballResults(): Promise<{
   let lost = 0;
 
   try {
-    // 🔧 AUTO-FIX HONNÊTE (Task 26): corriger l'historique corrompu par l'ancien FIX VN
-    // L'ancien code marquait les MATCHS NULS comme GAGNÉS pour les pronostics home/away
-    // (double chance implicite) tout en gardant les cotes 1X2 → ROI artificiellement gonflé.
-    // Un pari 1X2 home/away perd sur nul. On remet donc ces lignes en PERDU.
+    // 🔧 AUTO-FIX VN (politique utilisateur, inverse de l'ancienne règle 1X2 stricte):
+    // le pronostic foot home/away est suivi en mode VN (Victoire ou Nul — double chance).
+    // Un NUL = GAGNÉ. On répare l'historique des nuls marqués PERDUS.
     try {
       const allCompleted = await SupabaseStore.getAllPredictions(500);
       const vnFixes = allCompleted.filter(p =>
         p.sport === 'football' &&
         p.status === 'completed' &&
-        p.result_match === true &&
+        p.result_match === false &&
         p.actual_result === 'draw' &&
         (p.predicted_result === 'home' || p.predicted_result === 'away')
       );
       if (vnFixes.length > 0) {
-        console.log(`🎯 [AUTO-FIX-HONNÊTE] ${vnFixes.length} nuls étaient marqués GAGNÉS (cotes 1X2) → remis en PERDU`);
+        console.log(`🎯 [AUTO-FIX-VN] ${vnFixes.length} nuls étaient marqués PERDUS (politique VN: nul=gagné) → remis en GAGNÉ`);
         let fixed = 0;
         for (const p of vnFixes) {
           const ok = await SupabaseStore.completePrediction(p.match_id, {
             homeScore: p.home_score || 0,
             awayScore: p.away_score || 0,
             actualResult: p.actual_result as 'home' | 'draw' | 'away',
-            resultMatch: false,
+            resultMatch: true,
           });
           if (ok) fixed++;
         }
-        console.log(`🎯 [AUTO-FIX-HONNÊTE] ${fixed}/${vnFixes.length} corrigés`);
+        console.log(`🎯 [AUTO-FIX-VN] ${fixed}/${vnFixes.length} corrigés`);
       }
     } catch (fixErr: any) {
-      console.warn(`⚠️ [AUTO-FIX-HONNÊTE] Échec (non-bloquant): ${fixErr.message}`);
+      console.warn(`⚠️ [AUTO-FIX-VN] Échec (non-bloquant): ${fixErr.message}`);
     }
 
     // Récupérer les pronostics football pending depuis Supabase
@@ -598,10 +608,10 @@ async function verifyFootballResults(): Promise<{
         const predictedResult = prediction.predicted_result;
         const actualResult = adjustResultForInversion(result.actualResult, inverted);
 
-        // 🔧 HONNÊTETÉ 1X2 (Task 26): un pronostic home/away est un pari 1X2 aux cotes 1X2
-        // enregistrées → un NUL = PERDU. (L'ancien "FIX VN" comptait les nuls gagnés tout
-        // en gardant les cotes 1X2, gonflant artificiellement le ROI de ~+62% à -7%.)
-        const resultMatch = predictedResult === actualResult;
+        // 🎯 POLITIQUE VN (décision utilisateur): le bilan suit le pari fiable VN
+        // (Victoire ou Nul — double chance) → un NUL = GAGNÉ.
+        // On ne perd que si l'équipe prédite s'incline.
+        const resultMatch = vnResultMatch(predictedResult, actualResult);
 
         // Vérifier les buts (Over/Under 2.5)
         let goalsMatch: boolean | undefined;
@@ -623,7 +633,7 @@ async function verifyFootballResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${actualResult === 'draw' ? 'nul=perdu ' : ''}${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${actualResult === 'draw' && resultMatch ? 'nul=gagné(VN) ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
         // 🔍 LOG détaillé pour diagnostiquer les "en attente" prolongés
@@ -669,8 +679,8 @@ async function verifyFootballResults(): Promise<{
         if (fbMatch) {
           const inverted = (matchPredictionWithResult(prediction, fbMatch, true) as { matched: boolean; inverted: boolean }).inverted;
           const actualResult = adjustResultForInversion(fbMatch.actualResult, inverted);
-          // 🔧 HONNÊTETÉ 1X2 (Task 26): nul = perdu (cotes 1X2 enregistrées)
-          const resultMatch = prediction.predicted_result === actualResult;
+          // 🎯 POLITIQUE VN (décision utilisateur): nul = gagné pour home/away
+          const resultMatch = vnResultMatch(prediction.predicted_result, actualResult);
           const success = await SupabaseStore.completePrediction(prediction.match_id, {
             homeScore: inverted ? fbMatch.awayScore : fbMatch.homeScore,
             awayScore: inverted ? fbMatch.homeScore : fbMatch.awayScore,
@@ -704,8 +714,8 @@ async function verifyFootballResults(): Promise<{
         if (fdMatch) {
           const inverted = (matchPredictionWithResult(prediction, fdMatch, true) as { matched: boolean; inverted: boolean }).inverted;
           const actualResult = adjustResultForInversion(fdMatch.actualResult, inverted);
-          // 🔧 HONNÊTETÉ 1X2 (Task 26): nul = perdu (cotes 1X2 enregistrées)
-          const resultMatch = prediction.predicted_result === actualResult;
+          // 🎯 POLITIQUE VN (décision utilisateur): nul = gagné pour home/away
+          const resultMatch = vnResultMatch(prediction.predicted_result, actualResult);
           const success = await SupabaseStore.completePrediction(prediction.match_id, {
             homeScore: inverted ? fdMatch.awayScore : fdMatch.homeScore,
             awayScore: inverted ? fdMatch.homeScore : fdMatch.awayScore,
@@ -3308,7 +3318,8 @@ export async function GET(request: NextRequest) {
           console.log('🏈 BADJAN: récupération des matchs du pipeline (force refresh)...');
           const badjanMatches = await getMatchesWithRealOdds(true);
           const badjanResult = await publishBadjanToTelegram(badjanMatches);
-          const badjanFunnel = analyzeBadjanFunnel(badjanMatches);
+          // 🆕 Task 27: funnel enrichi (ratios domicile/H2H) si dispo, sinon funnel de base
+          const badjanFunnel = badjanResult.funnel || analyzeBadjanFunnel(badjanMatches);
           result = {
             telegram: {
               success: badjanResult.success,
@@ -4152,7 +4163,8 @@ export async function POST(request: NextRequest) {
           console.log('🏈 [POST] BADJAN: récupération des matchs du pipeline (force refresh)...');
           const badjanMatches = await getMatchesWithRealOdds(true);
           const badjanResult = await publishBadjanToTelegram(badjanMatches);
-          const badjanFunnel = analyzeBadjanFunnel(badjanMatches);
+          // 🆕 Task 27: funnel enrichi (ratios domicile/H2H) si dispo, sinon funnel de base
+          const badjanFunnel = badjanResult.funnel || analyzeBadjanFunnel(badjanMatches);
           result = {
             telegram: {
               success: badjanResult.success,
