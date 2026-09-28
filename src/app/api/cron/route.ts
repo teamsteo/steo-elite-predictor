@@ -534,33 +534,35 @@ async function verifyFootballResults(): Promise<{
   let lost = 0;
 
   try {
-    // 🔥 AUTO-FIX VN: Corriger les anciens résultats football où draw=a été marqué loss
-    // au lieu de win (avant que le fix VN soit ajouté au code de vérification)
+    // 🔧 AUTO-FIX HONNÊTE (Task 26): corriger l'historique corrompu par l'ancien FIX VN
+    // L'ancien code marquait les MATCHS NULS comme GAGNÉS pour les pronostics home/away
+    // (double chance implicite) tout en gardant les cotes 1X2 → ROI artificiellement gonflé.
+    // Un pari 1X2 home/away perd sur nul. On remet donc ces lignes en PERDU.
     try {
       const allCompleted = await SupabaseStore.getAllPredictions(500);
       const vnFixes = allCompleted.filter(p =>
         p.sport === 'football' &&
         p.status === 'completed' &&
-        p.result_match === false &&
+        p.result_match === true &&
         p.actual_result === 'draw' &&
         (p.predicted_result === 'home' || p.predicted_result === 'away')
       );
       if (vnFixes.length > 0) {
-        console.log(`🎯 [AUTO-FIX-VN] ${vnFixes.length} résultats football VN à corriger (draw était marqué loss)`);
+        console.log(`🎯 [AUTO-FIX-HONNÊTE] ${vnFixes.length} nuls étaient marqués GAGNÉS (cotes 1X2) → remis en PERDU`);
         let fixed = 0;
         for (const p of vnFixes) {
           const ok = await SupabaseStore.completePrediction(p.match_id, {
             homeScore: p.home_score || 0,
             awayScore: p.away_score || 0,
             actualResult: p.actual_result as 'home' | 'draw' | 'away',
-            resultMatch: true,
+            resultMatch: false,
           });
           if (ok) fixed++;
         }
-        console.log(`🎯 [AUTO-FIX-VN] ${fixed}/${vnFixes.length} corrigés`);
+        console.log(`🎯 [AUTO-FIX-HONNÊTE] ${fixed}/${vnFixes.length} corrigés`);
       }
     } catch (fixErr: any) {
-      console.warn(`⚠️ [AUTO-FIX-VN] Échec (non-bloquant): ${fixErr.message}`);
+      console.warn(`⚠️ [AUTO-FIX-HONNÊTE] Échec (non-bloquant): ${fixErr.message}`);
     }
 
     // Récupérer les pronostics football pending depuis Supabase
@@ -596,13 +598,10 @@ async function verifyFootballResults(): Promise<{
         const predictedResult = prediction.predicted_result;
         const actualResult = adjustResultForInversion(result.actualResult, inverted);
 
-        // 🎯 FIX VN: En football, predicted_result 'home'/'away' affiche "V/N: X%" dans le bilan.
-        // Le nul est donc couvert (double chance 1X/X2) → draw = WIN, seul la défaite = échec
-        const isFootballVNWin = (
-          actualResult === 'draw' &&
-          (predictedResult === 'home' || predictedResult === 'away')
-        );
-        const resultMatch = isFootballVNWin ? true : predictedResult === actualResult;
+        // 🔧 HONNÊTETÉ 1X2 (Task 26): un pronostic home/away est un pari 1X2 aux cotes 1X2
+        // enregistrées → un NUL = PERDU. (L'ancien "FIX VN" comptait les nuls gagnés tout
+        // en gardant les cotes 1X2, gonflant artificiellement le ROI de ~+62% à -7%.)
+        const resultMatch = predictedResult === actualResult;
 
         // Vérifier les buts (Over/Under 2.5)
         let goalsMatch: boolean | undefined;
@@ -624,7 +623,7 @@ async function verifyFootballResults(): Promise<{
         if (success) {
           updated++;
           if (resultMatch) won++; else lost++;
-          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${isFootballVNWin ? 'V/N nul ' : ''}${result.homeScore}-${result.awayScore})`);
+          console.log(`✅ Football: ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${inverted ? '⚠️inversé ' : ''}${actualResult === 'draw' ? 'nul=perdu ' : ''}${result.homeScore}-${result.awayScore})`);
         }
       } else {
         // 🔍 LOG détaillé pour diagnostiquer les "en attente" prolongés
@@ -670,12 +669,8 @@ async function verifyFootballResults(): Promise<{
         if (fbMatch) {
           const inverted = (matchPredictionWithResult(prediction, fbMatch, true) as { matched: boolean; inverted: boolean }).inverted;
           const actualResult = adjustResultForInversion(fbMatch.actualResult, inverted);
-          // 🎯 FIX VN: nul couvert pour pronostics home/away
-          const isFootballVNWin = (
-            actualResult === 'draw' &&
-            (prediction.predicted_result === 'home' || prediction.predicted_result === 'away')
-          );
-          const resultMatch = isFootballVNWin ? true : prediction.predicted_result === actualResult;
+          // 🔧 HONNÊTETÉ 1X2 (Task 26): nul = perdu (cotes 1X2 enregistrées)
+          const resultMatch = prediction.predicted_result === actualResult;
           const success = await SupabaseStore.completePrediction(prediction.match_id, {
             homeScore: inverted ? fbMatch.awayScore : fbMatch.homeScore,
             awayScore: inverted ? fbMatch.homeScore : fbMatch.awayScore,
@@ -685,7 +680,7 @@ async function verifyFootballResults(): Promise<{
           if (success) {
             updated++;
             if (resultMatch) won++; else lost++;
-            console.log(`✅ [TheSportsDB] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${isFootballVNWin ? 'V/N nul ' : ''}${fbMatch.homeScore}-${fbMatch.awayScore})`);
+            console.log(`✅ [TheSportsDB] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${fbMatch.homeScore}-${fbMatch.awayScore})`);
           }
         }
       }
@@ -709,11 +704,8 @@ async function verifyFootballResults(): Promise<{
         if (fdMatch) {
           const inverted = (matchPredictionWithResult(prediction, fdMatch, true) as { matched: boolean; inverted: boolean }).inverted;
           const actualResult = adjustResultForInversion(fdMatch.actualResult, inverted);
-          const isFootballVNWin = (
-            actualResult === 'draw' &&
-            (prediction.predicted_result === 'home' || prediction.predicted_result === 'away')
-          );
-          const resultMatch = isFootballVNWin ? true : prediction.predicted_result === actualResult;
+          // 🔧 HONNÊTETÉ 1X2 (Task 26): nul = perdu (cotes 1X2 enregistrées)
+          const resultMatch = prediction.predicted_result === actualResult;
           const success = await SupabaseStore.completePrediction(prediction.match_id, {
             homeScore: inverted ? fdMatch.awayScore : fdMatch.homeScore,
             awayScore: inverted ? fdMatch.homeScore : fdMatch.awayScore,
@@ -723,7 +715,7 @@ async function verifyFootballResults(): Promise<{
           if (success) {
             updated++;
             if (resultMatch) won++; else lost++;
-            console.log(`✅ [football-data.org] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${isFootballVNWin ? 'V/N nul ' : ''}${fdMatch.homeScore}-${fdMatch.awayScore})`);
+            console.log(`✅ [football-data.org] ${prediction.home_team} vs ${prediction.away_team}: ${resultMatch ? 'GAGNÉ' : 'PERDU'} (${fdMatch.homeScore}-${fdMatch.awayScore})`);
           }
         }
       }

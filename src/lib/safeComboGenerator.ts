@@ -19,6 +19,14 @@
  *    comparateur non-transitif. Remplacé par un score de classement par combo
  *    : safety (60%) + proximité normalisée de la cote cible (40%).
  *
+ * 🔧 FIX 3 (Task 26 — honnêteté mathématique) : avgSafety affiché = PRODUIT des
+ *    probabilités implicites (Π 1/cote) = probabilité réelle que TOUS les picks
+ *    passent. L'ancien calcul faisait la MOYENNE de scores multipliés par des
+ *    bonus subjectifs (confiance ×1.4, favori ×1.3...) → un combo 2×1.5 affichait
+ *    "Sécurité 78%" alors que la vraie proba marché est 44%. La moyenne surestime
+ *    systématiquement (0.7+0.7)/2 = 0.7 vs 0.7×0.7 = 0.49 réel. Les bonus restent
+ *    utilisés pour la SÉLECTION des picks (ordre des candidats), pas pour l'affichage.
+ *
  * Forme de sortie IDENTIQUE à l'ancienne (UI inchangée) :
  *   pick  = { match, betType, odds, safetyScore, confidence, isValueBet, isLive }
  *   combo = { picks, combinedOdds, avgSafety, distance, riskLevel }
@@ -200,9 +208,11 @@ export function findBestCombinations(matches: any[], targetOdds: number): SafeCo
     }
   }
 
-  // ── 3. 🔧 FIX 2 : tri transitive par score de classement ──
-  // sécurité (60%) + proximité normalisée de la cote cible (40%)
+  // ── 3. 🔧 FIX 2+3 : tri transitive + probabilité combinée honnête ──
+  // proba réelle que TOUS les picks passent = produit des probabilités implicites
   combinations.forEach(c => {
+    const trueProb = c.picks.reduce((acc, p) => acc * (1 / (p.odds > 1 ? p.odds : 1)), 1);
+    c.avgSafety = Math.min(1, trueProb); // affichage UI "Sécurité" = proba honnête
     const proximity = 1 - Math.min(1, c.distance / Math.max(1e-9, targetOdds * tolerance));
     c.rankScore = c.avgSafety * 0.6 + proximity * 0.4;
   });

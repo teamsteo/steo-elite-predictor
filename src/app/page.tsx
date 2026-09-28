@@ -2890,7 +2890,7 @@ ${lines.join('\n')}
         }}>
           <strong style={{ color: '#3b82f6' }}>💡 Comment ça marche:</strong> L'algorithme scanne tous les sports disponibles,
           identifie les favoris avec haute confiance, et combine les picks les plus sûrs pour atteindre votre cote cible
-          (tolérance de ±15%).
+          (tolérance de ±20%). La "Sécurité" affichée = probabilité réelle que tous les picks passent (produit des probabilités implicites).
         </div>
 
         {/* Résultats des combinaisons */}
