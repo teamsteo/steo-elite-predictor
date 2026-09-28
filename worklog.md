@@ -873,3 +873,23 @@ Work Log:
 Stage Summary:
 - Task 25 bouclée : check complet 14 onglets + 5 bugs corrigés + vérifiés en production
 - Rappel sécurité : token GitHub ghp_j9CotY... toujours actif, ROTATION IMPÉRATIVE sur https://github.com/settings/tokens
+
+---
+Task ID: 26
+Agent: main
+Task: Vérifier logique combiné (onglet API) + efficacité pronostics tennis + rendements par championnat foot
+
+Work Log:
+- Audit safeComboGenerator.ts: logique de sélection OK (1 pick/match = prédiction ML, Task 16) MAIS "Sécurité" affichée = moyenne de scores à bonus subjectifs (×1.4 confiance, ×1.3 favori) → pouvait dépasser 100% et surestimer la proba réelle (moyenne vs produit). FIX 3: affichage = produit des probabilités implicites (Π 1/cote); bonus gardés pour la sélection; copie UI ±15%→±20%
+- BUG MAJEUR vérification résultats foot trouvé: l'ancien "FIX VN" (cron/route.ts ×4 sites: ESPN, TheSportsDB, football-data.org) comptait les MATCHS NULS comme GAGNÉS pour pronostics home/away tout en gardant cotes 1X2 + "AUTO-FIX-VN" re-marquait rétroactivement les nuls perdus en gagnés à chaque passe cron → ROI affiché 59.9%/+61.8% au lieu de 34.9%/-6.9% RÉEL (43 nuls faux-gagnants / 172 réglés)
+- FIX: nul=perdu sur les 3 chemins + AUTO-FIX-HONNÊTE inverse qui répare l'historique DB au prochain cron (CRON_SECRET inaccessible du sandbox)
+- Tennis: compteur BADJAN V3 trop jeune (1 pending, 0 réglé). Backtest prod KO (Sackmann/GitHub raw bloqués serveur + sandbox). Validation proxy cœur Elo sur seed: 2337 matchs réels → 70.0% précision favori (hard 73.9%, clay 67.7%, grass 66.9%, GS 71.4%, ATP250 65.7%) = plage saine
+- Rendements foot par championnat CORRIGÉS (nul=perdu, 172 réglés, 31/08→28/09): meilleurs ROI réels = Bundesliga +58.5%, La Liga +46.7%, Premier League +39.5%, Serie A +27.9%, Europa League +27.1%; pires = Champions League -100% (0/6), Ligue 1 -65%, Nations League -60.7%; GLOBAL RÉEL 60/172 (34.9%) ROI -6.9% (-11.90u)
+- Livrable: download/rendements_par_championnat_foot_corriges.csv + scripts/analyze_foot_league_yields.py + scripts/validate_tennis_v3_proxy.py
+- tsc 0, build OK. Commit 86bd86f prêt LOCALEMENT — PUSH BLOQUÉ: token ghp_j9CotY... révoqué (GitHub API 401). Token neuf requis
+
+Stage Summary:
+- 2 bugs de fond corrigés (nuls comptés gagnés = faux ROI; sécurité combinés surestimée)
+- Tennis V3: cœur Elo validé 70% précision, compteur live trop jeune pour ROI
+- Classement rendements foot corrigé livré (CSV)
+- EN ATTENTE: push du commit 86bd86f dès réception d'un token GitHub valide
