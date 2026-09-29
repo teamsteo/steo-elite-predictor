@@ -990,3 +990,47 @@ Work Log:
 Stage Summary:
 - Le duo V (risqué) / VN (fiable) avec pourcentages est maintenant visible PARTOUT: message BADJAN Telegram + cartes football du site + API — l'utilisateur voit les 2 pronostics proposés et leur probabilité sur chaque match
 - Cohérence vérifiée avec les panneaux existants (Double Chance 1X = VN)
+
+---
+Task ID: 31
+Agent: main
+Task: BADJAN Foot silencieux sur Telegram — diagnostic + fix fallback cotes normalisées
+
+Work Log:
+- Symptôme utilisateur : "Le badjan foot doit avoir un problème, il y a plus de publications sur telegram"
+- Diagnostic prod (curl /api/cron?action=telegram-badjan) : HTTP 200, picks=0, funnel finalPicks=0 avec rejectionDetails=[
+    "Spain vs Croatia: échantillon domicile insuffisant (0 match < 2)",
+    "Slovenia vs North Macedonia: échantillon domicile insuffisant (1 match < 2)",
+    "Bulgaria vs Estonia: échantillon domicile insuffisant (1 match < 2)"
+  ]
+- Root cause : le filtre Task 27 (fail-closed strict) exige ≥2 matchs domicile ESPN + ≥2 confrontations H2H ESPN. Pour les équipes nationales (Nations League aujourd'hui) ESPN n'a pas cet historique → rejet systématique → silence Telegram (3 matchs du jour rejetés)
+- Fix implémenté : fallback cotes normalisées (Task 31) dans src/lib/badjanService.ts
+  - Nouvelle constante BADJAN_FALLBACK_MIN_PROB_HOME = 0.55 (seuil marché si stats ESPN indispo)
+  - evaluateBadjanRatios() étendue avec paramètre optionnel probHomeFallback (0..1)
+    * Chemin strict (Task 27) conservé : stats ESPN dispo + ratios ≥ 50% → PASS strict (pas de badge)
+    * Chemin fallback (Task 31) : stats ESPN indispo/insuffisantes → si probHome ≥ 55% → PASS avec badge fallback='cotes'
+    * Si stats ESPN dispo mais ratio faible ET probHome ≥ 55% → PASS en fallback (mix)
+    * Si stats ESPN dispo et ratio faible ET pas de probHome → REJET (legacy)
+    * Si stats ESPN indispo ET probHome < 55% → REJET (fail-closed préservé)
+  - Nouveau champ BadjanStats.probHomeMarket (0..1) pour affichage clair (séparé de homeWinRatio)
+  - enrichAndFilterBadjan() calcule probHome fallback (cotes 1X2 normalisées, marge bookmaker retirée) pour chaque candidat
+  - Nouveau compteur BadjanFunnelEnriched.fallbackCotes (picks validés via fallback)
+  - formatBadjanMessage() : en-tête différencie picks stricts vs fallback, badge 📈 par pick fallback
+  - Log publication : "🏈 BADJAN: X pick(s) — Y strict(s) ESPN + Z fallback cotes"
+- Test task31_fallback_cotes.ts (28 assertions) : 5 sections (stats null, échantillon insuffisant, ratios faibles sauvés, chemin strict préservé, normalisation cotes)
+- Test task27_vn_badjan.ts : 21/21 (régression OK — sans probHomeFallback, comportement strict identique)
+- Test test_badjan.ts : 27/27 ; test_badjan_funnel_pure.ts : 10/10 ; test_task29_v_vn_display.ts : 16/16
+- tsc 0 erreur
+- Commit 1c01785 poussé, Vercel déployé (build ~40s)
+- Validation prod (curl live) : success=true, picks=2, fallbackCotes=2, finalPicks=2
+  * Spain vs Croatia → ✅ fallback cotes (probHome marché ≥ 55%)
+  * Slovenia vs North Macedonia → ✅ fallback cotes (probHome marché ≥ 55%)
+  * Bulgaria vs Estonia → ❌ rejet (probHome 53% < 55% — BADJAN reste sélectif)
+- Message Telegram publié avec 2 matchs, en-tête affiche "📈 2 fallback cotes (stats ESPN indispo — probHome ≥ 55%)"
+
+Stage Summary:
+- BADJAN Foot publie à nouveau sur Telegram (silence rompu)
+- Fallback cotes normalisées préserve l'esprit fail-closed : si stats ESPN indispo ET probHome < 55%, rejet (BADJAN reste sélectif)
+- Picks stricts (ESPN vérifié) et picks fallback (marché vérifié) clairement distingués dans le message Telegram
+- Test 28/28 + 21/21 + 27/27 + 10/10 + 16/16, tsc 0
+- Production vérifiée : 2 picks publiés (Spain + Slovenia), 1 rejeté (Bulgaria, probHome 53%)
