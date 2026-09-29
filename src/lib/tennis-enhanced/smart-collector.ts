@@ -171,6 +171,9 @@ interface AntiBanState {
   lastBanTitle: string;
   lastBanSnippet: string;
   lastBanAt: string;
+  // Diagnostic Task 28 : dernière erreur brute (stealthFetch/parse) exposée à l'API
+  lastError: string;
+  lastErrorAt: string;
 }
 
 let antiBanState: AntiBanState = {
@@ -185,6 +188,8 @@ let antiBanState: AntiBanState = {
   lastBanTitle: '',
   lastBanSnippet: '',
   lastBanAt: '',
+  lastError: '',
+  lastErrorAt: '',
 };
 
 // Odds API state
@@ -258,6 +263,8 @@ function canRequestBetExplorer(): { allowed: boolean; reason: string } {
  */
 function recordError(error: string): void {
   antiBanState.errorCount++;
+  antiBanState.lastError = error;
+  antiBanState.lastErrorAt = new Date().toISOString();
   console.log(`[TennisCollector] ⚠️ Erreur ${antiBanState.errorCount}/${ANTI_BAN_CONFIG.maxErrors}: ${error}`);
   
   if (antiBanState.errorCount >= ANTI_BAN_CONFIG.maxErrors) {
@@ -746,6 +753,9 @@ export interface CollectorStatus {
     lastBanTitle: string;
     lastBanSnippet: string;
     lastBanAt: string;
+    /** Diagnostic Task 28 : dernière erreur brute (ex. circuit breaker partagé, WAF, réseau) */
+    lastError: string;
+    lastErrorAt: string;
   };
   oddsApi: {
     available: boolean;
@@ -776,6 +786,8 @@ export function getCollectorStatus(): CollectorStatus {
       lastBanTitle: antiBanState.lastBanTitle,
       lastBanSnippet: antiBanState.lastBanSnippet,
       lastBanAt: antiBanState.lastBanAt,
+      lastError: antiBanState.lastError,
+      lastErrorAt: antiBanState.lastErrorAt,
     },
     oddsApi: {
       available: !!ODDS_API_KEY,
