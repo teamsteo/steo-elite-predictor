@@ -920,3 +920,25 @@ Stage Summary:
 - BADJAN foot ne publie désormais que des favoris domicile à fort ratio domicile ET H2H vérifiés sur données ESPN réelles (0 €, cache, fail-closed)
 - BADJAN tennis et foot opérationnels (silences = 0 éligible, by design)
 - Note honnêteté: le bilan calcule les gains des nuls à la cote 1X2 enregistrée (police utilisateur assumée); passer aux cotes double chance serait plus conservateur — non implémenté sans validation
+
+---
+Task ID: 28
+Agent: Super Z (main)
+Task: Push Task 26+27 avec nouveau token + vérification BADJAN tennis/foot + rendements par championnat en politique VN (nul=gagné)
+
+Work Log:
+- PUSH (nouveau token utilisateur) : 5a11132..adc44c2 — les 3 commits en attente (Task 26 combiné/tennis/rendements, Task 27 politique VN + BADJAN foot enrichi) sont déployés
+- INCIDENT TRANSITOIRE post-déploiement : /api/tennis renvoyait 0 prédictions (source=fresh, collected=0) alors que 23h30 UTC tout était vivant ; BetExplorer répondait 200 depuis le sandbox (648 lignes data-dt) → cause : disjoncteur PARTAGÉ stealthFetch (Supabase Storage, 8-14 min) ouvert pendant la fenêtre de redéploiement ; auto-guérison confirmée à 00:10 UTC (collected=150, predicted=40, kept=40) — aucun code défaillant, comportement by design
+- OBSERVABILITÉ (commit f2b3c97) : collector.betexplorer.lastError/lastErrorAt ajoutés (recordError enrichi) — la prochaine panne de collecte sera lisible directement dans /api/tennis sans secret
+- BADJAN TENNIS VÉRIFIÉ : pipeline vivant (40 prédictions, BetExplorer available, isBanned=false), cron 10:15 UTC configuré dans vercel.json (+ bilan 12:45 UTC, auto-publish 09:00/11:00)
+- BADJAN FOOT VÉRIFIÉ : cron 45 7 * * * → action=telegram-badjan configuré ; run du matin (07:45) = 12 pronostics Nations League hors critères → silence normal ; la logique enrichie Task 27 (ratio domicile ≥50% + H2H ≥50%, données ESPN gratuites, fail-closed) prendra effet au prochain run
+- RENDEMENTS PAR CHAMPIONNAT EN POLITIQUE VN (scripts/analyze_foot_league_yields_vn.py, évaluation recalculée depuis les données brutes indépendamment du resultMatch stocké) : 172 réglés, 43 nuls tous GAGNÉS pour prono home/away → GLOBAL 103/172 (59.9%) ROI +61.8% (+106.26u) vs ancien 1X2 strict 60/172 (34.9%) ROI -6.9% (-11.90u), écart 118.16u
+- TOP VN : Liga Portugal +139.2% (9/12), Premier League +114.0% (7/10), Europa League +113.4% (9/14), Ligue 2 +103.0% (11/15), Süper Lig +102.8% (6/9), La Liga +93.5%, Bundesliga +84.1%, Serie A +62.5%, MLS +40.7% (18/27) — négatifs : Nations League -3.7%, Champions League -33.3%, Carabao Cup -100%
+- LIVRABLES : download/rendements_par_championnat_VN.csv + .json (hit_rate_vn, roi_vn, draws_won, losses par ligue)
+- Combiné : fix Task 26 (Sécurité = Π 1/cote) vérifié dans le code déployé ; endpoint /api/combi-analysis répond (rate-limit OK)
+- tsc 0 erreur, anti_ban 15/15
+
+Stage Summary:
+- Local = GitHub = Vercel synchronisés (f2b3c97), VN (nul=gagné) opérationnel sur toute la chaîne + auto-fix historique au prochain cron
+- BADJAN tennis et foot confirmés opérationnels ; silences = 0 éligible (by design)
+- Rendements VN par championnat livrés : 12 ligues positives ≥5 réglés, top 5 toutes >100% ROI
