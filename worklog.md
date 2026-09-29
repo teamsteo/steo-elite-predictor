@@ -973,3 +973,20 @@ Work Log:
 Stage Summary:
 - Le duo V (risqué) + VN (fiable) avec pourcentage normalisé est maintenant disponible sur TOUTE la chaîne : pipeline → BADJAN Telegram → API site
 - Le prochain message BADJAN Foot (07:45 UTC) affichera pour chaque pick : cotes 1X2, ratios domicile/H2H, et le duo « 🎯 V (risqué): X% · VN (fiable): Y% »
+
+---
+Task ID: 29-ter
+Agent: Super Z (main)
+Task: Afficher le duo V/VN sur les cartes football du site (validation utilisateur « Oui vas-y également »)
+
+Work Log:
+- Interface Match étendue (champs optionnels, zéro régression): vProbability/vnProbability (fractions 0-1) + predictedResult
+- FootballMatchCard: calcul duoV/duoVN — priorité aux champs API (si reco home/away), fallback local = probas ML du favori + nul (cap 100); équipe prédite tronquée à 20 caractères (anti-overflow mobile)
+- Bandeau ajouté sous la ligne principale de chaque carte (masqué si match terminé): « 🎯 {équipe} | V X% (orange) · VN Y% (vert) | V risqué · VN fiable (nul = gagné) »
+- Faux positif réglé au passage: la ligne 5425 « }, atch.homeTeam » était un artefact d'affichage terminal — les octets réels sont « }, [match.homeTeam » (code sain, tsc 0 + build OK)
+- VÉRIF PROD navigateur (login admin): 10 cartes affichent le duo; exemple Finland vs Belarus → V 61% · VN 89%, cohérent avec le panneau Double Chance 1X existant (89% = 89%) ; capture d'écran validée
+- tsc 0 erreur, next build OK, commit poussé
+
+Stage Summary:
+- Le duo V (risqué) / VN (fiable) avec pourcentages est maintenant visible PARTOUT: message BADJAN Telegram + cartes football du site + API — l'utilisateur voit les 2 pronostics proposés et leur probabilité sur chaque match
+- Cohérence vérifiée avec les panneaux existants (Double Chance 1X = VN)
