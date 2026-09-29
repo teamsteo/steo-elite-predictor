@@ -344,6 +344,10 @@ export interface Match {
   };
   // Pipeline ML unifié — probabilités calculées par le modèle
   probabilities?: { home: number; draw: number; away: number };
+  // 🆕 Task 29 — duo V/VN (police utilisateur: bilan suit le VN, nul=gagné) — fractions 0-1
+  vProbability?: number;
+  vnProbability?: number;
+  predictedResult?: 'home' | 'away' | 'draw' | string;
   // Enjeu du match (phase saison, type compétition)
   matchImportance?: {
     stakeLevel: string;
@@ -5448,6 +5452,23 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
   const favoriteTeam = favorite === 'home' ? match.homeTeam : match.awayTeam;
   const favoriteProb = Math.max(homeProb, awayProb);
   const favoriteOdds = favorite === 'home' ? validOddsHome : validOddsAway;
+
+  // 🆕 Task 29 — DUO V/VN (police utilisateur : 2 pronostics par match, bilan suit le VN, nul = gagné)
+  //   V  (risqué) = victoire pure du côté prédit
+  //   VN (fiable) = Victoire ou Nul (double chance)
+  // Priorité: champs API (vProbability/vnProbability, 0-1) si le reco est home/away,
+  // sinon calcul local depuis les probas ML du favori + le nul.
+  const apiDuoUsable =
+    typeof match.vProbability === 'number' &&
+    typeof match.vnProbability === 'number' &&
+    (match.predictedResult === 'home' || match.predictedResult === 'away');
+  const duoV = apiDuoUsable ? Math.round(match.vProbability! * 100) : Math.round(favoriteProb);
+  const duoVN = apiDuoUsable
+    ? Math.round(match.vnProbability! * 100)
+    : Math.min(100, Math.round(favoriteProb + drawProb));
+  const duoFavoriteTeam = apiDuoUsable
+    ? (match.predictedResult === 'home' ? match.homeTeam : match.awayTeam)
+    : favoriteTeam;
   
   // ==========================================
   // OPTIONS DE PARIS — Données ML enrichies
@@ -5608,6 +5629,34 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
           <div style={{ color: '#666', fontSize: '8px' }}>Risque</div>
         </div>
       </div>
+
+      {/* 🆕 Task 29 — DUO V/VN : les 2 pronostics proposés avec le pourcentage de chacun */}
+      {!isFinished && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: '#1a1a1a',
+          borderRadius: '8px',
+          padding: '6px 10px',
+          marginBottom: '8px',
+          border: '1px solid #2a2a2a'
+        }}>
+          <span style={{ fontSize: '9px', color: '#888', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '38%' }}>
+            🎯 <span style={{ color: '#c4b5fd', fontWeight: 'bold' }}>
+              {duoFavoriteTeam.length > 20 ? duoFavoriteTeam.slice(0, 19) + '…' : duoFavoriteTeam}
+            </span>
+          </span>
+          <span style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>
+            <b style={{ color: '#f97316' }}>V {duoV}%</b>
+            <span style={{ color: '#555', margin: '0 4px' }}>·</span>
+            <b style={{ color: '#22c55e' }}>VN {duoVN}%</b>
+          </span>
+          <span style={{ fontSize: '8px', color: '#666', marginLeft: 'auto', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            V risqué · VN fiable (nul = gagné)
+          </span>
+        </div>
+      )}
       
       {/* TAG ML PATTERN - Affiché si disponible */}
       {(match.bestTag || match.mlPatterns?.bestTag) && (
