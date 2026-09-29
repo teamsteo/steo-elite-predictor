@@ -520,7 +520,15 @@ export function formatBadjanMessage(picks: EnrichedBadjanMatch[]): string {
       message += `⚔️ H2H: <b>${h2.wins}V-${h2.draws}N-${h2.losses}D</b> → ${Math.round(st.h2hWinRatio * 100)}% V (${h2.total} confrontation${h2.total > 1 ? 's' : ''})\n`;
     }
 
-    if (winProb !== undefined) message += `💥 Chance: <b>${Math.round(winProb)}%</b> · Risque: <b>${Math.round(m.riskPercentage ?? 100 - winProb)}%</b>\n`;
+    // 🆕 Task 29 — DUO V/VN : deux pronostics par match avec le pourcentage de chacun
+    //   V (risqué)   = victoire pure du favori domicile
+    //   VN (fiable)  = Victoire ou Nul (double chance) — le bilan suit le VN (nul = gagné)
+    if (typeof m.vProbability === 'number' && typeof m.vnProbability === 'number') {
+      message += `🎯 <b>V (risqué): ${Math.round(m.vProbability * 100)}%</b> · <b>VN (fiable): ${Math.round(m.vnProbability * 100)}%</b>\n`;
+      message += `   Risque (perte si défaite): <b>${Math.round(m.riskPercentage ?? 100 - m.vProbability * 100)}%</b>\n`;
+    } else if (winProb !== undefined) {
+      message += `💥 Chance: <b>${Math.round(winProb)}%</b> · Risque: <b>${Math.round(m.riskPercentage ?? 100 - winProb)}%</b>\n`;
+    }
 
     // Bloc Dixon-Coles UNIQUEMENT si déjà calculé par le pipeline (zéro calcul ajouté)
     if (m._dixonColes) {

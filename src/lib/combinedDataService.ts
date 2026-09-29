@@ -486,6 +486,21 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
         const confidence = favoriteProb >= 70 ? 'high' : favoriteProb >= 55 ? 'medium' : 'low';
         const recommendation = homeProb > awayProb ? homeTeam : awayTeam;
 
+        // 🆕 Task 29 — DUO V/VN (police utilisateur : V risqué + VN fiable)
+        // Probabilités 1X2 NORMALISÉES (retrait de la marge du bookmaker) :
+        //   V  = probabilité de victoire pure du côté prédit
+        //   VN = V + probabilité de nul (double chance 1X / X2)
+        // Zéro régression : winProbability/riskPercentage inchangés, champs additifs.
+        const invH = oddsHome > 0 ? 1 / oddsHome : 0;
+        const invA = oddsAway > 0 ? 1 / oddsAway : 0;
+        const invD = oddsDraw && oddsDraw > 0 ? 1 / oddsDraw : 0;
+        const invSum = invH + invD + invA;
+        const probHome = invSum > 0 ? invH / invSum : 0.5;
+        const probAway = invSum > 0 ? invA / invSum : 0.5;
+        const probDraw = invSum > 0 ? invD / invSum : Math.max(0, 1 - probHome - probAway);
+        const vProbability = predictedResult === 'home' ? probHome : probAway;
+        const vnProbability = Math.min(1, vProbability + probDraw);
+
         // Venue extraction for weather enrichment (Phase 3)
         const venue = competition?.venue;
         const venueCity = venue?.address?.city || undefined;
@@ -534,6 +549,12 @@ export async function getMatchesWithRealOdds(forceRefresh: boolean = false): Pro
           predictedResult,
           confidence,
           recommendation,
+          // 🆕 Task 29 — duo V/VN + probabilités 1X2 normalisées (0-1)
+          vProbability,
+          vnProbability,
+          probHome,
+          probDraw,
+          probAway,
         });
       }
     }
