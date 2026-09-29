@@ -72,6 +72,15 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
   // Clamp pour éviter valeurs aberrantes
   const clampedWinProb = Math.max(0, Math.min(100, winProbability));
 
+  // 🆕 Task 29 — duo V/VN (police utilisateur : bilan suit le VN, nul = gagné)
+  //   V  (risqué)  = probabilité ML de victoire pure du côté recommandé
+  //   VN (fiable)  = V + probabilité ML de nul (double chance) — cap 100
+  //   Convention 0-1 (même échelle que combinedDataService) ; sports US: draw=0 → VN=V
+  const vProbML = rec.bet === 'home' ? homeProb : rec.bet === 'away' ? awayProb : drawProb;
+  const vnProbML = Math.min(100, rec.bet === 'draw' ? drawProb : vProbML + drawProb);
+  const vProbability = Math.max(0, Math.min(1, vProbML / 100));
+  const vnProbability = Math.max(0, Math.min(1, vnProbML / 100));
+
   // ── Advanced Predictions (site web) ──
   const expectedGoals = dc?.expectedGoals?.total || 2.5;
 
@@ -233,6 +242,9 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
     winProbability: clampedWinProb,
     recommendation: recommendationText,
     expectedValue: rec.expectedValue,
+    // 🆕 Task 29 — duo V/VN (0-1, normalisé ML)
+    vProbability,
+    vnProbability,
 
     // ═══════════════════════════════════════
     // DONNÉES SITE WEB — Options de paris
