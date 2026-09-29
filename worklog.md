@@ -942,3 +942,19 @@ Stage Summary:
 - Local = GitHub = Vercel synchronisés (f2b3c97), VN (nul=gagné) opérationnel sur toute la chaîne + auto-fix historique au prochain cron
 - BADJAN tennis et foot confirmés opérationnels ; silences = 0 éligible (by design)
 - Rendements VN par championnat livrés : 12 ligues positives ≥5 réglés, top 5 toutes >100% ROI
+
+---
+Task ID: 29
+Agent: Super Z (main)
+Task: Duo V/VN avec pourcentage de chacun sur chaque match foot (question utilisateur: « Tu proposes déjà la version V et celle VN avec le pourcentage de chacun non? »)
+
+Work Log:
+- ÉTAT DES LIEUX honnête: pipeline n'avait que winProbability (V brut 1/cote, marge incluse), BADJAN n'affichait qu'une ligne « 💥 Chance: X% » (V seul), le VN n'existait que comme politique de bilan (nul=gagné) + panneau 1X/X2 dans les détails de match du site
+- PIPELINE (combinedDataService.ts): probabilités 1X2 NORMALISÉES (retrait de marge: inv/Σinv) + champs additifs vProbability (victoire pure du côté prédit), vnProbability (V+nul, cap 1), probHome/probDraw/probAway — winProbability/riskPercentage inchangés (zéro régression); sports US sans nul: VN=V
+- BADJAN Telegram (badjanService.ts): la ligne unique devient le duo « 🎯 V (risqué): 61% · VN (fiable): 85% » + « Risque (perte si défaite): 38% » — fallback ancien format conservé si vProbability absent
+- TEST scripts/test_task29_v_vn_display.ts 16/16 (normalisation math 8, affichage 5, fallbacks 2, constantes 1); régression: tsc 0, task27 21/21, anti_ban 15/15, intégration live funnel OK
+- Exemple validé: cotes 1.55/3.90/6.20 → V 61% · VN 85% (marge 6.3% retirée)
+
+Stage Summary:
+- Chaque pick BADJAN publie désormais les DEUX pronostics (V risqué + VN fiable) avec le pourcentage normalisé de chacun, conformément au modèle produit de l'utilisateur (bilan suit le VN: nul=gagné)
+- Les champs V/VN normalisés sont disponibles dans tout le pipeline pour le site (additif)
