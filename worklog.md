@@ -958,3 +958,18 @@ Work Log:
 Stage Summary:
 - Chaque pick BADJAN publie désormais les DEUX pronostics (V risqué + VN fiable) avec le pourcentage normalisé de chacun, conformément au modèle produit de l'utilisateur (bilan suit le VN: nul=gagné)
 - Les champs V/VN normalisés sont disponibles dans tout le pipeline pour le site (additif)
+
+---
+Task ID: 29-bis
+Agent: Super Z (main)
+Task: Étendre le duo V/VN au mapper unifié /api/matches (site) + vérification production
+
+Work Log:
+- Le mapper unifié (mapUnifiedToEnrichedMatch) reconstruisait les objets et perdait les champs V/VN du pipeline → ajout de vProbability/vnProbability (0-1) dérivés des probabilités ML du côté recommandé (V = victoire pure, VN = V + nul, cap 100), convention identique à BADJAN
+- VÉRIF PROD /api/matches : 17/19 matchs portent le duo ; foot testé : Moldova-Féroé V 40%/VN 69%, Bulgarie-Estonie V 27%/VN 54%, Tchéquie-Angleterre V 25%/VN 45%…
+- Chaîne complète confirmée : BADJAN cron passe les objets pipeline BRUTS (getMatchesWithRealOdds(true) → publishBadjanToTelegram) → le duo V/VN s'affichera au prochain message Telegram 07:45 UTC
+- tsc 0, tests Task 29 16/16, Task 27 21/21
+
+Stage Summary:
+- Le duo V (risqué) + VN (fiable) avec pourcentage normalisé est maintenant disponible sur TOUTE la chaîne : pipeline → BADJAN Telegram → API site
+- Le prochain message BADJAN Foot (07:45 UTC) affichera pour chaque pick : cotes 1X2, ratios domicile/H2H, et le duo « 🎯 V (risqué): X% · VN (fiable): Y% »
