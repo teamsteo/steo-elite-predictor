@@ -1186,3 +1186,17 @@ Stage Summary:
 - 2 actions restantes pour l'utilisateur (optionnel, via Supabase Dashboard):
   1. DROP TRIGGER orphelin sur ml_patterns (fix durable du BUG #7)
   2. Auditer les 141 matchs "other" + scores basketball suspects (over 220 à 3%)
+
+---
+Task ID: 32 (vérification finale nouvelle session)
+Agent: main
+Task: Re-confirmation état prod après reprise de session
+
+Work Log:
+- Vérifié git: 0 commit non poussé (7bb17f2, 8bec8ed, c5e5bae, bc22b13, b8ea020, c50afdc tous sur origin/main)
+- curl /api/ml/status: version 0.0.6 (propre), patterns.total 12, avgSuccessRate 87%, learning Actif 100%
+- lastTrained 2026-10-08T07:58:49 → le cron verify du matin a bien entraîné le modèle en prod
+
+Stage Summary:
+- Task 32 CLÔTURÉ et vérifié en prod. Reste optionnel (côté utilisateur): DROP TRIGGER orphelin
+  ml_patterns via Supabase Dashboard + audit scores basketball / 141 matchs "other"
