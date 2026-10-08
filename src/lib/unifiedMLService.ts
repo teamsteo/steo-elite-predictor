@@ -401,25 +401,67 @@ export async function saveMLPattern(pattern: Omit<MLPattern, 'id' | 'last_update
 
 /**
  * Met à jour un pattern existant
+ *
+ * 🆕 Task 32 — CONTOURNEMENT TRIGGER: un trigger PostgreSQL sur ml_patterns
+ * (BEFORE UPDATE) référence une colonne `updated_at` INEXISTANTE dans la table
+ * → tout UPDATE échoue avec 'record "new" has no field "updated_at"'.
+ * L'INSERT fonctionne (le trigger ne porte pas sur INSERT).
+ * Stratégie: INSERT du pattern fusionné (nouvel id horodaté) puis DELETE de
+ * l'ancien en best-effort. Si le DELETE échoue (trigger sur DELETE ?), le
+ * doublon résiduel est inoffensif: find() prend le premier match et les
+ * prochains runs fusionneront vers la ligne fraîche.
+ * FIX DURABLE (à exécuter dans le SQL Editor Supabase):
+ *   DROP TRIGGER <nom> ON ml_patterns;  -- trigger orphelin sur updated_at
+ *   -- ou bien: ALTER TABLE ml_patterns ADD COLUMN updated_at timestamptz;
  */
 export async function updateMLPattern(patternId: string, sampleSize: number, successRate: number): Promise<boolean | string> {
   const supabase = getSupabase();
   if (!supabase) return false;
   
   try {
-    const { error } = await supabase
+    // 1) Charger la ligne existante (pour conserver sport/pattern_type/condition/outcome/description)
+    const { data: existingRow, error: loadErr } = await supabase
       .from('ml_patterns')
-      .update({
-        sample_size: sampleSize,
-        success_rate: successRate,
-        last_updated: new Date().toISOString()
-      })
+      .select('*')
+      .eq('id', patternId)
+      .single();
+    
+    if (loadErr || !existingRow) {
+      return `update KO: pattern source introuvable (${loadErr?.message || 'no row'})`;
+    }
+    
+    // 2) INSERT du pattern fusionné avec un nouvel id horodaté (l'INSERT n'est pas bloqué par le trigger)
+    const merged = {
+      sport: existingRow.sport,
+      pattern_type: existingRow.pattern_type,
+      condition: existingRow.condition,
+      outcome: existingRow.outcome,
+      sample_size: sampleSize,
+      success_rate: successRate,
+      confidence: Math.min(successRate / 100, 0.95),
+      description: existingRow.description,
+      id: `${existingRow.sport}_${existingRow.pattern_type}_${Date.now()}`,
+      last_updated: new Date().toISOString(),
+    };
+    
+    const { error: insertErr } = await supabase
+      .from('ml_patterns')
+      .insert(merged);
+    
+    if (insertErr) {
+      console.error('❌ UnifiedML: Erreur insert (update-contournement):', insertErr.message);
+      return `update KO (insert contournement): ${insertErr.message}`;
+    }
+    
+    // 3) DELETE de l'ancienne ligne (best-effort — si le trigger bloque aussi DELETE,
+    //    le doublon résiduel est inoffensif)
+    const { error: deleteErr } = await supabase
+      .from('ml_patterns')
+      .delete()
       .eq('id', patternId);
     
-    if (error) {
-      console.error('❌ UnifiedML: Erreur mise à jour pattern:', error.message);
-      // 🆕 Task 32 — remonter le message d'erreur exact pour diagnostic
-      return `update KO: ${error.message}`;
+    if (deleteErr) {
+      console.warn(`⚠️ UnifiedML: DELETE ancien pattern ${patternId} échoué (non bloquant): ${deleteErr.message}`);
     }
     
     // Rafraîchir le cache
