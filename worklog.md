@@ -1320,3 +1320,50 @@ Stage Summary:
 - Fix NFL proposé (non exécuté, en attente validation): mapper les events ESPN → NFLMatch
   dans le route (OU normaliser dans getNFLMatches) + garde null sur insights/projected;
   option B = intégration NFL au pipeline unifié (dailyPredictionService + history + Telegram)
+
+---
+Task ID: 36
+Agent: main
+Task: Fix NFL — /api/nfl-pro HTTP 500 en saison (Option A: débloquer avec vraies données ESPN, sans frais)
+
+Work Log:
+- Root cause confirmé: en saison getNFLMatches() retournait les data.events ESPN BRUTS;
+  le route accédait m.insights.moneyline.valueBet.detected → TypeError → 500.
+  Hors saison, "fonctionnait" uniquement avec matchs FICTIFS (DVOA hardcoded,
+  restEdge/injuryEdge/trendEdge = Math.random())
+- Créé mapESPNEventToNFLMatch dans nflAdvancedScraper.ts (~340 lignes):
+  * Normalisation complète ESPN event → NFLMatch (interface page.tsx respectée)
+  * Convention ESPN vérifiée live: odds.spread = spread côté HOME (négatif = home favori);
+    détails "DAL -9.5" home=DAL, "CHI -1.5" home=GB (away favori) → cohérent
+  * Blend 65% marché (spread + overUnder ESPN réels) / 35% engine DVOA-EPA
+    (marge engine = dvoaDiff×0.45 + HCA 2.5; total engine = 44 + epaSum×12)
+  * Probabilités CDF normale σ=13.5, clamp [0.15, 0.85]
+  * Edges: spread (couverture), total (O/U), moneyline (proba vs implicite marché, ≥4pp)
+    → fail-closed: sans lignes ESPN → toutes recos 'pass', source 'dvoa-engine-only'
+  * Match terminé (state=post) → scores réels dans projected, signaux 'pass'
+  * Alias WSH→WAS, LA→LAR; équipe inconnue → dataQuality 'fallback' (pas de drop)
+  * 100% déterministe: 0 Math.random; event malformé → null (jamais d'exception)
+  * Bilans réels ESPN (records[].summary), heure formatée ET, week/season
+- Route /api/nfl-pro blindé (défense en profondeur): filtre objets incomplets
+  (id string + projected/insights complets + Number.isFinite) + optional chaining
+- Supprimé de fait le random: generateNFLPrediction (dead code route) isolé
+- Tests scripts/test_task36_nfl_fix.ts: 48/48 ✅ (conventions spread home/away,
+  fail-closed 6 cas malformés, post-game, déterminisme, alias, fallback, live ESPN
+  TB@DAL proj 19.3-28.1, total 47.4, prob 74%, source espn-odds+dvoa-engine)
+  — 1er run 47/48: attendu du test faux (DVOA TB 7.2 pas -9.5), mapping correct
+- Régressions: Task 27 (exit 0), 27-int (0), 29 (16/16), 31 (0), 32 (0), 34 (67/67) ✅
+- tsc --noEmit: 0 erreur
+- Push 15ba56c (avec worklog Task 35 auto-commit 2e9651e) → Vercel déployé
+- PROD VÉRIFIÉE: /api/nfl-pro HTTP 200, "1 matchs NFL disponibles" (TB @ DAL TNF
+  20:15 ET), stats {valueBets 0, highConfidence 1, avgTotal 47}, edges honnêtes
+  spread pass (-0.7 pts) / total pass (-1.1 pts) — divergence engine/marché < seuil
+
+Stage Summary:
+- Option A LIVRÉE: NFL débloqué en prod avec données réelles (ESPN scoreboard gratuit,
+  cotes spread/O-U réelles + bilans), zéro frais, zéro risque de ban, rollback n/a
+  (pas d'env var nécessaire — fail-closed naturel)
+- Reste visibles/mineurs: 1 match/jour retourné (fenêtre ESPN dates=aujourd'hui —
+  conforme à la sémantique "matchs du jour"); DVOA/EPA statiques (table locale) —
+  équivalent du fallback NBA avant Task 34
+- Option B (NON exécutée, en attente validation): intégration NFL au pipeline unifié
+  (dailyPredictionService + historique + patterns ML + Telegram) — même pattern que NHL
