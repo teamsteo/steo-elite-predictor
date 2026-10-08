@@ -1482,3 +1482,19 @@ Stage Summary:
   (VOID/remboursé, sémantique bookmaker réelle)
 - Surveiller: demain 08h15 UTC, cron coupon — si ESPN a publié les résultats
   du 8 oct entre-temps → image gagné/perdu réelle; sinon skip (unresolved, void)
+
+---
+Task ID: 39-b
+Agent: main
+Task: Confirmation réception Telegram par l'utilisateur
+
+Work Log:
+- Utilisateur confirme visuellement la réception sur le canal (bot @SteoPronoBot,
+  chat -1003456978914): message texte test + photos coupons visibles
+- Chaîne complète validée: rendu PNG prod → sendTelegramPhoto → réception réelle
+- Rappel timing: 1ère publication AUTOMATIQUE du cron coupon = 9 oct 08h15 UTC
+  (déploiement vercel.json la veille ~20h, slot du matin déjà passé)
+
+Stage Summary:
+- Pipeline coupons 100% validé de bout en bout (rendu + livraison + réception)
+- Aucune action restante; surveillance demain 08h15 UTC (1er run auto)
