@@ -782,7 +782,7 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   
   if (isValueBet) {
     reasoning.push(`📊 VALUE BET: ${bestBet === 'home' ? match.homeTeam : bestBet === 'away' ? match.awayTeam : 'Draw'} sous-évalué de +${Math.round(bestEdge * 100)}%`);
-    reasoning.push(`🎯 Cote ${formatOdds(bestOdds)} vs probabilité ${formatPercent(bestProb)}`);
+    reasoning.push(`🎯 Cote ${formatOdds(bestOdds)} vs probabilité ${formatPercent(bestProb * 100)}`);
   } else {
     reasoning.push(`📉 Pas de value bet significatif (edge < ${Math.round(edgeThreshold * 100)}%)`);
   }
