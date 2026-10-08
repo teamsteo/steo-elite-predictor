@@ -1801,10 +1801,13 @@ async function trainMLModel(): Promise<{
   success: boolean; 
   accuracy: number; 
   samplesUsed: number;
+  patternsDiscovered: number;
   patternsSaved: number;
   patternsUpdated: number;
   improvements: string[];
-  errors: string[] 
+  errors: string[];
+  rejectedByThreshold?: { sport: string; type: string; rate: number; threshold: number }[];
+  matchesBySport?: Record<string, number>;
 }> {
   console.log('🧠 Entraînement du modèle ML unifié...');
 
@@ -1820,10 +1823,13 @@ async function trainMLModel(): Promise<{
       success: result.success,
       accuracy: result.accuracy,
       samplesUsed: result.samplesUsed,
+      patternsDiscovered: result.patternsDiscovered,
       patternsSaved: result.patternsSaved,
       patternsUpdated: result.patternsUpdated,
       improvements: result.improvements,
-      errors: result.errors
+      errors: result.errors,
+      rejectedByThreshold: result.rejectedByThreshold,
+      matchesBySport: result.matchesBySport,
     };
   } catch (error: any) {
     console.error('Erreur ML training:', error);
@@ -1831,6 +1837,7 @@ async function trainMLModel(): Promise<{
       success: false, 
       accuracy: 0, 
       samplesUsed: 0,
+      patternsDiscovered: 0,
       patternsSaved: 0,
       patternsUpdated: 0,
       improvements: [],

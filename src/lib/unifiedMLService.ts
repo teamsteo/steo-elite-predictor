@@ -135,6 +135,9 @@ export interface TrainingResult {
   accuracy: number;
   improvements: string[];
   errors: string[];
+  // 🆕 Task 32 — observabilité du filtrage par seuil de bruit
+  rejectedByThreshold?: { sport: string; type: string; rate: number; threshold: number }[];
+  matchesBySport?: Record<string, number>;
 }
 
 export interface MatchForTraining {
@@ -922,7 +925,9 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
     patternsUpdated: 0,
     accuracy: 0,
     improvements: [],
-    errors: []
+    errors: [],
+    rejectedByThreshold: [],
+    matchesBySport: {},
   };
   
   const supabase = getSupabase();
@@ -955,48 +960,64 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
     }
     
     result.samplesUsed = matches.length;
-    console.log(`📊 UnifiedML: ${matches.length} matchs analysés`);
+    
+    // 🆕 Task 32 — diagnostic répartition par sport (normalisation sport insensible à la casse)
+    const bySport: Record<string, number> = {};
+    for (const m of matches) {
+      const s = String(m.sport || 'unknown').toLowerCase();
+      bySport[s] = (bySport[s] || 0) + 1;
+    }
+    result.matchesBySport = bySport;
+    console.log(`📊 UnifiedML: ${matches.length} matchs analysés — répartition:`, bySport);
     
     // 2. Détecter les patterns par sport
+    // 🆕 Task 32 — normalisation insensible à la casse: 'Football', 'NBA', 'NHL',
+    // 'MLB', 'Tennis' en DB ne doivent pas faire échouer la détection
+    const sportOf = (m: any): string => String(m.sport || '').toLowerCase();
     let allPatterns: PatternDiscovery[] = [];
     
     if (!sport || sport === 'all' || sport === 'football') {
-      const footballMatches = matches.filter(m => 
-        m.sport === 'football' || m.sport === 'soccer' || m.sport === 'Foot'
-      );
+      const footballMatches = matches.filter((m: any) => {
+        const s = sportOf(m);
+        return s === 'football' || s === 'soccer' || s === 'foot' || s.includes('soccer') || s.includes('football');
+      });
       allPatterns = [...allPatterns, ...detectFootballPatterns(footballMatches as MatchForTraining[])];
     }
     
     if (!sport || sport === 'all' || sport === 'basketball') {
-      const basketballMatches = matches.filter(m => 
-        m.sport === 'basketball' || m.sport === 'nba' || m.sport === 'Basket'
-      );
+      const basketballMatches = matches.filter((m: any) => {
+        const s = sportOf(m);
+        return s === 'basketball' || s === 'nba' || s === 'basket' || s.includes('basket');
+      });
       allPatterns = [...allPatterns, ...detectBasketballPatterns(basketballMatches as MatchForTraining[])];
     }
     
     if (!sport || sport === 'all' || sport === 'hockey') {
-      const hockeyMatches = matches.filter(m => 
-        m.sport === 'hockey' || m.sport === 'nhl'
-      );
+      const hockeyMatches = matches.filter((m: any) => {
+        const s = sportOf(m);
+        return s === 'hockey' || s === 'nhl' || s.includes('hockey');
+      });
       allPatterns = [...allPatterns, ...detectHockeyPatterns(hockeyMatches as MatchForTraining[])];
     }
     
     if (!sport || sport === 'all' || sport === 'tennis') {
-      const tennisMatches = matches.filter(m => 
-        m.sport === 'tennis' || m.sport === 'Tennis'
-      );
+      const tennisMatches = matches.filter((m: any) => {
+        const s = sportOf(m);
+        return s === 'tennis' || s.includes('tennis');
+      });
       allPatterns = [...allPatterns, ...detectTennisPatterns(tennisMatches as MatchForTraining[])];
     }
     
     if (!sport || sport === 'all' || sport === 'baseball') {
-      const baseballMatches = matches.filter(m => 
-        m.sport === 'baseball' || m.sport === 'mlb'
-      );
+      const baseballMatches = matches.filter((m: any) => {
+        const s = sportOf(m);
+        return s === 'baseball' || s === 'mlb' || s.includes('baseball');
+      });
       allPatterns = [...allPatterns, ...detectBaseballPatterns(baseballMatches as MatchForTraining[])];
     }
     
     result.patternsDiscovered = allPatterns.length;
-    console.log(`🔍 UnifiedML: ${allPatterns.length} patterns découverts`);
+    console.log(`🔍 UnifiedML: ${allPatterns.length} patterns découverts:`, allPatterns.map(p => `${p.sport}/${p.pattern_type}=${p.success_rate}%(${p.sample_size})`));
     
     // 3. Charger les patterns existants
     const existingPatterns = await loadMLPatterns();
@@ -1006,6 +1027,12 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
       const sportThreshold = SPORT_THRESHOLDS[pattern.sport] || 55;
       if (pattern.success_rate < sportThreshold) {
         console.log(`🔇 UnifiedML: Pattern "${pattern.pattern_type}" ignoré (${pattern.sport}: ${pattern.success_rate}% < ${sportThreshold}%)`);
+        result.rejectedByThreshold!.push({
+          sport: pattern.sport,
+          type: pattern.pattern_type,
+          rate: pattern.success_rate,
+          threshold: sportThreshold,
+        });
         continue;
       }
       
