@@ -135,6 +135,10 @@
     {
       "path": "/api/cron/tennis-v3?mode=bilan",
       "schedule": "45 12 * * *"
+    },
+    {
+      "path": "/api/cron/coupon",
+      "schedule": "15 8 * * *"
     }
   ]
 }

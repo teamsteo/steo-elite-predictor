@@ -537,6 +537,50 @@ export async function sendTelegramMessage(text: string, options?: {
   return false;
 }
 
+// Envoi d'une IMAGE (coupon du jour / résultat) — Task 37
+// Upload multipart (pas d'URL publique nécessaire)
+export async function sendTelegramPhoto(pngBuffer: Buffer, caption: string): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn('⚠️ Telegram non configuré (sendPhoto)');
+    return false;
+  }
+
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    try {
+      const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`;
+      const form = new FormData();
+      form.append('chat_id', TELEGRAM_CHAT_ID);
+      form.append('caption', caption.slice(0, 1024));
+      form.append('parse_mode', 'HTML');
+      form.append('photo', new Blob([new Uint8Array(pngBuffer)], { type: 'image/png' }), 'coupon.png');
+
+      const response = await fetch(url, { method: 'POST', body: form });
+
+      if (response.status === 429 && attempt < 2) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '5', 10);
+        await new Promise(r => setTimeout(r, Math.min(retryAfter, 30) * 1000));
+        continue;
+      }
+
+      const data = await response.json();
+      if (!data.ok) {
+        console.error('❌ Erreur Telegram sendPhoto:', data.description);
+        return false;
+      }
+      console.log('✅ Photo envoyée sur Telegram');
+      return true;
+    } catch (error) {
+      if (attempt < 2) {
+        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      console.error('❌ Erreur envoi photo Telegram:', error);
+      return false;
+    }
+  }
+  return false;
+}
+
 // Envoi en message privé (chat personnel, pas le canal)
 export async function sendTelegramPersonalMessage(text: string, options?: {
   parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
