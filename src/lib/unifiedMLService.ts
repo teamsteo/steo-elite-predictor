@@ -402,7 +402,7 @@ export async function saveMLPattern(pattern: Omit<MLPattern, 'id' | 'last_update
 /**
  * Met à jour un pattern existant
  */
-export async function updateMLPattern(patternId: string, sampleSize: number, successRate: number): Promise<boolean> {
+export async function updateMLPattern(patternId: string, sampleSize: number, successRate: number): Promise<boolean | string> {
   const supabase = getSupabase();
   if (!supabase) return false;
   
@@ -418,7 +418,8 @@ export async function updateMLPattern(patternId: string, sampleSize: number, suc
     
     if (error) {
       console.error('❌ UnifiedML: Erreur mise à jour pattern:', error.message);
-      return false;
+      // 🆕 Task 32 — remonter le message d'erreur exact pour diagnostic
+      return `update KO: ${error.message}`;
     }
     
     // Rafraîchir le cache
@@ -426,9 +427,9 @@ export async function updateMLPattern(patternId: string, sampleSize: number, suc
     await loadMLPatterns(true);
     
     return true;
-  } catch (e) {
+  } catch (e: any) {
     console.error('❌ UnifiedML: Exception mise à jour pattern:', e);
-    return false;
+    return `update exception: ${e?.message || e}`;
   }
 }
 
@@ -1056,12 +1057,13 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
         );
         
         const updated = await updateMLPattern(existing.id, newSampleSize, newSuccessRate);
-        if (updated) {
+        if (updated === true) {
           result.patternsUpdated++;
           result.improvements.push(`Pattern "${pattern.pattern_type}" mis à jour: ${newSuccessRate}% (${newSampleSize} échantillons)`);
         } else {
-          // 🆕 Task 32 — l'échec d'update ne doit plus être silencieux
-          result.errors.push(`Échec update pattern "${pattern.pattern_type}" (id=${existing.id})`);
+          // 🆕 Task 32 — l'échec d'update ne doit plus être silencieux (message exact si string)
+          const detail = typeof updated === 'string' ? ` — ${updated}` : '';
+          result.errors.push(`Échec update pattern "${pattern.pattern_type}" (id=${existing.id})${detail}`);
         }
       } else {
         // Créer un nouveau pattern
