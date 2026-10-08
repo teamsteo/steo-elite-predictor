@@ -689,13 +689,19 @@ function detectFootballPatterns(matches: MatchForTraining[]): PatternDiscovery[]
 
 /**
  * Détecte les patterns Basketball (NBA) depuis les matchs
+ * Task 34 (hygiène): EXCLUT la Summer League — totaux ~170-190 (40 min, jeunes
+ * joueurs) qui polluaient le pattern over_220 (taux historique aberrant ~3%).
  */
 function detectBasketballPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
   const patterns: PatternDiscovery[] = [];
   
-  const nbaMatches = matches.filter(m => 
-    m.sport === 'basketball' || m.sport === 'nba' || m.sport === 'Basket'
-  );
+  const nbaMatches = matches.filter(m => {
+    const s = (m.sport || '').toLowerCase();
+    if (!(s === 'basketball' || s === 'nba' || s === 'basket')) return false;
+    const league = (m.league || '').toLowerCase();
+    if (league.includes('summer') || league.includes('preseason') || league.includes('pre-season')) return false;
+    return true;
+  });
   
   if (nbaMatches.length < 5) return patterns;
   

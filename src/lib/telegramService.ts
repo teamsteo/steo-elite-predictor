@@ -917,6 +917,30 @@ interface TelegramMatch {
     form?: string;
     newsAlerts?: string[];
   };
+  // 🧮 Engine V4-lite NBA (Task 34): projection + marchés O/U / spread
+  _nbaEngine?: {
+    homeExpectedPts: number;
+    awayExpectedPts: number;
+    expectedTotal: number;
+    expectedMargin: number;
+    sigmaTotal: number;
+    homeWinProb: number;
+    awayWinProb: number;
+    intervalTotal70: [number, number];
+    paceHome: number;
+    paceAway: number;
+    shrinkFactor: number;
+    dataBasis: string;
+    markets: Array<{
+      market: 'OVER' | 'UNDER' | 'HOME_SPREAD' | 'AWAY_SPREAD';
+      line: number;
+      probModel: number;
+      edgePp: number;
+      requiredEdgePp: number;
+      distancePts: number;
+      decision: 'BET' | 'LEAN' | 'NO BET';
+    }>;
+  };
 }
 
 // ============================================
@@ -1429,6 +1453,72 @@ export async function publishTopChampionshipToTelegram(
   return { published: selected, success: sent };
 }
 
+/**
+ * 🧮 V4-lite (Task 34): collecte les signaux de marchés basket (Over/Under, spread)
+ * générés par l'engine NBA. Seuls BET et LEAN sont retenus — NO BET est une sortie
+ * normale et NON affichée (sélectivité, V4 §22). Max 3 signaux par publication:
+ * BET d'abord (edge décroissant), puis LEAN.
+ */
+function collectBasketMarketSignals(predictions: TelegramMatch[]): Array<{
+  homeTeam: string;
+  awayTeam: string;
+  market: 'OVER' | 'UNDER' | 'HOME_SPREAD' | 'AWAY_SPREAD';
+  line: number;
+  probModel: number;
+  edgePp: number;
+  requiredEdgePp: number;
+  distancePts: number;
+  expectedTotal: number;
+  expectedMargin: number;
+  decision: 'BET' | 'LEAN';
+}> {
+  const signals: Array<{
+    homeTeam: string;
+    awayTeam: string;
+    market: 'OVER' | 'UNDER' | 'HOME_SPREAD' | 'AWAY_SPREAD';
+    line: number;
+    probModel: number;
+    edgePp: number;
+    requiredEdgePp: number;
+    distancePts: number;
+    expectedTotal: number;
+    expectedMargin: number;
+    decision: 'BET' | 'LEAN';
+    sortKey: number;
+  }> = [];
+
+  for (const p of predictions) {
+    const eng = (p as any)._nbaEngine;
+    if (!eng || !Array.isArray(eng.markets)) continue;
+    const sport = (p.sport || '').toLowerCase();
+    if (!sport.includes('basket') && !sport.includes('nba')) continue;
+
+    for (const m of eng.markets) {
+      if (m.decision === 'NO BET') continue;
+      signals.push({
+        homeTeam: p.homeTeam,
+        awayTeam: p.awayTeam,
+        market: m.market,
+        line: m.line,
+        probModel: m.probModel,
+        edgePp: m.edgePp,
+        requiredEdgePp: m.requiredEdgePp,
+        distancePts: m.distancePts,
+        expectedTotal: eng.expectedTotal,
+        expectedMargin: eng.expectedMargin,
+        decision: m.decision as 'BET' | 'LEAN',
+        sortKey: (m.decision === 'BET' ? 1000 : 0) + Math.max(0, m.edgePp),
+      });
+    }
+  }
+
+  // BET d'abord (edge décroissant), puis LEAN; cap 3 signaux par message
+  return signals
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .slice(0, 3)
+    .map(({ sortKey, ...rest }) => rest);
+}
+
 export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]): Promise<boolean> {
   // Sélectionner les meilleurs pronostics (max 10, cotes réelles, par fiabilité)
   const { selected: filtered, totalEligible, excludedEstimated, excludedRisk, excludedByLimit } = selectTopDailyPredictions(predictions);
@@ -1516,6 +1606,27 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
     }
   }
   
+  // 🧮 MARCHÉS BASKET — Engine V4-lite (Task 34)
+  // Uniquement les signaux BET/LEAN; NO BET = non listé (sélectivité conservée, fail-closed)
+  const basketSignals = collectBasketMarketSignals(filtered);
+  if (basketSignals.length > 0) {
+    message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    message += `🧮 <b>MARCHÉS BASKET — ENGINE V4</b>\n`;
+    message += `<i>Projections pace×efficacité indépendantes du marché · NO BET non listé</i>\n\n`;
+    for (const sig of basketSignals) {
+      const icon = sig.decision === 'BET' ? '🟢' : '🟡';
+      const marketLabel = sig.market === 'OVER' ? `Over ${sig.line}`
+        : sig.market === 'UNDER' ? `Under ${sig.line}`
+        : sig.market === 'HOME_SPREAD' ? `${sig.homeTeam.split(' ').slice(-1)[0]} ${sig.line > 0 ? '+' : ''}${sig.line}`
+        : `${sig.awayTeam.split(' ').slice(-1)[0]} ${sig.line > 0 ? '+' : ''}${sig.line}`;
+      const contextLine = sig.market === 'OVER' || sig.market === 'UNDER'
+        ? `proj total ${sig.expectedTotal} (écart proj-ligne ${sig.distancePts} pts)`
+        : `proj écart ${sig.expectedMargin > 0 ? '+' : ''}${sig.expectedMargin} (${sig.distancePts} pts de la ligne)`;
+      message += `${icon} <b>${marketLabel}</b> — ${sig.homeTeam} vs ${sig.awayTeam}\n`;
+      message += `     P ${(sig.probModel * 100).toFixed(0)}% · edge ${sig.edgePp > 0 ? '+' : ''}${sig.edgePp}pp (seuil ${sig.requiredEdgePp}pp) · ${contextLine}\n\n`;
+    }
+  }
+
   // Pied de message
   message += '━━━━━━━━━━━━━━━━━━━━━━━━━\n';
   message += '🟢 Safe (faible risque)  ·  🟡 Modéré (risque moyen)\n';

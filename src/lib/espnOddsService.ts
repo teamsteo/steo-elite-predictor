@@ -33,6 +33,10 @@ export interface ESPNOddMatch {
   clock?: string;
   period?: number;
   reliabilityScore: number; // 0-100
+  // V4-lite (Task 34): lignes marché ESPN (saison régulière; null en preseason)
+  marketTotal?: number | null;
+  homeSpread?: number | null;
+  awaySpread?: number | null;
 }
 
 export interface ESPNStatus {
@@ -180,6 +184,8 @@ async function fetchOddsApiFallback(): Promise<Map<string, { home: number; draw:
 
 /**
  * Extrait les cotes depuis ESPN (DraftKings)
+ * V4-lite (Task 34): capture aussi les lignes marché Over/Under + spread quand
+ * ESPN les fournit (saison régulière). Absentes en preseason → null → fail-closed.
  */
 function extractEspnOdds(competition: any): { 
   home: number; 
@@ -187,11 +193,14 @@ function extractEspnOdds(competition: any): {
   away: number; 
   provider: string;
   hasRealOdds: boolean;
+  marketTotal: number | null;
+  homeSpread: number | null;
+  awaySpread: number | null;
 } {
   const odds = competition?.odds?.[0];
   
   if (!odds) {
-    return { home: 0, draw: null, away: 0, provider: 'None', hasRealOdds: false };
+    return { home: 0, draw: null, away: 0, provider: 'None', hasRealOdds: false, marketTotal: null, homeSpread: null, awaySpread: null };
   }
   
   const provider = odds.provider?.name || 'DraftKings';
@@ -205,8 +214,39 @@ function extractEspnOdds(competition: any): {
   drawOdds = drawOdds ? americanToDecimal(drawOdds) : null;
   
   const hasRealOdds = homeOdds > 0 && awayOdds > 0;
-  
-  return { home: homeOdds, draw: drawOdds, away: awayOdds, provider, hasRealOdds };
+
+  // ── Lignes marché V4-lite: total (O/U) + spreads par équipe ──
+  const marketTotal = parseNumber(odds.overUnder);
+  let homeSpread = parseNumber(odds.homeTeamOdds?.spread);
+  let awaySpread = parseNumber(odds.awayTeamOdds?.spread);
+
+  // Fallback robuste: parser la chaîne "details" (ex: "BOS -5.5") contre les
+  // abréviations des compétiteurs pour déterminer le côté favori.
+  if (homeSpread == null && awaySpread == null && odds.details) {
+    const m = String(odds.details).match(/^(\S+)\s+([+-]?\d+(?:\.5)?)$/);
+    if (m) {
+      const abbr = m[1].toLowerCase();
+      const val = parseFloat(m[2]);
+      const homeAbbr = String(competition?.competitors?.find((c: any) => c.homeAway === 'home')?.team?.abbreviation || '').toLowerCase();
+      const awayAbbr = String(competition?.competitors?.find((c: any) => c.homeAway === 'away')?.team?.abbreviation || '').toLowerCase();
+      if (abbr && Number.isFinite(val)) {
+        if (abbr === homeAbbr) { homeSpread = val; awaySpread = -val; }
+        else if (abbr === awayAbbr) { awaySpread = val; homeSpread = -val; }
+      }
+    }
+  }
+
+  // Cohérence: si un seul côté connu, l'autre est son opposé
+  if (homeSpread != null && awaySpread == null) awaySpread = -homeSpread;
+  if (awaySpread != null && homeSpread == null) homeSpread = -awaySpread;
+
+  return { home: homeOdds, draw: drawOdds, away: awayOdds, provider, hasRealOdds, marketTotal, homeSpread, awaySpread };
+}
+
+function parseNumber(v: any): number | null {
+  if (v == null) return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v));
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -421,6 +461,10 @@ async function fetchESPNNBA(oddsApiMap: Map<string, { home: number; draw: number
         clock: isLive ? event.status?.displayClock : undefined,
         period: isLive ? event.status?.period : undefined,
         reliabilityScore,
+        // V4-lite (Task 34): lignes marché NBA (O/U + spread) quand ESPN les fournit
+        marketTotal: espnOdds.marketTotal,
+        homeSpread: espnOdds.homeSpread,
+        awaySpread: espnOdds.awaySpread,
       });
     }
   } catch (e) {

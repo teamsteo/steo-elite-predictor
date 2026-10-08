@@ -137,6 +137,8 @@ export async function GET(request: Request) {
             _sources: p.dataQuality?.sources || [],
             // 🏆 Enjeu du match (phase saison, type compétition, importance, CONTEXTE)
             _matchImportance: p.factors?.matchImportance || undefined,
+            // 🧮 Engine V4-lite NBA (projection + marchés O/U / spread)
+            _nbaEngine: p.nbaEngine || undefined,
           };
         });
 

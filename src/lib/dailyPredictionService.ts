@@ -103,6 +103,31 @@ export interface DailyPrediction {
   reasons: string[];
   warnings: string[];
   
+  // V4-lite (Task 34): engine NBA (projection + edges marchés O/U / spread)
+  nbaEngine?: {
+    homeExpectedPts: number;
+    awayExpectedPts: number;
+    expectedTotal: number;
+    expectedMargin: number;
+    sigmaTotal: number;
+    homeWinProb: number;
+    awayWinProb: number;
+    intervalTotal70: [number, number];
+    paceHome: number;
+    paceAway: number;
+    shrinkFactor: number;
+    dataBasis: string;
+    markets: Array<{
+      market: 'OVER' | 'UNDER' | 'HOME_SPREAD' | 'AWAY_SPREAD';
+      line: number;
+      probModel: number;
+      edgePp: number;
+      requiredEdgePp: number;
+      distancePts: number;
+      decision: 'BET' | 'LEAN' | 'NO BET';
+    }>;
+  };
+  
   // Métadonnées
   source: string;
   modelVersion: string;
@@ -573,8 +598,26 @@ async function createBasketballPrediction(event: any, home: any, away: any): Pro
       kellyStake: mlPrediction.recommendation.kellyStake,
       reasons: mlPrediction.recommendation.reasoning,
       warnings: [],
+      // V4-lite (Task 34): transport du bloc engine NBA vers le site + Telegram
+      nbaEngine: mlPrediction.nbaEngine
+        ? {
+            homeExpectedPts: mlPrediction.nbaEngine.homeExpectedPts,
+            awayExpectedPts: mlPrediction.nbaEngine.awayExpectedPts,
+            expectedTotal: mlPrediction.nbaEngine.expectedTotal,
+            expectedMargin: mlPrediction.nbaEngine.expectedMargin,
+            sigmaTotal: mlPrediction.nbaEngine.sigmaTotal,
+            homeWinProb: mlPrediction.nbaEngine.homeWinProb,
+            awayWinProb: mlPrediction.nbaEngine.awayWinProb,
+            intervalTotal70: mlPrediction.nbaEngine.intervalTotal70,
+            paceHome: mlPrediction.nbaEngine.paceHome,
+            paceAway: mlPrediction.nbaEngine.paceAway,
+            shrinkFactor: mlPrediction.nbaEngine.shrinkFactor,
+            dataBasis: mlPrediction.nbaEngine.dataBasis,
+            markets: mlPrediction.nbaEngine.markets,
+          }
+        : undefined,
       source: 'unified-ml',
-      modelVersion: 'nba-ml-v2.0',
+      modelVersion: 'nba-v4lite-v1.0',
       generatedAt: mlPrediction.generatedAt,
     };
   } catch (error) {

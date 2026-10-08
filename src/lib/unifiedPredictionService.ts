@@ -25,6 +25,12 @@ import { alignWithMarket, type MarketAlignmentResult } from './marketAlignmentSe
 import { analyzeMatchImportance } from './matchImportanceService';
 import { getMatchTeamStats } from './teamStatsService';
 import { getSportModelQuality } from './unifiedMLService';
+import {
+  getNBAProjection,
+  getNBAMarketEdges,
+  type NBAProjection,
+  type NBAMarketEdge,
+} from './nbaProjectionEngine';
 
 // ============================================
 // TYPES
@@ -112,6 +118,30 @@ export interface UnifiedPrediction {
     adjustmentStrength: 'none' | 'subtle' | 'moderate' | 'strong';
   };
   
+  // V4-lite (Task 34): engine statistique indépendante pour la NBA
+  // Projection pace×efficacité + distribution + edges marché O/U et spread.
+  // Absent si NBA_V4_LITE=false ou données ESPN insuffisantes (fail-closed).
+  nbaEngine?: {
+    homeExpectedPts: number;
+    awayExpectedPts: number;
+    expectedTotal: number;
+    expectedMargin: number;
+    sigmaTotal: number;
+    homeWinProb: number;
+    awayWinProb: number;
+    intervalTotal70: [number, number];
+    intervalMargin70: [number, number];
+    paceHome: number;
+    paceAway: number;
+    ortgHome: number;
+    ortgAway: number;
+    drtgHome: number;
+    drtgAway: number;
+    shrinkFactor: number;
+    dataBasis: string;
+    markets: NBAMarketEdge[];
+  };
+  
   // Context factors
   factors: {
     form: { home: number; away: number };
@@ -194,6 +224,10 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   let oddsAway = match.oddsAway;
   let oddsSource: 'espn-draftkings' | 'the-odds-api' | 'estimation' = 'estimation';
   let bookmaker = 'Unknown';
+  // V4-lite (Task 34): lignes marché O/U + spread (ESPN, saison régulière)
+  let marketTotal: number | null = null;
+  let homeSpread: number | null = null;
+  let awaySpread: number | null = null;
   
   try {
     const espnMatch = findESPNOddsForMatch(match.homeTeam, match.awayTeam, match.sport);
@@ -204,6 +238,10 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       oddsSource = espnMatch.oddsSource;
       bookmaker = espnMatch.bookmaker;
       hasRealOdds = true;
+      // V4-lite: lignes marché O/U + spread si ESPN les fournit
+      marketTotal = espnMatch.marketTotal ?? null;
+      homeSpread = espnMatch.homeSpread ?? null;
+      awaySpread = espnMatch.awaySpread ?? null;
       sources.push('ESPN-Odds');
     }
   } catch (e) {
@@ -524,10 +562,44 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     }
   }
   
-  // 9. Combine probabilities: Market + Dixon-Coles + Context + ML
+  // 9. Combine probabilities: Market + Dixon-Coles + Context + ML (+ Engine V4-lite NBA)
   let finalHomeProb: number;
   let finalDrawProb: number;
   let finalAwayProb: number;
+  
+  // ── V4-lite (Task 34): engine statistique indépendante pour la NBA ──
+  // Pace réel (Dean Oliver) × efficacité (ORTG/DRTG ajustés adversaires) →
+  // projection score + distribution. Kill-switch: NBA_V4_LITE=false.
+  // Fail-closed: si l'engine renvoie null → comportement historique inchangé.
+  let nbaProjection: NBAProjection | null = null;
+  let nbaMarketEdges: NBAMarketEdge[] = [];
+  if (sportType === 'basketball' && process.env.NBA_V4_LITE !== 'false') {
+    try {
+      nbaProjection = await getNBAProjection(match.homeTeam, match.awayTeam);
+      if (nbaProjection) {
+        nbaMarketEdges = getNBAMarketEdges(nbaProjection, {
+          total: marketTotal,
+          homeSpread,
+          awaySpread,
+        });
+        sources.push('NBA-Engine-V4');
+        console.log(
+          `🧮 Engine V4-lite: ${match.homeTeam} ${nbaProjection.homeExpectedPts} – ${nbaProjection.awayExpectedPts} ${match.awayTeam}` +
+          ` (total ${nbaProjection.expectedTotal}, marge ${nbaProjection.expectedMargin > 0 ? '+' : ''}${nbaProjection.expectedMargin},` +
+          ` P(home) ${(nbaProjection.homeWinProb * 100).toFixed(0)}%, shrink ${nbaProjection.shrinkFactor})` +
+          ` · lignes marché: ${marketTotal != null ? `O/U ${marketTotal}` : 'O/U n/d'}${homeSpread != null ? `, spread ${homeSpread}` : ''}` +
+          (nbaMarketEdges.some((e) => e.decision !== 'NO BET')
+            ? ` → ${nbaMarketEdges.filter((e) => e.decision !== 'NO BET').map((e) => `${e.market} ${e.decision}`).join(', ')}`
+            : ' → tous marchés NO BET')
+        );
+      } else {
+        console.log('🧮 Engine V4-lite: indisponible (fail-closed, comportement historique)');
+      }
+    } catch (e) {
+      console.log('⚠️ Engine V4-lite erreur (fail-closed):', e);
+      nbaProjection = null;
+    }
+  }
   
   if (match.sport === 'Foot' && dixonColesResult) {
     // Weighted combination: 35% market, 35% Dixon-Coles, 15% context, 15% ML
@@ -544,6 +616,22 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       (impliedAway - mlAdjustment.probabilityAdjustment) * 0.15
     );
     finalDrawProb = 1 - finalHomeProb - finalAwayProb;
+  } else if (sportType === 'basketball' && nbaProjection) {
+    // V4-lite NBA: 50% marché + 35% engine + 15% contexte
+    // (l'engine remplace le "ML désactivé" — CV historique 46-49% = bruit;
+    //  l'engine est indépendante du marché et statistiquement fondée)
+    const engineHomeProb = Math.max(0.02, Math.min(0.98, nbaProjection.homeWinProb));
+    finalHomeProb = (
+      impliedHome * 0.50 +
+      engineHomeProb * 0.35 +
+      (impliedHome + contextAdjustment.homeAdjustment) * 0.15
+    );
+    finalAwayProb = (
+      impliedAway * 0.50 +
+      (1 - engineHomeProb) * 0.35 +
+      (impliedAway + contextAdjustment.awayAdjustment) * 0.15
+    );
+    finalDrawProb = 0; // pas de nul au basket
   } else {
     // Non-football: Market + Context (NO ML — models are noise for basketball/hockey/baseball)
     finalHomeProb = impliedHome * 0.65 + 
@@ -703,6 +791,17 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     reasoning.push(`⚽ Buts attendus: ${formatNumber(dixonColesResult.expectedGoals.total, 1)} (${formatPercent(dixonColesResult.over25)} Over 2.5)`);
   }
   
+  // V4-lite (Task 34): ligne de raisonnement engine NBA
+  if (nbaProjection && sportType === 'basketball') {
+    const active = nbaMarketEdges.filter((e) => e.decision !== 'NO BET');
+    reasoning.push(
+      `🧮 Engine V4: proj ${nbaProjection.homeExpectedPts}-${nbaProjection.awayExpectedPts}` +
+      ` (total ${nbaProjection.expectedTotal} ±${nbaProjection.sigmaTotal}, écart ${nbaProjection.expectedMargin > 0 ? '+' : ''}${nbaProjection.expectedMargin})` +
+      ` · pace ${nbaProjection.paceHome}/${nbaProjection.paceAway}` +
+      (active.length ? ` · ${active.map((e) => `${e.market} ${e.line} P=${(e.probModel * 100).toFixed(0)}% edge ${e.edgePp > 0 ? '+' : ''}${e.edgePp}pp → ${e.decision}`).join(' · ')}` : ' · marchés: NO BET')
+    );
+  }
+  
   if (context) {
     if (context.unifiedAnalysis.overallAdvantage !== 'neutral') {
       const team = context.unifiedAnalysis.overallAdvantage === 'home' ? match.homeTeam : match.awayTeam;
@@ -819,6 +918,28 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     
     dixonColes: dixonColesResult,
     
+    // V4-lite (Task 34): bloc engine NBA (projection + edges marché)
+    nbaEngine: nbaProjection && sportType === 'basketball' ? {
+      homeExpectedPts: nbaProjection.homeExpectedPts,
+      awayExpectedPts: nbaProjection.awayExpectedPts,
+      expectedTotal: nbaProjection.expectedTotal,
+      expectedMargin: nbaProjection.expectedMargin,
+      sigmaTotal: nbaProjection.sigmaTotal,
+      homeWinProb: nbaProjection.homeWinProb,
+      awayWinProb: nbaProjection.awayWinProb,
+      intervalTotal70: nbaProjection.intervalTotal70,
+      intervalMargin70: nbaProjection.intervalMargin70,
+      paceHome: nbaProjection.paceHome,
+      paceAway: nbaProjection.paceAway,
+      ortgHome: nbaProjection.ortgHome,
+      ortgAway: nbaProjection.ortgAway,
+      drtgHome: nbaProjection.drtgHome,
+      drtgAway: nbaProjection.drtgAway,
+      shrinkFactor: nbaProjection.shrinkFactor,
+      dataBasis: nbaProjection.dataBasis,
+      markets: nbaMarketEdges,
+    } : undefined,
+    
     mlPrediction: {
       homeProb: Math.round(finalHomeProb * 1000) / 10,
       drawProb: Math.round(finalDrawProb * 1000) / 10,
@@ -867,7 +988,8 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     },
     
     dataQuality: {
-      score: dataQualityScore,
+      // V4-lite (Task 34): l'engine ESPN (pace/ORTG réels) renforce la qualité de données NBA
+      score: nbaProjection && sportType === 'basketball' ? Math.max(dataQualityScore, 60) : dataQualityScore,
       sources: uniqueSources,
       hasRealOdds,
       hasAdvancedStats,

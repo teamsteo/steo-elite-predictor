@@ -2588,6 +2588,8 @@ export async function GET(request: NextRequest) {
                   _h2h: p.factors?.h2h || undefined,
                   // 📰 Forme des équipes (points)
                   _form: p.factors?.form || undefined,
+                  // 🧮 Engine V4-lite NBA (projection + marchés O/U / spread)
+                  _nbaEngine: p.nbaEngine || undefined,
                 };
               });
             
