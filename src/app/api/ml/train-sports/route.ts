@@ -1,13 +1,18 @@
 /**
  * ML Sports Training API - Entraînement ML basé sur les résultats sportifs
- * 
+ *
  * GET /api/ml/train-sports
  * Analyse les résultats passés et apprend de nouveaux patterns
- * 
+ *
  * Ce module est spécifiquement conçu pour les pronostics sportifs:
  * - Football, Basketball, Hockey, Baseball, Tennis
  * - Apprend des résultats réels des rencontres
  * - Sauvegarde les patterns dans Supabase (ml_patterns)
+ *
+ * 🆕 Task 32 — FIX: l'ancien code lisait la table `matches` (table ESPN brute,
+ * VIDE en production). Désormais on lit `predictions` (la même table que
+ * trainUnifiedML) qui contient 569+ matchs terminés. Les deux endpoints sont
+ * maintenant alignés et cohérents.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -267,14 +272,15 @@ export async function GET(request: NextRequest) {
     }
     
     // Récupérer les matchs terminés avec résultats
+    // 🆕 Task 32 — FIX: lit `predictions` (comme trainUnifiedML) au lieu de `matches` (vide)
     const { data: matches, error } = await supabase
-      .from('matches')
+      .from('predictions')
       .select('*')
-      .eq('status', 'STATUS_FINAL')
+      .eq('status', 'completed')
       .not('home_score', 'is', null)
       .not('away_score', 'is', null)
-      .order('date', { ascending: false })
-      .limit(500);
+      .order('match_date', { ascending: false })
+      .limit(1000);
     
     if (error) {
       console.error('Erreur récupération matchs:', error);

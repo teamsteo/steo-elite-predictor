@@ -154,6 +154,7 @@ export interface MatchForTraining {
   league?: string;
   predicted_result?: string;
   result_match?: boolean;
+  risk_percentage?: number;  // 🆕 Task 32 — patterns par tranche de risque
   // Tennis fields
   home_sets_won?: number;
   away_sets_won?: number;
@@ -440,90 +441,26 @@ interface PatternDiscovery {
  */
 function detectFootballPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
   const patterns: PatternDiscovery[] = [];
-  
-  // Pattern: xG differential > 0.5 = favori gagne
-  const xgDiffMatches = matches.filter(m => 
-    m.home_xg !== undefined && m.away_xg !== undefined && 
-    Math.abs(m.home_xg - m.away_xg) >= 0.5 &&
-    m.home_score !== undefined && m.away_score !== undefined
+
+  // 🆕 Task 32 — FIX: la majorité des matchs en DB n'a pas de xG (Understat non
+  // scrappé systématiquement). L'ancien code exigeait home_xg+away_xg pour
+  // TOUS les patterns xG → 0 pattern découvert → patternsSaved: 0 à chaque run.
+  // On garde les patterns xG SI au moins 5 matchs ont des xG, mais on ajoute
+  // des patterns basés sur les COTES seules (disponibles pour tous les matchs).
+
+  // ── Patterns basés sur les cotes (disponibles pour tous les matchs) ──
+
+  // Pattern: Favori à domicile (cotes < 1.5) — EXISTANT, conservé
+  const homeFavoriteMatches = matches.filter(m =>
+    m.home_score !== undefined && m.away_score !== undefined &&
+    m.odds_home !== undefined && m.odds_home < 1.5
   );
-  
-  if (xgDiffMatches.length >= 5) {
-    const successCount = xgDiffMatches.filter(m => {
-      const favorite = m.home_xg! > m.away_xg! ? 'home' : 'away';
-      const actualWinner = m.home_score! > m.away_score! ? 'home' : 
-                          m.away_score! > m.home_score! ? 'away' : 'draw';
-      return favorite === actualWinner;
-    }).length;
-    
-    patterns.push({
-      sport: 'football',
-      pattern_type: 'xg_differential',
-      condition: 'xG_diff >= 0.5',
-      outcome: 'xg_favorite_wins',
-      success_rate: Math.round((successCount / xgDiffMatches.length) * 100),
-      sample_size: xgDiffMatches.length,
-      description: `Écart xG >= 0.5: favori gagne ${Math.round((successCount / xgDiffMatches.length) * 100)}%`
-    });
-  }
-  
-  // Pattern: Under 2.5 quand xG total < 2.2
-  const lowXgMatches = matches.filter(m => 
-    m.home_xg !== undefined && m.away_xg !== undefined && 
-    (m.home_xg + m.away_xg) < 2.2 &&
-    m.home_score !== undefined && m.away_score !== undefined
-  );
-  
-  if (lowXgMatches.length >= 5) {
-    const underCount = lowXgMatches.filter(m => 
-      (m.home_score! + m.away_score!) < 2.5
-    ).length;
-    
-    patterns.push({
-      sport: 'football',
-      pattern_type: 'under_xg_threshold',
-      condition: 'xG_total < 2.2',
-      outcome: 'under_2.5',
-      success_rate: Math.round((underCount / lowXgMatches.length) * 100),
-      sample_size: lowXgMatches.length,
-      description: `xG total < 2.2: Under 2.5 réussit ${Math.round((underCount / lowXgMatches.length) * 100)}%`
-    });
-  }
-  
-  // Pattern: Over 2.5 quand xG total > 2.8
-  const highXgMatches = matches.filter(m => 
-    m.home_xg !== undefined && m.away_xg !== undefined && 
-    (m.home_xg + m.away_xg) >= 2.8 &&
-    m.home_score !== undefined && m.away_score !== undefined
-  );
-  
-  if (highXgMatches.length >= 5) {
-    const overCount = highXgMatches.filter(m => 
-      (m.home_score! + m.away_score!) >= 2.5
-    ).length;
-    
-    patterns.push({
-      sport: 'football',
-      pattern_type: 'over_xg_threshold',
-      condition: 'xG_total >= 2.8',
-      outcome: 'over_2.5',
-      success_rate: Math.round((overCount / highXgMatches.length) * 100),
-      sample_size: highXgMatches.length,
-      description: `xG total >= 2.8: Over 2.5 réussit ${Math.round((overCount / highXgMatches.length) * 100)}%`
-    });
-  }
-  
-  // Pattern: Favori à domicile (cotes < 1.5)
-  const homeFavoriteMatches = matches.filter(m => 
-    m.odds_home !== undefined && m.odds_home < 1.5 &&
-    m.home_score !== undefined && m.away_score !== undefined
-  );
-  
+
   if (homeFavoriteMatches.length >= 5) {
-    const homeWinCount = homeFavoriteMatches.filter(m => 
+    const homeWinCount = homeFavoriteMatches.filter(m =>
       m.home_score! > m.away_score!
     ).length;
-    
+
     patterns.push({
       sport: 'football',
       pattern_type: 'home_favorite',
@@ -534,15 +471,40 @@ function detectFootballPatterns(matches: MatchForTraining[]): PatternDiscovery[]
       description: `Favori domicile (cote < 1.5): gagne ${Math.round((homeWinCount / homeFavoriteMatches.length) * 100)}%`
     });
   }
-  
-  // Pattern: Pronostics corrects par niveau de confiance
-  const predictionsWithResults = matches.filter(m => 
+
+  // 🆕 Task 32 — Pattern: Favori domicile LARGE (cote < 1.8) — plus permissif
+  const homeFavoriteLargeMatches = matches.filter(m =>
+    m.home_score !== undefined && m.away_score !== undefined &&
+    m.odds_home !== undefined && m.odds_home >= 1.5 && m.odds_home < 1.8
+  );
+
+  if (homeFavoriteLargeMatches.length >= 5) {
+    const homeWinCount = homeFavoriteLargeMatches.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    const homeOrDrawCount = homeFavoriteLargeMatches.filter(m =>
+      m.home_score! >= m.away_score!
+    ).length;
+
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'home_favorite_large',
+      condition: '1.5 <= odds_home < 1.8',
+      outcome: 'home_win',
+      success_rate: Math.round((homeWinCount / homeFavoriteLargeMatches.length) * 100),
+      sample_size: homeFavoriteLargeMatches.length,
+      description: `Favori modéré domicile (1.5-1.8): gagne ${Math.round((homeWinCount / homeFavoriteLargeMatches.length) * 100)}% (VN: ${Math.round((homeOrDrawCount / homeFavoriteLargeMatches.length) * 100)}%)`
+    });
+  }
+
+  // 🆕 Task 32 — Pattern: prédiction ML accuracy (si predicted_result dispo)
+  const predictionsWithResults = matches.filter(m =>
     m.predicted_result && m.result_match !== undefined
   );
-  
+
   if (predictionsWithResults.length >= 10) {
     const correctCount = predictionsWithResults.filter(m => m.result_match === true).length;
-    
+
     patterns.push({
       sport: 'football',
       pattern_type: 'prediction_accuracy',
@@ -550,10 +512,125 @@ function detectFootballPatterns(matches: MatchForTraining[]): PatternDiscovery[]
       outcome: 'correct_prediction',
       success_rate: Math.round((correctCount / predictionsWithResults.length) * 100),
       sample_size: predictionsWithResults.length,
-      description: `Taux de réussite global: ${Math.round((correctCount / predictionsWithResults.length) * 100)}%`
+      description: `Taux de réussite global ML: ${Math.round((correctCount / predictionsWithResults.length) * 100)}%`
+    });
+
+    // 🆕 Task 32 — Pattern: accuracy par tranche de risque
+    const riskBuckets = [
+      { range: '0-25', min: 0, max: 25 },
+      { range: '25-35', min: 25, max: 35 },
+      { range: '35-45', min: 35, max: 45 },
+    ];
+    for (const bucket of riskBuckets) {
+      const inBucket = predictionsWithResults.filter(m =>
+        typeof m.risk_percentage === 'number' &&
+        m.risk_percentage >= bucket.min && m.risk_percentage < bucket.max
+      );
+      if (inBucket.length >= 10) {
+        const correctInBucket = inBucket.filter(m => m.result_match === true).length;
+        patterns.push({
+          sport: 'football',
+          pattern_type: `prediction_risk_${bucket.range}`,
+          condition: `risk ${bucket.range}%`,
+          outcome: 'correct_prediction',
+          success_rate: Math.round((correctInBucket / inBucket.length) * 100),
+          sample_size: inBucket.length,
+          description: `ML risque ${bucket.range}%: ${Math.round((correctInBucket / inBucket.length) * 100)}% réussite (${inBucket.length} matchs)`
+        });
+      }
+    }
+  }
+
+  // 🆕 Task 32 — Pattern: VN (nul = gagné) sur favoris domicile
+  if (homeFavoriteMatches.length >= 5) {
+    const homeOrDrawCount = homeFavoriteMatches.filter(m =>
+      m.home_score! >= m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'home_favorite_vn',
+      condition: 'odds_home < 1.5 (VN: nul=gagné)',
+      outcome: 'home_win_or_draw',
+      success_rate: Math.round((homeOrDrawCount / homeFavoriteMatches.length) * 100),
+      sample_size: homeFavoriteMatches.length,
+      description: `Favori domicile VN (nul=gagné): ${Math.round((homeOrDrawCount / homeFavoriteMatches.length) * 100)}% (${homeFavoriteMatches.length} matchs)`
     });
   }
-  
+
+  // ── Patterns basés sur xG (seulement si ≥5 matchs ont des xG) ──
+  const matchesWithXg = matches.filter(m =>
+    m.home_xg !== undefined && m.away_xg !== undefined &&
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+
+  if (matchesWithXg.length >= 5) {
+    // Pattern: xG differential > 0.5 = favori gagne
+    const xgDiffMatches = matchesWithXg.filter(m =>
+      Math.abs(m.home_xg! - m.away_xg!) >= 0.5
+    );
+
+    if (xgDiffMatches.length >= 5) {
+      const successCount = xgDiffMatches.filter(m => {
+        const favorite = m.home_xg! > m.away_xg! ? 'home' : 'away';
+        const actualWinner = m.home_score! > m.away_score! ? 'home' :
+                            m.away_score! > m.home_score! ? 'away' : 'draw';
+        return favorite === actualWinner;
+      }).length;
+
+      patterns.push({
+        sport: 'football',
+        pattern_type: 'xg_differential',
+        condition: 'xG_diff >= 0.5',
+        outcome: 'xg_favorite_wins',
+        success_rate: Math.round((successCount / xgDiffMatches.length) * 100),
+        sample_size: xgDiffMatches.length,
+        description: `Écart xG >= 0.5: favori gagne ${Math.round((successCount / xgDiffMatches.length) * 100)}%`
+      });
+    }
+
+    // Pattern: Under 2.5 quand xG total < 2.2
+    const lowXgMatches = matchesWithXg.filter(m =>
+      (m.home_xg! + m.away_xg!) < 2.2
+    );
+
+    if (lowXgMatches.length >= 5) {
+      const underCount = lowXgMatches.filter(m =>
+        (m.home_score! + m.away_score!) < 2.5
+      ).length;
+
+      patterns.push({
+        sport: 'football',
+        pattern_type: 'under_xg_threshold',
+        condition: 'xG_total < 2.2',
+        outcome: 'under_2.5',
+        success_rate: Math.round((underCount / lowXgMatches.length) * 100),
+        sample_size: lowXgMatches.length,
+        description: `xG total < 2.2: Under 2.5 réussit ${Math.round((underCount / lowXgMatches.length) * 100)}%`
+      });
+    }
+
+    // Pattern: Over 2.5 quand xG total > 2.8
+    const highXgMatches = matchesWithXg.filter(m =>
+      (m.home_xg! + m.away_xg!) >= 2.8
+    );
+
+    if (highXgMatches.length >= 5) {
+      const overCount = highXgMatches.filter(m =>
+        (m.home_score! + m.away_score!) >= 2.5
+      ).length;
+
+      patterns.push({
+        sport: 'football',
+        pattern_type: 'over_xg_threshold',
+        condition: 'xG_total >= 2.8',
+        outcome: 'over_2.5',
+        success_rate: Math.round((overCount / highXgMatches.length) * 100),
+        sample_size: highXgMatches.length,
+        description: `xG total >= 2.8: Over 2.5 réussit ${Math.round((overCount / highXgMatches.length) * 100)}%`
+      });
+    }
+  }
+
   return patterns;
 }
 
@@ -1044,12 +1121,36 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
 }
 
 /**
- * Incrémente la version du modèle
+ * Incrémente la version du modèle (semver-lite, robuste aux corruptions).
+ *
+ * 🆕 Task 32 — FIX: la version stockée en DB a pu être corrompue à un moment
+ * (chaîne vide, "NaN", "undefined", etc.) → l'ancien code produisait "NaN..1"
+ * qui restait bloqué (le split retournait [NaN] puis parts[2] = 1 → join = "NaN..1").
+ *
+ * Stratégie :
+ *   - Si la version entrante est invalide (vide, NaN, moins de 3 segments),
+ *     on repart de "1.0.0" (réinitialisation propre, pas de corruption cascade).
+ *   - Sinon on incrémente le patch (parts[2] + 1) en préservant major.minor.
+ *
+ * Exemples:
+ *   "1.0.0"  → "1.0.1"
+ *   "2.3.7"  → "2.3.8"
+ *   ""       → "1.0.0"   (était "NaN..1" avant — BUG)
+ *   "NaN"    → "1.0.0"   (était "NaN..1" avant)
+ *   "1"      → "1.0.1"   (était "1..1" avant)
  */
 function incrementVersion(version: string): string {
-  const parts = version.split('.').map(Number);
+  if (typeof version !== 'string' || version.trim() === '') {
+    return '1.0.0';
+  }
+  const parts = version.split('.').map(s => {
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  });
+  // S'assurer d'avoir au moins 3 segments [major, minor, patch]
+  while (parts.length < 3) parts.push(0);
   parts[2] = (parts[2] || 0) + 1;
-  return parts.join('.');
+  return parts.slice(0, 3).join('.');
 }
 
 // ============================================
