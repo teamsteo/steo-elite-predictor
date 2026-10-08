@@ -1,11 +1,17 @@
 /**
- * Coupon Renderer — Task 37
- * ==========================
- * Réplique le design de coupon "Combiné" (style app bookmaker fourni par
- * l'utilisateur: fond navy, sélections avec icônes, cotes italiques, badge
- * Gagné/Perdu, pastille jaune cote totale, Mise / Gains).
+ * Coupon Renderer — Task 37/38
+ * ============================
+ * Réplique le design de coupon "Combiné" de l'app Betclic (captures utilisateur).
  *
- * Rendu: satori (via next/og ImageResponse) → PNG. Polices Montserrat inline
+ * Task 38 — fidélité pixel aux captures réelles:
+ *  - Couleurs échantillonnées par script (canvas #040410, carte/boîte #14182c,
+ *    vert menthe #8bd1b4, saumon #fd99a1, jaune #fcdc3d, badges #004024/#680c10)
+ *  - Police Inter (identification empirique vs Roboto/Figtree/DM Sans)
+ *  - Boîte match = même fond que la carte, bordure fine #2e3144, gros rayon
+ *  - Trophées = cercle vert menthe à glyphe sombre; croix = cercle saumon
+ *  - Cotes en gros chiffres italiques (55px), hiérarchie de tailles mesurée
+ *
+ * Rendu: satori (via next/og ImageResponse) → PNG. Polices Inter inline
  * (src/lib/couponFonts.ts) → déterministe local comme Vercel.
  */
 
@@ -13,22 +19,22 @@ import { ImageResponse } from 'next/og';
 import { COUPON_FONTS } from './couponFonts';
 import { formatFcfa, formatOdds, type CouponView } from './couponTicket';
 
-// ─── Palette (échantillonnée depuis les captures utilisateur) ───────────────
+// ─── Palette (échantillonnée pixel par pixel des captures Betclic) ──────────
 
 const C = {
-  canvas: '#0d1322',      // fond autour de la carte
-  card: '#1a2138',        // carte principale
-  box: '#1f2740',         // boîte résultat
-  border: '#303754',      // bordures internes
+  canvas: '#040410',      // fond autour de la carte (quasi noir)
+  card: '#14182c',        // carte principale
+  box: '#14182c',         // boîte résultat = MÊME fond que la carte
+  border: '#2e3144',      // bordures internes / séparateurs
   white: '#ffffff',
-  grey: '#8b93ab',
-  green: '#57d9a3',
-  salmon: '#f08c9e',
-  badgeGreenBg: '#154734',
-  badgeRedBg: '#5a1e30',
-  badgeNeutralBg: '#2a3352',
-  yellow: '#ffd43b',
-  yellowText: '#12182b',
+  grey: '#b0b9ca',
+  green: '#8bd1b4',
+  salmon: '#fd99a1',
+  badgeGreenBg: '#004024',
+  badgeRedBg: '#680c10',
+  badgeNeutralBg: '#262c46',
+  yellow: '#fcdc3d',
+  yellowText: '#14182c',
 };
 
 // ─── Icônes SVG (data URIs) ─────────────────────────────────────────────────
@@ -37,14 +43,16 @@ const svg64 = (svg: string) =>
   `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 
 const ICONS = {
-  football: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#ffffff"/><polygon points="24,14 33,21 29,32 19,32 15,21" fill="#1a2138"/><path d="M24 2v12M24 34v12M4 17l11 4M44 17l-11 4M12 43l7-11M36 43l-7-11" stroke="#1a2138" stroke-width="2.5" fill="none"/></svg>`),
-  tennis: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#ffd43b"/><path d="M9 9c9 8 9 22 0 30M39 9c-9 8-9 22 0 30" stroke="#ffffff" stroke-width="3" fill="none"/></svg>`),
-  basketball: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#f08c3a"/><path d="M2 24h44M24 2v44M9 9c8 8 8 22 0 30M39 9c-8 8-8 22 0 30" stroke="#1a2138" stroke-width="2.5" fill="none"/></svg>`),
+  football: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#ffffff"/><polygon points="24,14 33,21 29,32 19,32 15,21" fill="#14182c"/><path d="M24 2v12M24 34v12M4 17l11 4M44 17l-11 4M12 43l7-11M36 43l-7-11" stroke="#14182c" stroke-width="2.5" fill="none"/></svg>`),
+  tennis: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#fcdc3d"/><path d="M9 9c9 8 9 22 0 30M39 9c-9 8-9 22 0 30" stroke="#ffffff" stroke-width="3" fill="none"/></svg>`),
+  basketball: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#f08c3a"/><path d="M2 24h44M24 2v44M9 9c8 8 8 22 0 30M39 9c-8 8-8 22 0 30" stroke="#14182c" stroke-width="2.5" fill="none"/></svg>`),
   baseball: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#ffffff"/><path d="M10 4c6 12 6 28 0 40M38 4c-6 12-6 28 0 40" stroke="#e05252" stroke-width="3" fill="none"/></svg>`),
   hockey: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><ellipse cx="24" cy="30" rx="19" ry="8" fill="#0e1424"/><ellipse cx="24" cy="26" rx="19" ry="8" fill="#2b3248"/></svg>`),
-  trophy: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#2e7d5b"/><path d="M16 13h16v7c0 5-3.5 9-8 9s-8-4-8-9v-7z" fill="#ffffff"/><path d="M16 15h-5c0 5 2 8.5 6.5 9M32 15h5c0 5-2 8.5-6.5 9" stroke="#ffffff" stroke-width="2.5" fill="none"/><rect x="21" y="29" width="6" height="4" fill="#ffffff"/><rect x="16.5" y="33" width="15" height="3.5" rx="1.75" fill="#ffffff"/></svg>`),
-  cross: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#e0526e"/><path d="M17 17l14 14M31 17l-14 14" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/></svg>`),
-  chevron: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M10 30l14-13 14 13" stroke="#8b93ab" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
+  // Trophée Betclic: cercle VERT MENTHE, glyphe sombre (échantillonné capture gagné)
+  trophy: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#8bd1b4"/><path d="M16 12h16v8c0 5.5-3.6 10-8 10s-8-4.5-8-10v-8z" fill="#14182c"/><path d="M16 14h-5.5c0 5.5 2.2 9.5 7 10.5M32 14h5.5c0 5.5-2.2 9.5-7 10.5" stroke="#14182c" stroke-width="2.6" fill="none"/><rect x="21.2" y="30" width="5.6" height="4.5" fill="#14182c"/><rect x="16" y="34.5" width="16" height="3.6" rx="1.8" fill="#14182c"/></svg>`),
+  // Croix Betclic: cercle SAUMON, croix blanche (échantillonné capture perdu)
+  cross: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#fd99a1"/><path d="M17 17l14 14M31 17l-14 14" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round"/></svg>`),
+  chevron: svg64(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><path d="M10 30l14-13 14 13" stroke="#b0b9ca" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`),
 };
 
 function sportIcon(sport: string): string {
@@ -59,15 +67,6 @@ function sportIcon(sport: string): string {
 // ─── Briques de style ───────────────────────────────────────────────────────
 
 type Style = Record<string, string | number>;
-
-const col = (flexDirection: string, style: Style = {}): object => ({
-  type: 'div',
-  props: { style: { display: 'flex', flexDirection, ...style } },
-});
-
-function text(content: string, style: Style): object {
-  return { type: 'div', props: { style } };
-}
 
 const txt = (content: string, style: Style): object => ({
   type: 'div',
@@ -86,12 +85,12 @@ function legBlock(leg: CouponView['legs'][number], isLast: boolean): object {
     props: {
       style: {
         display: 'flex', flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'space-between', marginTop: i === 0 ? 0 : 10,
+        justifyContent: 'space-between', marginTop: i === 0 ? 0 : 16,
       },
       children: [
-        txt(t.name, { fontSize: 27, color: t.dimmed ? C.grey : C.white, fontWeight: 500 }),
+        txt(t.name, { fontSize: 41, color: t.dimmed ? C.grey : C.white, fontWeight: 500 }),
         txt(t.score !== null && t.score !== undefined ? String(t.score) : '',
-          { fontSize: 27, color: t.dimmed ? C.grey : C.white, fontWeight: 700 }),
+          { fontSize: 41, color: t.dimmed ? C.grey : C.white, fontWeight: 700 }),
       ],
     },
   }));
@@ -101,8 +100,8 @@ function legBlock(leg: CouponView['legs'][number], isLast: boolean): object {
     props: {
       style: {
         display: 'flex', flexDirection: 'column',
-        paddingTop: 26, paddingBottom: 24,
-        borderBottom: isLast ? '0px solid transparent' : `1px solid ${C.border}55`,
+        paddingTop: 28, paddingBottom: 26,
+        borderBottom: isLast ? '0px solid transparent' : `1px solid ${C.border}66`,
       },
       children: [
         // Rangée sélection
@@ -111,19 +110,19 @@ function legBlock(leg: CouponView['legs'][number], isLast: boolean): object {
           props: {
             style: { display: 'flex', flexDirection: 'row', alignItems: 'center' },
             children: [
-              { type: 'img', props: { src: sportIcon(leg.sport), width: 42, height: 42 } },
+              { type: 'img', props: { src: sportIcon(leg.sport), width: 44, height: 44 } },
               {
                 type: 'div',
                 props: {
                   style: { display: 'flex', flexDirection: 'column', marginLeft: 22, flex: 1 },
                   children: [
-                    txt(leg.pickLabel, { fontSize: 30, fontWeight: 700, color: pickColor }),
-                    txt(leg.marketLabel, { fontSize: 26, color: C.white, marginTop: 5, fontWeight: 500 }),
+                    txt(leg.pickLabel, { fontSize: 41, fontWeight: 700, color: pickColor }),
+                    txt(leg.marketLabel, { fontSize: 36, color: C.white, marginTop: 8, fontWeight: 400 }),
                   ],
                 },
               },
               txt(formatOdds(leg.odds), {
-                fontSize: 40, fontWeight: 700, fontStyle: 'italic', color: C.white,
+                fontSize: 55, fontWeight: 700, fontStyle: 'italic', color: C.white,
               }),
             ],
           },
@@ -136,9 +135,9 @@ function legBlock(leg: CouponView['legs'][number], isLast: boolean): object {
               display: 'flex', flexDirection: 'column',
               position: 'relative',
               border: `2px solid ${C.border}`,
-              borderRadius: 18,
-              marginTop: 24,
-              paddingTop: 30, paddingBottom: 20, paddingHorizontal: 26,
+              borderRadius: 26,
+              marginTop: 52,
+              paddingTop: 26, paddingBottom: 32, paddingHorizontal: 28,
               backgroundColor: C.box,
             },
             children: [
@@ -148,12 +147,12 @@ function legBlock(leg: CouponView['legs'][number], isLast: boolean): object {
                 props: {
                   style: {
                     display: 'flex', flexDirection: 'row', justifyContent: 'center',
-                    position: 'absolute', top: -17, left: 0, right: 0,
+                    position: 'absolute', top: -18, left: 0, right: 0,
                   },
                   children: [
                     txt(leg.timeLabel, {
-                      fontSize: 24, color: C.grey, backgroundColor: C.box,
-                      paddingLeft: 16, paddingRight: 16, fontWeight: 500,
+                      fontSize: 27, color: C.grey, backgroundColor: C.card,
+                      paddingLeft: 18, paddingRight: 18, fontWeight: 400,
                     }),
                   ],
                 },
@@ -177,9 +176,9 @@ function headerIcons(view: CouponView): object {
       children: [
         ...icons.map((src, i) => ({
           type: 'img',
-          props: { src, width: 36, height: 36, marginLeft: i === 0 ? 0 : -6 },
+          props: { src, width: 39, height: 39, marginLeft: i === 0 ? 0 : -7 },
         })),
-        { type: 'img', props: { src: ICONS.chevron, width: 26, height: 26, marginLeft: 10 } },
+        { type: 'img', props: { src: ICONS.chevron, width: 28, height: 28, marginLeft: 12 } },
       ],
     },
   };
@@ -196,10 +195,10 @@ function badge(view: CouponView): object {
     type: 'div',
     props: {
       style: {
-        display: 'flex', backgroundColor: m.bg, borderRadius: 10,
-        paddingLeft: 20, paddingRight: 20, paddingTop: 9, paddingBottom: 9,
+        display: 'flex', backgroundColor: m.bg, borderRadius: 12,
+        paddingLeft: 22, paddingRight: 22, paddingTop: 10, paddingBottom: 10,
       },
-      children: [txt(m.label, { fontSize: 27, fontWeight: 700, color: m.fg })],
+      children: [txt(m.label, { fontSize: 30, fontWeight: 700, color: m.fg })],
     },
   };
 }
@@ -210,10 +209,10 @@ function footerRow(label: string, right: object): object {
     props: {
       style: {
         display: 'flex', flexDirection: 'row', alignItems: 'center',
-        justifyContent: 'space-between', marginTop: 22,
+        justifyContent: 'space-between', marginTop: 24,
       },
       children: [
-        txt(label, { fontSize: 30, fontWeight: 700, color: C.white }),
+        txt(label, { fontSize: 36, fontWeight: 600, color: C.white }),
         right,
       ],
     },
@@ -227,8 +226,8 @@ function buildTree(view: CouponView): object {
 
   const legsChildren = view.legs.map((l, i) => legBlock(l, i === view.legs.length - 1));
 
-  // Hauteur dynamique: en-tête ~150 + par leg ~240 + footer ~260 + marges carte/canvas
-  const height = 300 + view.legs.length * 250 + 300;
+  // Hauteur dynamique calée sur les captures (en-tête ~150 + leg ~365 + pied ~280)
+  const height = 560 + view.legs.length * 365;
 
   return {
     type: 'div',
@@ -246,7 +245,7 @@ function buildTree(view: CouponView): object {
             style: {
               display: 'flex', flexDirection: 'column',
               backgroundColor: C.card, borderRadius: 26,
-              padding: 34, width: '100%', height: '100%',
+              padding: 32, width: '100%', height: '100%',
             },
             children: [
               // En-tête
@@ -260,7 +259,7 @@ function buildTree(view: CouponView): object {
                       props: {
                         style: { display: 'flex', flexDirection: 'column' },
                         children: [
-                          txt(`Combiné (${view.legs.length})`, { fontSize: 32, fontWeight: 600, color: C.white }),
+                          txt(`Combiné (${view.legs.length})`, { fontSize: 37, fontWeight: 600, color: C.white }),
                           headerIcons(view),
                         ],
                       },
@@ -270,27 +269,27 @@ function buildTree(view: CouponView): object {
                 },
               },
               // Legs
-              { type: 'div', props: { style: { display: 'flex', flexDirection: 'column', marginTop: 10 }, children: legsChildren } },
+              { type: 'div', props: { style: { display: 'flex', flexDirection: 'column', marginTop: 12 }, children: legsChildren } },
               // Pied
               {
                 type: 'div',
                 props: {
-                  style: { display: 'flex', flexDirection: 'column', marginTop: 16 },
+                  style: { display: 'flex', flexDirection: 'column', marginTop: 18 },
                   children: [
                     footerRow('Cote totale', {
                       type: 'div',
                       props: {
                         style: {
-                          display: 'flex', backgroundColor: C.yellow, borderRadius: 14,
-                          paddingLeft: 24, paddingRight: 24, paddingTop: 10, paddingBottom: 10,
+                          display: 'flex', backgroundColor: C.yellow, borderRadius: 26,
+                          paddingLeft: 28, paddingRight: 28, paddingTop: 12, paddingBottom: 12,
                         },
                         children: [txt(formatOdds(view.totalOdds), {
-                          fontSize: 34, fontWeight: 700, fontStyle: 'italic', color: C.yellowText,
+                          fontSize: 50, fontWeight: 700, fontStyle: 'italic', color: C.yellowText,
                         })],
                       },
                     }),
-                    footerRow('Mise', txt(formatFcfa(view.stake), { fontSize: 30, fontWeight: 700, color: C.white })),
-                    footerRow(gainsLabel, txt(gainsValue, { fontSize: 33, fontWeight: 700, fontStyle: 'italic', color: gainsColor })),
+                    footerRow('Mise', txt(formatFcfa(view.stake), { fontSize: 36, fontWeight: 600, color: C.white })),
+                    footerRow(gainsLabel, txt(gainsValue, { fontSize: 41, fontWeight: 700, fontStyle: 'italic', color: gainsColor })),
                   ],
                 },
               },
@@ -306,7 +305,7 @@ function buildTree(view: CouponView): object {
 
 /** Rend le coupon en PNG (Buffer). */
 export async function renderCouponPNG(view: CouponView): Promise<Buffer> {
-  const height = 300 + view.legs.length * 250 + 300;
+  const height = 560 + view.legs.length * 365;
   const response = new ImageResponse(buildTree(view) as any, {
     width: 1000,
     height,
