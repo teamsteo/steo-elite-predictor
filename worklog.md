@@ -1367,3 +1367,47 @@ Stage Summary:
   équivalent du fallback NBA avant Task 34
 - Option B (NON exécutée, en attente validation): intégration NFL au pipeline unifié
   (dailyPredictionService + historique + patterns ML + Telegram) — même pattern que NHL
+
+---
+Task ID: 37
+Agent: main
+Task: Coupons visuels style bookmaker (captures fournies par l'utilisateur) publiés sur Telegram après le bilan journalier — mise min 25 000 F, gains ET pertes affichés
+
+Work Log:
+- Cadre validé avec l'utilisateur: PAS de faux tickets — le coupon = les legs RÉELLES
+  du combiné publié en avance par le bot combo (is_combo=true en DB, historique canal
+  vérifiable); résultat affiché = résultat réel vérifié; pertes assumées publiquement
+- Design répliqué depuis 2 captures (coupon gagné + perdu): fond navy #0d1322/#1a2138,
+  badges Gagné (vert)/Perdu (rouge)/En jeu (jaune), icônes statut header (trophée/croix),
+  sélections avec icône sport, cotes italiques, boîtes match avec heure sur la bordure,
+  vainqueur blanc/perdant grisé, pastille jaune cote totale, Mise / Gains
+- Renderer: satori via next/og ImageResponse (déjà compilé dans Next 15, 0 nouvelle dep
+  lourde), polices Montserrat static TTF (regular/semibold/bold/bold-italic, gstatic)
+  inline base64 → rendu identique local/Vercel; icônes = SVG data-URI maison
+  (foot/tennis/basket/base/hockey/trophée/croix/chevron)
+- couponTicket.ts: dérivation DÉTERMINISTE sans nouvelle table (DDL Supabase impossible
+  via REST) — premier combo du jour par created_at min; resolveTicket: lost si une leg
+  result_match=false, leg pending >36h = perdue (repoussé), cancelled/postponed = VOID
+  (cote 1.0, ticket gagné à cote effective), pending vivante = unresolved (rien publié);
+  cote affichée ticket gagné = effectiveOdds (cohérence bookmaker)
+- Paliers de mise: prob combinée ≥0.80 → 75 000 F, ≥0.72 → 50 000 F, sinon 25 000 F (min)
+- telegramService.sendTelegramPhoto: upload multipart Blob (429 retry, caption HTML)
+- Route /api/cron/coupon: auth Bearer/?secret; publish-daily = résultat du combo le plus
+  récemment résolu (scan D-1→D-4) + combiné du jour en jeu; action preview&date&mode →
+  PNG direct (test visuel prod)
+- vercel.json: cron 15 8 * * * → /api/cron/coupon (après telegram-results 08h00)
+- Tests scripts/test_task37_coupon.ts: 18/18 ✅ (resolve won/lost/void/stalled/unresolved,
+  paliers, formatage FR espaces fines/comma décimale, labels Hier/Aujourd'hui, rendu 3 PNG)
+- Aperçus réels validés visuellement (download/coupon_reel_8oct.png = Spurs+76ers cote 1.92)
+- PREMIÈRE PUBLICATION RÉELLE OK (19h41 UTC): result_2026-10-06 {won, 2 legs, mise 25000,
+  gains 53500, sent:true} + today_2026-10-08 {2 legs, cote 1.92, mise 25000, sent:true}
+- Note: combo du 7 oct non résolu au moment du run (scan saute → ok, se résoudra seul);
+  aucun combo trouvé pour le 9 oct = normal (futur)
+
+Stage Summary:
+- Pipeline coupons LIVRÉ et actif en prod: chaque jour 08h15 UTC → image résultat d'hier
+  (gagné ou perdu, scores réels) + image combiné du jour (mise ≥25k, gain potentiel)
+- 0 frais, 0 nouvelle dépendance (next/og embarqué), 0 nouvelle table (dérivation
+  déterministe), honnêteté structurelle: gains ET pertes, pronos publiés en avance
+- Prochaines améliorations possibles: legs tennis (store séparé), choix visuel du combiné
+  (value bets plutôt que premier combo), archive des coupons sur le site
