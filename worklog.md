@@ -1117,3 +1117,72 @@ Stage Summary:
 - EN ATTENTE: push du commit 7bb17f2 dès réception d'un nouveau token GitHub valide
 - Après push, validation prod attendue: model.version propre (1.0.x ou similaire),
   patternsSaved > 0 au prochain cron verify, accuracy recalculée sur les nouveaux patterns
+
+---
+Task ID: 32 (suite — nouveau token GitHub fourni)
+Agent: main
+Task: Push Task 32 + validation complète pipeline ML unifié en production
+
+Work Log:
+- Nouveau token GitHub reçu (ghp_IAwU...), validé via API (login: teamsteo)
+- Push commits: 7bb17f2 (Task 32 fixes) → 8bec8ed, puis suite de fixes incrémentaux
+- Validation prod séquentielle avec découverte de 3 bugs supplémentaires EN CASCADE:
+
+  BUG #5 (découvert via observabilité Task 32-bis) — patternsDiscovered était masqué
+    Le cron ne retournait pas patternsDiscovered → impossible de distinguer
+    "0 découvert" de "découverts mais rejetés". Ajout du champ + rejectedByThreshold
+    (liste des patterns ignorés par seuil de bruit) + matchesBySport (répartition DB).
+    Normalisation sport insensible à la casse (toLowerCase + includes) pour couvrir
+    'Football'/'NBA'/'NHL'/'MLB'/'Tennis' éventuels.
+    → Résultat prod: 11 patterns découverts ! matchesBySport: football=382, basketball=33, hockey=13, other=141
+
+  BUG #6 (CRITIQUE — racine historique du patternsSaved: 0) — saveMLPattern sans id
+    La table ml_patterns n'a PAS de colonne id auto-générée. L'insert du service
+    (unifiedMLService.saveMLPattern) omettait l'id → violation NOT NULL silencieuse
+    → patternsSaved: 0 DEPUIS TOUJOURS. Preuve: saveNewPattern (ml-memory-service,
+    utilisé par /api/ml/train-sports) génère un id explicite
+    `${sport}_${pattern_type}_${Date.now()}` et réussit (pattern hockey sauvé).
+    Fix: id explicite identique dans saveMLPattern + échecs remontés dans result.errors.
+    → Résultat prod: patternsSaved: 6 ! home_favorite_vn 75% (105), prediction_risk_0-25
+      93% (15), prediction_risk_25-35 93% (28), prediction_risk_35-45 88% (34),
+      prediction_accuracy 69% (382), home_favorite_large 83% (6)
+
+  BUG #7 (découvert via message d'erreur exact Task 32-quater) — trigger PostgreSQL orphelin
+    updateMLPattern échouait avec: 'record "new" has no field "updated_at"'.
+    Cause: un trigger BEFORE UPDATE sur ml_patterns référence une colonne updated_at
+    INEXISTANTE (la table a last_updated). Tout UPDATE sur la table échoue donc.
+    L'INSERT n'est pas affecté (trigger pas sur INSERT).
+    Fix applicatif: updateMLPattern réécrit en INSERT du pattern fusionné (nouvel id
+    horodaté) + DELETE best-effort de l'ancien ligne. Si DELETE bloqué → doublon
+    inoffensif (find() prend le premier).
+    FIX DURABLE recommandé (SQL Editor Supabase):
+      DROP TRIGGER <nom_du_trigger> ON ml_patterns;
+      -- ou: ALTER TABLE ml_patterns ADD COLUMN updated_at timestamptz DEFAULT now();
+    → Résultat prod: patternsUpdated: 7, errors: [] !
+
+- État final production (/api/ml/status):
+  * version: 0.0.6 (propre, incrémente à chaque training — plus de NaN..1)
+  * patterns.total: 12 (avant: 5 statiques) — football=10, basketball=1, hockey=1
+  * avgSuccessRate: 87%
+  * learning.status: Actif, canLearn: true, progressPercent: 100
+  * accuracy: 65% sur 569 samples
+
+- Insights métier précieux issus des nouveaux patterns:
+  * home_favorite (cote<1.5) ne gagne qu'à 40% en VN-exclu → rejeté par le seuil 55%
+  * MAIS home_favorite_vn (nul=gagné, politique VN) = 75% → le VN sur favoris domicile
+    est un pattern FORT, aligné avec la politique utilisateur
+  * prediction_risk_0-25: 93% de réussite — le ML est très fiable à faible risque
+  * basketball over_threshold à 3% → scores en DB probablement en quarts pas en points
+    (données suspectes à auditer plus tard)
+
+Commits: 7bb17f2, 8bec8ed, c5e5bae, bc22b13, b8ea020, c50afdc (tous poussés)
+
+Stage Summary:
+- Pipeline ML unifié ENTIÈREMENT OPÉRATIONNEL en production
+- Chaîne complète validée: découverte (11) → filtre bruit (4 rejetés avec motif) →
+  sauvegarde nouveaux (6) → mise à jour existants (7, fusion pondérée) → version propre
+- Observabilité complète: patternsDiscovered, rejectedByThreshold, matchesBySport,
+  erreurs avec messages Supabase exacts
+- 2 actions restantes pour l'utilisateur (optionnel, via Supabase Dashboard):
+  1. DROP TRIGGER orphelin sur ml_patterns (fix durable du BUG #7)
+  2. Auditer les 141 matchs "other" + scores basketball suspects (over 220 à 3%)
