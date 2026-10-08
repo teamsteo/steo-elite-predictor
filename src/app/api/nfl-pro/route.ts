@@ -303,42 +303,37 @@ export async function GET() {
     // Utiliser le nouveau scraper avancé qui gère la saison ET hors-saison
     const advancedMatches = await getNFLMatches();
     
+    // Task 36 (défense en profondeur): ne jamais traiter un objet incomplet —
+    // un event malformé doit être ignoré, pas faire planter l'endpoint en 500.
+    const matches = advancedMatches.filter(
+      (m: any) =>
+        m &&
+        typeof m.id === 'string' &&
+        m.projected &&
+        Number.isFinite(m.projected.homePoints) &&
+        Number.isFinite(m.projected.awayPoints) &&
+        m.insights &&
+        m.insights.moneyline &&
+        m.insights.spread &&
+        m.insights.total
+    );
+    
     // Vérifier si on est en saison NFL (Sep à Feb)
     const month = new Date().getMonth() + 1;
     const isNFLSeason = month >= 9 || month <= 2;
     
-    if (advancedMatches.length > 0) {
-      // Convertir au format NFLMatch attendu par le frontend
-      const matches: NFLMatch[] = advancedMatches.map((m: any) => ({
-        id: m.id,
-        homeTeam: m.homeTeam,
-        awayTeam: m.awayTeam,
-        homeAbbr: m.homeAbbr,
-        awayAbbr: m.awayAbbr,
-        date: m.date,
-        time: m.time || '13:00 EST',
-        status: m.status || 'scheduled',
-        isLive: m.isLive || false,
-        homeRecord: m.homeRecord,
-        awayRecord: m.awayRecord,
-        projected: m.projected,
-        factors: m.factors,
-        insights: m.insights,
-        injuryReport: m.injuryReport,
-        dataQuality: m.dataQuality,
-      }));
-      
-      // Calculate stats
-      const valueBets = matches.filter(m => m.insights.moneyline.valueBet.detected);
-      const highConfidence = matches.filter(m => m.insights.confidence >= 70);
+    if (matches.length > 0) {
+      // Calculate stats (optional chaining partout — jamais de TypeError)
+      const valueBets = matches.filter(m => m.insights?.moneyline?.valueBet?.detected);
+      const highConfidence = matches.filter(m => (m.insights?.confidence || 0) >= 70);
       const avgTotal = matches.length > 0 
-        ? Math.round(matches.reduce((sum, m) => sum + m.projected.totalPoints, 0) / matches.length)
+        ? Math.round(matches.reduce((sum, m) => sum + (m.projected?.totalPoints || 0), 0) / matches.length)
         : 0;
       
       return NextResponse.json({
         success: true,
         predictions: matches,
-        week: advancedMatches[0]?.week || 1,
+        week: matches[0]?.week || 1,
         timeRange: isNFLSeason ? 'Saison en cours' : 'Saison à venir - Septembre',
         stats: {
           total: matches.length,

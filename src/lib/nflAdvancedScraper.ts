@@ -301,10 +301,360 @@ export function generateUpcomingNFLMatches(): any[] {
   return matches;
 }
 
+// ============================================
+// MAPPING ESPN → NFLMatch normalisé (Task 36)
+// Fix du HTTP 500 en saison: getNFLMatches retournait les data.events
+// ESPN BRUTS (sans .projected/.insights) → TypeError dans /api/nfl-pro.
+// Désormais: normalisation complète ici, 100% déterministe (0 Math.random),
+// projections = blend 65% marché (spread/O-U ESPN réels) + 35% engine (DVOA/EPA).
+// ============================================
+
+/** σ des marges NFL en points (valeur empirique standard ~13-14) */
+const NFL_MARGIN_SIGMA = 13.5;
+
+/** Seuil minimal (pts) pour recommander over/under ou cover spread */
+const NFL_EDGE_THRESHOLD_PTS = 1.5;
+/** Seuil minimal (probabilité) pour détecter un value bet moneyline */
+const NFL_VALUE_THRESHOLD_PROB = 0.04;
+
+/** Alias abbreviations ESPN → table locale */
+const ESPN_ABBR_ALIASES: Record<string, string> = {
+  WSH: 'WAS', // Washington
+  LA: 'LAR',  // Rams (variante historique)
+};
+
+/** CDF normale standard (approximation Abramowitz-Stegun 7.1.26) */
+function normalCdf(x: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const p = 1 - (Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI)) * poly;
+  return x >= 0 ? p : 1 - p;
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
+
+/** Interfaces minimales du payload ESPN (fail-closed: champs optionnels partout) */
+interface ESPNCompetitor {
+  homeAway?: string;
+  team?: { abbreviation?: string; displayName?: string };
+  score?: string | number;
+  records?: { summary?: string }[];
+}
+
+interface ESPNEvent {
+  id?: string;
+  date?: string;
+  name?: string;
+  week?: { number?: number };
+  season?: { year?: number };
+  status?: { type?: { state?: string } };
+  competitions?: {
+    competitors?: ESPNCompetitor[];
+    odds?: {
+      details?: string;
+      spread?: number;
+      overUnder?: number;
+    }[];
+  }[];
+}
+
+/** Format NFLMatch normalisé — identique à l'interface consommée par page.tsx */
+export interface NormalizedNFLMatch {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeAbbr: string;
+  awayAbbr: string;
+  date: string;
+  time: string;
+  status: string;
+  isLive?: boolean;
+  homeRecord?: string;
+  awayRecord?: string;
+  week?: number;
+  season?: number;
+  projected: {
+    homePoints: number;
+    awayPoints: number;
+    totalPoints: number;
+    spread: number;
+    homeWinProb: number;
+    awayWinProb: number;
+  };
+  factors: {
+    dvoaDiff: number;
+    epaDiff: number;
+    turnoverEdge: number;
+    homeFieldAdvantage: number;
+    restEdge: number;
+    injuryEdge: number;
+    trendEdge: number;
+    qbMatchup: string;
+  };
+  insights: {
+    spread: {
+      line: number;
+      recommendation: 'home' | 'away' | 'pass';
+      confidence: number;
+      reasoning: string;
+    };
+    total: {
+      line: number;
+      predicted: number;
+      recommendation: 'over' | 'under' | 'pass';
+      confidence: number;
+      reasoning: string;
+    };
+    moneyline: {
+      homeProb: number;
+      awayProb: number;
+      valueBet: {
+        detected: boolean;
+        type: 'home' | 'away' | null;
+        edge: number;
+      };
+    };
+    kellyFraction: number;
+    confidence: number;
+    recommendation: string;
+  };
+  injuryReport: {
+    home: { impact: string; keyPlayersOut: string[] };
+    away: { impact: string; keyPlayersOut: string[] };
+    summary: string;
+  };
+  dataQuality: {
+    homeStats: 'real' | 'fallback';
+    awayStats: 'real' | 'fallback';
+    overallScore: number;
+  };
+  source: string;
+}
+
+/** Formate l'heure du match en ET (Eastern Time) pour l'affichage */
+function formatTimeET(isoDate: string): string {
+  try {
+    const fmt = new Intl.DateTimeFormat('fr-FR', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    return `${fmt.format(new Date(isoDate))} ET`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Convertit un event ESPN brut en NFLMatch normalisé.
+ * Retourne null si les données essentielles manquent (fail-closed) —
+ * ne JAMAIS lancer d'exception: un event malformé est simplement ignoré.
+ *
+ * Modèle: blend 65% marché (spread + overUnder ESPN, réels) + 35% engine (DVOA/EPA).
+ * Sans cotes disponibles → engine seule, flag dataQuality dégradé.
+ */
+export function mapESPNEventToNFLMatch(event: ESPNEvent): NormalizedNFLMatch | null {
+  try {
+    const comp = event?.competitions?.[0];
+    const competitors = comp?.competitors ?? [];
+    const home = competitors.find(c => c?.homeAway === 'home');
+    const away = competitors.find(c => c?.homeAway === 'away');
+    if (!home || !away || !home.team || !away.team) return null;
+
+    const homeAbbrRaw = (home.team.abbreviation || '').toUpperCase();
+    const awayAbbrRaw = (away.team.abbreviation || '').toUpperCase();
+    if (!homeAbbrRaw || !awayAbbrRaw) return null;
+
+    const homeAbbr = ESPN_ABBR_ALIASES[homeAbbrRaw] ?? homeAbbrRaw;
+    const awayAbbr = ESPN_ABBR_ALIASES[awayAbbrRaw] ?? awayAbbrRaw;
+
+    const homeStats = NFL_TEAM_STATS[homeAbbr];
+    const awayStats = NFL_TEAM_STATS[awayAbbr];
+    const homeDvoa = homeStats?.dvoa ?? 0;
+    const awayDvoa = awayStats?.dvoa ?? 0;
+    const homeEpa = homeStats?.epa ?? 0;
+    const awayEpa = awayStats?.epa ?? 0;
+
+    const dvoaDiff = homeDvoa - awayDvoa;
+    const epaDiff = homeEpa - awayEpa;
+
+    // --- Marché (ESPN, réel) ---
+    const odds = comp?.odds?.[0];
+    const marketSpread = typeof odds?.spread === 'number' && Number.isFinite(odds.spread) ? odds.spread : null;
+    const marketTotal = typeof odds?.overUnder === 'number' && Number.isFinite(odds.overUnder) ? odds.overUnder : null;
+    const hasMarket = marketSpread !== null && marketTotal !== null;
+
+    // --- Engine (DVOA/EPA) ---
+    // Marge attendue engine: DVOA diff convertie en points + avantage domicile 2.5
+    const engineMargin = dvoaDiff * 0.45 + 2.5;
+    const engineTotal = 44 + (homeEpa + awayEpa) * 12;
+
+    // --- Blend 65% marché / 35% engine (cohérent avec la philosophie NBA) ---
+    const finalMargin = hasMarket ? 0.65 * (-marketSpread) + 0.35 * engineMargin : engineMargin;
+    const finalTotal = hasMarket ? 0.65 * marketTotal + 0.35 * engineTotal : engineTotal;
+
+    const homePoints = Math.round(((finalTotal + finalMargin) / 2) * 10) / 10;
+    const awayPoints = Math.round(((finalTotal - finalMargin) / 2) * 10) / 10;
+
+    // Probabilité home via CDF normale sur la marge
+    const homeWinProb = clamp(normalCdf(finalMargin / NFL_MARGIN_SIGMA), 0.15, 0.85);
+
+    // --- Edges vs marché (l'edge vient de la divergence engine/marché) ---
+    // Spread: home couvre si marge finale > handicap marché (-spread)
+    const spreadEdge = hasMarket ? finalMargin + marketSpread : 0;
+    // Total: edge vs ligne marché
+    const totalEdge = hasMarket ? finalTotal - marketTotal : 0;
+    // Moneyline: écart de probabilité modèle vs probabilité implicite marché
+    const marketProb = hasMarket ? clamp(normalCdf((-marketSpread) / NFL_MARGIN_SIGMA), 0.05, 0.95) : 0.5;
+    const probEdge = homeWinProb - marketProb;
+
+    // --- Statut du match ---
+    const state = event.status?.type?.state ?? 'pre';
+    const isPost = state === 'post';
+    const isLive = state === 'in';
+
+    // Match terminé → scores réels dans projected (affichage honnête), plus de signaux
+    const realHome = parseFloat(String(home.score ?? ''));
+    const realAway = parseFloat(String(away.score ?? ''));
+    const postScores = isPost && Number.isFinite(realHome) && Number.isFinite(realAway);
+
+    const finalHomePoints = postScores ? realHome : homePoints;
+    const finalAwayPoints = postScores ? realAway : awayPoints;
+    const finalTotalPoints = postScores ? realHome + realAway : Math.round(finalTotal * 10) / 10;
+    const finalSpread = postScores ? Math.round((realHome - realAway) * 10) / 10 : Math.round(finalMargin * 10) / 10;
+
+    // --- Recommandations (fail-closed: sans marché réel → pass) ---
+    const spreadRec: 'home' | 'away' | 'pass' = isPost
+      ? 'pass'
+      : !hasMarket
+        ? 'pass'
+        : spreadEdge > NFL_EDGE_THRESHOLD_PTS ? 'home' : spreadEdge < -NFL_EDGE_THRESHOLD_PTS ? 'away' : 'pass';
+
+    const totalRec: 'over' | 'under' | 'pass' = isPost
+      ? 'pass'
+      : !hasMarket
+        ? 'pass'
+        : totalEdge > NFL_EDGE_THRESHOLD_PTS ? 'over' : totalEdge < -NFL_EDGE_THRESHOLD_PTS ? 'under' : 'pass';
+
+    // Value bet moneyline: écart proba modèle vs marché ≥ 4pp
+    const valueDetected = !isPost && hasMarket && Math.abs(probEdge) >= NFL_VALUE_THRESHOLD_PROB;
+    const valueType: 'home' | 'away' | null = valueDetected ? (probEdge > 0 ? 'home' : 'away') : null;
+
+    const spreadLine = hasMarket ? Math.round(Math.abs(marketSpread) * 10) / 10 : Math.round(Math.abs(engineMargin) * 10) / 10;
+    const totalLine = hasMarket ? marketTotal : Math.round(engineTotal * 10) / 10;
+
+    const spreadConfidence = clamp(Math.round(50 + Math.abs(spreadEdge) * 6 + (hasMarket ? 8 : 0)), 40, 85);
+    const totalConfidence = clamp(Math.round(50 + Math.abs(totalEdge) * 8 + (hasMarket ? 8 : 0)), 40, 85);
+    const overallConfidence = clamp(
+      Math.round(
+        50 +
+        (hasMarket ? 10 : 0) +
+        Math.min(15, Math.abs(dvoaDiff) * 0.8) +
+        (hasMarket ? Math.min(15, Math.max(Math.abs(spreadEdge), Math.abs(totalEdge)) * 5) : 0)
+      ),
+      40,
+      85
+    );
+
+    const marketLabel = hasMarket
+      ? `Marché: ${odds?.details ?? ''}, O/U ${marketTotal}`
+      : 'Marché: lignes absentes';
+    const engineLabel = `Engine: DVOA ${dvoaDiff >= 0 ? '+' : ''}${dvoaDiff.toFixed(1)}`;
+
+    const matchDate = event.date ?? new Date().toISOString();
+    const dateKey = matchDate.slice(0, 10).replace(/-/g, '');
+
+    return {
+      id: `nfl-${homeAbbr}-${awayAbbr}-${dateKey}`,
+      homeTeam: homeStats?.name ?? home.team.displayName ?? homeAbbr,
+      awayTeam: awayStats?.name ?? away.team.displayName ?? awayAbbr,
+      homeAbbr,
+      awayAbbr,
+      date: matchDate,
+      time: formatTimeET(matchDate),
+      status: isPost ? 'completed' : isLive ? 'live' : 'scheduled',
+      isLive,
+      homeRecord: home.records?.[0]?.summary,
+      awayRecord: away.records?.[0]?.summary,
+      week: event.week?.number,
+      season: event.season?.year,
+      projected: {
+        homePoints: finalHomePoints,
+        awayPoints: finalAwayPoints,
+        totalPoints: finalTotalPoints,
+        spread: finalSpread,
+        homeWinProb: Math.round(homeWinProb * 1000) / 1000,
+        awayWinProb: Math.round((1 - homeWinProb) * 1000) / 1000,
+      },
+      factors: {
+        dvoaDiff: Math.round(dvoaDiff * 10) / 10,
+        epaDiff: Math.round(epaDiff * 100) / 100,
+        turnoverEdge: Math.round(((homeDvoa + awayDvoa) / 20) * 10) / 10,
+        homeFieldAdvantage: 2.5,
+        restEdge: 0,        // déterministe — données de repos non disponibles gratuitement
+        injuryEdge: 0,      // déterministe — données blessures non fiables gratuitement
+        trendEdge: homeStats?.streak?.startsWith('W') ? 1 : awayStats?.streak?.startsWith('W') ? -1 : 0,
+        qbMatchup: `Bilan ${homeStats?.lastSeasonRecord ?? 'N/D'} (${homeStats?.streak ?? '-'}) vs ${awayStats?.lastSeasonRecord ?? 'N/D'} (${awayStats?.streak ?? '-'})`,
+      },
+      insights: {
+        spread: {
+          line: spreadLine,
+          recommendation: spreadRec,
+          confidence: spreadConfidence,
+          reasoning: `${marketLabel} · ${engineLabel} · edge ${spreadEdge >= 0 ? '+' : ''}${spreadEdge.toFixed(1)} pts`,
+        },
+        total: {
+          line: totalLine,
+          predicted: Math.round(finalTotal * 10) / 10,
+          recommendation: totalRec,
+          confidence: totalConfidence,
+          reasoning: `${marketLabel} · proj ${Math.round(finalTotal * 10) / 10} · edge ${totalEdge >= 0 ? '+' : ''}${totalEdge.toFixed(1)} pts`,
+        },
+        moneyline: {
+          homeProb: Math.round(homeWinProb * 1000) / 1000,
+          awayProb: Math.round((1 - homeWinProb) * 1000) / 1000,
+          valueBet: {
+            detected: valueDetected,
+            type: valueType,
+            edge: valueDetected ? Math.round(Math.abs(probEdge) * 1000) / 10 : 0,
+          },
+        },
+        kellyFraction: valueDetected ? Math.min(0.05, Math.max(0.01, (Math.abs(probEdge) * 100) / 400)) : 0.01,
+        confidence: overallConfidence,
+        recommendation: isPost
+          ? 'Match terminé'
+          : valueDetected
+            ? `Parier sur ${valueType === 'home' ? (homeStats?.name ?? homeAbbr) : (awayStats?.name ?? awayAbbr)}`
+            : overallConfidence >= 65
+              ? `Lean ${homeWinProb > 0.5 ? (homeStats?.name ?? homeAbbr) : (awayStats?.name ?? awayAbbr)}`
+              : 'Éviter - Match serré',
+      },
+      injuryReport: {
+        home: { impact: 'Mineur', keyPlayersOut: [] },
+        away: { impact: 'Mineur', keyPlayersOut: [] },
+        summary: 'Données blessures non disponibles via ESPN scoreboard',
+      },
+      dataQuality: {
+        homeStats: homeStats ? 'real' : 'fallback',
+        awayStats: awayStats ? 'real' : 'fallback',
+        overallScore: hasMarket ? (homeStats && awayStats ? 85 : 70) : 55,
+      },
+      source: hasMarket ? 'espn-odds+dvoa-engine' : 'dvoa-engine-only',
+    };
+  } catch {
+    // Fail-closed: un event malformé ne doit JAMAIS casser l'endpoint
+    return null;
+  }
+}
+
 /**
  * Récupère les matchs NFL (réels si disponibles, sinon projections)
+ * Task 36: retourne désormais des NFLMatch NORMALISÉS (jamais les events ESPN bruts)
  */
-export async function getNFLMatches(): Promise<any[]> {
+export async function getNFLMatches(): Promise<NormalizedNFLMatch[]> {
   const cacheKey = 'nfl_matches';
   
   if (isCacheValid(cacheKey)) {
@@ -326,9 +676,15 @@ export async function getNFLMatches(): Promise<any[]> {
       if (response.ok) {
         const data = await response.json();
         if (data?.events?.length > 0) {
-          console.log(`✅ NFL: ${data.events.length} matchs ESPN trouvés`);
-          cache.set(cacheKey, { data: data.events, timestamp: Date.now() });
-          return data.events;
+          // Normalisation: chaque event → NFLMatch (fail-closed, null ignoré)
+          const normalized = (data.events as ESPNEvent[])
+            .map(mapESPNEventToNFLMatch)
+            .filter((m): m is NormalizedNFLMatch => m !== null);
+          console.log(`✅ NFL: ${normalized.length}/${data.events.length} matchs ESPN normalisés`);
+          if (normalized.length > 0) {
+            cache.set(cacheKey, { data: normalized, timestamp: Date.now() });
+            return normalized;
+          }
         }
       }
     }
