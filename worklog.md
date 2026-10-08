@@ -1288,3 +1288,35 @@ Stage Summary:
   rollback instant (NBA_V4_LITE=false), fail-closed partout
 - Prochaines étapes naturelles: Phase 2 = backtest chronologique (Brier/LogLoss) dès ~2-3 semaines de saison
   régulière pour recalibrer σ et les poids du blend; Phase 3 optionnelle = blessures pondérées importance joueur
+
+---
+Task ID: 35
+Agent: main
+Task: Audit de santé du pipeline ML unifié — 5 sports (Foot / Basket / Tennis / NHL / NFL)
+
+Work Log:
+- /api/ml/status: v0.0.6, 569 samples, lastTrained 2026-10-08T07:58:49 (cron matin OK),
+  12 patterns (football 10, basketball 1, hockey 1; tennis/NFL 0), avgSuccessRate 87%
+- /api/history 90j: football 379 (dernier 07 oct), basketball 36 (09 oct), hockey 15 (09 oct),
+  other 75 (legacy juillet/Summer League), tennis 0, NFL 0
+- Tennis: testé /api/cron/tennis-v3 en prod → HTTP 200, funnel {collected 71, predicted 20,
+  unresolved 51, greens 0, yellows 2}, anti-ban OK (caps par domaine, 0 blocage).
+  Pipeline DÉDIÉ (tennis-data.co.uk + betexplorer + ESPN + persistence Supabase dédiée,
+  seed 29 756 matchs) — hors historique unifié PAR DESIGN, donc 0 pattern ML unifié = normal
+- NHL: pipeline unifié ESPN alimenté (matchs du 9 oct présents), 1 pattern, saison démarrée
+- NFL: /api/nfl-pro → HTTP 500 "Failed to fetch NFL data" EN SAISON (cause identifiée:
+  getNFLMatches retourne les data.events ESPN BRUTS en saison, le route attend des objets
+  normalisés .projected/.insights → TypeError sur m.insights.moneyline.valueBet.detected).
+  Hors saison "fonctionnait" uniquement avec matchs FICTIFS generateUpcomingNFLMatches
+  (DVOA/EPA hardcoded, restEdge/injuryEdge/trendEdge = Math.random())
+- NFL absent de dailyPredictionService (foot/NBA/NHL/tennis uniquement), absent de
+  l'historique unifié → aucun ML, aucune publication Telegram, aucun suivi de résultats
+- Confirmé: ESPN scoreboard NFL gratuit renvoie 15 events aujourd'hui (09 oct) → réparable
+
+Stage Summary:
+- VERDICT: Foot ✅, Basket ✅ (+engine V4 active, lignes O/U ~21 oct), Tennis ✅ (pipeline
+  dédié V3 vivant), NHL ✅ (saison démarrée, pipeline alimenté) — NFL ❌ 500 en saison,
+  jamais réellement fonctionnel avec données réelles
+- Fix NFL proposé (non exécuté, en attente validation): mapper les events ESPN → NFLMatch
+  dans le route (OU normaliser dans getNFLMatches) + garde null sur insights/projected;
+  option B = intégration NFL au pipeline unifié (dailyPredictionService + history + Telegram)
