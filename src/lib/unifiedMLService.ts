@@ -362,6 +362,12 @@ export async function loadMLPatterns(forceRefresh = false): Promise<MLPattern[]>
 
 /**
  * Sauvegarde un nouveau pattern
+ *
+ * 🆕 Task 32 — FIX CRITIQUE: la table ml_patterns n'a PAS de colonne id
+ * auto-générée → l'insert sans id échouait silencieusement (violation NOT NULL)
+ * → patternsSaved restait à 0 depuis toujours, alors que saveNewPattern
+ * (ml-memory-service, utilisé par /api/ml/train-sports) génère un id explicite
+ * et réussit. Alignement sur le même schéma d'id.
  */
 export async function saveMLPattern(pattern: Omit<MLPattern, 'id' | 'last_updated' | 'created_at'>): Promise<boolean> {
   const supabase = getSupabase();
@@ -372,6 +378,7 @@ export async function saveMLPattern(pattern: Omit<MLPattern, 'id' | 'last_update
       .from('ml_patterns')
       .insert({
         ...pattern,
+        id: `${pattern.sport}_${pattern.pattern_type}_${Date.now()}`,  // 🆕 Task 32 — id explicite (identique à saveNewPattern)
         last_updated: new Date().toISOString()
       });
     
@@ -1052,6 +1059,9 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
         if (updated) {
           result.patternsUpdated++;
           result.improvements.push(`Pattern "${pattern.pattern_type}" mis à jour: ${newSuccessRate}% (${newSampleSize} échantillons)`);
+        } else {
+          // 🆕 Task 32 — l'échec d'update ne doit plus être silencieux
+          result.errors.push(`Échec update pattern "${pattern.pattern_type}" (id=${existing.id})`);
         }
       } else {
         // Créer un nouveau pattern
@@ -1069,6 +1079,9 @@ export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey
         if (saved) {
           result.patternsSaved++;
           result.improvements.push(`Nouveau pattern "${pattern.pattern_type}": ${pattern.success_rate}% (${pattern.sample_size} échantillons)`);
+        } else {
+          // 🆕 Task 32 — l'échec d'insert ne doit plus être silencieux
+          result.errors.push(`Échec insert pattern "${pattern.pattern_type}" (${pattern.sport})`);
         }
       }
     }
