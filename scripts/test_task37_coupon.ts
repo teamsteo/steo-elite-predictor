@@ -53,7 +53,20 @@ const rLost = resolveTicket([leg({}), leg({ predicted_result: 'away', odds_away:
 check('une leg fausse → lost', rLost.status === 'lost');
 
 const rStalled = resolveTicket([leg({}), leg({ status: 'pending', match_date: '2026-10-07T12:00:00Z' })], now);
-check('leg pending >36h → lost (stalled)', rLost.status === 'lost' && rStalled.status === 'lost');
+check('leg pending >36h → VOID (pas perdu): ticket gagné à cote réduite 1.70',
+  rStalled.status === 'won' && Math.abs(rStalled.effectiveOdds - 1.70) < 0.01,
+  JSON.stringify(rStalled));
+check('leg stalled comptée en voidLegs', rStalled.voidLegs === 1 && rStalled.stalledLegs === 1, JSON.stringify(rStalled));
+
+const rAllVoid = resolveTicket([
+  leg({ status: 'pending', match_date: '2026-10-06T12:00:00Z' }),
+  leg({ status: 'pending', match_date: '2026-10-07T12:00:00Z' }),
+], now);
+check('TOUTES legs stalled → unresolved (rien publier, ni faux gain ni fausse perte)',
+  rAllVoid.status === 'unresolved', JSON.stringify(rAllVoid));
+
+const rStalledPlusLost = resolveTicket([leg({}), leg({ status: 'completed', match_date: '2026-10-07T12:00:00Z', predicted_result: 'away', odds_away: 1.46, odds_home: null, result_match: false })], now);
+check('stalled + leg completed fausse → lost (règle inchangée)', rStalledPlusLost.status === 'lost');
 
 const rVoid = resolveTicket([leg({}), leg({ status: 'cancelled' })], now);
 check('leg annulée → void, ticket won à cote 1.70', rVoid.status === 'won' && Math.abs(rVoid.effectiveOdds - 1.70) < 0.01, JSON.stringify(rVoid));

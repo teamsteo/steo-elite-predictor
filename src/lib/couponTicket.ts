@@ -13,7 +13,9 @@
  *  - Coupon du jour = premier combo créé ce jour (combo_id au created_at le plus ancien)
  *  - Résultat = même dérivation sur les jours précédents (les legs ne changent pas:
  *    odds figées à la création; seuls status/scores/result_match évoluent)
- *  - Leg bloquée (pending > 36h après match_date) → considérée perdue (garantit la progression)
+ *  - Leg bloquée (pending > 36h après match_date, aucun résultat vérifiable) → VOID
+ *    (règle bookmaker: événement non résoluble = remboursé, JAMAIS compté perdu —
+ *    on ne publie jamais une fausse défaite)
  */
 
 import { SupabaseStore, type DbPrediction } from './db-supabase';
@@ -46,7 +48,7 @@ export interface CouponView {
 
 /** Mise minimale (F CFA) */
 export const MIN_STAKE = 25000;
-/** Une leg pending plus de STALL_H heures après l'heure de match = perdue (match repoussé/abandon) */
+/** Une leg pending plus de STALL_H heures après l'heure de match = VOID (résultat non vérifiable) */
 const STALL_HOURS = 36;
 /** Fuseau d'affichage (audience principale) */
 const TZ = 'Africa/Abidjan';
@@ -167,10 +169,13 @@ export interface TicketResolution {
 /**
  * Règles (alignées bookmaker):
  *  - leg completed + result_match=false → ticket PERDU
- *  - leg pending au-delà de 36h après match_date → PERDUE (repoussé/abandon)
+ *  - leg pending au-delà de 36h après match_date (aucun résultat vérifiable) → VOID
+ *    (cote comptée 1.0 — comme chez Betclic quand un événement est annulé:
+ *    JAMAIS comptée perdue, on ne publie pas de fausse défaite)
  *  - leg cancelled/postponed → VOID (cote comptée 1.0, neutre)
  *  - toutes les autres gagnées (ou void) → GAGNÉ (cote effective = produit des cotes non-void)
  *  - au moins une leg pending "vivante" → UNRESOLVED (on ne publie rien)
+ *  - TOUTES les legs void → UNRESOLVED (rien publier: ni faux gain ni fausse perte)
  */
 export function resolveTicket(legs: DbPrediction[], now: Date = new Date()): TicketResolution {
   let stalledLegs = 0;
@@ -196,8 +201,9 @@ export function resolveTicket(legs: DbPrediction[], now: Date = new Date()): Tic
       if (leg.result_match === true) effectiveOdds *= odds;
       else { anyFalse = true; }
     } else if (stalled) {
+      // Résultat jamais publié par les sources → VOID (remboursé), PAS perdu
       stalledLegs++;
-      anyFalse = true;
+      voidLegs++;
     } else if (leg.status === 'pending') {
       anyLivePending = true;
     }
@@ -206,6 +212,7 @@ export function resolveTicket(legs: DbPrediction[], now: Date = new Date()): Tic
   let status: TicketResolution['status'];
   if (anyFalse) status = 'lost';
   else if (anyLivePending) status = 'unresolved';
+  else if (voidLegs > 0 && voidLegs === legs.length) status = 'unresolved'; // tout void → rien publier
   else status = 'won';
 
   return {
@@ -235,8 +242,8 @@ function legView(leg: DbPrediction, now: Date): CouponLegView {
     && new Date(leg.match_date || 0).getTime() < now.getTime() - STALL_HOURS * 3600000;
   const legStatus: 'won' | 'lost' | 'pending' =
     leg.status === 'completed' ? (leg.result_match === true ? 'won' : 'lost')
-    : stalled ? 'lost'
     : (leg.status === 'cancelled' || leg.status === 'postponed') ? 'pending'
+    : stalled ? 'pending' // void: rendue comme non jouée (⏳/↩️ en légende)
     : 'pending';
 
   // Équipes + scores (match terminé) — vainqueur en blanc, perdant grisé
