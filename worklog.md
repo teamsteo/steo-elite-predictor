@@ -1411,3 +1411,36 @@ Stage Summary:
   déterministe), honnêteté structurelle: gains ET pertes, pronos publiés en avance
 - Prochaines améliorations possibles: legs tennis (store séparé), choix visuel du combiné
   (value bets plutôt que premier combo), archive des coupons sur le site
+
+---
+Task ID: 38
+Agent: main
+Task: Fidélité pixel des coupons Betclic aux captures utilisateur (couleurs + police)
+
+Work Log:
+- Reçu 2 nouvelles captures Betclic (upload/IMG_20261008_192748.jpg gagné, _192823.jpg perdu)
+- Échantillonnage pixel par pixel (scripts/analyze_betclic_screenshots.py + _peak.py):
+  canvas #040410, carte/boîte #14182c (MÊME fond, l'ancien box #1f2740 était faux),
+  bordure #2e3144, gris #b0b9ca, vert menthe #8bd1b4, saumon #fd99a1,
+  badge Gagné #004024, badge Perdu #680c10, jaune #fcdc3d, texte jaune #14182c
+- Icônes corrigées: trophée = cercle VERT MENTHE + glyphe sombre (l'ancien
+  blanc-sur-vert-foncé était faux), croix = cercle SAUMON + X blanc
+- Identification police EMPIRIQUE (scripts/fetch_font_candidates.py + font_compare.py):
+  4 candidates téléchargées (Roboto/Inter/Figtree/DM Sans), rendu des mêmes textes
+  comparé aux crops → INTER gagnant (chiffres italiques 1,70, g à crochet de
+  "Gagné", proportions de "Vainqueur du match"); Roboto trop condensé,
+  DM Sans trop géométrique
+- 5 TTF Inter (400/500/600/700 + 700 italic) installés dans src/lib/fonts/,
+  build_fonts_module.ts régénéré → couponFonts.ts (2.1 Mo inline base64)
+- couponRenderer.ts: palette exacte, boîte = fond carte + bordure 2px #2e3144
+  rayon 26, tailles mesurées (cotes 55px italiques, sélections/équipes 41px,
+  market 36px, header 37px/600, pastille jaune 50px rayon 26), hauteur
+  560 + 365×legs (gains plus coupés)
+- Tests scripts/test_task37_coupon.ts: 18/18 ✅, tsc 0 erreur
+- Commit c336498 poussé → déploiement Vercel
+
+Stage Summary:
+- Coupons rendus quasi indistinguables des captures Betclic réelles
+  (police Inter, palette échantillonnée, icônes conformes)
+- Scripts d'analyse réutilisables si l'utilisateur fournit d'autres références
+- Le cron 08h15 UTC publiera désormais les images avec le style exact
