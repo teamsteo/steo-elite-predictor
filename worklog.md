@@ -1200,3 +1200,40 @@ Work Log:
 Stage Summary:
 - Task 32 CLÔTURÉ et vérifié en prod. Reste optionnel (côté utilisateur): DROP TRIGGER orphelin
   ml_patterns via Supabase Dashboard + audit scores basketball / 141 matchs "other"
+
+---
+Task ID: 33
+Agent: main
+Task: Audit modèle basket actuel vs "MODÈLE BASKET V4" (fourni par l'utilisateur) — analyse d'écart et faisabilité évolution sans frais / sans risque de ban
+
+Work Log:
+- Cartographié le flux NBA complet: dailyPredictionService (ESPN scoreboard) → unifiedPredictionService
+  → publication Telegram (summary 07h00/18h00, valuebets 07h15, combo; plafond 3 non-prioritaires,
+  risk ≤30%, cote ≥1.80, prob ≥70%)
+- Constat clé #1: modèle NBA = ANCRÉ MARCHÉ (65% market + 35% context) — ML désactivé historiquement
+  (CV XGBoost 46.6-49.5% = bruit). Aucune projection statistique indépendante (V4 Principe 1 violé)
+- Constat clé #2: nbaStatsService — pace HARDCODÉ à 98, ratings = PPG×100/98 (proxys), ELO heuristique
+- Constat clé #3: marché moneyline UNIQUEMENT publié pour NBA — pas d'Over/Under ni handicap
+- Constat clé #4: basketballReferenceScraper = recherche web via ZAI SDK (fragile, non déterministe)
+  — remplaçable par l'endpoint officiel ESPN statistics
+- Constat clé #5: patterns ML basket (home_advantage, over_220) NE FILTRENT PAS la Summer League
+  → pollution des stats (totaux ~170-190 en SL vs seuil 220) — explique le pattern over à 3% noté au worklog
+- Testé live: endpoint ESPN team statistics gratuit fournit FGA/FTA/ORB/TOV par match
+  → pace RÉEL calculable (formule Dean Oliver: FGA − ORB + TOV + 0.44×FTA; Boston = 97.4, plausible)
+  → ORtg réel = PPG/poss×100 = 118.0 pour Boston. DRtg ≈ oppPPG (standings, déjà fetché)/pace
+- ESPN scoreboard fournit aussi spread + overUnder en saison régulière (absents en preseason)
+- Audité l'historique prod: 36 pronos basket/90j, scores = points réels (pas des quarts);
+  les totaux bas de juillet = Summer League (normal), pas une corruption DB
+
+Stage Summary:
+- VERDICT: évolution V4-LITE 100% faisable SANS frais (ESPN uniquement, déjà utilisé + caché)
+  et SANS risque de ban (aucune nouvelle source, pas de scraping protégé; on REMPLACE le scraper IA)
+- Écarts majeurs comblables: pace/efficacité réels (V4 §7-8), projection score + distribution
+  normale (V4 §12-13), P(Over/Under)+P(cover spread) avec edge adaptatif (V4 §14/19/23)
+- Hors scope (pas gratis sans scraping risqué): modèle joueurs usage/minutes/on-off (V4 §10),
+  SOS strict (§6 — approximable), Monte-Carlo 10k (inutile: CDF normale = équivalent analytique)
+- Roadmap proposée: Phase 1 = nbaProjectionEngine (engine indépendante + kill-switch env,
+  intégration additive 50/35/15, marchés O/U + spread, format rapport V4 §29 lite);
+  Phase 2 = hygiène données (filtre Summer League) + backtest chronologique + Brier/LogLoss;
+  Phase 3 optionnel = blessures pondérées importance joueur, SOS approximé
+- EN ATTENTE: validation utilisateur du scope Phase 1 avant implémentation
