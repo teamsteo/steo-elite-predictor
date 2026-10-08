@@ -1237,3 +1237,54 @@ Stage Summary:
   Phase 2 = hygiène données (filtre Summer League) + backtest chronologique + Brier/LogLoss;
   Phase 3 optionnel = blessures pondérées importance joueur, SOS approximé
 - EN ATTENTE: validation utilisateur du scope Phase 1 avant implémentation
+
+---
+Task ID: 34
+Agent: main
+Task: Implémentation Phase 1 "NBA Projection Engine V4-lite" (validée par l'utilisateur) — évolution sans frais / sans risque de ban
+
+Work Log:
+- Créé src/lib/nbaProjectionEngine.ts (~470 lignes): engine statistique INDÉPENDANTE du marché
+  * Pace réel via formule Dean Oliver (FGA − ORB + TOV + 0.44×FTA) sur ESPN team statistics
+    (endpoint public déjà utilisé par le projet, cache 6h — aucune nouvelle source, aucun scraping)
+  * ORtg réel = PPG/pace×100; DRtg ≈ oppPPG/pace×100 (possessions subies ≈ possessions créées)
+  * Régression vers la moyenne: shrinkRating alpha = n/(n+10) vers moyennes ligue (V4 §5)
+  * Projection: possessions attendues = moy(paces) × efficacité additive (ORtg + DRtg_adv − ligue) + HCA 2.5pts
+  * Distribution normale: σ total/marge 11.5 élargi ×(1+0.20×incertitude) si échantillon faible (V4 §12)
+  * P(Over/Under ligne) + P(cover spread home/away) via CDF normale analytique (équivalent Monte-Carlo 0 ms)
+  * Edge adaptatif (V4 §19): seuil 3.5pp (données riches) → 7pp (début de saison); ligne trop proche (<1.5pts) = NO BET
+  * Décisions BET/LEAN/NO BET par marché (V4 §22) — fail-closed: lignes absentes (preseason) → aucun signal
+  * KILL-SWITCH: env NBA_V4_LITE=false désactive tout sans redéploiement
+  * Dédup du chargement en vol (globalThis.nbaBoxStatsLoading): 1 seul fetch réseau partagé même avec
+    getBatchPredictions en parallèle (sinon ~900 fetch ESPN concurrents au cache froid)
+- espnOddsService: capture marketTotal/homeSpread/awaySpread (odds.overUnder, homeTeamOdds.spread, fallback parsing "details" type "BOS -5.5")
+- unifiedPredictionService: blend NBA 50% marché + 35% engine + 15% contexte (avant: 65/35 market-only);
+  bloc nbaEngine dans UnifiedPrediction; dataQuality ≥60 quand engine active; ligne de reasoning 🧮
+- dailyPredictionService: champ nbaEngine dans DailyPrediction, modelVersion 'nba-v4lite-v1.0'
+- telegramService: section "🧮 MARCHÉS BASKET — ENGINE V4" dans le résumé quotidien (BET/LEAN uniquement,
+  max 3, NO BET non listé — sélectivité conservée)
+- unifiedMLService: detectBasketballPatterns exclut Summer League/preseason (fix pollution pattern over_220 ~3%)
+- cron route + publish-now: mapping _nbaEngine vers TelegramMatch
+- Fix au passage (préexistant): formatPercent recevait bestProb 0-1 → VALUE BET affichait "0%"/"1%" depuis toujours
+
+Tests:
+- scripts/test_task34_nba_engine.ts: 67/67 ✅ (Dean Oliver réel Boston 97.4, CDF référence, conventions spread,
+  shrinkage, σ élargi, seuils adaptatifs, balance projection, BET/LEAN/NO BET, parse ESPN, kill-switch, live ESPN)
+- Live ESPN validé: BOS/NYK proj 119.1-115.5 (total 234.6, marge +3.6), pace 98.0/102.3, 30 équipes chargées
+- Régressions: Task 27 (21/21), 27-int (exit 0), 29 (16/16), 31 (28/28), 32 (12/12) ✅ — tsc 0 erreur
+
+Vérification prod (après push e21845e + 3249f70):
+- /api/matches?sport=basketball: engine active sur les 17 matchs ✅
+  * Cavs vs Celtics: "🧮 Engine V4: proj 115.5-113 (total 228.5 ±11.8, écart +2.5) · pace 104.3/98 · marchés: NO BET"
+  * VALUE BET Cleveland +5% détecté via le blend (implied 44% → final 49%) — probabilités saines 49/51
+- "marchés: NO BET" partout = NORMAL (preseason, pas de lignes O/U ESPN) — la section Telegram apparaîtra
+  avec les lignes de saison régulière (~21 oct)
+- OBSERVATION préexistante (non bloquant): /api/cron/generate-daily échoue en prod — DATA_DIR=process.cwd()/data
+  non inscriptible sur Vercel serverless. Le flux réel de publication (telegram-summary) n'utilise PAS ce fichier.
+
+Stage Summary:
+- Phase 1 V4-lite 100% livrée: engine indépendante + blend + marchés O/U/spread + section Telegram + hygiène ML
+- 0 frais (ESPN public uniquement), 0 risque de ban (caches 6h, dedup réseau, aucune nouvelle source),
+  rollback instant (NBA_V4_LITE=false), fail-closed partout
+- Prochaines étapes naturelles: Phase 2 = backtest chronologique (Brier/LogLoss) dès ~2-3 semaines de saison
+  régulière pour recalibrer σ et les poids du blend; Phase 3 optionnelle = blessures pondérées importance joueur
