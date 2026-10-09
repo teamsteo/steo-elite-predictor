@@ -1566,3 +1566,56 @@ Stage Summary:
 - Validation historique 365j CONFIRME l'audit: hockey n=15 (insuffisant) 80% ROI +77% Brier modèle<marché ✅; baseball n=141 (suffisant) 56.7% win rate mais ROI −4.5% avec l'ancien pipeline stats statiques → le marché gagnait — exactement ce que la nouvelle couche décision va filtrer (calibration 50-60% bien calibrée: prédit 55.3% vs réalisé 53.8%)
 - Kill-switchs indépendants: NHL_V4_LITE / MLB_V4_LITE / V3_DECISION (env=false) — rollback sans redeploy
 - Limites connues: CLV non calculable (pas d'historique cotes clôture — brancher oddsTrackingService), NHL début saison shrink 0.29 → seuils élevés → peu de RETENIR (voulu), cron métriques premier run dimanche 19h UTC avec envoi Telegram
+
+---
+Task ID: 42
+Agent: main
+Task: Audit complet demandé par l'utilisateur — règle "15 matchs", charnière centrale football,
+méthodes risqué/fiable, options du site, sections Telegram (badjan/value bet/kamikaze)
+
+Work Log:
+- 3 audits parallèles (pipeline football, site, Telegram) puis vérification manuelle de chaque
+  finding critique avant correction
+- RÉPONSE "15 matchs": AUCUN minimum n'existe — MAX_MATCHES_PER_DAY=20 est un PLAFOND (commentaire
+  "15" périmé corrigé); publications dès qu'au moins 1 pick satisfait les critères
+- dixonColesModel: FIX critique — defenseStrength=1.35/conceded (haute=bonne défense) était
+  MULTIPLIÉ dans le xG adverse (bonne défense → plus de buts prédits pour l'adversaire!);
+  renommé defenseWeakness=conceded/1.35; FIX (2−homeDefenseBonus)→homeDefenseBonus direct;
+  FIX tau DC (1,0)↔(0,1) conformément au papier 1997; FIX predictGoalsFromOdds qui gonflait
+  le total de buts de ~15% (homeBias double + 0.1)
+- dailyPredictionService: FIX winProbability/riskPercentage indexés TOUJOURS sur le domicile
+  même quand la reco était away/nul (foot+basket+hockey) → proba du côté RECOMMANDÉ
+- Barème risque UNIFIÉ 30/50 (Telegram/bilans canoniques) partout: matches/route.ts (labels
+  + typo 'Audaceux' + byRisk 'Audacieux'/'Kamikaze' morts), riskCalculator (40/60→30/50),
+  page.tsx (foot ≤40/55, basket ≤45, cartes ≤40/60, 9274) → Sûr ≤30 / Modéré ≤50 / Risqué >50
+- telegramService: isDuplicate n'enregistre PLUS avant l'envoi → markPublished() après
+  data.ok (11 sites mis à jour: summary, top-champ, VB, kamikaze×2, results, bilan kamikaze,
+  combo, badjan, tennis×2); FALLBACK parse HTML (nom "Brighton & Hove" cassait tout le
+  message) → retry texte brut dans sendTelegramMessage + sendTelegramPhoto caption;
+  DÉDUP croisée kamikaze par matchKey (fallback 07h + section 13h jamais le même match)
+- cron/route.ts: ENVOI Telegram AVANT sauvegarde DB (summary, top-champ, VB GET+POST,
+  kamikaze GET+POST, summary POST) — un échec d'envoi ne pollue plus le bilan du lendemain;
+  fix 2 template literals non interpolées (console.error)
+- badjanService: bornes globales appliquées (MIN 1.10→1.25 aligné backtest + plafond 8.00)
+- unifiedPredictionService: FIX TDZ `reasoning` utilisé avant déclaration (ReferenceError
+  avalé par catch → lignes CLV jamais ajoutées au raisonnement)
+- Site: page /challenges RÉÉCRITE sur la structure plate de l'API (ancienne: TypeError crash
+  challenge.challenge.underdogOdds.toFixed); bouton Telegram branché sur nouvelle action
+  POST {action:'publish'} réelle; minValueGap→minEdge (page + section Challenges);
+  ExportManager range→days (l'API ne lisait pas range); badge LIVE 2D count 0→liveMatches;
+  badge "⚠️ COTES ESTIMÉES" sur cartes foot/basket (honnêteté, isEstimated était renvoyé
+  mais jamais affiché)
+- sportsApi.ts: commentaire 15→20 + clarification plafond
+- Tests: 21/21 coupon, 94/94 V3, 21/21 badjan VN, 28/28 fallback cotes, 12/12 ML,
+  67/67 NBA engine, 48/48 NFL, exit 0 integration — tsc 0 erreur
+- Prod: matches 200 (byRisk Sûr 4/Modéré 11/Risqué 4 = cohérent), challenges 200 (5 picks,
+  structure plate), health 200
+
+Stage Summary:
+- 12 anomalies corrigées (2 critiques modèle, 3 majeures classification, 4 majeures
+  fiabilité Telegram, 3 site) + ~15 mineures documentées non corrigées (code mort
+  MainApp/football-analyzer/footballAdvancedModel, quotas Infinity, timezone mixte)
+- Le modèle Dixon-Coles produit désormais des xG dans le bon sens; classifications
+  risqué/fiable identiques site ↔ Telegram ↔ bilans; bilan = exactement ce qui a été publié
+- À surveiller: prochaines publications cron (07h00/07h15/07h45/08h00/13h UTC) avec les
+  nouveaux garde-fous; NFL/page.tsx ligne 1626 était un faux positif d'affichage (déjà clos)
