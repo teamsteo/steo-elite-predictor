@@ -77,6 +77,10 @@ export async function GET(request: Request) {
         oddsHome: m.oddsHome,
         oddsDraw: m.oddsDraw || null,
         oddsAway: m.oddsAway,
+        // Task 43 — honnêteté cotes
+        isEstimated: m.isEstimated === true,
+        bookmaker: m.bookmaker,
+        oddsSource: m.oddsSource,
       };
     });
 

@@ -2068,6 +2068,42 @@ export async function GET(request: NextRequest) {
         result = { ping: pingResult };
         break;
 
+      case 'track-odds': {
+        // Task 43 — Zero-cost odds tracking (CLV): snapshots des cotes RÉELLES
+        // ESPN uniquement (jamais d'estimation), détection steam moves, CLV live.
+        // Fail-safe: table odds_history absente → snapshotsSaved=0 sans crash.
+        try {
+          const { getMatchesWithRealOdds, invalidateEspnCache } = await import('@/lib/combinedDataService');
+          const { trackOddsForToday } = await import('@/lib/oddsTrackingService');
+          invalidateEspnCache();
+          const allMatches = await getMatchesWithRealOdds(true);
+          const realOddsMatches = allMatches.filter((m: any) => m.hasRealOdds && !m.isEstimated && !m.isFinished);
+          const tracking = await trackOddsForToday(realOddsMatches.map((m: any) => ({
+            matchId: m.id,
+            sport: m.sport,
+            homeTeam: m.homeTeam,
+            awayTeam: m.awayTeam,
+            oddsHome: m.oddsHome,
+            oddsDraw: m.oddsDraw ?? null,
+            oddsAway: m.oddsAway,
+          })));
+          result = {
+            trackOdds: {
+              success: true,
+              date: new Date().toISOString().split('T')[0],
+              eligible: realOddsMatches.length,
+              snapshotsSaved: tracking.snapshotsSaved,
+              steamMoves: tracking.steamMoves.length,
+              clvCalculated: tracking.clvResults.length,
+              sampleClv: tracking.clvResults.slice(0, 3),
+            },
+          };
+        } catch (e: any) {
+          result = { trackOdds: { success: false, error: e.message } };
+        }
+        break;
+      }
+
       case 'backfill-mlb': {
         // P4 Phase 1 — backfill archives MLB (betExplorer via ZAI page_reader).
         // Idempotent (upsert par match_id stable), additif (table matches uniquement).
@@ -2511,6 +2547,10 @@ export async function GET(request: NextRequest) {
               oddsHome: m.oddsHome,
               oddsDraw: m.oddsDraw || null,
               oddsAway: m.oddsAway,
+              // Task 43 — honnêteté cotes: propager le flag estimation + source
+              isEstimated: m.isEstimated === true,
+              bookmaker: m.bookmaker,
+              oddsSource: m.oddsSource,
               // P4 consensus multi-books (si enrichi par combinedDataService)
               consensusHome: (m as any).oddsConsensus?.best?.home,
               consensusDraw: (m as any).oddsConsensus?.best?.draw ?? null,
@@ -4615,6 +4655,10 @@ async function generatePalierIntelligent(): Promise<{ mlb_palier: { success: boo
           oddsHome: m.oddsHome,
           oddsDraw: m.oddsDraw || null,
           oddsAway: m.oddsAway,
+          // Task 43 — honnêteté cotes
+          isEstimated: m.isEstimated === true,
+          bookmaker: m.bookmaker,
+          oddsSource: m.oddsSource,
         }));
 
         let unifiedPreds: any[] = [];

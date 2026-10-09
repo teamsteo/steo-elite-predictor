@@ -61,6 +61,14 @@ export interface UnifiedPredictionInput {
   oddsHome: number;
   oddsDraw: number | null;
   oddsAway: number;
+  // Task 43 — honnêteté cotes: true quand les cotes fournies sont une ESTIMATION
+  // (fallback combinDataService / dailyPredictionService 1.85 / pronostiqueur 2.0).
+  // Sans ce flag, une cote estimée passait pour réelle (odds>0) → isEstimated=false
+  // partout, badge « cotes estimées » jamais affiché et combinés construits sur
+  // des cotes fictives non identifiées.
+  isEstimated?: boolean;
+  bookmaker?: string;
+  oddsSource?: 'espn-draftkings' | 'the-odds-api' | 'estimation';
   // P4 Phase 2 — consensus multi-book (additif, optionnel):
   // meilleur prix par issue + nombre de books. Utilisé pour l'edge (référence
   // marché honnête) SEULEMENT si >= 3 books (garde-fou shouldUseConsensusEdge).
@@ -276,7 +284,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   console.log(`🎯 Unified Prediction: ${match.homeTeam} vs ${match.awayTeam}`);
   
   const sources: string[] = [];
-  let hasRealOdds = match.oddsHome > 0 && match.oddsAway > 0;
+  // Task 43 FIX: une cote estimée (isEstimated=true) n'est PAS une cote réelle,
+  // même si odds>0 (le fallback estimation remplit toujours les cotes).
+  let hasRealOdds = match.oddsHome > 0 && match.oddsAway > 0 && match.isEstimated !== true;
   let hasAdvancedStats = false;
   
   // 1. Get ML thresholds
@@ -292,8 +302,10 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   let oddsHome = match.oddsHome;
   let oddsDraw = match.oddsDraw;
   let oddsAway = match.oddsAway;
-  let oddsSource: 'espn-draftkings' | 'the-odds-api' | 'estimation' = 'estimation';
-  let bookmaker = 'Unknown';
+  let oddsSource: 'espn-draftkings' | 'the-odds-api' | 'estimation' = match.oddsSource
+    ? match.oddsSource
+    : 'estimation';
+  let bookmaker = match.bookmaker || 'Unknown';
   // V4-lite (Task 34): lignes marché O/U + spread (ESPN, saison régulière)
   let marketTotal: number | null = null;
   let homeSpread: number | null = null;

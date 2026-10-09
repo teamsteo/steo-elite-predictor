@@ -469,6 +469,8 @@ async function generatePicks(): Promise<BasePick[]> {
         oddsHome: m.oddsHome || 2.0,
         oddsDraw: m.oddsDraw || 3.3,
         oddsAway: m.oddsAway || 2.0,
+        // Task 43 — honnêteté cotes: fallback 2.0/3.3 = ESTIMATION
+        isEstimated: m.isEstimated === true || m.oddsHome == null || m.oddsAway == null,
       }));
     
     if (matchInputs.length > 0) {

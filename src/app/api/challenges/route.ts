@@ -98,12 +98,16 @@ async function analyzeMatchForChallenge(match: any): Promise<Challenge | null> {
       id: match.id,
       homeTeam: match.homeTeam,
       awayTeam: match.awayTeam,
-      sport: match.sport === 'Basket' || match.sport === 'NBA' ? 'NBA' : 
+      sport: match.sport === 'Basket' || match.sport === 'NBA' ? 'NBA' :
              match.sport === 'NHL' || match.sport === 'Hockey' ? 'NHL' : 'Foot',
       league: match.league || 'Unknown',
       oddsHome: match.oddsHome,
       oddsDraw: match.oddsDraw,
       oddsAway: match.oddsAway,
+      // Task 43 — honnêteté cotes
+      isEstimated: (match as any).isEstimated === true,
+      bookmaker: (match as any).bookmaker,
+      oddsSource: (match as any).oddsSource,
     });
     
     // Ne garder que les value bets avec une edge positive

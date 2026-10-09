@@ -479,6 +479,10 @@ export async function GET(request: Request) {
       oddsHome: m.oddsHome,
       oddsDraw: m.oddsDraw || null,
       oddsAway: m.oddsAway,
+      // Task 43 — honnêteté cotes: propager le flag estimation + source
+      isEstimated: m.isEstimated === true,
+      bookmaker: m.bookmaker,
+      oddsSource: m.oddsSource,
     }));
 
     // Exécuter le pipeline ML unifié

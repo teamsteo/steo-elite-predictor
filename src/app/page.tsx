@@ -2655,8 +2655,9 @@ ${lines.join('\n')}
                 <div style={{ fontSize: '9px', color: '#888' }}>Statut</div>
               </div>
               <div style={{ background: '#0a0a0a', borderRadius: '6px', padding: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '16px', fontWeight: 'bold', color: (apiStatus.quotaInfo?.remaining || 0) > 100 ? '#22c55e' : '#f97316' }}>
-                  {apiStatus.quotaInfo?.remaining || 0}
+                {/* Task 43 FIX: ESPN illimité → '∞' (avant: Infinity sérialisé null → 0 + alarme orange à tort) */}
+                <div style={{ fontSize: '16px', fontWeight: 'bold', color: apiStatus.quotaInfo?.unlimited || (apiStatus.quotaInfo?.remaining || 0) > 100 ? '#22c55e' : '#f97316' }}>
+                  {apiStatus.quotaInfo?.unlimited ? '∞' : (apiStatus.quotaInfo?.remaining || 0)}
                 </div>
                 <div style={{ fontSize: '9px', color: '#888' }}>Crédits Restants</div>
               </div>
@@ -2673,7 +2674,7 @@ ${lines.join('\n')}
                 <div style={{ fontSize: '9px', color: '#888' }}>Matchs</div>
               </div>
             </div>
-            {(apiStatus.quotaInfo?.remaining || 0) < 100 && (
+            {!apiStatus.quotaInfo?.unlimited && (apiStatus.quotaInfo?.remaining || 0) < 100 && (
               <div style={{ 
                 marginTop: '8px', 
                 padding: '8px', 
@@ -8174,14 +8175,15 @@ function AdminPanel() {
               <div style={{ fontSize: '9px', color: '#888' }}>Statut</div>
             </div>
             <div style={{ background: '#0a0a0a', borderRadius: '6px', padding: '10px', textAlign: 'center' }}>
+              {/* Task 43 FIX: ESPN illimité → '∞' */}
               <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#22c55e' }}>
-                {apiStatus.quotaInfo?.remaining || 0}
+                {apiStatus.quotaInfo?.unlimited ? '∞' : (apiStatus.quotaInfo?.remaining || 0)}
               </div>
               <div style={{ fontSize: '9px', color: '#888' }}>Quota Restant</div>
             </div>
             <div style={{ background: '#0a0a0a', borderRadius: '6px', padding: '10px', textAlign: 'center' }}>
               <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#f97316' }}>
-                {apiStatus.quotaInfo?.dailyUsed || 0}/{apiStatus.quotaInfo?.dailyBudget || 15}
+                {apiStatus.quotaInfo?.unlimited ? '∞' : `${apiStatus.quotaInfo?.dailyUsed || 0}/${apiStatus.quotaInfo?.dailyBudget || 15}`}
               </div>
               <div style={{ fontSize: '9px', color: '#888' }}>Req Aujourd'hui</div>
             </div>

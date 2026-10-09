@@ -135,12 +135,15 @@ export async function GET() {
       ],
       
       // Quota info (ESPN est illimité)
+      // Task 43 FIX: JSON.stringify(Infinity) → null côté client (sérialisation
+      // JSON perd Infinity). null + flag unlimited = affichage cohérent.
       quotaInfo: {
-        monthlyQuota: Infinity,
+        monthlyQuota: null as number | null,
         used: 0,
-        remaining: Infinity,
+        remaining: null as number | null,
         dailyUsed: 0,
-        dailyBudget: Infinity,
+        dailyBudget: null as number | null,
+        unlimited: true,
         note: 'ESPN est gratuit et illimité! The Odds API utilisé uniquement en fallback.',
       },
       

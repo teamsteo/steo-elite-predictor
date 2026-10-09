@@ -19,8 +19,11 @@
  *   La baseline marché = P_devig seule. Les deux Brier sont affichés côte à côte:
  *   le modèle doit faire MIEUX que le marché pour justifier son edge.
  *
- * CLV: non calculable actuellement (pas d'historique de cotes de clôture en DB)
- * — voir clv.note. Une fois oddsTrackingService historisé, la colonne se branchera ici.
+ * CLV (Task 43): branché sur la table odds_history alimentée par le cron
+ * track-odds (3x/jour, snapshots cotes réelles ESPN). CLV du pick =
+ * (cote d'ouverture − cote de clôture) du côté prédit, en % de la cote
+ * d'ouverture — positif = le marché a confirmé le pick après la prise.
+ * Sans snapshots suffisants (≥2 par match), clv.available=false (note).
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -59,6 +62,14 @@ export interface ConfidenceRow {
   roiPct: number;
 }
 
+export interface ClvStats {
+  available: boolean;
+  note: string;
+  samples: number;       // picks avec ≥2 snapshots cotes
+  avgClvPct: number;     // moyenne CLV côté prédit (% de la cote d'ouverture)
+  positivePct: number;   // % de picks avec CLV positif (beat the close)
+}
+
 export interface SportMetrics {
   sport: string;
   windowDays: number;
@@ -89,10 +100,7 @@ export interface SportMetrics {
   };
   calibration: CalibrationBucket[];
   byConfidence: ConfidenceRow[];
-  clv: {
-    available: boolean;
-    note: string;
-  };
+  clv: ClvStats;
   reliability: {
     minSample: number;
     sufficient: boolean;
@@ -142,6 +150,41 @@ export function calibrationBucket(p: number): string {
   return '≥85%';
 }
 
+/**
+ * CLV d'un pick du côté prédit: (cote_ouverture − cote_clôture) / cote_ouverture × 100.
+ * Positif = le marché a réduit la cote après la prise → on a battu la clôture.
+ * Fonction pure testée unitairement.
+ */
+export function clvPctForPick(
+  openingSide: number,
+  closingSide: number
+): number | null {
+  if (!(openingSide > 1) || !(closingSide > 1)) return null;
+  return Math.round(((openingSide - closingSide) / openingSide) * 10000) / 100;
+}
+
+/** Résumé CLV d'une liste de CLV (%) — disponible seulement si ≥1 valeur */
+export function summarizeClv(clvs: number[]): ClvStats {
+  if (clvs.length === 0) {
+    return {
+      available: false,
+      note: 'CLV indisponible: pas encore de snapshots cotes (odds_history) pour ces matchs — le cron track-odds les collecte 3×/jour depuis aujourd\'hui.',
+      samples: 0,
+      avgClvPct: 0,
+      positivePct: 0,
+    };
+  }
+  const avg = clvs.reduce((s, v) => s + v, 0) / clvs.length;
+  const positive = clvs.filter((v) => v > 0).length;
+  return {
+    available: true,
+    note: `CLV = (cote d\'ouverture − clôture)/ouverture du côté prédit, mesuré sur ${clvs.length} picks avec historique cotes (track-odds)`,
+    samples: clvs.length,
+    avgClvPct: Math.round(avg * 100) / 100,
+    positivePct: Math.round((positive / clvs.length) * 1000) / 10,
+  };
+}
+
 // ============================================
 // CALCUL PRINCIPAL
 // ============================================
@@ -185,7 +228,7 @@ export async function computeSportMetrics(
   // Récupération des lignes complétées avec résultat
   const { data, error } = await supabase
     .from('predictions')
-    .select('sport, league, match_date, odds_home, odds_away, predicted_result, result_match, confidence, edge_value')
+    .select('match_id, sport, league, match_date, odds_home, odds_away, predicted_result, result_match, confidence, edge_value')
     .in('sport', dbSports)
     .not('result_match', 'is', null)
     .gte('match_date', fromISO)
@@ -197,6 +240,7 @@ export async function computeSportMetrics(
   }
 
   const rows = (data || []) as Array<{
+    match_id: string;
     sport: string;
     league: string;
     match_date: string;
@@ -223,6 +267,31 @@ export async function computeSportMetrics(
   }
 
   const metrics: SportMetrics[] = [];
+
+  // Task 43 — Snapshots cotes (odds_history) pour le calcul CLV des picks.
+  // Une seule requête pour tous les matchs du sample (fail-safe: table absente → CLV indisponible).
+  const sampleMatchIds = [...new Set(rows.map((r) => r.match_id).filter(Boolean))];
+  const snapshotsByMatch = new Map<string, Array<{ odds_home: number; odds_away: number; recorded_at: string }>>();
+  if (sampleMatchIds.length > 0) {
+    try {
+      // Par lots de 200 (limite PostgREST .in)
+      for (let i = 0; i < Math.min(sampleMatchIds.length, 1000); i += 200) {
+        const batch = sampleMatchIds.slice(i, i + 200);
+        const { data: snaps, error: snapErr } = await supabase
+          .from('odds_history')
+          .select('match_id, odds_home, odds_away, recorded_at')
+          .in('match_id', batch)
+          .order('recorded_at', { ascending: true });
+        if (snapErr || !snaps) continue;
+        for (const s of snaps as any[]) {
+          if (!snapshotsByMatch.has(s.match_id)) snapshotsByMatch.set(s.match_id, []);
+          snapshotsByMatch.get(s.match_id)!.push({ odds_home: Number(s.odds_home), odds_away: Number(s.odds_away), recorded_at: s.recorded_at });
+        }
+      }
+    } catch {
+      // Table odds_history absente ou inconnue → CLV indisponible (note explicative)
+    }
+  }
 
   for (const sp of sports) {
     const sportRows = rowsBySport.get(sp) || [];
@@ -292,6 +361,25 @@ export async function computeSportMetrics(
       })
       .filter((c) => c.n > 0);
 
+    // CLV (Task 43): opening = 1er snapshot du match, closing = dernier
+    // (track-odds n'enregistre que des matchs non terminés → snapshots pré-match)
+    const clvValues: number[] = [];
+    for (const r of sportRows) {
+      if (!r.match_id) continue;
+      const snaps = snapshotsByMatch.get(r.match_id);
+      if (!snaps || snaps.length < 2) continue;
+      const opening = snaps[0];
+      const closing = snaps[snaps.length - 1];
+      const isHome = r.predicted_result === 'home';
+      const isAway = r.predicted_result === 'away';
+      if (!isHome && !isAway) continue;
+      const clv = clvPctForPick(
+        isHome ? opening.odds_home : opening.odds_away,
+        isHome ? closing.odds_home : closing.odds_away,
+      );
+      if (clv !== null) clvValues.push(clv);
+    }
+
     metrics.push({
       sport: sp,
       windowDays: days,
@@ -322,10 +410,7 @@ export async function computeSportMetrics(
       },
       calibration,
       byConfidence,
-      clv: {
-        available: false,
-        note: 'CLV non calculable: historique de cotes de clôture non stocké. Brancher oddsTrackingService pour l\'activer.',
-      },
+      clv: summarizeClv(clvValues),
       reliability: {
         minSample: MIN_SAMPLE,
         sufficient: n >= MIN_SAMPLE,
@@ -359,6 +444,9 @@ export function formatMetricsText(metrics: SportMetrics[]): string {
     }
     for (const c of m.byConfidence) {
       lines.push(`  ↳ ${c.confidence}: ${c.wins}/${c.n} (${c.winRate}%), ROI ${c.roiPct > 0 ? '+' : ''}${c.roiPct}%`);
+    }
+    if (m.clv.available) {
+      lines.push(`• CLV: ${m.clv.avgClvPct > 0 ? '+' : ''}${m.clv.avgClvPct}% moyen, ${m.clv.positivePct}% de picks battant la clôture (n=${m.clv.samples}) ${m.clv.avgClvPct > 0 ? '✅' : '⚠️'}`);
     }
     lines.push(`• Fiabilité: ${m.reliability.note}`);
     lines.push('');

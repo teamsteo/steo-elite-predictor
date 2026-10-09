@@ -496,6 +496,7 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
   const awayTeam = away.team?.displayName || 'Unknown';
   
   // Récupérer les cotes réelles si disponibles
+  // Task 43 — honnêteté cotes: fallback 1.85 = ESTIMATION (flag propagé au ML)
   const oddsHome = home.odds?.current || 1.85;
   const oddsAway = away.odds?.current || 1.85;
   const oddsDraw = 3.3;
@@ -511,6 +512,7 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
       oddsHome,
       oddsDraw,
       oddsAway,
+      isEstimated: !home.odds?.current,
     };
     
     const mlPrediction = await getUnifiedPrediction(mlInput);
@@ -568,6 +570,7 @@ async function createBasketballPrediction(event: any, home: any, away: any): Pro
   const homeTeam = home.team?.displayName || 'Unknown';
   const awayTeam = away.team?.displayName || 'Unknown';
   
+  // Task 43 — honnêteté cotes: fallback 1.85 = ESTIMATION
   const oddsHome = home.odds?.current || 1.85;
   const oddsAway = away.odds?.current || 1.85;
   
@@ -581,6 +584,7 @@ async function createBasketballPrediction(event: any, home: any, away: any): Pro
       oddsHome,
       oddsDraw: null,
       oddsAway,
+      isEstimated: !home.odds?.current,
     };
     
     const mlPrediction = await getUnifiedPrediction(mlInput);
@@ -648,6 +652,7 @@ async function createHockeyPrediction(event: any, home: any, away: any): Promise
   const homeTeam = home.team?.displayName || 'Unknown';
   const awayTeam = away.team?.displayName || 'Unknown';
   
+  // Task 43 — honnêteté cotes: fallback 1.85 = ESTIMATION
   const oddsHome = home.odds?.current || 1.85;
   const oddsAway = away.odds?.current || 1.85;
   
@@ -661,6 +666,7 @@ async function createHockeyPrediction(event: any, home: any, away: any): Promise
       oddsHome,
       oddsDraw: null,
       oddsAway,
+      isEstimated: !home.odds?.current,
     };
     
     const mlPrediction = await getUnifiedPrediction(mlInput);
