@@ -177,3 +177,59 @@ for (const [s, om] of sortedOrigins) {
   }
 }
 console.log('\nSans cote du tout (exclues): ' + [...drawFp.entries()].map(([s, n]) => `${SPORT_LABEL[s] || s}=${n}`).join(', '));
+
+// ============================================================
+// ROI VN RÉEL football — les bilans foot suivent la politique VN
+// (Victoire ou Nul = double chance, cf. resultPolicy.vnResultMatch)
+// mais odds stockées = cotes 1X2 pures → ROI précédent GONFLÉ.
+// Méthode: p_vn_raw = 1/O_side + 1/O_draw ; marge m = Σ(1/O_i) − 1
+//          p_vn_marché = p_vn_raw / (1+m) ; cote_VN = 1/p_vn_marché
+// ============================================================
+interface VnRow { won: boolean; vnOdds: number }
+
+const historyV2 = JSON.parse(fs.readFileSync('/home/z/my-project/scripts/history_365_v2.json', 'utf-8')) as { predictions: any[] };
+const fp2 = historyV2.predictions;
+
+const vnRows: VnRow[] = [];
+let vnNoDrawOdds = 0;
+const vnByRisk = new Map<string, Agg & { stakesVn: number; profitVn: number }>();
+for (const p of fp2) {
+  if (p.sport !== 'football' || p.predictedResult === 'draw') continue;
+  if (p.status === 'pending' || p.resultMatch === null || p.resultMatch === undefined) continue;
+  const oh = Number(p.oddsHome), od = Number(p.oddsDraw), oa = Number(p.oddsAway);
+  const side = p.predictedResult === 'home' ? oh : oa;
+  if (!side || side <= 1.01) continue;
+  const risk = (p.riskPercentage ?? 50) <= 50 ? 'fiable (≤50)' : 'risqué (>50)';
+  if (!vnByRisk.has(risk)) vnByRisk.set(risk, { ...newAgg(), stakesVn: 0, profitVn: 0 });
+
+  const a = vnByRisk.get(risk)!;
+  a.n++; a.stake += 1;
+  if (p.resultMatch) a.wins++; else a.losses++;
+
+  if (!od || od <= 1.01) { vnNoDrawOdds++; continue; } // pas de cote nul → VN non chiffrable
+  const m = 1 / oh + 1 / od + 1 / oa - 1;
+  if (m < 0 || m > 0.5) continue; // trio incohérent → ignorer
+  const pVn = (1 / side + 1 / od) / (1 + m);
+  const vnOdds = 1 / pVn;
+  if (p.resultMatch) { vnRows.push({ won: true, vnOdds }); a.profitVn += vnOdds - 1; a.profit += vnOdds - 1; }
+  else { vnRows.push({ won: false, vnOdds }); a.profitVn -= 1; a.profit -= 1; }
+  a.stakesVn += 1;
+  a.oddsSum += vnOdds;
+}
+
+console.log('\n' + line);
+console.log('FOOTBALL — ROI RÉEL EN MODE VN (Victoire ou Nul, cote double chance reconstituée)');
+console.log(line);
+for (const [risk, a] of vnByRisk) {
+  const roiVn = a.stakesVn > 0 ? (a.profitVn / a.stakesVn) * 100 : 0;
+  console.log(
+    `  ${risk.padEnd(14)} n=${String(a.n).padEnd(4)} WR_VN=${wr(a).toFixed(1).padStart(5)}% ` +
+    `ROI_VN=${(roiVn >= 0 ? '+' : '') + roiVn.toFixed(1)}% ` +
+    `(cote_VN moy=${a.stakesVn ? (a.oddsSum / a.stakesVn).toFixed(2) : '-'}, ${a.stakesVn}/${a.n} chiffrables)`
+  );
+}
+const totalVn = vnRows.length;
+const profitVnAll = vnRows.reduce((s, r) => s + (r.won ? r.vnOdds - 1 : -1), 0);
+const wrVnAll = vnRows.filter(r => r.won).length / Math.max(1, totalVn) * 100;
+console.log(`  TOTAL: n=${totalVn} chiffrables, WR_VN=${wrVnVnFix(wrVnAll)}%, ROI_VN=${((profitVnAll / Math.max(1, totalVn)) * 100 >= 0 ? '+' : '')}${(profitVnAll / Math.max(1, totalVn) * 100).toFixed(1)}% | ${vnNoDrawOdds} rows sans cote nul (non chiffrables)`);
+function wrVnVnFix(x: number) { return x.toFixed(1); }

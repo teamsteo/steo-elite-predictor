@@ -1676,3 +1676,22 @@ Stage Summary:
   métriques Brier/log-loss/calibration/ROI existantes inchangées
 - 336 tests verts, build OK, prod 200 sur tous les points de contrôle
 - Reste à l'utilisateur: exécuter download/create_odds_history.sql dans le SQL Editor
+
+---
+Task ID: 44
+Agent: main
+Task: "Au vu des bilans enregistrés lequel des sports est plus rentable ?" — analyse rentabilité par sport + fix transparence
+
+Work Log:
+- /api/history?days=365 (prod, Supabase) → 694 prédictions complètes (369 foot, 45 NBA, 15 NHL, 141 MLB 'other', tennis à part: 8 pending)
+- scripts/analysis_roi_sports.ts: ROI 1u/côté prédit, stabilité mensuelle, ligues, confiance, empreintes cotes estimées (espnOddsService.estimateOdds + 1.85/1.85)
+- DÉCOUVERTE 1 (sémantique VN): bilans foot vérifiés en VN (nul=gagné, resultPolicy.vnResultMatch) mais cotes stockées = 1X2 pur → ROI foot affiché +65% est FICTIONNEL; ROI VN réel reconstitué via odds_draw (p_vn=(1/O_side+1/O_draw)/(1+m))
+- DÉCOUVERTE 2 (cotes NHL synthétiques): 12/15 lignes NHL (pré-saison 21-26 sept) = paire identique 2.50/2.80 = empreinte estimation (branche foot sans draw), pas du marché → ROI NHL +77% non prouvé; 3 lignes à vraies cotes ESPN (30 sept→9 oct): 3/3
+- FIX déployé (commit 431cb9a): /api/history expose désormais oddsDraw + riskPercentage (transparence bilans)
+- ROI VN réel football: fiable(≤50) n=85 WR 91.8% ROI +6.4% (cote VN moy 1.16) | risqué(>50) n=284 WR 60.6% ROI -2.1% | total -0.5%
+- Vraies cotes US: MLB 132 réelles WR 56.7% ROI -1.8% | NBA 44 réelles WR 46.7% ROI -20.8% (Summer League -16%, saison -38%) | Tennis 8 bets pending (non jugeable)
+
+Stage Summary:
+- Verdict: SEULE poche réellement rentable = football fiable/modéré en VN (+6.4%, WR 91.8%); NHL affiché +77% mais cotes synthétiques (non prouvé, WR 80% réel quand même); foot risqué ≈ neutre (-2.1%); MLB ≈ neutre (-1.8%); NBA perdant (-20.8%) → candidat refonte/STOP
+- Toute métrique ROI foot historique basée sur odds stockées est gonflée par le mix VN/1X2 — à l'avenir, stocker la cote VN à la publication (recommandation)
+- oddsDraw+riskPercentage exposés dans /api/history (déployé prod); scripts/analysis_roi_sports.ts réexécutable
