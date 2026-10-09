@@ -169,11 +169,24 @@ export async function computeSportMetrics(
   const fromISO = from.toISOString();
   const toISO = to.toISOString();
 
+  // ⚠️ Enum Supabase `sport_type`: valeurs valides = football, basketball, hockey,
+  // tennis, other. PAS de 'baseball' — les pronostics MLB sont stockés sous
+  // sport='other' avec league contenant 'MLB' (même convention que verifyMLBResults).
+  let dbSports: string[];
+  switch (sport) {
+    case 'hockey': dbSports = ['hockey']; break;
+    case 'baseball': dbSports = ['other']; break;
+    case 'basketball': dbSports = ['basketball']; break;
+    case 'football': dbSports = ['football']; break;
+    case 'all':
+    default: dbSports = ['hockey', 'other']; break;
+  }
+
   // Récupération des lignes complétées avec résultat
   const { data, error } = await supabase
     .from('predictions')
-    .select('sport, match_date, odds_home, odds_away, predicted_result, result_match, confidence, edge_value')
-    .in('sport', sports)
+    .select('sport, league, match_date, odds_home, odds_away, predicted_result, result_match, confidence, edge_value')
+    .in('sport', dbSports)
     .not('result_match', 'is', null)
     .gte('match_date', fromISO)
     .lte('match_date', toISO)
@@ -185,6 +198,7 @@ export async function computeSportMetrics(
 
   const rows = (data || []) as Array<{
     sport: string;
+    league: string;
     match_date: string;
     odds_home: number;
     odds_away: number;
@@ -194,10 +208,24 @@ export async function computeSportMetrics(
     edge_value: number | null;
   }>;
 
+  // Attribution du sport logique: hockey direct; 'other' + league MLB → baseball
+  const rowsBySport = new Map<string, typeof rows>();
+  for (const sp of sports) rowsBySport.set(sp, []);
+  for (const r of rows) {
+    if (r.sport === 'hockey' && sports.includes('hockey')) {
+      rowsBySport.get('hockey')!.push(r);
+    } else if (r.sport === 'other' && sports.includes('baseball')) {
+      const lg = (r.league || '').toLowerCase();
+      if (lg.includes('mlb')) {
+        rowsBySport.get('baseball')!.push(r);
+      }
+    }
+  }
+
   const metrics: SportMetrics[] = [];
 
   for (const sp of sports) {
-    const sportRows = rows.filter((r) => r.sport === sp);
+    const sportRows = rowsBySport.get(sp) || [];
 
     // Chaque ligne: side prédit, probas, outcome
     interface EvalRow { pModel: number; pMarket: number; y: number; odds: number; profit: number; confidence: string }
