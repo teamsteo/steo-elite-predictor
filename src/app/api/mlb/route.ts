@@ -20,6 +20,16 @@ import {
   buildPitcherFromMLBStats,
   normalizeTeamAbbr,
 } from '@/lib/mlbPitcherService';
+import {
+  getMLBProjection,
+  getMLBMarketEdges,
+  type MLBProjection,
+  type MLBMarketEdge,
+} from '@/lib/mlbProjectionEngine';
+import {
+  decideFromEngine,
+  type V3Decision,
+} from '@/lib/v3DecisionLayer';
 
 // ============================================
 // INTERFACES ESPN
@@ -280,6 +290,32 @@ async function fetchMLBGames(): Promise<ESPNMLBEvent[]> {
   }
 }
 
+/**
+ * V4-lite (Task 41, BADJAN V3): cotes RÉELLES ESPN (DraftKings) par équipe.
+ * Map displayName normalisé → { oddsHome, oddsAway, hasRealOdds, bookmaker }.
+ * Utilisée pour la couche décision V3 (jamais de value sur cotes estimées).
+ */
+function buildRealOddsMap(events: ESPNMLBEvent[]): Map<string, { oddsHome: number; oddsAway: number; bookmaker: string }> {
+  const map = new Map<string, { oddsHome: number; oddsAway: number; bookmaker: string }>();
+  for (const e of events || []) {
+    const comp = e.competitions?.[0];
+    if (!comp?.odds?.length) continue;
+    const odd = comp.odds[0];
+    const homeOdds = americanToDecimal(odd.homeTeamOdds?.moneyLine);
+    const awayOdds = americanToDecimal(odd.awayTeamOdds?.moneyLine);
+    if (homeOdds <= 1 || awayOdds <= 1) continue;
+    for (const c of comp.competitors || []) {
+      const name = c?.team?.displayName;
+      if (!name) continue;
+      const key = name.toLowerCase().replace(/[^a-z]/g, '');
+      if (!map.has(key)) {
+        map.set(key, { oddsHome: homeOdds, oddsAway: awayOdds, bookmaker: odd.provider?.name || 'ESPN' });
+      }
+    }
+  }
+  return map;
+}
+
 // ============================================
 // API ROUTE
 // ============================================
@@ -303,6 +339,10 @@ export async function GET(request: Request) {
         source: 'MLB Stats API',
       });
     }
+
+    // V4-lite (Task 41): cotes RÉELLES ESPN + engine indépendante
+    const espnEvents = await fetchMLBGames();
+    const realOddsMap = buildRealOddsMap(espnEvents);
 
     // Collecter tous les IDs de lanceurs
     const pitcherIds: number[] = [];
@@ -411,9 +451,89 @@ export async function GET(request: Request) {
 
       const prediction = predictMLBMatch(match, teamStats, pitcherStatsMap);
 
+      // ── V4-lite (Task 41, BADJAN V3): engine indépendante + décision V3 ──
+      // ÉTAPES 2-3: proba sportive PURE (runs réels ESPN + lanceurs réels).
+      // ÉTAPES 5-7: cotes RÉELLES ESPN → devig → Écart → EV → RETENIR/SURVEILLER/REJETER.
+      // Fail-closed: engine indisponible → prédiction historique inchangée.
+      let engine: MLBProjection | null = null;
+      let engineMarkets: MLBMarketEdge[] = [];
+      let v3Decision: V3Decision | null = null;
+      try {
+        engine = await getMLBProjection(
+          homeTeam.team?.name || home.name,
+          awayTeam.team?.name || away.name,
+          new Date(game.gameDate).toISOString().split('T')[0]
+        );
+        if (engine) {
+          engineMarkets = getMLBMarketEdges(engine, { total: totalRuns });
+          const realOdds = realOddsMap.get((homeTeam.team?.name || home.name).toLowerCase().replace(/[^a-z]/g, ''));
+          const oddsH = realOdds?.oddsHome || oddsHome;
+          const oddsA = realOdds?.oddsAway || oddsAway;
+          const hasRealOdds = realOdds != null;
+          v3Decision = decideFromEngine(
+            'MLB',
+            homeTeam.team?.name || home.name,
+            awayTeam.team?.name || away.name,
+            engine.homeWinProb,
+            oddsH,
+            oddsA,
+            engine.shrinkFactor,
+            hasRealOdds,
+            !engine.homeStarter || !engine.awayStarter,
+            engine.dataBasis
+          );
+          console.log(
+            `⚾ Engine V4 ${homeTeam.team?.name}: proj ${engine.homeExpectedRuns}-${engine.awayExpectedRuns}` +
+            ` P(home) ${(engine.homeWinProb * 100).toFixed(0)}% → V3 ${v3Decision.category}` +
+            ` (écart ${v3Decision.gapPp > 0 ? '+' : ''}${v3Decision.gapPp}pp, EV ${v3Decision.ev > 0 ? '+' : ''}${v3Decision.ev}%${hasRealOdds ? '' : ', cotes estimées → REJETER'})`
+          );
+        }
+      } catch (e) {
+        console.log('⚠️ Engine V4 MLB erreur (fail-closed):', e);
+        engine = null;
+      }
+
+      // Engine disponible → les probas affichées deviennent celles de l'engine
+      // (données RÉELLES) au lieu des stats statiques. Shape identique pour le site.
+      if (engine) {
+        const engineFavorsHome = engine.homeWinProb >= 0.5;
+        prediction.predictedWinner = engineFavorsHome ? 'home' : 'away';
+        prediction.winnerTeam = engineFavorsHome ? home.name : away.name;
+        prediction.winnerProb = Math.round((engineFavorsHome ? engine.homeWinProb : engine.awayWinProb) * 100);
+        prediction.projectedHomeRuns = engine.homeExpectedRuns;
+        prediction.projectedAwayRuns = engine.awayExpectedRuns;
+        prediction.projectedTotal = engine.expectedTotal;
+        prediction.moneyline.homeProb = Math.round(engine.homeWinProb * 1000) / 10;
+        prediction.moneyline.awayProb = Math.round(engine.awayWinProb * 1000) / 10;
+        // Value bet = décision V3 RETENIR uniquement (jamais sur cotes estimées)
+        prediction.moneyline.valueBet = {
+          detected: v3Decision?.category === 'RETENIR',
+          type: v3Decision?.category === 'RETENIR' ? v3Decision.side : null,
+          edge: v3Decision ? v3Decision.gapPp / 100 : 0,
+        };
+        prediction.confidence = v3Decision?.category === 'RETENIR'
+          ? 'high'
+          : v3Decision?.category === 'SURVEILLER' ? 'medium' : 'low';
+      }
+
       predictions.push({
         ...match,
         prediction,
+        engine: engine ? {
+          homeExpectedRuns: engine.homeExpectedRuns,
+          awayExpectedRuns: engine.awayExpectedRuns,
+          expectedTotal: engine.expectedTotal,
+          expectedMargin: engine.expectedMargin,
+          homeWinProb: engine.homeWinProb,
+          awayWinProb: engine.awayWinProb,
+          intervalTotal70: engine.intervalTotal70,
+          homeStarter: engine.homeStarter,
+          awayStarter: engine.awayStarter,
+          shrinkFactor: engine.shrinkFactor,
+          dataBasis: engine.dataBasis,
+          markets: engineMarkets,
+        } : undefined,
+        v3Decision: v3Decision ?? undefined,
         insight: {
           riskPercentage: 100 - prediction.winnerProb,
           confidence: prediction.confidence,

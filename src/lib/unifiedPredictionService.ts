@@ -31,6 +31,22 @@ import {
   type NBAProjection,
   type NBAMarketEdge,
 } from './nbaProjectionEngine';
+import {
+  getNHLProjection,
+  getNHLMarketEdges,
+  type NHLProjection,
+  type NHLMarketEdge,
+} from './nhlProjectionEngine';
+import {
+  getMLBProjection,
+  getMLBMarketEdges,
+  type MLBProjection,
+  type MLBMarketEdge,
+} from './mlbProjectionEngine';
+import {
+  decideFromEngine,
+  type V3Decision,
+} from './v3DecisionLayer';
 
 // ============================================
 // TYPES
@@ -141,6 +157,60 @@ export interface UnifiedPrediction {
     dataBasis: string;
     markets: NBAMarketEdge[];
   };
+  
+  // V4-lite (Task 41, BADJAN V3): engine statistique indépendante NHL
+  // Poisson exacte (Skellam implicite) sur buts réels ESPN standings.
+  // Absent si NHL_V4_LITE=false ou données ESPN insuffisantes (fail-closed).
+  nhlEngine?: {
+    homeExpectedGoals: number;
+    awayExpectedGoals: number;
+    expectedTotal: number;
+    expectedMargin: number;
+    homeWinProb: number;
+    awayWinProb: number;
+    regTieProb: number;
+    intervalTotal70: [number, number];
+    intervalMargin70: [number, number];
+    gfPerGameHome: number;
+    gaPerGameHome: number;
+    gfPerGameAway: number;
+    gaPerGameAway: number;
+    leagueAvgGoals: number;
+    shrinkFactor: number;
+    dataBasis: string;
+    markets: NHLMarketEdge[];
+  };
+  
+  // V4-lite (Task 41, BADJAN V3): engine statistique indépendante MLB
+  // Runs réels ESPN + lanceurs partants RÉELS (MLB Stats API) + surdispersion.
+  // Absent si MLB_V4_LITE=false ou données insuffisantes (fail-closed).
+  mlbEngine?: {
+    homeExpectedRuns: number;
+    awayExpectedRuns: number;
+    expectedTotal: number;
+    expectedMargin: number;
+    homeWinProb: number;
+    awayWinProb: number;
+    intervalTotal70: [number, number];
+    intervalMargin70: [number, number];
+    rsPerGameHome: number;
+    raPerGameHome: number;
+    rsPerGameAway: number;
+    raPerGameAway: number;
+    leagueAvgRuns: number;
+    homeStarter: string | null;
+    awayStarter: string | null;
+    starterFactorHome: number;
+    starterFactorAway: number;
+    shrinkFactor: number;
+    dataBasis: string;
+    markets: MLBMarketEdge[];
+  };
+  
+  // BADJAN V3 (Task 41, Phase 3): couche décision étapes 5-6-7
+  // devig → Écart → EV → 8 garde-fous → RETENIR / SURVEILLER / REJETER.
+  // La décision part de la proba sportive PURE (engine), jamais de la proba blendée.
+  v3Decision?: V3Decision;
   
   // Context factors
   factors: {
@@ -601,6 +671,59 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     }
   }
   
+  // ── V4-lite (Task 41, BADJAN V3): engines indépendantes NHL & MLB ──
+  // Chaîne "LE MATCH D'ABORD, LA PROBABILITÉ ENSUITE": ces engines produisent
+  // une proba sportive SANS regarder les cotes (étapes 2-3 de la méthodologie).
+  // Fail-closed: engine indisponible → comportement historique inchangé.
+  let nhlProjection: NHLProjection | null = null;
+  let nhlMarketEdges: NHLMarketEdge[] = [];
+  if (match.sport === 'NHL' && process.env.NHL_V4_LITE !== 'false') {
+    try {
+      nhlProjection = await getNHLProjection(match.homeTeam, match.awayTeam);
+      if (nhlProjection) {
+        nhlMarketEdges = getNHLMarketEdges(nhlProjection, { total: marketTotal });
+        sources.push('NHL-Engine-V4');
+        console.log(
+          `🏒 Engine V4-lite NHL: ${match.homeTeam} ${nhlProjection.homeExpectedGoals} – ${nhlProjection.awayExpectedGoals} ${match.awayTeam}` +
+          ` (total ${nhlProjection.expectedTotal}, P(home) ${(nhlProjection.homeWinProb * 100).toFixed(0)}%, shrink ${nhlProjection.shrinkFactor})` +
+          (nhlMarketEdges.some((e) => e.decision !== 'NO BET')
+            ? ` → ${nhlMarketEdges.filter((e) => e.decision !== 'NO BET').map((e) => `${e.market} ${e.decision}`).join(', ')}`
+            : ' → marchés NO BET')
+        );
+      } else {
+        console.log('🏒 Engine V4-lite NHL: indisponible (fail-closed, comportement historique)');
+      }
+    } catch (e) {
+      console.log('⚠️ Engine V4-lite NHL erreur (fail-closed):', e);
+      nhlProjection = null;
+    }
+  }
+  
+  let mlbProjection: MLBProjection | null = null;
+  let mlbMarketEdges: MLBMarketEdge[] = [];
+  if (match.sport === 'MLB' && process.env.MLB_V4_LITE !== 'false') {
+    try {
+      mlbProjection = await getMLBProjection(match.homeTeam, match.awayTeam);
+      if (mlbProjection) {
+        mlbMarketEdges = getMLBMarketEdges(mlbProjection, { total: marketTotal });
+        sources.push('MLB-Engine-V4');
+        console.log(
+          `⚾ Engine V4-lite MLB: ${match.homeTeam} ${mlbProjection.homeExpectedRuns} – ${mlbProjection.awayExpectedRuns} ${match.awayTeam}` +
+          ` (total ${mlbProjection.expectedTotal}, P(home) ${(mlbProjection.homeWinProb * 100).toFixed(0)}%, shrink ${mlbProjection.shrinkFactor},` +
+          ` partants ${mlbProjection.awayStarter ?? 'n/d'} @ ${mlbProjection.homeStarter ?? 'n/d'})` +
+          (mlbMarketEdges.some((e) => e.decision !== 'NO BET')
+            ? ` → ${mlbMarketEdges.filter((e) => e.decision !== 'NO BET').map((e) => `${e.market} ${e.decision}`).join(', ')}`
+            : ' → marchés NO BET')
+        );
+      } else {
+        console.log('⚾ Engine V4-lite MLB: indisponible (fail-closed, comportement historique)');
+      }
+    } catch (e) {
+      console.log('⚠️ Engine V4-lite MLB erreur (fail-closed):', e);
+      mlbProjection = null;
+    }
+  }
+  
   if (match.sport === 'Foot' && dixonColesResult) {
     // Weighted combination: 35% market, 35% Dixon-Coles, 15% context, 15% ML
     finalHomeProb = (
@@ -632,6 +755,36 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       (impliedAway + contextAdjustment.awayAdjustment) * 0.15
     );
     finalDrawProb = 0; // pas de nul au basket
+  } else if (sportType === 'hockey' && nhlProjection) {
+    // V4-lite NHL (Task 41, BADJAN V3): 50% marché + 35% engine + 15% contexte
+    // (même pattern que l'engine NBA Task 34 — moteur Poisson sur buts réels)
+    const engineHomeProb = Math.max(0.02, Math.min(0.98, nhlProjection.homeWinProb));
+    finalHomeProb = (
+      impliedHome * 0.50 +
+      engineHomeProb * 0.35 +
+      (impliedHome + contextAdjustment.homeAdjustment) * 0.15
+    );
+    finalAwayProb = (
+      impliedAway * 0.50 +
+      (1 - engineHomeProb) * 0.35 +
+      (impliedAway + contextAdjustment.awayAdjustment) * 0.15
+    );
+    finalDrawProb = 0; // pas de nul à la moneyline NHL (OT/TAB inclus dans l'engine)
+  } else if (sportType === 'baseball' && mlbProjection) {
+    // V4-lite MLB (Task 41, BADJAN V3): 50% marché + 35% engine + 15% contexte
+    // (moteur runs + lanceurs partants réels MLB Stats API)
+    const engineHomeProb = Math.max(0.02, Math.min(0.98, mlbProjection.homeWinProb));
+    finalHomeProb = (
+      impliedHome * 0.50 +
+      engineHomeProb * 0.35 +
+      (impliedHome + contextAdjustment.homeAdjustment) * 0.15
+    );
+    finalAwayProb = (
+      impliedAway * 0.50 +
+      (1 - engineHomeProb) * 0.35 +
+      (impliedAway + contextAdjustment.awayAdjustment) * 0.15
+    );
+    finalDrawProb = 0; // pas de nul au baseball
   } else {
     // Non-football: Market + Context (NO ML — models are noise for basketball/hockey/baseball)
     finalHomeProb = impliedHome * 0.65 + 
@@ -708,6 +861,53 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       bestBet = 'away'; bestEdge = awayEdge; bestOdds = oddsAway; bestProb = finalAwayProb;
     } else if (drawPasses && oddsDraw) {
       bestBet = 'draw'; bestEdge = drawEdge; bestOdds = oddsDraw; bestProb = finalDrawProb;
+    }
+  }
+  
+  // ── BADJAN V3 (Task 41, Phase 3): couche décision étapes 5-6-7 ──
+  // La décision part de la proba sportive PURE de l'engine (jamais de la blendée):
+  // devig 2-marchés → Écart → EV → 8 garde-fous → RETENIR/SURVEILLER/REJETER.
+  // Kill-switch: V3_DECISION=false. Absente pour Foot (Dixon-Coles = autre chaîne).
+  let v3DecisionResult: V3Decision | null = null;
+  if (
+    process.env.V3_DECISION !== 'false' &&
+    ((match.sport === 'NHL' && nhlProjection) || (match.sport === 'MLB' && mlbProjection))
+  ) {
+    try {
+      const v3EngineHomeProb = match.sport === 'NHL' && nhlProjection
+        ? nhlProjection.homeWinProb
+        : (mlbProjection ? mlbProjection.homeWinProb : 0.5);
+      const v3EngineShrink = match.sport === 'NHL' && nhlProjection
+        ? nhlProjection.shrinkFactor
+        : (mlbProjection ? mlbProjection.shrinkFactor : 0);
+      const v3StartersMissing = match.sport === 'MLB'
+        ? (!mlbProjection?.homeStarter || !mlbProjection?.awayStarter)
+        : false;
+      const v3ProjSummary = match.sport === 'NHL' && nhlProjection
+        ? `Projeté ${nhlProjection.homeExpectedGoals}-${nhlProjection.awayExpectedGoals} (total ${nhlProjection.expectedTotal}, marge ${nhlProjection.expectedMargin > 0 ? '+' : ''}${nhlProjection.expectedMargin})`
+        : mlbProjection
+          ? `Projeté ${mlbProjection.homeExpectedRuns}-${mlbProjection.awayExpectedRuns} (total ${mlbProjection.expectedTotal}, marge ${mlbProjection.expectedMargin > 0 ? '+' : ''}${mlbProjection.expectedMargin})`
+          : undefined;
+      v3DecisionResult = decideFromEngine(
+        match.sport === 'NHL' ? 'NHL' : 'MLB',
+        match.homeTeam,
+        match.awayTeam,
+        v3EngineHomeProb,
+        oddsHome,
+        oddsAway,
+        v3EngineShrink,
+        hasRealOdds,
+        v3StartersMissing,
+        v3ProjSummary
+      );
+      console.log(
+        `🧭 Décision V3 (${match.sport}): ${v3DecisionResult.category} → ${v3DecisionResult.sideLabel}` +
+        ` | écart ${v3DecisionResult.gapPp > 0 ? '+' : ''}${v3DecisionResult.gapPp}pp, EV ${v3DecisionResult.ev > 0 ? '+' : ''}${v3DecisionResult.ev}%,` +
+        ` EV pessim. ${v3DecisionResult.evConservative > 0 ? '+' : ''}${v3DecisionResult.evConservative}%, seuil ${v3DecisionResult.requiredGapPp}pp`
+      );
+    } catch (e) {
+      console.log('⚠️ Décision V3 erreur (fail-closed):', e);
+      v3DecisionResult = null;
     }
   }
 
@@ -799,6 +999,37 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       ` (total ${nbaProjection.expectedTotal} ±${nbaProjection.sigmaTotal}, écart ${nbaProjection.expectedMargin > 0 ? '+' : ''}${nbaProjection.expectedMargin})` +
       ` · pace ${nbaProjection.paceHome}/${nbaProjection.paceAway}` +
       (active.length ? ` · ${active.map((e) => `${e.market} ${e.line} P=${(e.probModel * 100).toFixed(0)}% edge ${e.edgePp > 0 ? '+' : ''}${e.edgePp}pp → ${e.decision}`).join(' · ')}` : ' · marchés: NO BET')
+    );
+  }
+  
+  // V4-lite (Task 41, BADJAN V3): lignes de raisonnement engines NHL/MLB
+  if (nhlProjection && sportType === 'hockey') {
+    const active = nhlMarketEdges.filter((e) => e.decision !== 'NO BET');
+    reasoning.push(
+      `🏒 Engine V4 NHL: proj ${nhlProjection.homeExpectedGoals}-${nhlProjection.awayExpectedGoals}` +
+      ` (total ${nhlProjection.expectedTotal}, intervalle ${nhlProjection.intervalTotal70[0]}-${nhlProjection.intervalTotal70[1]},` +
+      ` P(home) ${(nhlProjection.homeWinProb * 100).toFixed(0)}%) · buts réels ${nhlProjection.gfPerGameHome}/${nhlProjection.gaPerGameHome} vs ${nhlProjection.gfPerGameAway}/${nhlProjection.gaPerGameAway}` +
+      (active.length ? ` · ${active.map((e) => `${e.market} ${e.line} P=${(e.probModel * 100).toFixed(0)}% → ${e.decision}`).join(' · ')}` : ' · marchés: NO BET')
+    );
+  }
+  if (mlbProjection && sportType === 'baseball') {
+    const active = mlbMarketEdges.filter((e) => e.decision !== 'NO BET');
+    reasoning.push(
+      `⚾ Engine V4 MLB: proj ${mlbProjection.homeExpectedRuns}-${mlbProjection.awayExpectedRuns}` +
+      ` (total ${mlbProjection.expectedTotal}, intervalle ${mlbProjection.intervalTotal70[0]}-${mlbProjection.intervalTotal70[1]},` +
+      ` P(home) ${(mlbProjection.homeWinProb * 100).toFixed(0)}%) · partants ${mlbProjection.awayStarter ?? 'n/d'} @ ${mlbProjection.homeStarter ?? 'n/d'}` +
+      (active.length ? ` · ${active.map((e) => `${e.market} ${e.line} P=${(e.probModel * 100).toFixed(0)}% → ${e.decision}`).join(' · ')}` : ' · marchés: NO BET')
+    );
+  }
+  
+  // BADJAN V3: ligne de décision finale (étape 7)
+  if (v3DecisionResult) {
+    const v3icon = v3DecisionResult.category === 'RETENIR' ? '✅' : v3DecisionResult.category === 'SURVEILLER' ? '👁️' : '🚫';
+    reasoning.push(
+      `🧭 Décision V3: ${v3icon} ${v3DecisionResult.category} → ${v3DecisionResult.sideLabel}` +
+      ` · P_modèle ${(v3DecisionResult.modelProb * 100).toFixed(1)}% vs marché ${(v3DecisionResult.impliedDevig * 100).toFixed(1)}% (écart ${v3DecisionResult.gapPp > 0 ? '+' : ''}${v3DecisionResult.gapPp}pp)` +
+      ` · EV ${v3DecisionResult.ev > 0 ? '+' : ''}${v3DecisionResult.ev}%` +
+      ` · ${v3DecisionResult.reasons[0] ?? ''}`
     );
   }
   
@@ -918,6 +1149,52 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     
     dixonColes: dixonColesResult,
     
+    // V4-lite (Task 41, BADJAN V3): blocs engines NHL & MLB + décision V3
+    nhlEngine: nhlProjection && sportType === 'hockey' ? {
+      homeExpectedGoals: nhlProjection.homeExpectedGoals,
+      awayExpectedGoals: nhlProjection.awayExpectedGoals,
+      expectedTotal: nhlProjection.expectedTotal,
+      expectedMargin: nhlProjection.expectedMargin,
+      homeWinProb: nhlProjection.homeWinProb,
+      awayWinProb: nhlProjection.awayWinProb,
+      regTieProb: nhlProjection.regTieProb,
+      intervalTotal70: nhlProjection.intervalTotal70,
+      intervalMargin70: nhlProjection.intervalMargin70,
+      gfPerGameHome: nhlProjection.gfPerGameHome,
+      gaPerGameHome: nhlProjection.gaPerGameHome,
+      gfPerGameAway: nhlProjection.gfPerGameAway,
+      gaPerGameAway: nhlProjection.gaPerGameAway,
+      leagueAvgGoals: nhlProjection.leagueAvgGoals,
+      shrinkFactor: nhlProjection.shrinkFactor,
+      dataBasis: nhlProjection.dataBasis,
+      markets: nhlMarketEdges,
+    } : undefined,
+    
+    mlbEngine: mlbProjection && sportType === 'baseball' ? {
+      homeExpectedRuns: mlbProjection.homeExpectedRuns,
+      awayExpectedRuns: mlbProjection.awayExpectedRuns,
+      expectedTotal: mlbProjection.expectedTotal,
+      expectedMargin: mlbProjection.expectedMargin,
+      homeWinProb: mlbProjection.homeWinProb,
+      awayWinProb: mlbProjection.awayWinProb,
+      intervalTotal70: mlbProjection.intervalTotal70,
+      intervalMargin70: mlbProjection.intervalMargin70,
+      rsPerGameHome: mlbProjection.rsPerGameHome,
+      raPerGameHome: mlbProjection.raPerGameHome,
+      rsPerGameAway: mlbProjection.rsPerGameAway,
+      raPerGameAway: mlbProjection.raPerGameAway,
+      leagueAvgRuns: mlbProjection.leagueAvgRuns,
+      homeStarter: mlbProjection.homeStarter,
+      awayStarter: mlbProjection.awayStarter,
+      starterFactorHome: mlbProjection.starterFactorHome,
+      starterFactorAway: mlbProjection.starterFactorAway,
+      shrinkFactor: mlbProjection.shrinkFactor,
+      dataBasis: mlbProjection.dataBasis,
+      markets: mlbMarketEdges,
+    } : undefined,
+    
+    v3Decision: v3DecisionResult ?? undefined,
+    
     // V4-lite (Task 34): bloc engine NBA (projection + edges marché)
     nbaEngine: nbaProjection && sportType === 'basketball' ? {
       homeExpectedPts: nbaProjection.homeExpectedPts,
@@ -988,8 +1265,11 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
     },
     
     dataQuality: {
-      // V4-lite (Task 34): l'engine ESPN (pace/ORTG réels) renforce la qualité de données NBA
-      score: nbaProjection && sportType === 'basketball' ? Math.max(dataQualityScore, 60) : dataQualityScore,
+      // V4-lite (Task 34/41): l'engine ESPN (stats réelles) renforce la qualité de données
+      score: nbaProjection && sportType === 'basketball' ? Math.max(dataQualityScore, 60)
+        : nhlProjection && sportType === 'hockey' ? Math.max(dataQualityScore, 60)
+        : mlbProjection && sportType === 'baseball' ? Math.max(dataQualityScore, 60)
+        : dataQualityScore,
       sources: uniqueSources,
       hasRealOdds,
       hasAdvancedStats,

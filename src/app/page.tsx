@@ -1680,7 +1680,7 @@ function MLBSection() {
           MLB Baseball
         </h2>
         <p style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>
-          Prédictions basées sur Sabermetrics: Pythagorean Expectation, FIP, OPS+
+          Prédictions V4: engine statistique indépendante (runs réels ESPN + lanceurs MLB) + décision BADJAN V3
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <p style={{ color: '#666', fontSize: '10px' }}>
@@ -2261,7 +2261,7 @@ function MLBMatchCard({ match, index }: { match: any; index: number }) {
         textAlign: 'center'
       }}>
         <span style={{ fontSize: '8px', color: '#dc2626' }}>
-          🧮 Sabermetrics: Pythagorean + FIP + OPS + Home Field
+          🧮 Engine V4: runs réels ESPN + lanceurs MLB Stats API · Décision V3: RETENIR/SURVEILLER/REJETER
         </span>
       </div>
     </div>
