@@ -1498,3 +1498,51 @@ Work Log:
 Stage Summary:
 - Pipeline coupons 100% validé de bout en bout (rendu + livraison + réception)
 - Aucune action restante; surveillance demain 08h15 UTC (1er run auto)
+
+---
+Task ID: 40
+Agent: main
+Task: Audit pipeline NHL/MLB vs méthodologie "modèle indépendant du marché" (document BADJAN V3 fourni par l'utilisateur)
+
+Work Log:
+- Cartographie complète du flux: combinedDataService (ESPN scoreboard+odds DK,
+  consensus multi-books MLB via ODDS_API_KEY) → unifiedPredictionService
+  (getUnifiedPrediction) → /api/matches, combo-private, telegram, cron
+- DÉCOUVERTE CLÉ: NHL/MLB dans le pipeline principal = proba finale
+  implied*0.65 + (implied+contextAdjustment)*0.35 → marché-ancré, PAS
+  d'estimation sportive indépendante (le contexte ajuste le marché, pas l'inverse)
+- nhlAdvancedModel.ts (1024 lignes: xG/Corsi/PDO/forme/gardien/PP-PK) EXISTE
+  mais ORPHELIN — appelé seulement par unified-sports-analysis.analyzeMatch
+  qui n'a plus d'appelants actifs
+- mlbModel.ts (Pythagorean/FIP/OPS/bullpen) + mlbPitcherService (MLB Stats API
+  officielle gratuite, lanceurs probables RÉELS) + route /api/mlb DÉDIÉE
+  affichée sur le site (section MLB) — mais n'alimente PAS le pipeline
+  principal (cotes/DB/Telegram/coupon)
+- Conforme déjà en place: marge bookmaker corrigée (totalImplied), consensus
+  best-price MLB (≥3 books), seuils edge ADAPTATIFS par palier de cote
+  (≤1.50:3%, ≤3:5%, ≤8:8%, >8:12% — pas de filtre de cote initial = règle 4 OK),
+  somme probas = 100%, dataQuality score, matchImportance, vérification
+  résultats réels NHL/MLB (verify crons ESPN), ML désactivé hockey/baseball
+  (CV 46-49% = bruit, réactivable si CV≥52%)
+- Gaps vs méthodologie: (1) ÉTAPES 2-3 violées pour NHL/MLB (pas d'engine
+  indépendante branchée); (2) pas de contrôle de cohérence multi-modèles ni
+  d'intervalle d'incertitude; (3) pas d'EV explicite (edge seulement), pas de
+  scénario défavorable, pas de suivi mouvement de cotes; (4) pas de
+  classification RETENIR/SURVEILLER/REJETER; (5) pas de Brier/log-loss/
+  calibration NHL-MLB; (6) stats NHL avancées = tables statiques périmées
+  (xG/Corsi/PDO/gardiens) vs MLB lanceurs réels
+- Prod aujourd'hui: 19 matchs site, 0 NHL/MLB (calendrier); MLB route dédiée
+  0 prédictions (hors saison/filtre); ML global 2849 samples, acc 55%
+- Note technique: fausse alerte syntaxe page.tsx ligne 1626 — od -c prouve
+  `const [mlbMatches` correct (artefact d'affichage sed/grep de l'env, tsc 0 err)
+
+Stage Summary:
+- Verdict: l'architecture demandée existe à ~60% (marge corrigée, seuils
+  adaptatifs, consensus, vérification) mais le CŒUR de la méthodologie
+  (probas sportives AVANT cotes) manque pour NHL/MLB — alors que les deux
+  engines sportifs existent déjà dans le repo, juste débranchés
+- Plan proposé à l'utilisateur (0 ban/0 frais, pattern Task 34 éprouvé):
+  Phase 1 NHL Engine V4-lite (Poisson, blend 50/35/15, kill-switch)
+  Phase 2 MLB Engine V4-lite (brancher mlbModel existant)
+  Phase 3 Couche décision (EV + RETENIR/SURVEILLER/REJETER + divergence)
+  Phase 4 Validation historique (Brier/log-loss/ROI hebdo depuis DB)
