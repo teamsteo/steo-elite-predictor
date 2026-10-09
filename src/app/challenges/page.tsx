@@ -5,52 +5,47 @@ import Link from 'next/link';
 
 interface Challenge {
   id: string;
-  match: {
-    player1: string;
-    player2: string;
-    tournament: string;
-    surface: string;
-  };
-  challenge: {
-    underdog: string;
-    favorite: string;
-    underdogOdds: number;
-    favoriteOdds: number;
-    impliedProbability: number;
-    ourProbability: number;
-    valueGap: number;
-  };
-  valueFactors: {
-    formAdvantage: boolean;
-    surfaceAdvantage: boolean;
-    h2hAdvantage: boolean;
-    pressureAdvantage: boolean;
-    homeAdvantage: boolean;
-    favoriteDecline: boolean;
-    fatigueAdvantage: boolean;
-  };
+  sport: 'football' | 'basketball' | 'hockey' | 'tennis';
+  league: string;
+  homeTeam: string;
+  awayTeam: string;
+  date: string;
+  displayDate?: string;
+  oddsHome: number;
+  oddsAway: number;
+  oddsDraw: number | null;
+  bookmaker: string;
+  hasRealOdds: boolean;
+  recommendation: 'home' | 'away' | 'draw' | 'avoid';
+  recommendedTeam: string;
+  winProbability: number;
+  edge: number;
+  isValueBet: boolean;
+  valueBetType: 'home' | 'away' | 'draw' | null;
+  expectedValue: number;
+  kellyStake: number;
+  confidence: 'very_high' | 'high' | 'medium' | 'low';
+  riskLevel: 'low' | 'medium' | 'high';
+  riskPercentage: number;
   valueScore: number;
-  confidenceLevel: 'high' | 'medium' | 'low';
-  riskLevel: 'calculated' | 'moderate' | 'high';
   reasoning: string[];
-  keyInsight: string;
+  factors: {
+    formAdvantage: 'home' | 'away' | 'neutral';
+    oddsValue: 'high' | 'medium' | 'low';
+    dataQuality: number;
+  };
+  status: 'take' | 'consider' | 'rejected';
 }
 
 interface ChallengesData {
   success: boolean;
-  generatedAt: string;
+  lastUpdated: string;
   summary: {
     totalScanned: number;
     valueBetsFound: number;
-    filteredCount: number;
     highConfidenceCount: number;
-    averageValueGap: number;
-    bestValue: {
-      underdog: string;
-      odds: number;
-      valueGap: number;
-      valueScore: number;
-    } | null;
+    averageEdge: number;
+    realOddsCount: number;
   };
   challenges: Challenge[];
 }
@@ -61,7 +56,7 @@ export default function ChallengesPage() {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     minOdds: '2.0',
-    minValueGap: '8',
+    minEdge: '5',
     confidence: 'all',
   });
   const [publishing, setPublishing] = useState(false);
@@ -93,20 +88,18 @@ export default function ChallengesPage() {
   const publishToTelegram = async () => {
     setPublishing(true);
     try {
+      const top = (data?.challenges || []).slice(0, 5);
       const response = await fetch('/api/challenges', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          maxChallenges: 5,
-          minConfidence: 'medium',
-        }),
+        body: JSON.stringify({ action: 'publish', challenges: top }),
       });
       const result = await response.json();
       
       if (result.success) {
         alert(`✅ ${result.challengesCount} challenges publiés sur Telegram !`);
       } else {
-        alert('❌ Erreur: ' + result.message);
+        alert('❌ Erreur: ' + (result.error || result.message));
       }
     } catch (err) {
       alert('Erreur lors de la publication');
@@ -117,6 +110,7 @@ export default function ChallengesPage() {
 
   const getConfidenceColor = (level: string) => {
     switch (level) {
+      case 'very_high': return 'text-green-400 bg-green-400/10 border-green-400/30';
       case 'high': return 'text-green-400 bg-green-400/10 border-green-400/30';
       case 'medium': return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/30';
       case 'low': return 'text-orange-400 bg-orange-400/10 border-orange-400/30';
@@ -126,8 +120,8 @@ export default function ChallengesPage() {
 
   const getRiskIcon = (risk: string) => {
     switch (risk) {
-      case 'calculated': return '✅';
-      case 'moderate': return '⚠️';
+      case 'low': return '✅';
+      case 'medium': return '⚠️';
       case 'high': return '🎲';
       default: return '❓';
     }
@@ -138,6 +132,11 @@ export default function ChallengesPage() {
     if (score >= 50) return 'text-yellow-400';
     return 'text-orange-400';
   };
+
+  const getPickOdds = (c: Challenge): number =>
+    c.recommendation === 'home' ? c.oddsHome
+      : c.recommendation === 'away' ? c.oddsAway
+        : (c.oddsDraw || 0);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-6">
@@ -171,11 +170,11 @@ export default function ChallengesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm text-gray-400 mb-1">Value Gap min (%)</label>
+              <label className="block text-sm text-gray-400 mb-1">Edge min (%)</label>
               <input
                 type="number"
-                value={filters.minValueGap}
-                onChange={(e) => setFilters({ ...filters, minValueGap: e.target.value })}
+                value={filters.minEdge}
+                onChange={(e) => setFilters({ ...filters, minEdge: e.target.value })}
                 className="bg-gray-700 rounded px-3 py-2 w-24 text-white"
               />
             </div>
@@ -241,30 +240,34 @@ export default function ChallengesPage() {
                 <div className="text-sm text-gray-400">Haute confiance</div>
               </div>
               <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
-                <div className="text-2xl font-bold text-purple-400">+{data.summary.averageValueGap}%</div>
-                <div className="text-sm text-gray-400">Value Gap moyen</div>
+                <div className="text-2xl font-bold text-purple-400">+{data.summary.averageEdge}%</div>
+                <div className="text-sm text-gray-400">Edge moyen</div>
               </div>
             </div>
 
-            {/* Best Value */}
-            {data.summary.bestValue && (
-              <div className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 border border-green-500/30 rounded-xl p-4 mb-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl">👑</span>
-                  <span className="font-bold text-green-400">MEILLEUR VALUE BET</span>
-                </div>
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="text-xl font-bold">{data.summary.bestValue.underdog}</div>
-                  <div className="text-2xl font-bold text-green-400">@{data.summary.bestValue.odds.toFixed(2)}</div>
-                  <div className="bg-green-500/20 px-3 py-1 rounded-full text-green-400">
-                    +{data.summary.bestValue.valueGap}% value
+            {/* Best Value — premier challenge (trié par valueScore côté API) */}
+            {data.challenges.length > 0 && (() => {
+              const best = data.challenges[0];
+              const bestOdds = getPickOdds(best);
+              return (
+                <div className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 border border-green-500/30 rounded-xl p-4 mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl">👑</span>
+                    <span className="font-bold text-green-400">MEILLEUR VALUE BET</span>
                   </div>
-                  <div className={getValueScoreColor(data.summary.bestValue.valueScore)}>
-                    Score: {data.summary.bestValue.valueScore}/100
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="text-xl font-bold">{best.recommendedTeam}</div>
+                    <div className="text-2xl font-bold text-green-400">@{bestOdds.toFixed(2)}</div>
+                    <div className="bg-green-500/20 px-3 py-1 rounded-full text-green-400">
+                      +{(best.edge || 0).toFixed(1)}% edge
+                    </div>
+                    <div className={getValueScoreColor(best.valueScore)}>
+                      Score: {best.valueScore}/100
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Challenges List */}
             {data.challenges.length === 0 ? (
@@ -283,17 +286,22 @@ export default function ChallengesPage() {
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                       {/* Match info */}
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-lg font-bold">{challenge.challenge.underdog}</span>
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className="text-lg font-bold">{challenge.recommendedTeam}</span>
                           <span className="text-2xl font-bold text-green-400">
-                            @{challenge.challenge.underdogOdds.toFixed(2)}
+                            @{getPickOdds(challenge).toFixed(2)}
                           </span>
-                          <span className={`px-2 py-0.5 rounded text-xs border ${getConfidenceColor(challenge.confidenceLevel)}`}>
-                            {challenge.confidenceLevel.toUpperCase()}
+                          <span className={`px-2 py-0.5 rounded text-xs border ${getConfidenceColor(challenge.confidence)}`}>
+                            {challenge.confidence.toUpperCase()}
                           </span>
+                          {challenge.status === 'take' && (
+                            <span className="px-2 py-0.5 rounded text-xs border bg-green-500/20 text-green-400 border-green-500/30">
+                              À PRENDRE
+                            </span>
+                          )}
                         </div>
                         <div className="text-gray-400 text-sm">
-                          vs {challenge.challenge.favorite} • {challenge.match.tournament}
+                          vs {challenge.recommendation === 'home' ? challenge.awayTeam : challenge.homeTeam} • {challenge.league}
                         </div>
                       </div>
 
@@ -306,25 +314,25 @@ export default function ChallengesPage() {
                       </div>
                     </div>
 
-                    {/* Value Gap Bar */}
+                    {/* Edge Bar */}
                     <div className="mb-4">
                       <div className="flex justify-between text-sm mb-1">
                         <span className="text-gray-400">Probabilité</span>
-                        <span className="text-green-400">+{challenge.challenge.valueGap}% value gap</span>
+                        <span className="text-green-400">+{(challenge.edge || 0).toFixed(1)}% edge</span>
                       </div>
                       <div className="h-4 bg-gray-700 rounded-full overflow-hidden flex">
                         <div
                           className="bg-gray-500"
-                          style={{ width: `${challenge.challenge.impliedProbability}%` }}
+                          style={{ width: `${Math.min(100, Math.max(0, challenge.winProbability - (challenge.edge || 0)))}%` }}
                         />
                         <div
                           className="bg-green-500"
-                          style={{ width: `${challenge.challenge.valueGap}%` }}
+                          style={{ width: `${Math.min(100, Math.max(0, challenge.edge || 0))}%` }}
                         />
                       </div>
                       <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>Bookmaker: {challenge.challenge.impliedProbability}%</span>
-                        <span>Notre analyse: {challenge.challenge.ourProbability}%</span>
+                        <span>Bookmaker: {Math.max(0, Math.round(challenge.winProbability - (challenge.edge || 0)))}%</span>
+                        <span>Notre analyse: {Math.round(challenge.winProbability)}%</span>
                       </div>
                     </div>
 
@@ -337,24 +345,31 @@ export default function ChallengesPage() {
                       ))}
                     </div>
 
-                    {/* Key Insight */}
-                    <div className="bg-gray-900/50 rounded p-3 text-sm">
-                      <span className="text-gray-400">💡 </span>
-                      <span className="text-gray-300">{challenge.keyInsight}</span>
+                    {/* Key Insight + métriques */}
+                    <div className="bg-gray-900/50 rounded p-3 text-sm flex flex-wrap gap-x-4 gap-y-1">
+                      {challenge.reasoning[0] && (
+                        <span className="text-gray-300">💡 {challenge.reasoning[0]}</span>
+                      )}
+                      <span className="text-gray-400">
+                        EV: {challenge.expectedValue > 0 ? '+' : ''}{(challenge.expectedValue || 0).toFixed(1)}%
+                      </span>
+                      <span className="text-gray-400">
+                        Kelly: {((challenge.kellyStake || 0) * 100).toFixed(1)}% bankroll
+                      </span>
                     </div>
 
                     {/* Footer */}
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-700">
-                      <div className="flex gap-4 text-sm">
+                      <div className="flex gap-4 text-sm flex-wrap">
                         <span className="text-gray-400">
-                          {getRiskIcon(challenge.riskLevel)} Risque: {challenge.riskLevel}
+                          {getRiskIcon(challenge.riskLevel)} Risque: {challenge.riskPercentage}%
                         </span>
                         <span className="text-gray-400">
-                          🎾 {challenge.match.surface}
+                          🏟️ {challenge.sport}{!challenge.hasRealOdds && ' • ⚠️ cotes estimées'}
                         </span>
                       </div>
                       <div className="text-sm text-gray-500">
-                        Favori @{challenge.challenge.favoriteOdds.toFixed(2)}
+                        {challenge.bookmaker || 'Pipeline ESPN'}
                       </div>
                     </div>
                   </div>
@@ -371,7 +386,7 @@ export default function ChallengesPage() {
             <li>• <strong>Value Gap</strong>: Écart entre notre analyse et les cotes des bookmakers</li>
             <li>• <strong>Value Score</strong>: Score composite (écart + facteurs + attractivité de la cote)</li>
             <li>• <strong>Confiance</strong>: Basée sur le nombre de facteurs favorables</li>
-            <li>• Un challenge "High" avec value gap &gt;15% et plusieurs facteurs = excellent opportunité</li>
+            <li>• Un challenge "High" avec edge &gt;15% et plusieurs facteurs = excellente opportunité</li>
           </ul>
         </div>
       </div>

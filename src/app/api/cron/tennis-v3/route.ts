@@ -34,7 +34,7 @@ import {
 } from '@/lib/tennis-v3/badjan-tennis';
 import { ensureFreshData, getRuntimeMatches } from '@/lib/tennis-v3/data-service';
 import { parseCanonical } from '@/lib/tennis-v3/name-utils';
-import { sendTelegramMessage, isDuplicate } from '@/lib/telegramService';
+import { sendTelegramMessage, isDuplicate, markPublished } from '@/lib/telegramService';
 import { getAntiBanStatus } from '@/lib/stealthFetch';
 
 const CRON_SECRET = process.env.CRON_SECRET;
@@ -184,6 +184,7 @@ export async function GET(request: Request) {
           sent = false;
         } else {
           sent = await sendTelegramMessage(bilanMessage);
+          if (sent) markPublished('badjan-tennis-bilan', bilanMessage);
         }
       }
       return NextResponse.json({
@@ -247,6 +248,7 @@ export async function GET(request: Request) {
           badjanSent = false;
         } else {
           badjanSent = await sendTelegramMessage(message);
+          if (badjanSent) markPublished('badjan-tennis', message);
         }
       }
       return NextResponse.json({

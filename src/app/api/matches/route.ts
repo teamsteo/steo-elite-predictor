@@ -189,10 +189,10 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
     hasAdvancedStats: dq.hasAdvancedStats,
   };
 
-  // ── Risk Label ── (aligné avec getRiskLevel : ≤40 Sûr, ≤60 Modéré, >60 Risqué)
+  // ── Risk Label ── (barème unifié : ≤30 Sûr, ≤50 Modéré, >50 Risqué — aligné Telegram/bilans)
   let riskLabel: string;
-  if (riskPercentage <= 40) riskLabel = 'Sûr';
-  else if (riskPercentage <= 60) riskLabel = 'Modéré';
+  if (riskPercentage <= 30) riskLabel = 'Sûr';
+  else if (riskPercentage <= 50) riskLabel = 'Modéré';
   else riskLabel = 'Risqué';
 
   // ── Status Badge ──
@@ -535,7 +535,7 @@ export async function GET(request: Request) {
         probabilities: { home: homeProb, draw: drawProb, away: awayProb },
         riskPercentage: 100 - maxProb,
         confidence: maxProb >= 65 ? 'medium' : 'low',
-        riskLabel: maxProb >= 75 ? 'Sûr' : maxProb >= 60 ? 'Modéré' : 'Audaceux',
+        riskLabel: maxProb >= 70 ? 'Sûr' : maxProb >= 50 ? 'Modéré' : 'Risqué',
         insight: {
           riskPercentage: 100 - maxProb,
           confidence: maxProb >= 65 ? 'medium' : 'low',
@@ -576,7 +576,7 @@ export async function GET(request: Request) {
     // ÉTAPE 4: Stats résumées
     // ═══════════════════════════════════════
     const bySport: Record<string, number> = {};
-    const byRisk: Record<string, number> = { 'Sûr': 0, 'Modéré': 0, 'Audacieux': 0, 'Kamikaze': 0 };
+    const byRisk: Record<string, number> = { 'Sûr': 0, 'Modéré': 0, 'Risqué': 0 };
     for (const m of enrichedMatches) {
       const s = m.sport || 'Foot';
       bySport[s] = (bySport[s] || 0) + 1;

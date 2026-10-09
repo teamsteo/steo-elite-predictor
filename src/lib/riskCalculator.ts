@@ -211,10 +211,12 @@ function getFormRiskDescription(risk: number): string {
 
 /**
  * Retourne le niveau de risque textuel
+ * 🔒 Barème unifié (aligné Telegram/bilans) : ≤30 low, ≤50 medium, >50 high
+ * (ancien barème 40/60 contredisait la classification safe/modéré/kamikaze ≥51)
  */
 export function getRiskLevel(percentage: number): 'low' | 'medium' | 'high' {
-  if (percentage <= 40) return 'low';
-  if (percentage <= 60) return 'medium';
+  if (percentage <= 30) return 'low';
+  if (percentage <= 50) return 'medium';
   return 'high';
 }
 
@@ -222,8 +224,8 @@ export function getRiskLevel(percentage: number): 'low' | 'medium' | 'high' {
  * Retourne la couleur associée au niveau de risque
  */
 export function getRiskColor(percentage: number): string {
-  if (percentage <= 40) return 'text-green-500';
-  if (percentage <= 60) return 'text-yellow-500';
+  if (percentage <= 30) return 'text-green-500';
+  if (percentage <= 50) return 'text-yellow-500';
   return 'text-red-500';
 }
 
@@ -231,8 +233,8 @@ export function getRiskColor(percentage: number): string {
  * Retourne la classe CSS pour le badge de risque
  */
 export function getRiskBadgeClass(percentage: number): string {
-  if (percentage <= 40) return 'bg-green-500/20 text-green-400 border-green-500/30';
-  if (percentage <= 60) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+  if (percentage <= 30) return 'bg-green-500/20 text-green-400 border-green-500/30';
+  if (percentage <= 50) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
   return 'bg-red-500/20 text-red-400 border-red-500/30';
 }
 

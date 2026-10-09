@@ -2648,7 +2648,13 @@ export async function GET(request: NextRequest) {
           
           // 💾 Sauvegarder en Supabase UNIQUEMENT les pronostics publiés sur Telegram
           // Le bilan journalier doit refléter EXACTEMENT ce qui a été publié
+          // 🔒 FIX: ENVOI Telegram D'ABORD — si l'envoi échoue (HTML, 429, réseau),
+          // RIEN n'est sauvegardé (avant: des picks jamais publiés polluaient le bilan)
           let toSave: any[] = publishedList;
+
+          const telegramResult = await publishDailySummaryToTelegram(predictions);
+
+          if (telegramResult) {
           try {
             const todayISO = new Date().toISOString().split('T')[0];
             
@@ -2719,7 +2725,7 @@ export async function GET(request: NextRequest) {
                 }
               }
               if (saved === 0 && toSave.length > 0) {
-                console.error('❌ [ALERTE] Sauvegarde summary ÉCHOUÉE — 0 enregistré sur ${toSave.length}!');
+                console.error(`❌ [ALERTE] Sauvegarde summary ÉCHOUÉE — 0 enregistré sur ${toSave.length}!`);
                 // Loguer les match_ids et match_dates pour diagnostic
                 for (const db of dbPredictions.slice(0, 3)) {
                   console.error(`   ❌ match_id=${db.match_id}, match_date=${db.match_date}, sport=${db.sport}, risk=${db.risk_percentage}`);
@@ -2861,8 +2867,9 @@ export async function GET(request: NextRequest) {
           } catch (e: any) {
             console.error('❌ [CRITICAL] Erreur sauvegarde Supabase (main):', e.message, e.stack?.split('\n').slice(0, 3));
           }
-          
-          const telegramResult = await publishDailySummaryToTelegram(predictions);
+          } else {
+            console.log('⚠️ Envoi Telegram summary ÉCHOUÉ — rien sauvegardé en DB (bilan restera cohérent)');
+          }
           
           // 🏆 TOP CHAMPIONSHIP — Seuils assouplis pour grands championnats
           // Les matchs PL/La Liga/etc. entre 25-35% de risque sont rejetés par le filtre
@@ -2887,7 +2894,7 @@ export async function GET(request: NextRequest) {
             const { published: topChampPublished, success: topChampSuccess } = 
               await publishTopChampionshipToTelegram(predictions, alreadyPublishedKeys);
             
-            if (topChampPublished.length > 0) {
+            if (topChampPublished.length > 0 && topChampSuccess) {
               // Sauvegarder en DB avec source='top-championship' pour le bilan dédié
               const topChampDbPredictions = topChampPublished.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
@@ -3148,7 +3155,7 @@ export async function GET(request: NextRequest) {
             // 🔒 PLAFONNER à 5 — seuls les 5 plus fiables sont sauvegardés pour le bilan
             .slice(0, 5);
             
-            if (vbFiltered.length > 0) {
+            if (telegramResult && vbFiltered.length > 0) {
               const todayISO = new Date().toISOString().split('T')[0];
               const dbPredictions = vbFiltered.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
@@ -3249,6 +3256,10 @@ export async function GET(request: NextRequest) {
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS sur Telegram
           // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + cross-section VB dedup + tri par edge desc + max 4 global
+          // 🔒 FIX: envoi d'abord, sauvegarde seulement si l'envoi a réussi
+          const telegramResult = await publishKamikazeToTelegram(predictions);
+
+          if (telegramResult) {
           try {
             const kamikazeFiltered = capKamikazePerSport(
               sortKamikazePicks(
@@ -3298,13 +3309,15 @@ export async function GET(request: NextRequest) {
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 ${saved} pronostics kamikaze PUBLIÉS sauvegardés dans Supabase (sur ${kamikazeCount} kamikazes totaux)`);
             if (saved === 0 && kamikazeFiltered.length > 0) {
-              console.error('💣 [ALERTE] Sauvegarde kamikaze GET ÉCHOUÉE — 0 enregistrement sauvegardé malgré ${kamikazeFiltered.length} kamikazes!');
+              console.error(`💣 [ALERTE] Sauvegarde kamikaze GET ÉCHOUÉE — 0 enregistrement sauvegardé malgré ${kamikazeFiltered.length} kamikazes!`);
             }
           } catch (e: any) {
             console.log('⚠️ Erreur sauvegarde kamikaze Supabase:', e.message);
           }
+          } else {
+            console.log('⚠️ Envoi Telegram kamikaze ÉCHOUÉ — rien sauvegardé en DB (bilan restera cohérent)');
+          }
           
-          const telegramResult = await publishKamikazeToTelegram(predictions);
           result = { 
             telegram: { 
               success: telegramResult, 
@@ -4097,6 +4110,10 @@ export async function POST(request: NextRequest) {
           
           // 💾 Sauvegarder UNIQUEMENT les pronostics kamikaze PUBLIÉS (même logique que GET)
           // ⚠️ Même logique que publishKamikazeToTelegram : isKamikaze + cross-section VB dedup + tri par edge desc + max 4 global
+          // 🔒 FIX: envoi d'abord, sauvegarde seulement si l'envoi a réussi
+          const telegramResult = await publishKamikazeToTelegram(predictions);
+
+          if (telegramResult) {
           try {
             const kamikazeFiltered = capKamikazePerSport(
               sortKamikazePicks(
@@ -4145,13 +4162,13 @@ export async function POST(request: NextRequest) {
             const saved = await SupabaseStore.addPredictions(dbPredictions);
             console.log(`💾 [POST] ${saved} pronostics kamikaze sauvegardés en Supabase (sur ${kamikazeCount} totaux)`);
             if (saved === 0 && kamikazeFiltered.length > 0) {
-              console.error('💣 [ALERTE] Sauvegarde kamikaze POST ÉCHOUÉE — 0 enregistrement!');
+              console.error(`💣 [ALERTE] Sauvegarde kamikaze POST ÉCHOUÉE — 0 enregistrement!`);
             }
           } catch (e: any) {
             console.log('⚠️ [POST] Erreur sauvegarde kamikaze:', e.message);
           }
+          }
           
-          const telegramResult = await publishKamikazeToTelegram(predictions);
           result = { 
             telegram: { 
               success: telegramResult, 
@@ -4251,7 +4268,11 @@ export async function POST(request: NextRequest) {
 
           const { selected: publishedList } = selectTopDailyPredictions(predictions);
 
+          // 🔒 FIX: envoi d'abord, sauvegarde seulement si l'envoi a réussi
+          const telegramResult = await publishDailySummaryToTelegram(predictions);
+
           // 💾 [POST] Sauvegarder UNIQUEMENT les pronostics publiés sur Telegram
+          if (telegramResult) {
           try {
             const todayISO = new Date().toISOString().split('T')[0];
             if (publishedList.length > 0) {
@@ -4285,8 +4306,8 @@ export async function POST(request: NextRequest) {
           } catch (saveErr: any) {
             console.log('⚠️ [POST summary] Erreur sauvegarde Supabase:', saveErr.message);
           }
+          }
 
-          const telegramResult = await publishDailySummaryToTelegram(predictions);
           result = {
             telegram: {
               success: telegramResult,
@@ -4348,7 +4369,7 @@ export async function POST(request: NextRequest) {
               const sport = (p.sport || '').toLowerCase();
               return !sport.includes('tennis') && p.valueBetDetected && p.confidence !== 'low' && isSafeOrModerate(p.riskPercentage);
             }).slice(0, 5);
-            if (vbFiltered.length > 0) {
+            if (telegramResult && vbFiltered.length > 0) {
               const todayISO = new Date().toISOString().split('T')[0];
               const dbPredictions = vbFiltered.map((p: any) => {
                 const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();

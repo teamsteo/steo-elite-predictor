@@ -57,7 +57,10 @@ export function ExportManager({ predictions, bankrollData, stats }: ExportManage
       let dataToExport: any = {};
 
       if (exportType === 'predictions' || exportType === 'full') {
-        const res = await fetch(`/api/history?type=predictions&range=${dateRange}`);
+        // 🔒 FIX: /api/history lit `days` (pas `range`) — convertir la période
+        const daysMap: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, 'all': 3650 };
+        const days = daysMap[dateRange] ?? 30;
+        const res = await fetch(`/api/history?type=predictions&days=${days}`);
         const predData = await res.json();
         dataToExport.predictions = predData.predictions || predData || [];
       }

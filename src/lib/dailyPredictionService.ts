@@ -515,6 +515,15 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
     
     const mlPrediction = await getUnifiedPrediction(mlInput);
     
+    // 🔒 FIX: probabilité du côté RECOMMANDÉ (pas toujours domicile) — une reco
+    // extérieur à 75% doit avoir risk=25%, pas 100−homeProb
+    const recBet = mlPrediction.recommendation.bet;
+    const recProb = Math.round(
+      recBet === 'away' ? mlPrediction.mlPrediction.awayProb
+        : recBet === 'draw' ? mlPrediction.mlPrediction.drawProb
+          : mlPrediction.mlPrediction.homeProb
+    );
+    
     return {
       id: mlPrediction.matchId,
       sport: 'football',
@@ -531,10 +540,10 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
           ? awayTeam 
           : 'Match Nul',
       predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
-      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+      winProbability: recProb,
       confidence: mlPrediction.mlPrediction.confidence,
-      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
-      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+      riskPercentage: 100 - recProb,
+      riskLevel: getRiskLevel(100 - recProb),
       valueBet: mlPrediction.mlPrediction.valueBet,
       valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
       expectedValue: mlPrediction.recommendation.expectedValue,
@@ -576,6 +585,12 @@ async function createBasketballPrediction(event: any, home: any, away: any): Pro
     
     const mlPrediction = await getUnifiedPrediction(mlInput);
     
+    // 🔒 FIX: probabilité du côté recommandé (pas toujours domicile)
+    const recBetNba = mlPrediction.recommendation.bet;
+    const recProbNba = Math.round(
+      recBetNba === 'away' ? mlPrediction.mlPrediction.awayProb : mlPrediction.mlPrediction.homeProb
+    );
+    
     return {
       id: mlPrediction.matchId,
       sport: 'basketball',
@@ -588,10 +603,10 @@ async function createBasketballPrediction(event: any, home: any, away: any): Pro
       oddsDraw: undefined,
       recommendation: mlPrediction.recommendation.bet === 'home' ? homeTeam : awayTeam,
       predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
-      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+      winProbability: recProbNba,
       confidence: mlPrediction.mlPrediction.confidence,
-      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
-      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+      riskPercentage: 100 - recProbNba,
+      riskLevel: getRiskLevel(100 - recProbNba),
       valueBet: mlPrediction.mlPrediction.valueBet,
       valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
       expectedValue: mlPrediction.recommendation.expectedValue,
@@ -650,6 +665,12 @@ async function createHockeyPrediction(event: any, home: any, away: any): Promise
     
     const mlPrediction = await getUnifiedPrediction(mlInput);
     
+    // 🔒 FIX: probabilité du côté recommandé (pas toujours domicile)
+    const recBetNhl = mlPrediction.recommendation.bet;
+    const recProbNhl = Math.round(
+      recBetNhl === 'away' ? mlPrediction.mlPrediction.awayProb : mlPrediction.mlPrediction.homeProb
+    );
+    
     return {
       id: mlPrediction.matchId,
       sport: 'hockey',
@@ -662,10 +683,10 @@ async function createHockeyPrediction(event: any, home: any, away: any): Promise
       oddsDraw: undefined,
       recommendation: mlPrediction.recommendation.bet === 'home' ? homeTeam : awayTeam,
       predictedResult: mlPrediction.recommendation.bet === 'avoid' ? 'home' : mlPrediction.recommendation.bet,
-      winProbability: Math.round(mlPrediction.mlPrediction.homeProb),
+      winProbability: recProbNhl,
       confidence: mlPrediction.mlPrediction.confidence,
-      riskPercentage: 100 - Math.round(mlPrediction.mlPrediction.homeProb),
-      riskLevel: getRiskLevel(100 - Math.round(mlPrediction.mlPrediction.homeProb)),
+      riskPercentage: 100 - recProbNhl,
+      riskLevel: getRiskLevel(100 - recProbNhl),
       valueBet: mlPrediction.mlPrediction.valueBet,
       expectedValue: mlPrediction.recommendation.expectedValue,
       kellyStake: mlPrediction.recommendation.kellyStake,

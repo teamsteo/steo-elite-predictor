@@ -944,6 +944,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   // 11.5. CLV MARKET ALIGNMENT
   // Adjust final probabilities based on market movements (CLV)
   // Applied AFTER bestBet is determined so we know which side to check
+  // 🔒 FIX TDZ: `reasoning` déclaré ICI (il était utilisé ligne ~964 avant sa
+  // déclaration → ReferenceError avalé par le catch, lignes CLV jamais ajoutées)
+  const reasoning: string[] = [];
   let marketAlignment: MarketAlignmentResult | null = null;
   try {
     marketAlignment = await alignWithMarket(
@@ -975,8 +978,6 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
   const kellyStake = Math.min(kellyFraction * confidenceMultiplier, 0.05); // Max 5%
   
   // 13. Build recommendation
-  const reasoning: string[] = [];
-  
   // ⚠️ P0 FIX: Value bets interdits sur cotes estimées
   const isValueBet = isValueBetRaw && hasRealOdds;
   

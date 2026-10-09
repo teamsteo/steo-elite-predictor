@@ -475,6 +475,36 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { matchId, action } = body;
     
+    if (action === 'publish') {
+      // 🔒 FIX: publication Telegram des challenges affichés (top 5 envoyés par le client).
+      // Avant, le bouton du site envoyait {maxChallenges, minConfidence} que cette route
+      // ne comprenait pas → toujours "Action non reconnue".
+      const items = Array.isArray(body.challenges) ? body.challenges.slice(0, 5) : [];
+      if (items.length === 0) {
+        return NextResponse.json({ success: false, error: 'Aucun challenge à publier' }, { status: 400 });
+      }
+      const { sendTelegramMessage, markPublished } = await import('@/lib/telegramService');
+      let message = '╔════════════════════════╗\n';
+      message += '║ 🔥 <b>CHALLENGES NÉGLIGÉS</b> ║\n';
+      message += '╚════════════════════════╝\n\n';
+      items.forEach((c: any, i: number) => {
+        const odds = c.recommendation === 'home' ? c.oddsHome
+          : c.recommendation === 'away' ? c.oddsAway
+            : (c.oddsDraw || 0);
+        message += `${i + 1}. <b>${c.recommendedTeam}</b> @${odds.toFixed(2)}\n`;
+        message += `   ${c.homeTeam} vs ${c.awayTeam}\n`;
+        message += `   🏟️ ${c.league || c.sport} · P ${Math.round(c.winProbability || 0)}% · edge +${(c.edge || 0).toFixed(1)}% · score ${c.valueScore || 0}/100\n\n`;
+      });
+      message += '⚠️ Cotes élevées = risque élevé. Pariez responsable.';
+      const ok = await sendTelegramMessage(message);
+      if (ok) markPublished('challenges', message);
+      return NextResponse.json({
+        success: ok,
+        challengesCount: ok ? items.length : 0,
+        message: ok ? 'Publié' : 'Échec envoi Telegram',
+      });
+    }
+    
     if (action === 'analyze') {
       // Analyser un match spécifique
       const matches = await getMatchesWithRealOdds();

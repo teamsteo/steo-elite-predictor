@@ -24,8 +24,30 @@ const TELEGRAM_PERSONAL_CHAT_ID = process.env.TELEGRAM_PERSONAL_CHAT_ID;
 // Déduplication : track la dernière publication par type pour éviter les doublons
 const lastPublication: Record<string, { date: string; hash: string }> = {};
 
+// 🔒 Dédup croisée kamikaze: matchs kamikaze déjà publiés aujourd'hui (toutes
+// sections confondues: fallback summary 07h + section kamikaze 13h)
+const publishedKamikazeKeys: { date: string; keys: Set<string> } = { date: '', keys: new Set() };
+
 function getTodayStr(): string {
   return new Date().toISOString().split('T')[0];
+}
+
+function isKamikazeKeyPublished(key: string): boolean {
+  const today = getTodayStr();
+  if (publishedKamikazeKeys.date !== today) {
+    publishedKamikazeKeys.date = today;
+    publishedKamikazeKeys.keys = new Set();
+  }
+  return publishedKamikazeKeys.keys.has(key);
+}
+
+function markKamikazeKeyPublished(key: string): void {
+  const today = getTodayStr();
+  if (publishedKamikazeKeys.date !== today) {
+    publishedKamikazeKeys.date = today;
+    publishedKamikazeKeys.keys = new Set();
+  }
+  publishedKamikazeKeys.keys.add(key);
 }
 
 /** Calcule un hash simple du contenu pour détecter les doublons */
@@ -42,6 +64,9 @@ function contentHash(text: string): string {
 /**
  * Vérifie si une publication est un doublon (même type, même jour, même contenu)
  * Retourne true si c'est un doublon (à ne PAS publier)
+ * ⚠️ N'enregistre PLUS la publication: appeler markPublished() après un envoi
+ * réussi (data.ok===true). L'ancien comportement (enregistrement avant envoi)
+ * bloquait toute reprise après un échec d'envoi.
  * @param slotSuffix  Suffixe optionnel pour distinguer MATIN/SOIR
  */
 export function isDuplicate(publicationType: string, messageContent: string, slotSuffix?: string): boolean {
@@ -55,9 +80,16 @@ export function isDuplicate(publicationType: string, messageContent: string, slo
     return true;
   }
 
-  // Enregistrer cette publication
-  lastPublication[key] = { date: today, hash };
   return false;
+}
+
+/**
+ * 🔒 Enregistre une publication (hash) — à appeler UNIQUEMENT après un envoi
+ * Telegram réussi (data.ok === true).
+ */
+export function markPublished(publicationType: string, messageContent: string, slotSuffix?: string): void {
+  const key = slotSuffix ? `${publicationType}-${slotSuffix}` : publicationType;
+  lastPublication[key] = { date: getTodayStr(), hash: contentHash(messageContent) };
 }
 
 /** Clé unique pour un match (équipe domic + ext) */
@@ -480,6 +512,20 @@ function computeDateTag(matchDateStr?: string): string {
 // ENVOI TELEGRAM
 // ============================================
 
+/**
+ * Supprime les balises HTML d'un message (fallback si parse_mode HTML échoue:
+ * nom d'équipe avec "&", balise non fermée après découpe, etc.)
+ */
+function stripHtmlTags(text: string): string {
+  return text
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&');
+}
+
 export async function sendTelegramMessage(text: string, options?: {
   parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
   disable_notification?: boolean;
@@ -519,6 +565,12 @@ export async function sendTelegramMessage(text: string, options?: {
 
       if (!data.ok) {
         console.error('❌ Erreur Telegram:', data.description);
+        // 🔒 FALLBACK: erreur de parsing HTML (ex: "Brighton & Hove Albion") →
+        // renvoyer en texte brut plutôt que de perdre toute la publication
+        if (/parse|entit/i.test(String(data.description || '')) && (options?.parse_mode || 'HTML') === 'HTML') {
+          console.warn('⚠️ Erreur parsing HTML → retry en texte brut (balises supprimées)');
+          return sendTelegramMessage(stripHtmlTags(text), { ...options, parse_mode: undefined, retryCount: 0 });
+        }
         return false;
       }
 
@@ -530,7 +582,7 @@ export async function sendTelegramMessage(text: string, options?: {
         await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
         continue;
       }
-      console.error('❌ Erreur envoi Telegram (échec après ${maxRetries} tentatives):', error);
+      console.error(`❌ Erreur envoi Telegram (échec après ${maxRetries} tentatives):`, error);
       return false;
     }
   }
@@ -565,6 +617,13 @@ export async function sendTelegramPhoto(pngBuffer: Buffer, caption: string): Pro
       const data = await response.json();
       if (!data.ok) {
         console.error('❌ Erreur Telegram sendPhoto:', data.description);
+        // 🔒 FALLBACK parse HTML sur la caption → réessayer sans parse_mode
+        if (/parse|entit/i.test(String(data.description || '')) && attempt < 2) {
+          console.warn('⚠️ Caption HTML invalide → retry en texte brut');
+          form.set('caption', stripHtmlTags(caption).slice(0, 1024));
+          form.delete('parse_mode');
+          continue;
+        }
         return false;
       }
       console.log('✅ Photo envoyée sur Telegram');
@@ -1492,6 +1551,7 @@ export async function publishTopChampionshipToTelegram(
 
   const sent = await sendTelegramMessageLong(message);
   if (sent) {
+    markPublished('top-championship', message, slotLabel);
     console.log(`🏆 Top Championship: ${selected.length} matchs publiés (${slotLabel})`);
   }
   return { published: selected, success: sent };
@@ -1684,7 +1744,9 @@ export async function publishDailySummaryToTelegram(predictions: TelegramMatch[]
     return false;
   }
 
-  return sendTelegramMessageLong(message);
+  const summaryOk = await sendTelegramMessageLong(message);
+  if (summaryOk) markPublished('summary', message, slotLabel);
+  return summaryOk;
 }
 
 /**
@@ -1740,9 +1802,12 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
 
   // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
   // 🔒 COTES DANS BORNES: favori >= 1.25, aucune cote > 8.00
+  // 🔒 DÉDUP KAMIKAZE INTER-SECTIONS: exclure les kamikazes déjà publiés
+  // (fallback summary 07h / section kamikaze 13h) — même match jamais 2 fois
   const kamikazePicks = dedupMatches(nonTennis.filter(p => {
     if (!isKamikaze(p.riskPercentage) || p.isEstimated) return false;
     if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
+    if (isKamikazeKeyPublished(matchKey(p))) return false;
     if (p.valueBetDetected && p.confidence !== 'low') {
       const vbDir = p.valueBetType || p.predictedResult;
       const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
@@ -1812,7 +1877,13 @@ async function publishKamikazeOnlyMessage(predictions: TelegramMatch[]): Promise
     return false;
   }
 
-  return sendTelegramMessageLong(message);
+  const kzOnlyOk = await sendTelegramMessageLong(message);
+  if (kzOnlyOk) {
+    markPublished('kamikaze', message);
+    // 🔒 Mémoriser les matchs réellement publiés (dédup croisée 13h)
+    for (const p of kamikazePicks) markKamikazeKeyPublished(matchKey(p));
+  }
+  return kzOnlyOk;
 }
 
 // ============================================
@@ -1978,7 +2049,9 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
     return false;
   }
 
-  return sendTelegramMessageLong(message);
+  const vbOk = await sendTelegramMessageLong(message);
+  if (vbOk) markPublished('valuebets', message);
+  return vbOk;
 }
 
 // ============================================
@@ -1993,9 +2066,11 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
   });
   // 🔒 CROSS-SECTION DEDUP: Exclure les matchs Value Bets (vbRisk ≤ 50)
   // 🔒 COTES DANS BORNES: favori >= 1.25, aucune cote > 8.00
+  // 🔒 DÉDUP KAMIKAZE INTER-SECTIONS: exclure les kamikazes déjà publiés ce jour
   const kamikazePicks = dedupMatches(nonTennis.filter(p => {
     if (!isKamikaze(p.riskPercentage) || p.isEstimated) return false;
     if (!isOddsInRange(p.oddsHome, p.oddsDraw, p.oddsAway)) return false;
+    if (isKamikazeKeyPublished(matchKey(p))) return false;
     if (p.valueBetDetected && p.confidence !== 'low') {
       const vbDir = p.valueBetType || p.predictedResult;
       const vbOdds = vbDir === 'home' ? p.oddsHome : vbDir === 'away' ? p.oddsAway : p.oddsDraw;
@@ -2095,7 +2170,12 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
     return false;
   }
 
-  return sendTelegramMessageLong(message);
+  const kzOk = await sendTelegramMessageLong(message);
+  if (kzOk) {
+    markPublished('kamikaze', message);
+    for (const p of kamikazeCapped) markKamikazeKeyPublished(matchKey(p));
+  }
+  return kzOk;
 }
 
 // ============================================
@@ -3134,6 +3214,7 @@ export async function publishDailyResultsToTelegram(dateISO?: string): Promise<b
   }
 
   const sent = await sendTelegramMessageLong(message);
+  if (sent) markPublished('results', message);
 
   // Envoyer un sticker en fonction du bilan
   if (sent) {
@@ -3329,7 +3410,9 @@ export async function publishKamikazeBilanToTelegram(dateISO?: string): Promise<
       return false;
     }
 
-    return await sendTelegramMessageLong(message);
+    const kzBilanOk = await sendTelegramMessageLong(message);
+    if (kzBilanOk) markPublished('kamikaze-bilan', message);
+    return kzBilanOk;
   } catch (e) {
     console.error('Erreur bilan kamikaze:', e);
     return false;
@@ -3625,7 +3708,9 @@ export async function publishComboToTelegram(combo: any): Promise<boolean> {
     return false;
   }
 
-  return await sendTelegramMessageLong(message);
+  const comboOk = await sendTelegramMessageLong(message);
+  if (comboOk) markPublished(comboKey, message);
+  return comboOk;
 }
 
 export default {

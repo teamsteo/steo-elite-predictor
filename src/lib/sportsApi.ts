@@ -2,7 +2,8 @@
  * Service d'intégration multi-sources pour données sportives réelles
  * Sources: The Odds API + SportAPI7 (RapidAPI)
  * 
- * OPTIMISÉ: 15 matchs max/jour avec croisement des sources
+ * OPTIMISÉ: 20 matchs max/jour avec croisement des sources (plafond, pas un minimum —
+ * les publications partent dès qu'au moins 1 pick satisfait les critères de qualité)
  * Validation croisée pour données fiables uniquement
  */
 

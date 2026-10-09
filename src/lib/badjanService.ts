@@ -17,7 +17,11 @@
 
 // ── Constantes BADJAN ──
 export const BADJAN_MAX_RISK = 45;
-export const BADJAN_MIN_FAVORITE_ODDS = 1.10; // garde-fou anti-cote corrompue
+// 🔒 Aligné sur les bornes globales du pipeline (MIN_FAVORITE_ODDS/MAX_BET_ODDS
+// de telegramService — backtest: cote favori < 1.25 = ROI négatif):
+// BADJAN ne contourne plus les bornes communes (ancien plancher 1.10 + pas de plafond)
+export const BADJAN_MIN_FAVORITE_ODDS = 1.25; // garde-fou anti-cote corrompue + ROI
+export const BADJAN_MAX_ODDS = 8.00;          // aucune cote du 1X2 ne doit dépasser 8.00
 const TELEGRAM_MAX_LENGTH = 4096;
 
 // ── Types (loose = compatibles avec le pipeline) ──
@@ -119,9 +123,10 @@ export function filterBadjanMatches(matches: BadjanMatchInput[]): BadjanMatchInp
     if (m.predictedResult !== 'home') return false;
     const oh = m.oddsHome, oa = m.oddsAway, od = m.oddsDraw;
     if (typeof oh !== 'number' || typeof oa !== 'number' || !isFinite(oh) || !isFinite(oa)) return false;
-    if (oh < BADJAN_MIN_FAVORITE_ODDS) return false;          // cote corrompue
+    if (oh < BADJAN_MIN_FAVORITE_ODDS) return false;          // cote corrompue / ROI négatif
     if (oh >= oa) return false;                               // marché : away au moins aussi bas → pas favori net
     if (typeof od === 'number' && isFinite(od) && oh >= od) return false; // nul coté plus bas → pas favori
+    if (oh > BADJAN_MAX_ODDS || oa > BADJAN_MAX_ODDS || (typeof od === 'number' && isFinite(od) && od > BADJAN_MAX_ODDS)) return false; // 🔒 plafond global
 
     // 4. Cotes réelles uniquement (le risque doit être fiable)
     if (m.isEstimated) return false;
@@ -545,6 +550,7 @@ export function analyzeBadjanFunnel(matches: BadjanMatchInput[]): BadjanFunnel {
     if (oh < BADJAN_MIN_FAVORITE_ODDS) return false;
     if (oh >= oa) return false;
     if (typeof od === 'number' && isFinite(od) && oh >= od) return false;
+    if (oh > BADJAN_MAX_ODDS || oa > BADJAN_MAX_ODDS || (typeof od === 'number' && isFinite(od) && od > BADJAN_MAX_ODDS)) return false;
     return true;
   });
   const realOdds = marketConfirmed.filter(m => !m.isEstimated);
@@ -680,7 +686,7 @@ export interface BadjanPublishResult {
 }
 
 export async function publishBadjanToTelegram(matches: BadjanMatchInput[]): Promise<BadjanPublishResult> {
-  const { sendTelegramMessage, isDuplicate } = await import('./telegramService');
+  const { sendTelegramMessage, isDuplicate, markPublished } = await import('./telegramService');
 
   // 🆕 Chaîne complète (Task 27): filtre de base + stats domicile/H2H (fail-closed)
   const { picks: enrichedPicks, funnel } = await enrichAndFilterBadjan(matches);
@@ -707,6 +713,8 @@ export async function publishBadjanToTelegram(matches: BadjanMatchInput[]): Prom
   // Message trop long → découpe propre aux frontières de matchs
   if (message.length <= TELEGRAM_MAX_LENGTH) {
     const ok = await sendTelegramMessage(message);
+    // 🔒 Hash enregistré APRÈS envoi réussi (pas avant)
+    if (ok) markPublished('badjan', message);
     return { success: ok, picks: picks.length, message: ok ? 'Publié' : 'Erreur envoi', funnel };
   }
 
@@ -730,6 +738,8 @@ export async function publishBadjanToTelegram(matches: BadjanMatchInput[]): Prom
     const ok = await sendTelegramMessage(current);
     allOk = allOk && ok;
   }
+
+  if (allOk) markPublished('badjan', message);
 
   return { success: allOk, picks: picks.length, message: `Publié en ${part} partie(s)`, funnel };
 }

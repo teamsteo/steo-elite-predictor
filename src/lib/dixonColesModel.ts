@@ -77,12 +77,12 @@ const LEAGUE_STRENGTH: Record<string, number> = {
  */
 function calculateTeamStrength(stats: TeamStats): {
   attackStrength: number;
-  defenseStrength: number;
+  defenseWeakness: number;
   homeAttackBonus: number;
   homeDefenseBonus: number;
 } {
   if (stats.matches === 0) {
-    return { attackStrength: 1.0, defenseStrength: 1.0, homeAttackBonus: 1.1, homeDefenseBonus: 0.9 };
+    return { attackStrength: 1.0, defenseWeakness: 1.0, homeAttackBonus: 1.1, homeDefenseBonus: 0.9 };
   }
 
   // Moyennes de buts par match
@@ -92,8 +92,10 @@ function calculateTeamStrength(stats: TeamStats): {
   // Force offensive (plus c'est haut, plus l'équipe marque)
   const attackStrength = avgGoalsScored > 0 ? avgGoalsScored / 1.35 : 0.8;
   
-  // Force défensive (plus c'est bas, moins l'équipe encaisse)
-  const defenseStrength = avgGoalsConceded > 0 ? 1.35 / avgGoalsConceded : 1.2;
+  // Faiblesse défensive (plus c'est HAUT, plus l'équipe encaisse — FIX: ancienne
+  // formule 1.35/conceded était inversée et gonflait le xG de l'adversaire face
+  // aux bonnes défenses). Multiplicateur direct du xG adverse.
+  const defenseWeakness = avgGoalsConceded > 0 ? avgGoalsConceded / 1.35 : 1.0;
   
   // Bonus domicile
   const homeAttackBonus = (stats.homeGoalsScored && stats.homeMatches)
@@ -106,7 +108,7 @@ function calculateTeamStrength(stats: TeamStats): {
 
   return {
     attackStrength: Math.min(2.0, Math.max(0.5, attackStrength)),
-    defenseStrength: Math.min(2.0, Math.max(0.5, defenseStrength)),
+    defenseWeakness: Math.min(2.0, Math.max(0.5, defenseWeakness)),
     homeAttackBonus: Math.min(1.5, Math.max(0.8, homeAttackBonus)),
     homeDefenseBonus: Math.min(1.2, Math.max(0.7, homeDefenseBonus)),
   };
@@ -120,9 +122,9 @@ function dixonColesAdjustment(homeGoals: number, awayGoals: number, lambda: numb
   if (homeGoals === 0 && awayGoals === 0) {
     return 1 - (lambda * mu * rho);
   } else if (homeGoals === 1 && awayGoals === 0) {
-    return 1 + (lambda * rho);
+    return 1 + (mu * rho);   // τ(1,0) = 1 + μρ (Dixon & Coles 1997)
   } else if (homeGoals === 0 && awayGoals === 1) {
-    return 1 + (mu * rho);
+    return 1 + (lambda * rho);   // τ(0,1) = 1 + λρ
   } else if (homeGoals === 1 && awayGoals === 1) {
     return 1 - rho;
   }
@@ -196,15 +198,18 @@ export function predictMatch(
   const baseHomeGoals = 1.35 * leagueFactor; // Moyenne de buts domicile
   const baseAwayGoals = 1.10 * leagueFactor; // Moyenne de buts extérieur
   
+  // FIX défense: multiplier par la FAIBLESSE défensive adverse (conceded/moyenne),
+  // et par le bonus défensif domicile DIRECT (<1 = défense solide à domicile →
+  // réduit le xG extérieur — l'ancien (2 − bonus) inversait l'effet).
   const lambda = baseHomeGoals 
     * homeStrength.attackStrength 
-    * awayStrength.defenseStrength 
+    * awayStrength.defenseWeakness 
     * homeStrength.homeAttackBonus;
   
   const mu = baseAwayGoals 
     * awayStrength.attackStrength 
-    * homeStrength.defenseStrength 
-    * (2 - homeStrength.homeDefenseBonus);
+    * homeStrength.defenseWeakness 
+    * homeStrength.homeDefenseBonus;
   
   // 4. Ajustement forme récente
   const homeFormWeight = temporalWeight(homeStats.form || []);
@@ -605,14 +610,15 @@ function predictGoalsFromOdds(
   else if (oddsRatio < 1.5) expectedGoals = 2.9;
   if (oddsDraw && oddsDraw < 3.0) expectedGoals *= 0.9;
   
-  // Répartition domicile/extérieur
-  const homeBias = 1.15;
-  const expectedHome = expectedGoals * (normHome + 0.5) / (normHome + normAway + 1) * homeBias;
-  const expectedAway = expectedGoals - expectedHome + (expectedGoals * (homeBias - 1));
+  // Répartition domicile/extérieur — FIX: l'ancienne formule gonflait le total de
+  // ~15% (homeBias ajouté AUX DEUX côtés + 0.1 sur mu). Le bonus domicile déplace
+  // la PART home sans changer le total de buts attendu.
+  const homeShare = Math.min(0.85, (normHome + 0.5) / (normHome + normAway + 1) * 1.15);
+  const expectedHome = expectedGoals * homeShare;
   
-  // Poisson
+  // Poisson — total préservé = expectedGoals
   const lambda = Math.max(0.5, expectedHome);
-  const mu = Math.max(0.3, expectedGoals - expectedHome + 0.1);
+  const mu = Math.max(0.3, expectedGoals - expectedHome);
   
   let over25Prob = 0;
   let over15Prob = 0;
@@ -651,7 +657,7 @@ function predictGoalsFromOdds(
     under25: Math.round((1 - over25Prob) * 1000) / 10,
     over15: Math.round(over15Prob * 1000) / 10,
     btts: Math.round(bttsProb * 1000) / 10,
-    expectedGoals: Math.round(expectedGoals * 10) / 10,
+    expectedGoals: Math.round((lambda + mu) * 10) / 10,
     expectedHome: Math.round(lambda * 10) / 10,
     expectedAway: Math.round(mu * 10) / 10,
     mostLikelyScore: `${topScore.home}-${topScore.away}`,

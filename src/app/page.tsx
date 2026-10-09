@@ -254,6 +254,8 @@ export interface Match {
   oddsHome: number;
   oddsDraw: number | null;
   oddsAway: number;
+  isEstimated?: boolean; // 🔒 Cotes estimées (pas de cotes réelles bookmaker) — badge honnêteté
+  oddsSource?: string;
   sources?: string[];
   timeSlot?: 'morning' | 'afternoon' | 'evening';
   // Scores live
@@ -3397,7 +3399,8 @@ function ChallengesSection() {
     const fetchChallenges = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/challenges?minOdds=2.0&minValueGap=5');
+        // 🔒 FIX: l'API /api/challenges lit `minEdge` (pas minValueGap)
+        const response = await fetch('/api/challenges?minOdds=2.0&minEdge=5');
         const data = await response.json();
         
         if (data.success) {
@@ -3918,17 +3921,18 @@ function FootballSection({ matches, loading, lastUpdate }: { matches: Match[]; l
   const activeMatches = [...upcomingMatches, ...liveMatches];
 
   // Categoriser avec fallback pour les matchs sans insight
+  // 🔒 Barème unifié (aligné Telegram/bilans) : Sûr ≤30, Modéré 31-50, Risqué >50
   const safes = activeMatches.filter(m => {
     const risk = m.insight?.riskPercentage ?? 50;
-    return risk <= 40;
+    return risk <= 30;
   });
   const moderate = activeMatches.filter(m => {
     const risk = m.insight?.riskPercentage ?? 50;
-    return risk > 40 && risk <= 55;
+    return risk > 30 && risk <= 50;
   });
   const risky = activeMatches.filter(m => {
     const risk = m.insight?.riskPercentage ?? 50;
-    return risk > 55;
+    return risk > 50;
   });
 
   const displayedMatches = activeTab === 'safes' ? safes
@@ -3954,7 +3958,7 @@ function FootballSection({ matches, loading, lastUpdate }: { matches: Match[]; l
           ⚽ Football - Pronostics du Jour
         </h2>
         <p style={{ color: '#888', fontSize: '11px', marginBottom: '4px' }}>
-          Modèle Dixon-Coles amélioré • 10 matchs max • Analyse valeur
+          Modèle Dixon-Coles amélioré • Analyse valeur • Barème unifié : Sûr ≤30% / Modéré ≤50% / Risqué {'>'}50%
         </p>
         <p style={{ color: '#666', fontSize: '10px' }}>
           Mise à jour: {lastUpdate.toLocaleTimeString('fr-FR')} • {safes.length} sûrs, {moderate.length} modérés, {risky.length} risqués
@@ -3978,7 +3982,7 @@ function FootballSection({ matches, loading, lastUpdate }: { matches: Match[]; l
         <TabButtonCompact active={activeTab === 'moderate'} onClick={() => setActiveTab('moderate')} icon="⚠️" label="Modérés" count={moderate.length} />
         <TabButtonCompact active={activeTab === 'risky'} onClick={() => setActiveTab('risky')} icon="🎯" label="Risqués" count={risky.length} />
         <TabButtonCompact active={activeTab === 'live'} onClick={() => setActiveTab('live')} icon="🔴" label="Live" count={liveMatches.length} isLive />
-        <TabButtonCompact active={activeTab === 'live2d'} onClick={() => setActiveTab('live2d')} icon="📺" label="LIVE 2D" count={0} />
+        <TabButtonCompact active={activeTab === 'live2d'} onClick={() => setActiveTab('live2d')} icon="📺" label="LIVE 2D" count={liveMatches.length} />
         <TabButtonCompact active={activeTab === 'finished'} onClick={() => setActiveTab('finished')} icon="✅" label="Terminés" count={finishedMatches.length} />
       </div>
 
@@ -4033,7 +4037,7 @@ function BasketballSection({ matches, loading, lastUpdate }: { matches: Match[];
   const liveMatches = matches.filter(m => m.isLive);
   const finishedMatches = matches.filter(m => m.isFinished);
   const upcomingMatches = matches.filter(m => !m.isLive && !m.isFinished);
-  const safes = upcomingMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage <= 45);
+  const safes = upcomingMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage <= 30);
   
   const displayedMatches = activeTab === 'safes' ? safes 
     : activeTab === 'live' ? liveMatches
@@ -4349,8 +4353,9 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
 
   // Filtrer les matchs à venir ET en cours pour les pronostics
   const activeMatches = [...upcomingMatches, ...liveMatches];
-  const safes = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage <= 40);
-  const moderate = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 40 && m.insight.riskPercentage <= 60);
+  // 🔒 Barème unifié (aligné Telegram/bilans) : Sûr ≤30, Modéré ≤50, Risqué >50
+  const safes = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage <= 30);
+  const moderate = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 30 && m.insight.riskPercentage <= 50);
   const risky = activeMatches.filter(m => m.insight?.riskPercentage !== undefined && m.insight.riskPercentage > 60);
   const valueBets = activeMatches.filter(m => m.insight?.valueBetDetected === true);
 
@@ -4936,8 +4941,8 @@ function TabButtonCompact({ active, onClick, icon, label, count, isLive }: { act
 // Composant NBAMatchCard - Affichage spécifique pour le basket
 function NBAMatchCard({ match, index }: { match: Match; index: number }) {
   const riskPercentage = match.insight?.riskPercentage ?? 50;
-  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 60 ? '#f97316' : '#ef4444';
-  const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 60 ? 'Modéré' : 'Risqué';
+  const riskColor = riskPercentage <= 30 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
+  const riskLabel = riskPercentage <= 30 ? 'Sûr' : riskPercentage <= 50 ? 'Modéré' : 'Risqué';
   
   // Données NBA - avec fallbacks si pas de nbaPredictions
   const nba = match.nbaPredictions;
@@ -5011,6 +5016,11 @@ function NBAMatchCard({ match, index }: { match: Match; index: number }) {
             animation: isLive ? 'pulse 1.5s infinite' : 'none'
           }}>{index}</span>
           <span style={{ fontSize: '11px', color: '#888' }}>🏀 {match.league}</span>
+          {match.isEstimated && (
+            <span style={{ fontSize: '8px', color: '#f97316', border: '1px solid #f9731666', borderRadius: '4px', padding: '0 4px', fontWeight: 'bold' }}>
+              ⚠️ COTES ESTIMÉES
+            </span>
+          )}
           {match.homeRecord && match.awayRecord && (
             <span style={{ fontSize: '9px', color: '#666' }}>
               ({match.homeRecord} vs {match.awayRecord})
@@ -5429,8 +5439,8 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
   }, [match.homeTeam, match.awayTeam]);
   
   const riskPercentage = match.insight?.riskPercentage ?? 50;
-  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 60 ? '#f97316' : '#ef4444';
-  const riskLabel = riskPercentage <= 40 ? 'Sûr' : riskPercentage <= 60 ? 'Modéré' : 'Risqué';
+  const riskColor = riskPercentage <= 30 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
+  const riskLabel = riskPercentage <= 30 ? 'Sûr' : riskPercentage <= 50 ? 'Modéré' : 'Risqué';
   
   // ═══════════════════════════════════════════════════════════
   // PIPELINE ML UNIFIÉ — Utilise les probas ML (pas les cotes brutes)
@@ -5595,8 +5605,13 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
             )}
             <span>{match.awayTeam}</span>
           </div>
-          <div style={{ color: '#666', fontSize: '10px' }}>
-            {match.league} • {match.sport}
+          <div style={{ color: '#666', fontSize: '10px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            <span>{match.league} • {match.sport}</span>
+            {match.isEstimated && (
+              <span style={{ fontSize: '8px', color: '#f97316', border: '1px solid #f9731666', borderRadius: '4px', padding: '0 4px', fontWeight: 'bold' }}>
+                ⚠️ COTES ESTIMÉES
+              </span>
+            )}
           </div>
           {/* Indicateur blessures */}
           {!loadingEnrichment && enrichment && enrichment.totalInjuries && enrichment.totalInjuries > 0 && (
@@ -7131,8 +7146,8 @@ function ResultsSection() {
 // Composant MatchCard
 function MatchCard({ match, index }: { match: Match; index: number }) {
   const riskPercentage = match.insight?.riskPercentage ?? 50;
-  const riskColor = riskPercentage <= 40 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
-  const riskBg = riskPercentage <= 40 ? 'rgba(34,197,94,0.1)' : riskPercentage <= 50 ? 'rgba(249,115,22,0.1)' : 'rgba(239,68,68,0.1)';
+  const riskColor = riskPercentage <= 30 ? '#22c55e' : riskPercentage <= 50 ? '#f97316' : '#ef4444';
+  const riskBg = riskPercentage <= 30 ? 'rgba(34,197,94,0.1)' : riskPercentage <= 50 ? 'rgba(249,115,22,0.1)' : 'rgba(239,68,68,0.1)';
   
   // Déterminer le favori
   const favorite = match.oddsHome < match.oddsAway ? 'home' : 'away';
@@ -9271,9 +9286,9 @@ function MatchAnalysisSection({ username, matches }: { username: string; matches
               <div style={{
                 fontSize: '14px',
                 fontWeight: 'bold',
-                color: result.risk <= 40 ? '#22c55e' : result.risk <= 50 ? '#f97316' : '#ef4444'
+                color: result.risk <= 30 ? '#22c55e' : result.risk <= 50 ? '#f97316' : '#ef4444'
               }}>
-                {result.risk}% - {result.risk <= 40 ? 'Faible' : result.risk <= 50 ? 'Modéré' : 'Élevé'}
+                {result.risk}% - {result.risk <= 30 ? 'Faible (Sûr)' : result.risk <= 50 ? 'Modéré' : 'Élevé'}
               </div>
             </div>
           </div>
