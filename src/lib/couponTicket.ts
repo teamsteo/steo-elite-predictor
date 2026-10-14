@@ -159,17 +159,16 @@ export function legOdds(leg: DbPrediction): number {
 }
 
 /**
- * 🎯 Task 46 — libellé du marché correspondant à la sélection:
- *  - VN (football home/away) → "Double Chance — Victoire ou Nul" (comme chez Betclic);
- *  - Nul pur → "Résultat exact"; over/under/btts inchangés;
- *  - sports US → "Vainqueur du match" (pas de nul possible).
+ * 🎯 Task 46 — libellé du marché du pari TEL QUE PUBLIÉ (le label Double Chance
+ * est posé par legView uniquement quand la leg est réellement VN — cote nul dispo):
+ *  - home/away → "Vainqueur du match" (Victoire pure);
+ *  - Nul pur → "Résultat exact"; over/under/btts inchangés.
  */
-export function marketLabel(sport: string, predicted: string): string {
+export function marketLabel(_sport: string, predicted: string): string {
   if (predicted === 'over' || predicted === 'under') return 'Total de points';
   if (predicted === 'btts_yes') return 'Les deux équipes marquent — Oui';
   if (predicted === 'btts_no') return 'Les deux équipes marquent — Non';
   if (predicted === 'draw') return 'Résultat exact';
-  if (comboLegIsVn(sport, predicted)) return 'Double Chance — Victoire ou Nul';
   return 'Vainqueur du match';
 }
 

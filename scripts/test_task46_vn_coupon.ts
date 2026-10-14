@@ -124,10 +124,11 @@ check('cote leg football sans draw → fallback side',
   legOdds(dbLeg({ odds_draw: null })) === 2.30);
 check('pickLabel football = "PSG ou Nul"', pickLabelOf(dbLeg({})) === 'PSG ou Nul');
 check('pickLabel basket = nom équipe', pickLabelOf(dbLeg({ sport: 'basketball', home_team: 'Lakers', away_team: 'Celtics', odds_draw: null })) === 'Lakers');
-check('marketLabel football = "Double Chance — Victoire ou Nul"',
-  marketLabel('football', 'home') === 'Double Chance — Victoire ou Nul');
-check('marketLabel basket = "Vainqueur du match"',
-  marketLabel('basketball', 'home') === 'Vainqueur du match');
+check('marketLabel (pari tel que publié) home/away = "Vainqueur du match"',
+  marketLabel('football', 'home') === 'Vainqueur du match'
+  && marketLabel('basketball', 'home') === 'Vainqueur du match');
+check('marketLabel nul pur = "Résultat exact"',
+  marketLabel('football', 'draw') === 'Résultat exact');
 
 // ─── 4. End-to-end bookmaker ────────────────────────────────────────────────
 section('4. Règle bookmaker de bout en bout');
@@ -176,8 +177,8 @@ const legacyLeg = (o: Partial<any>): any => dbLeg({
 check('legacy sans cote nul: label = "Philadelphia Union" (Victoire pure, pas "ou Nul")',
   pickLabelOf(legacyLeg({})) === 'Philadelphia Union', pickLabelOf(legacyLeg({})));
 check('legacy: cote affichée = 1X2 2.40 (telle que publiée)', legOdds(legacyLeg({})) === 2.40);
-check('marketLabel: football VN → Double Chance / basket → Vainqueur du match',
-  marketLabel('football', 'home') === 'Double Chance — Victoire ou Nul'
+check('marketLabel: pari publié = Vainqueur du match (le label DC est posé par legView si VN)',
+  marketLabel('football', 'home') === 'Vainqueur du match'
   && marketLabel('basketball', 'home') === 'Vainqueur du match');
 
 const legacyDrawLost = legacyLeg({
