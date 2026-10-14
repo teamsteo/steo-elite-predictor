@@ -1741,3 +1741,24 @@ Stage Summary:
 - Site et Telegram affichent désormais le MÊME risque pour le même pick (barème unifié
   côté recommandé)
 - Vérification NBA immunisée contre le cross-day matching
+
+---
+Task ID: 46
+Agent: main
+Task: "Pour les captures de coupon, tu fais une erreur — victoire d'une équipe + match nul inscrit gagné; en combiné UNE seule option V ou VN avec la cote qui correspond"
+
+Work Log:
+- Repli de l'utilisateur sur basket: "n'était pas cohérent" (passé) → confirmé résolu par Task 45 (8206fea, déployé); question "modifier sans token ?" → oui, remote GitHub a un token embarqué, push = auto-déploiement Vercel
+- CAUSE RACINE: legs football de combiné vérifiées en VN (nul=gagné, vnResultMatch) mais AFFICHÉES "Victoire X" @cote 1X2 pure → incohérence libellé/cote/verification
+- FIX (3 commits):
+  • d61e052 — resultPolicy: comboLegIsVn + doubleChanceOnds DC=1/(1/O_side+1/O_draw) + deviggedDoubleChanceProb/deviggedDrawProb + vnPickLabel; comboService: betLabelForResult "PSG ou Nul"/"Nul ou Marseille", publishedOddsForResult (DC foot / 1X2 US), publishedProbForResult (p_side + p_nul dévig), betType V/VN, narration LLM sur paris PUBLIÉS; couponTicket: legOdds/pickLabelOf/marketLabel/legWinProb VN-aware; telegramService: bilan combos IA libellé+cote VN; cron: legs football combo EXIGENT odds_draw (2 flux)
+  • 831be85 — legs LEGACY sans odds_draw (pré-Task 45, ex: Philadelphia @2.40, LAFC @1.43) → restent "Victoire" pure @1X2 TEL QUE PUBLIÉ, nul=PERDU malgré AUTO-FIX-VN (legResolvedWon recalcule depuis actual_result; result_match en fallback); VN (avec cote nul) → nul=gagné
+  • faeb1e8 — marketLabel = pari tel que publié ("Vainqueur du match"); label "Double Chance — Victoire ou Nul" posé par legView UNIQUEMENT si legIsVn
+- SÉMANTIQUE FINALE (règle bookmaker): hors combiné = double option V + V/N (inchangé); combiné = UNE option/leg — foot avec cote nul → "X ou Nul" @DC (nul=gagné), foot legacy → "Victoire X" @1X2 (nul=PERDU), US → "Victoire X" @1X2
+- Vérif prod (previews PNG): 14 oct = 3 legs "Vainqueur du match" @2.40/1.70/1.43 ✓; 15 oct 404 = normal (aucun combo créé le 15 encore; le cron 07h30 en créera un avec cotes complètes → DC)
+- Tests: scripts/test_task46_vn_coupon.ts 42/42 (incl. PNG gagné+perdu, legacy nul=perdu); régressions coupon 21/21, basket 23/23, odds-honesty 33/33, V3 94/94; tsc 0; build OK
+
+Stage Summary:
+- L'erreur signalée est corrigée de bout en bout: un nul ne peut plus être payé sur un pari "Victoire"; les VN sont tarifées Double Chance (jamais 1X2); les legs legacy restent tels que publiés avec la vraie sémantique bookmaker
+- Tout nouveau combiné football exige une cote nul réelle → prix DC honnête garanti
+- Effet secondaire attendu: cotes combinées affichées plus basses (DC < 1X2) — honnête, EV inchangé
