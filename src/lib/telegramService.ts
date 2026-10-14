@@ -2521,8 +2521,11 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
           // 🎯 Task 46: une leg FOOTBALL de combiné est un pari "Victoire ou Nul"
           // (elle est vérifiée avec nul = gagné) → libellé + cote Double Chance de
           // CETTE option — pas "Victoire" @cote_1X2 (incohérence corrigée).
-          // Les pronostics hors combiné gardent l'affichage double option (V + V/N).
-          const isVnLeg = comboLegIsVn(l.sport || 'football', l.predicted_result);
+          // Legs legacy SANS cote nul → restent "Victoire X" @1X2 comme publiées
+          // (nul = perdu, règle bookmaker). Les pronostics hors combiné gardent
+          // l'affichage double option (V + V/N).
+          const isVnLeg = comboLegIsVn(l.sport || 'football', l.predicted_result)
+            && typeof l.odds_draw === 'number' && l.odds_draw > 1;
           const predictedLabel = isVnLeg
             ? vnPickLabel(l.predicted_result, l.home_team || '', l.away_team || '')
             : formatPredictedResult(l.predicted_result, l.sport, l.home_team, l.away_team, l.odds_home, l.odds_draw, l.odds_away);

@@ -107,13 +107,47 @@ export function relativeTimeLabel(iso: string, now: Date): string {
 }
 
 /**
+ * 🎯 Task 46 — la leg est un pari VN AFFICHABLE/TARIFABLE uniquement si la cote
+ * du nul existe: c'est elle qui permet le prix Double Chance honnête.
+ *  - football home/away + odds_draw → VN ("X ou Nul" @DC, nul = gagné);
+ *  - football home/away SANS odds_draw (legs legacy antérieures au fix cotes
+ *    complètes) → restent CE QUI A ÉTÉ PUBLIÉ: "Victoire X" @1X2 → nul = PERDU
+ *    (règle bookmaker — c'est exactement l'erreur utilisateur corrigée);
+ *  - sports US → V pure (pas de nul).
+ */
+function legIsVn(leg: DbPrediction): boolean {
+  return comboLegIsVn(leg.sport, leg.predicted_result)
+    && typeof leg.odds_draw === 'number' && leg.odds_draw > 1;
+}
+
+/**
+ * 🎯 Task 46 — condition de gain de la leg, recalculée depuis le RÉSULTAT RÉEL
+ * (actual_result) plutôt que result_match seul:
+ *  - VN (avec cote nul): gagnée si côté prédit OU nul (politique VN);
+ *  - V pure (US + legs football sans cote nul): gagnée si le côté prédit gagne —
+ *    un NUL = PERDU (comme chez Betclic sur "Victoire");
+ *  - fallback result_match quand actual_result est absent.
+ * (Pourquoi: l'AUTO-FIX-VN du bilan bascule les nuls en gagné sur TOUTES les
+ *  lignes football — juste pour les VN, faux pour les "Victoire" pures du coupon.)
+ */
+export function legResolvedWon(leg: DbPrediction): boolean {
+  const isVn = legIsVn(leg);
+  if (leg.actual_result
+      && (leg.predicted_result === 'home' || leg.predicted_result === 'away')) {
+    if (leg.actual_result === 'draw') return isVn;
+    return leg.actual_result === leg.predicted_result;
+  }
+  return leg.result_match === true;
+}
+
+/**
  * 🎯 Task 46 — cote affichée = cote de LA SÉLECTION jouée:
- *  - leg football home/away (vérifiée en VN) → cote Double Chance dérivée des
- *    cotes 1X2 stockées à la publication;
+ *  - leg VN (football + cote nul) → cote Double Chance dérivée des cotes 1X2
+ *    stockées à la publication;
  *  - sinon cote du côté prédit (1X2), inchangée.
  */
 export function legOdds(leg: DbPrediction): number {
-  if (comboLegIsVn(leg.sport, leg.predicted_result)) {
+  if (legIsVn(leg)) {
     const side = leg.predicted_result === 'home' ? leg.odds_home : leg.odds_away;
     const dc = doubleChanceOdds(side, leg.odds_draw);
     if (dc) return dc;
@@ -145,7 +179,7 @@ export function marketLabel(sport: string, predicted: string): string {
  *  - sports US → nom de l'équipe (Victoire pure, pas de nul possible).
  */
 export function pickLabelOf(leg: DbPrediction): string {
-  if (comboLegIsVn(leg.sport, leg.predicted_result)) {
+  if (legIsVn(leg)) {
     return vnPickLabel(leg.predicted_result, leg.home_team, leg.away_team);
   }
   switch (leg.predicted_result) {
@@ -166,7 +200,7 @@ export function pickLabelOf(leg: DbPrediction): string {
  *  - sinon barème risk_percentage inchangé.
  */
 function legWinProb(leg: DbPrediction): number {
-  if (comboLegIsVn(leg.sport, leg.predicted_result)) {
+  if (legIsVn(leg)) {
     const side = leg.predicted_result === 'home' ? leg.odds_home : leg.odds_away;
     const other = leg.predicted_result === 'home' ? leg.odds_away : leg.odds_home;
     const pVn = deviggedDoubleChanceProb(side, leg.odds_draw, other);
@@ -219,7 +253,9 @@ export interface TicketResolution {
 
 /**
  * Règles (alignées bookmaker):
- *  - leg completed + result_match=false → ticket PERDU
+ *  - leg completed + pari perdu → ticket PERDU
+ *    (🎯 Task 46: condition de gain par type de pari — VN: nul=gagné;
+ *     "Victoire" pure: nul=PERDU, comme chez Betclic — voir legResolvedWon)
  *  - leg pending au-delà de 36h après match_date (aucun résultat vérifiable) → VOID
  *    (cote comptée 1.0 — comme chez Betclic quand un événement est annulé:
  *    JAMAIS comptée perdue, on ne publie pas de fausse défaite)
@@ -249,7 +285,7 @@ export function resolveTicket(legs: DbPrediction[], now: Date = new Date()): Tic
     const stalled = leg.status === 'pending' && matchTs > 0 && matchTs < now.getTime() - STALL_HOURS * 3600000;
 
     if (leg.status === 'completed') {
-      if (leg.result_match === true) effectiveOdds *= odds;
+      if (legResolvedWon(leg)) effectiveOdds *= odds;
       else { anyFalse = true; }
     } else if (stalled) {
       // Résultat jamais publié par les sources → VOID (remboursé), PAS perdu
@@ -292,7 +328,7 @@ function legView(leg: DbPrediction, now: Date): CouponLegView {
   const stalled = leg.status === 'pending'
     && new Date(leg.match_date || 0).getTime() < now.getTime() - STALL_HOURS * 3600000;
   const legStatus: 'won' | 'lost' | 'pending' =
-    leg.status === 'completed' ? (leg.result_match === true ? 'won' : 'lost')
+    leg.status === 'completed' ? (legResolvedWon(leg) ? 'won' : 'lost')
     : (leg.status === 'cancelled' || leg.status === 'postponed') ? 'pending'
     : stalled ? 'pending' // void: rendue comme non jouée (⏳/↩️ en légende)
     : 'pending';
@@ -305,7 +341,11 @@ function legView(leg: DbPrediction, now: Date): CouponLegView {
   return {
     sport: leg.sport,
     pickLabel: pickLabelOf(leg),
-    marketLabel: marketLabel(leg.sport, leg.predicted_result),
+    // 🎯 Task 46: le marché affiché suit le type RÉEL de la leg (VN si cote nul
+    // disponible, sinon le pari tel que publié — "Victoire" pure pour les legs legacy)
+    marketLabel: legIsVn(leg)
+      ? 'Double Chance — Victoire ou Nul'
+      : marketLabel(leg.sport, leg.predicted_result),
     odds,
     legStatus,
     timeLabel: relativeTimeLabel(leg.match_date, now),

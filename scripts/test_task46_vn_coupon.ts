@@ -167,6 +167,36 @@ const rCombo = resolveTicket([
 check('combiné VN×V gagné → cote effective 1.30×1.70=2.21',
   Math.abs(rCombo.effectiveOdds - 2.21) < 0.01, String(rCombo.effectiveOdds));
 
+// ── Legs LEGACY sans cote nul: "Victoire" pure @1X2 → NUL = PERDU (règle Betclic) ──
+const legacyLeg = (o: Partial<any>): any => dbLeg({
+  odds_home: 2.9, odds_draw: null, odds_away: 2.40,
+  predicted_result: 'away', home_team: 'Chicago Fire FC', away_team: 'Philadelphia Union',
+  ...o,
+});
+check('legacy sans cote nul: label = "Philadelphia Union" (Victoire pure, pas "ou Nul")',
+  pickLabelOf(legacyLeg({})) === 'Philadelphia Union', pickLabelOf(legacyLeg({})));
+check('legacy: cote affichée = 1X2 2.40 (telle que publiée)', legOdds(legacyLeg({})) === 2.40);
+check('marketLabel: football VN → Double Chance / basket → Vainqueur du match',
+  marketLabel('football', 'home') === 'Double Chance — Victoire ou Nul'
+  && marketLabel('basketball', 'home') === 'Vainqueur du match');
+
+const legacyDrawLost = legacyLeg({
+  status: 'completed', result_match: true, actual_result: 'draw', // AUTO-FIX-VN l'avait basculé gagné
+  home_score: 1, away_score: 1,
+});
+const rLegacyDraw = resolveTicket([legacyDrawLost], new Date('2026-10-17T08:00:00Z'));
+check('legacy "Victoire" + NUL 1-1 → leg PERDUE malgré AUTO-FIX-VN (result_match=true ignoré)',
+  rLegacyDraw.status === 'lost', JSON.stringify(rLegacyDraw));
+
+const legacyWinWon = legacyLeg({
+  status: 'completed', result_match: true, actual_result: 'away',
+  home_score: 0, away_score: 2,
+});
+const rLegacyWin = resolveTicket([legacyWinWon], new Date('2026-10-17T08:00:00Z'));
+check('legacy "Victoire" + victoire réelle 0-2 → GAGNÉ @2.40',
+  rLegacyWin.status === 'won' && Math.abs(rLegacyWin.effectiveOdds - 2.40) < 0.01,
+  JSON.stringify(rLegacyWin));
+
 // La caption du ticket gagné affiche bien l'option VN
 const viewWon: CouponView = {
   status: 'won', comboId: 'combo-x', dateISO: '2026-10-16',
