@@ -57,7 +57,16 @@ function mapUnifiedToEnrichedMatch(p: UnifiedPrediction, rawMatch?: any): any {
   const drawProb = Math.round(ml.drawProb);
   const awayProb = Math.round(ml.awayProb);
   const maxProb = Math.max(homeProb, drawProb, awayProb);
-  const riskPercentage = Math.max(0, Math.min(100, 100 - maxProb));
+  // 🎯 FIX Task 45 (basket): le risque doit refléter le côté RECOMMANDÉ, pas le favori du
+  // modèle. Avant: risk = 100 − maxProb → un pick value sur l'outsider (ex: reco=away avec
+  // pAway 33% / pHome 67%) héritait du risque du favori (33% "Modéré") — contradiction
+  // directe avec Telegram (cron: riskPct = 100 − winProb du côté recommandé = 67 "Kamikaze").
+  // 'avoid' → conservé sur maxProb (pas de pari recommandé, information modèle brute).
+  const recProb = rec.bet === 'home' ? homeProb
+    : rec.bet === 'away' ? awayProb
+    : rec.bet === 'draw' ? drawProb
+    : maxProb;
+  const riskPercentage = Math.max(0, Math.min(100, 100 - recProb));
 
   // Recommendation text
   const recommendationText = rec.bet === 'home' ? p.homeTeam

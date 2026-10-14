@@ -283,7 +283,11 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
                 ? 'away' as const
                 : 'draw' as const,
             league: endpoint.league,
-            sport: 'basketball' as const
+            sport: 'basketball' as const,
+            // 🎯 FIX Task 45: attacher la date ESPN (YYYYMMDD) — permet le matching
+            // par date dans verifyNBAResults (avant: matching par noms seulement →
+            // un pick pouvait être vérifié contre le score d'un AUTRE jour).
+            espnDate: dateStr
           });
         }
       } catch (error) {
@@ -308,16 +312,60 @@ async function fetchNBAResults(): Promise<MatchResult[]> {
  * Matcher un résultat avec un pronostic (fuzzy matching amélioré)
  * Fonctionne avec DbPrediction (home_team/away_team) ou Prediction locale (homeTeam/awayTeam)
  */
+/** YYYYMMDD ESPN → ISO YYYY-MM-DD (null si invalide) */
+function espnDateToISO(espnDate?: string): string | null {
+  if (!espnDate || espnDate.length !== 8 || !/^\d{8}$/.test(espnDate)) return null;
+  return `${espnDate.slice(0, 4)}-${espnDate.slice(4, 6)}-${espnDate.slice(6, 8)}`;
+}
+
+/** Distance en jours entre deux dates ISO (null si invalide) */
+function dayDistance(a: string, b: string): number | null {
+  try {
+    const da = new Date(a + 'T12:00:00Z').getTime();
+    const dbb = new Date(b + 'T12:00:00Z').getTime();
+    if (!Number.isFinite(da) || !Number.isFinite(dbb)) return null;
+    return Math.abs(da - dbb) / 86400000;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 🎯 FIX Task 45: sélection date-aware du résultat correspondant.
+ * Plusieurs rencontres du même matchup existent sur la fenêtre de recherche (8 jours)
+ * → le premier match par noms pouvait vérifier un pick contre le score d'un AUTRE jour.
+ * Règle: si le pick a une vraie date de match (pas le placeholder T12:00 des anciens
+ * legs combo) et que le résultat porte une date ESPN → exiger |écart| ≤ 1.5 jour.
+ * Sans date ESPN sur le résultat → conservé (comportement antérieur, non-régressif).
+ */
+function pickDatedResultMatch(
+  prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string; match_date?: string },
+  results: MatchResult[]
+): { result: MatchResult; match: { matched: boolean; inverted: boolean } } | undefined {
+  const candidates = results
+    .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
+    .filter(e => e.match.matched);
+
+  if (candidates.length === 0) return undefined;
+
+  const predDateISO = (prediction.match_date || '').slice(0, 10);
+  const isPlaceholderDate = /T12:00:00/.test(prediction.match_date || '');
+  if (!predDateISO || isPlaceholderDate) return candidates[0];
+
+  const dated = candidates.filter(e => {
+    const iso = espnDateToISO(e.result.espnDate);
+    if (!iso) return true; // pas de date sur le résultat → on garde (non-régressif)
+    const d = dayDistance(iso, predDateISO);
+    return d !== null && d <= 1.5;
+  });
+  return dated.length > 0 ? dated[0] : undefined; // tous d'un autre jour → ne pas vérifier
+}
+
 function matchPredictionWithResult(
   prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
   result: MatchResult,
   returnInverted: true
 ): { matched: boolean; inverted: boolean };
-function matchPredictionWithResult(
-  prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
-  result: MatchResult,
-  returnInverted?: false
-): boolean;
 function matchPredictionWithResult(
   prediction: { homeTeam?: string; awayTeam?: string; home_team?: string; away_team?: string; league?: string },
   result: MatchResult,
@@ -490,9 +538,9 @@ async function verifyNBAResults(): Promise<{
     for (const prediction of pending) {
       verified++;
       
-      const matchEntry = nbaResults
-        .map(r => ({ result: r, match: matchPredictionWithResult(prediction, r, true) as { matched: boolean; inverted: boolean } }))
-        .find(e => e.match.matched);
+      // 🎯 FIX Task 45: sélection date-aware (évite de vérifier un pick contre le
+      // score d'une AUTRE rencontre du même matchup sur la fenêtre de 8 jours)
+      const matchEntry = pickDatedResultMatch(prediction, nbaResults);
       
       if (matchEntry) {
         const result = matchEntry.result;
@@ -3053,8 +3101,30 @@ export async function GET(request: NextRequest) {
           
           console.log(`🤖 Combo: ${comboInputs.length} matchs foot/basket éligibles, ${comboInputs.filter(m => m.valueBetDetected).length} value bets détectés`);
           
+          // 🎯 FIX Task 45 (répétition basket sur Telegram): 3 combos/jour (07h30/12h30/17h00)
+          // re-sélectionnaient le MÊME match (ex: Clippers–Nuggets ×3 le 14 oct) — pas de
+          // déduplication inter-combos. On exclut les matchs déjà legs d'un combo du jour.
+          try {
+            const todayISOCombo = new Date().toISOString().split('T')[0];
+            const todayRows = await SupabaseStore.getPredictionsByCreatedAt(todayISOCombo);
+            const alreadyInCombo = new Set(
+              todayRows
+                .filter(r => r.is_combo)
+                .map(r => `${(r.home_team || '').toLowerCase()}|${(r.away_team || '').toLowerCase()}|${(r.match_date || '').split('T')[0]}`)
+            );
+            const before = comboInputs.length;
+            const deduped = comboInputs.filter(m => !alreadyInCombo.has(`${(m.homeTeam || '').toLowerCase()}|${(m.awayTeam || '').toLowerCase()}|${(m.date || '').split('T')[0]}`));
+            if (deduped.length < before) {
+              console.log(`🔁 Combo dedup: ${before - deduped.length} matchs déjà publiés dans un combo du jour → exclus`);
+            }
+            comboInputs.length = 0;
+            comboInputs.push(...deduped);
+          } catch (dedupErr: any) {
+            console.log('⚠️ Combo dedup indisponible (non-bloquant):', dedupErr.message);
+          }
+          
           if (comboInputs.length < 2) {
-            result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2)' } };
+            result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2 ou tous déjà publiés aujourd\'hui)' } };
             break;
           }
           
@@ -3067,22 +3137,30 @@ export async function GET(request: NextRequest) {
           }
           
           // 💾 Sauvegarder les legs dans Supabase (pour le bilan journalier)
+          // 🎯 FIX Task 45: vraie date du match (leg.date), match_id déterministe
+          // (date+heure du match, pas date de sauvegarde+hex aléatoire → le dedup
+          // addPredictions fonctionne entre combos du même jour), cotes complètes
+          // (avant: odds_home null si reco=away → bilan/devig impossibles).
           try {
             const dbPredictions = combo.legs.map((leg: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-              const dateStr = new Date().toISOString().split('T')[0];
-              const timeSuffix = combo.comboId.split('-').pop() || '';
-              const matchId = `${cleanTeam(leg.homeTeam)}-${cleanTeam(leg.awayTeam)}-${cleanTeam(leg.league || '')}-${dateStr}-${timeSuffix}`;
+              const legDateStr = (leg.date || '').split('T')[0] || new Date().toISOString().split('T')[0];
+              const legTimeMatch = (leg.date || '').match(/T(\d{2}:\d{2})/);
+              const legTimeSuffix = legTimeMatch ? `-${legTimeMatch[1].replace(':', '')}` : '';
+              const matchId = `${cleanTeam(leg.homeTeam)}-${cleanTeam(leg.awayTeam)}-${cleanTeam(leg.league || '')}-${legDateStr}${legTimeSuffix}`;
+              const legMatchDate = leg.date || `${legDateStr}T12:00:00Z`;
               return {
                 match_id: matchId,
                 home_team: leg.homeTeam,
                 away_team: leg.awayTeam,
                 league: leg.league || 'Unknown',
                 sport: (leg.sport || 'football').toLowerCase(),
-                match_date: leg.date || `${dateStr}T12:00:00Z`,
-                odds_home: leg.predictedResult === 'home' ? leg.odds : (leg.predictedResult === 'away' ? null : null),
-                odds_draw: leg.predictedResult === 'draw' ? leg.odds : null,
-                odds_away: leg.predictedResult === 'away' ? leg.odds : (leg.predictedResult === 'home' ? null : null),
+                match_date: legMatchDate,
+                // 🎯 FIX Task 45: cotes complètes (les 3 issues du ComboMatch) — le côté
+                // prédit reste via leg.odds si les cotes complètes manquent (compat).
+                odds_home: leg.oddsHome ?? (leg.predictedResult === 'home' ? leg.odds : null),
+                odds_draw: leg.oddsDraw ?? (leg.predictedResult === 'draw' ? leg.odds : null),
+                odds_away: leg.oddsAway ?? (leg.predictedResult === 'away' ? leg.odds : null),
                 predicted_result: leg.predictedResult,
                 confidence: leg.confidence || 'medium',
                 risk_percentage: 100 - leg.winProbability,
@@ -4519,6 +4597,32 @@ export async function POST(request: NextRequest) {
             break;
           }
           
+          // 🎯 FIX Task 45: dedup inter-combos (combo-private tourne à 19h APRÈS les
+          // 3 telegram-combos du jour → sans dedup il republiait les mêmes matchs)
+          try {
+            const todayISOComboPost = new Date().toISOString().split('T')[0];
+            const todayRowsPost = await SupabaseStore.getPredictionsByCreatedAt(todayISOComboPost);
+            const alreadyInComboPost = new Set(
+              todayRowsPost
+                .filter(r => r.is_combo)
+                .map(r => `${(r.home_team || '').toLowerCase()}|${(r.away_team || '').toLowerCase()}|${(r.match_date || '').split('T')[0]}`)
+            );
+            const beforePost = comboInputs.length;
+            const dedupedPost = comboInputs.filter(m => !alreadyInComboPost.has(`${(m.homeTeam || '').toLowerCase()}|${(m.awayTeam || '').toLowerCase()}|${(m.date || '').split('T')[0]}`));
+            if (dedupedPost.length < beforePost) {
+              console.log(`🔁 [POST] Combo dedup: ${beforePost - dedupedPost.length} matchs déjà dans un combo du jour → exclus`);
+            }
+            comboInputs.length = 0;
+            comboInputs.push(...dedupedPost);
+          } catch (dedupErr: any) {
+            console.log('⚠️ [POST] Combo dedup indisponible (non-bloquant):', dedupErr.message);
+          }
+          
+          if (comboInputs.length < 2) {
+            result = { telegram: { success: false, message: 'Pas assez de matchs pour un combo (min 2 ou tous déjà publiés aujourd\'hui)' } };
+            break;
+          }
+          
           const combo = await generateComboWithLLM(comboInputs);
           
           if (!combo) {
@@ -4527,21 +4631,25 @@ export async function POST(request: NextRequest) {
           }
           
           try {
+            // 🎯 FIX Task 45: mêmes garanties que le combo du matin — vraie date du
+            // match, match_id déterministe (dedup inter-flows), cotes complètes.
             const dbPredictions = combo.legs.map((leg: any) => {
               const cleanTeam = (name: string) => (name || '').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-              const dateStr = new Date().toISOString().split('T')[0];
-              const timeSuffix = combo.comboId.split('-').pop() || '';
-              const matchId = `${cleanTeam(leg.homeTeam)}-${cleanTeam(leg.awayTeam)}-${cleanTeam(leg.league || '')}-${dateStr}-${timeSuffix}`;
+              const legDateStr = (leg.date || '').split('T')[0] || new Date().toISOString().split('T')[0];
+              const legTimeMatch = (leg.date || '').match(/T(\d{2}:\d{2})/);
+              const legTimeSuffix = legTimeMatch ? `-${legTimeMatch[1].replace(':', '')}` : '';
+              const matchId = `${cleanTeam(leg.homeTeam)}-${cleanTeam(leg.awayTeam)}-${cleanTeam(leg.league || '')}-${legDateStr}${legTimeSuffix}`;
+              const legMatchDate = leg.date || `${legDateStr}T12:00:00Z`;
               return {
                 match_id: matchId,
                 home_team: leg.homeTeam,
                 away_team: leg.awayTeam,
                 league: leg.league || 'Unknown',
                 sport: (leg.sport || 'football').toLowerCase(),
-                match_date: leg.date || `${dateStr}T12:00:00Z`,
-                odds_home: leg.predictedResult === 'home' ? leg.odds : null,
-                odds_draw: leg.predictedResult === 'draw' ? leg.odds : null,
-                odds_away: leg.predictedResult === 'away' ? leg.odds : null,
+                match_date: legMatchDate,
+                odds_home: leg.oddsHome ?? (leg.predictedResult === 'home' ? leg.odds : null),
+                odds_draw: leg.oddsDraw ?? (leg.predictedResult === 'draw' ? leg.odds : null),
+                odds_away: leg.oddsAway ?? (leg.predictedResult === 'away' ? leg.odds : null),
                 predicted_result: leg.predictedResult,
                 confidence: leg.confidence || 'medium',
                 risk_percentage: 100 - leg.winProbability,

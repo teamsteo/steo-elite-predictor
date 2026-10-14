@@ -250,6 +250,14 @@ export async function generateComboWithLLM(
         betLabel: betLabelForResult(m, m.predictedResult),
         winProbability: m.winProbability,
         odds,
+        // 🎯 FIX Task 45: propager la vraie date du match + les cotes complètes.
+        // Avant: legs sans date → le cron sauvegardait match_date placeholder T12:00Z
+        // et des cotes à un seul côté (odds_home null si reco=away) → bilan cassé
+        // (vérification impossible, devig impossible, double comptage OKC combo+summary).
+        date: m.date,
+        oddsHome: m.oddsHome,
+        oddsDraw: m.oddsDraw,
+        oddsAway: m.oddsAway,
         confidence: m.confidence,
         reasoning: (m._mlReasoning ?? []).slice(0, 2).join(' | '),
       };
