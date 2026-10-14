@@ -18,6 +18,9 @@
  */
 
 import ZAI from 'z-ai-web-dev-sdk';
+import {
+  comboLegIsVn, doubleChanceOdds, deviggedDrawProb, vnPickLabel,
+} from './resultPolicy';
 
 // ─── Types (contrats inchangés pour les consommateurs) ──────────────────────
 
@@ -77,20 +80,64 @@ function generateComboId(): string {
   return `combo-${dateStr}-${hex}`;
 }
 
-function betLabelForResult(
-  match: ComboMatch,
-  result: string,
-): string {
+/**
+ * 🎯 Task 46 — libellé bookmaker de LA SEULE option jouée:
+ *  - football home/away → "PSG ou Nul" / "Nul ou Marseille" (Double Chance);
+ *  - football draw → "Match Nul"; sports US → "Victoire Équipe" (pas de nul).
+ * (Avant: le libellé disait "Victoire X" avec la cote 1X2 alors que le nul
+ *  était compté gagné à la vérification — incohérence corrigée.)
+ */
+export function betLabelForResult(match: ComboMatch, result: string): string {
+  if (comboLegIsVn(match.sport, result)) {
+    return vnPickLabel(result, match.homeTeam, match.awayTeam);
+  }
   const team =
     result === 'home' ? match.homeTeam : result === 'away' ? match.awayTeam : 'Match Nul';
   const verb = result === 'draw' ? '' : 'Victoire ';
   return `${verb}${team}`;
 }
 
-function oddsForResult(match: ComboMatch, result: string): number {
+/**
+ * Marché de SÉLECTION (1X2 pur): utilisé par le scoring composite / plafond de
+ * cote — inchangé (la value bet est détectée sur le marché du côté).
+ */
+export function oddsForResult(match: ComboMatch, result: string): number {
   if (result === 'home') return match.oddsHome;
   if (result === 'away') return match.oddsAway;
   return match.oddsDraw ?? 1;
+}
+
+/**
+ * 🎯 Task 46 — marchés de PUBLICATION (une seule option par leg, cote correspondante):
+ *  - football home/away → pari "Victoire ou Nul" (Double Chance, politique VN:
+ *    nul = gagné) → cote DC = 1/(1/O_side + 1/O_draw), JAMAIS la cote 1X2 pure;
+ *  - football 'draw' → "Match Nul" pur → cote du nul;
+ *  - sports US (pas de nul) → victoire pure → cote du côté.
+ * Fallback: si la cote du nul manque, la cote 1X2 du côté est conservée
+ * (la cote d'origine est toujours préférable à un prix inventé).
+ */
+export function publishedOddsForResult(match: ComboMatch, result: string): number {
+  if (result === 'draw') return match.oddsDraw ?? 1;
+  if (comboLegIsVn(match.sport, result)) {
+    const side = result === 'home' ? match.oddsHome : match.oddsAway;
+    const dc = doubleChanceOdds(side, match.oddsDraw);
+    if (dc) return dc;
+  }
+  return oddsForResult(match, result);
+}
+
+/**
+ * 🎯 Task 46 — probabilité PUBLIÉE de la sélection (celle qui correspond à la cote):
+ *  - VN: p_modèle(côté) + p_nul dévigorisée (le modèle ne publie qu'un côté);
+ *  - V / Nul pur: proba modèle du côté, inchangée.
+ */
+export function publishedProbForResult(match: ComboMatch, result: string): number {
+  const sideProb = Math.min(0.97, Math.max(0.02, match.winProbability / 100));
+  if (comboLegIsVn(match.sport, result)) {
+    const drawP = deviggedDrawProb(match.oddsHome, match.oddsDraw, match.oddsAway);
+    if (drawP !== null) return Math.min(0.97, sideProb + drawP);
+  }
+  return sideProb;
 }
 
 const CONFIDENCE_WEIGHT: Record<string, number> = { high: 1.25, medium: 1.0, low: 0.6 };
@@ -167,7 +214,8 @@ function deterministicName(legs: ComboMatch[], combinedOdds: number): string {
 function deterministicReasoning(legs: ComboMatch[]): string {
   return legs
     .map((l) => {
-      const odds = oddsForResult(l, l.predictedResult);
+      // Task 46: le raisonnement décrit le pari PUBLIÉ (option VN + cote DC)
+      const odds = publishedOddsForResult(l, l.predictedResult);
       // FIX Task 15: _mlEdge arrive déjà en points de % (ex: 33.0 pour 33%)
       // depuis mlPrediction.edge = Math.round(bestEdge * 1000) / 10.
       // L'ancien code (l._mlEdge * 100) produisait 3300% — absurde.
@@ -187,7 +235,8 @@ async function narrateWithLLM(
   try {
     const zai = await ZAI.create();
     const legSummary = legs.map((l) => {
-      const odds = oddsForResult(l, l.predictedResult);
+      // Task 46: le LLM reprend les paris PUBLIÉS (option VN + cote DC), pas le 1X2 interne
+      const odds = publishedOddsForResult(l, l.predictedResult);
       return `- ${l.homeTeam} vs ${l.awayTeam} (${l.league}) : ${betLabelForResult(l, l.predictedResult)} @${odds.toFixed(2)}`;
     }).join('\n');
 
@@ -240,7 +289,10 @@ export async function generateComboWithLLM(
 
     const legs = selected.map((m) => {
       const source = m;
-      const odds = oddsForResult(source, source.predictedResult);
+      // 🎯 Task 46: la leg publiée porte UNE option + LA cote qui correspond
+      const odds = publishedOddsForResult(source, source.predictedResult);
+      const betType: 'V' | 'VN' = comboLegIsVn(source.sport, source.predictedResult) ? 'VN'
+        : source.predictedResult === 'draw' ? 'VN' : 'V';
       return {
         homeTeam: m.homeTeam,
         awayTeam: m.awayTeam,
@@ -248,8 +300,11 @@ export async function generateComboWithLLM(
         league: m.league,
         predictedResult: m.predictedResult,
         betLabel: betLabelForResult(m, m.predictedResult),
-        winProbability: m.winProbability,
+        // Probabilité de la sélection publiée (VN inclut le nul pour le football)
+        winProbability: Math.round(publishedProbForResult(m, m.predictedResult) * 1000) / 10,
         odds,
+        // Type de pari affiché (transparence: VN = nul compris dans le pari)
+        betType,
         // 🎯 FIX Task 45: propager la vraie date du match + les cotes complètes.
         // Avant: legs sans date → le cron sauvegardait match_date placeholder T12:00Z
         // et des cotes à un seul côté (odds_home null si reco=away) → bilan cassé
@@ -263,6 +318,8 @@ export async function generateComboWithLLM(
       };
     });
 
+    // 🎯 Task 46: cote combinée et probabilité = produits des sélections PUBLIÉES
+    // (VN pour le football) — cohérents entre eux, donc EV honnête.
     const combinedOdds = legs.reduce((acc, leg) => acc * leg.odds, 1);
     const combinedWinProbability = legs.reduce(
       (acc, leg) => acc * (leg.winProbability / 100),

@@ -12,6 +12,7 @@
 import { predictGoalsEnriched, type GoalsPredictionResult } from './dixonColesModel';
 import { getMatchTeamStats } from './teamStatsService';
 import SupabaseStore, { type DbPrediction } from './db-supabase';
+import { comboLegIsVn, doubleChanceOdds, vnPickLabel } from './resultPolicy';
 import { getDailyCalibrations, type StoredCalibration } from './liveCalibration/store';
 import { updateFinalScore } from './liveCalibration/store';
 import { fetchFinalScoresBatch } from './liveCalibration/finalScores';
@@ -2517,9 +2518,20 @@ async function fetchDailyResultsFromSupabase(dateISO?: string): Promise<DailyRes
         comboId,
         comboName: comboNames.get(comboId) || 'Combo',
         legs: legs.map(l => {
-          const predictedLabel = formatPredictedResult(l.predicted_result, l.sport, l.home_team, l.away_team, l.odds_home, l.odds_draw, l.odds_away);
+          // 🎯 Task 46: une leg FOOTBALL de combiné est un pari "Victoire ou Nul"
+          // (elle est vérifiée avec nul = gagné) → libellé + cote Double Chance de
+          // CETTE option — pas "Victoire" @cote_1X2 (incohérence corrigée).
+          // Les pronostics hors combiné gardent l'affichage double option (V + V/N).
+          const isVnLeg = comboLegIsVn(l.sport || 'football', l.predicted_result);
+          const predictedLabel = isVnLeg
+            ? vnPickLabel(l.predicted_result, l.home_team || '', l.away_team || '')
+            : formatPredictedResult(l.predicted_result, l.sport, l.home_team, l.away_team, l.odds_home, l.odds_draw, l.odds_away);
           let betOdds = 1.0;
-          if (l.predicted_result === 'home') betOdds = l.odds_home || 1.0;
+          if (isVnLeg) {
+            const side = l.predicted_result === 'home' ? l.odds_home : l.odds_away;
+            betOdds = doubleChanceOdds(side, l.odds_draw) ?? (side || 1.0);
+          }
+          else if (l.predicted_result === 'home') betOdds = l.odds_home || 1.0;
           else if (l.predicted_result === 'away') betOdds = l.odds_away || 1.0;
           else if (l.predicted_result === 'draw') betOdds = l.odds_draw || 1.0;
           return {

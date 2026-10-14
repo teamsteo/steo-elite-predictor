@@ -3057,9 +3057,16 @@ export async function GET(request: NextRequest) {
           }
           
           // Filtrer: à venir, cotes réelles, foot et basket uniquement
-          const upcomingWithOdds = matches.filter((m: any) =>
-            !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
-          );
+          const upcomingWithOdds = matches.filter((m: any) => {
+            if (m.isFinished || m.isEstimated || !(m.oddsHome > 0) || !(m.oddsAway > 0)) return false;
+            // 🎯 Task 46: une leg football publiée est un pari "Victoire ou Nul"
+            // (politique VN: nul = gagné) → son prix Double Chance = 1/(1/O_side+1/O_draw).
+            // Sans cote nul réelle, pas de prix VN honnête → le match est exclu du combo
+            // (on ne republie pas "Victoire @1X2" en comptant le nul gagné).
+            const s = (m.sport || '').toLowerCase();
+            if (s.includes('foot')) return m.oddsDraw !== null && m.oddsDraw !== undefined && m.oddsDraw > 1;
+            return true;
+          });
           
           // Mapper vers le format ComboMatch + détecter les value bets inline
           const comboInputs: any[] = upcomingWithOdds
@@ -4551,9 +4558,16 @@ export async function POST(request: NextRequest) {
             break;
           }
           
-          const upcomingWithOdds = matches.filter((m: any) =>
-            !m.isFinished && !m.isEstimated && m.oddsHome > 0 && m.oddsAway > 0
-          );
+          const upcomingWithOdds = matches.filter((m: any) => {
+            if (m.isFinished || m.isEstimated || !(m.oddsHome > 0) || !(m.oddsAway > 0)) return false;
+            // 🎯 Task 46: une leg football publiée est un pari "Victoire ou Nul"
+            // (politique VN: nul = gagné) → son prix Double Chance = 1/(1/O_side+1/O_draw).
+            // Sans cote nul réelle, pas de prix VN honnête → le match est exclu du combo
+            // (on ne republie pas "Victoire @1X2" en comptant le nul gagné).
+            const s = (m.sport || '').toLowerCase();
+            if (s.includes('foot')) return m.oddsDraw !== null && m.oddsDraw !== undefined && m.oddsDraw > 1;
+            return true;
+          });
           
           const comboInputs: any[] = upcomingWithOdds
             .filter((m: any) => {
