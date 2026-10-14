@@ -1,0 +1,717 @@
+{
+  "players": {
+    "player_medvedevdaniil_15": {
+      "id": "player_medvedevdaniil_15",
+      "name": "Medvedev Daniil",
+      "country": "",
+      "ranking": 8,
+      "rankingPoints": 0,
+      "surfaceStats": {
+        "hard": {
+          "wins": 0,
+          "losses": 1,
+          "winRate": 0
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 0,
+        "losses": 1,
+        "winStreak": 0,
+        "last10": [
+          "L"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_sinnerjannik_13": {
+      "id": "player_sinnerjannik_13",
+      "name": "Sinner Jannik",
+      "country": "",
+      "ranking": 1,
+      "rankingPoints": 640,
+      "surfaceStats": {
+        "hard": {
+          "wins": 1,
+          "losses": 0,
+          "winRate": 100
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 0,
+        "winStreak": 1,
+        "last10": [
+          "W"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_alcarazgarfia_14": {
+      "id": "player_alcarazgarfia_14",
+      "name": "Alcaraz Garfia",
+      "country": "",
+      "ranking": 2,
+      "rankingPoints": 640,
+      "surfaceStats": {
+        "hard": {
+          "wins": 1,
+          "losses": 0,
+          "winRate": 100
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 0,
+        "winStreak": 1,
+        "last10": [
+          "W"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_carlosdjokovicnovak_21": {
+      "id": "player_carlosdjokovicnovak_21",
+      "name": "Carlos Djokovic Novak",
+      "country": "",
+      "ranking": 9,
+      "rankingPoints": 0,
+      "surfaceStats": {
+        "hard": {
+          "wins": 0,
+          "losses": 1,
+          "winRate": 0
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 0,
+        "losses": 1,
+        "winStreak": 0,
+        "last10": [
+          "L"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_deminauralex_14": {
+      "id": "player_deminauralex_14",
+      "name": "De Minaur Alex",
+      "country": "",
+      "ranking": 3,
+      "rankingPoints": 640,
+      "surfaceStats": {
+        "hard": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 1,
+          "losses": 0,
+          "winRate": 100
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 0,
+        "winStreak": 1,
+        "last10": [
+          "W"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_augeraliassimefelix_21": {
+      "id": "player_augeraliassimefelix_21",
+      "name": "Auger Aliassime Felix",
+      "country": "",
+      "ranking": 10,
+      "rankingPoints": 0,
+      "surfaceStats": {
+        "hard": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 1,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 0,
+        "losses": 1,
+        "winStreak": 0,
+        "last10": [
+          "L"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_sabalenkaaryna_15": {
+      "id": "player_sabalenkaaryna_15",
+      "name": "Sabalenka Aryna",
+      "country": "",
+      "ranking": 7,
+      "rankingPoints": 330,
+      "surfaceStats": {
+        "hard": {
+          "wins": 1,
+          "losses": 1,
+          "winRate": 50
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 1,
+        "winStreak": 0,
+        "last10": [
+          "W",
+          "L"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_rybakinaelena_14": {
+      "id": "player_rybakinaelena_14",
+      "name": "Rybakina Elena",
+      "country": "",
+      "ranking": 6,
+      "rankingPoints": 340,
+      "surfaceStats": {
+        "hard": {
+          "wins": 1,
+          "losses": 1,
+          "winRate": 50
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 1,
+        "winStreak": 1,
+        "last10": [
+          "L",
+          "W"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_gironmarcos_12": {
+      "id": "player_gironmarcos_12",
+      "name": "Giron Marcos",
+      "country": "",
+      "ranking": 11,
+      "rankingPoints": 0,
+      "surfaceStats": {
+        "hard": {
+          "wins": 0,
+          "losses": 1,
+          "winRate": 0
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 0,
+        "losses": 1,
+        "winStreak": 0,
+        "last10": [
+          "L"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_quinnethan_11": {
+      "id": "player_quinnethan_11",
+      "name": "Quinn Ethan",
+      "country": "",
+      "ranking": 4,
+      "rankingPoints": 640,
+      "surfaceStats": {
+        "hard": {
+          "wins": 1,
+          "losses": 0,
+          "winRate": 100
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 0,
+        "winStreak": 1,
+        "last10": [
+          "W"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_belluccimattia_15": {
+      "id": "player_belluccimattia_15",
+      "name": "Bellucci Mattia",
+      "country": "",
+      "ranking": 12,
+      "rankingPoints": 0,
+      "surfaceStats": {
+        "hard": {
+          "wins": 0,
+          "losses": 1,
+          "winRate": 0
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 0,
+        "losses": 1,
+        "winStreak": 0,
+        "last10": [
+          "L"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    },
+    "player_navonemariano_14": {
+      "id": "player_navonemariano_14",
+      "name": "Navone Mariano",
+      "country": "",
+      "ranking": 5,
+      "rankingPoints": 640,
+      "surfaceStats": {
+        "hard": {
+          "wins": 1,
+          "losses": 0,
+          "winRate": 100
+        },
+        "clay": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "grass": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        },
+        "carpet": {
+          "wins": 0,
+          "losses": 0,
+          "winRate": 0
+        }
+      },
+      "recentForm": {
+        "wins": 1,
+        "losses": 0,
+        "winStreak": 1,
+        "last10": [
+          "W"
+        ]
+      },
+      "serveStats": {
+        "acesPerMatch": 0,
+        "doubleFaultsPerMatch": 0,
+        "firstServePct": 0,
+        "breakPointsSaved": 0
+      },
+      "returnStats": {
+        "breakPointsConverted": 0,
+        "returnGamesWon": 0
+      },
+      "lastUpdated": "2026-03-16T10:15:27.979Z"
+    }
+  },
+  "h2h": {
+    "player_medvedevdaniil_15_vs_player_sinnerjannik_13": {
+      "player1Id": "player_medvedevdaniil_15",
+      "player2Id": "player_sinnerjannik_13",
+      "player1Wins": 0,
+      "player2Wins": 1,
+      "totalMatches": 1,
+      "surfaceBreakdown": {
+        "hard": {
+          "p1": 0,
+          "p2": 1
+        },
+        "clay": {
+          "p1": 0,
+          "p2": 0
+        },
+        "grass": {
+          "p1": 0,
+          "p2": 0
+        }
+      },
+      "lastMeeting": "2026-03-16T10:15:21.788Z"
+    },
+    "player_alcarazgarfia_14_vs_player_carlosdjokovicnovak_21": {
+      "player1Id": "player_alcarazgarfia_14",
+      "player2Id": "player_carlosdjokovicnovak_21",
+      "player1Wins": 1,
+      "player2Wins": 0,
+      "totalMatches": 1,
+      "surfaceBreakdown": {
+        "hard": {
+          "p1": 1,
+          "p2": 0
+        },
+        "clay": {
+          "p1": 0,
+          "p2": 0
+        },
+        "grass": {
+          "p1": 0,
+          "p2": 0
+        }
+      },
+      "lastMeeting": "2026-03-16T10:15:22.766Z"
+    },
+    "player_augeraliassimefelix_21_vs_player_deminauralex_14": {
+      "player1Id": "player_deminauralex_14",
+      "player2Id": "player_augeraliassimefelix_21",
+      "player1Wins": 1,
+      "player2Wins": 0,
+      "totalMatches": 1,
+      "surfaceBreakdown": {
+        "hard": {
+          "p1": 0,
+          "p2": 0
+        },
+        "clay": {
+          "p1": 0,
+          "p2": 0
+        },
+        "grass": {
+          "p1": 0,
+          "p2": 0
+        }
+      },
+      "lastMeeting": "2026-03-16T10:15:23.646Z"
+    },
+    "player_rybakinaelena_14_vs_player_sabalenkaaryna_15": {
+      "player1Id": "player_sabalenkaaryna_15",
+      "player2Id": "player_rybakinaelena_14",
+      "player1Wins": 1,
+      "player2Wins": 1,
+      "totalMatches": 2,
+      "surfaceBreakdown": {
+        "hard": {
+          "p1": 1,
+          "p2": 1
+        },
+        "clay": {
+          "p1": 0,
+          "p2": 0
+        },
+        "grass": {
+          "p1": 0,
+          "p2": 0
+        }
+      },
+      "lastMeeting": "2026-03-16T10:15:25.685Z"
+    },
+    "player_gironmarcos_12_vs_player_quinnethan_11": {
+      "player1Id": "player_gironmarcos_12",
+      "player2Id": "player_quinnethan_11",
+      "player1Wins": 0,
+      "player2Wins": 1,
+      "totalMatches": 1,
+      "surfaceBreakdown": {
+        "hard": {
+          "p1": 0,
+          "p2": 1
+        },
+        "clay": {
+          "p1": 0,
+          "p2": 0
+        },
+        "grass": {
+          "p1": 0,
+          "p2": 0
+        }
+      },
+      "lastMeeting": "2026-03-16T10:15:26.561Z"
+    },
+    "player_belluccimattia_15_vs_player_navonemariano_14": {
+      "player1Id": "player_belluccimattia_15",
+      "player2Id": "player_navonemariano_14",
+      "player1Wins": 0,
+      "player2Wins": 1,
+      "totalMatches": 1,
+      "surfaceBreakdown": {
+        "hard": {
+          "p1": 0,
+          "p2": 1
+        },
+        "clay": {
+          "p1": 0,
+          "p2": 0
+        },
+        "grass": {
+          "p1": 0,
+          "p2": 0
+        }
+      },
+      "lastMeeting": "2026-03-16T10:15:27.478Z"
+    }
+  },
+  "lastUpdated": "2026-03-16T10:15:27.980Z"
+}

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "bun run build",
+  "installCommand": "bun install",
+  "framework": "nextjs",
+  "regions": ["cdg1"],
+  "functions": {
+    "src/app/api/cron/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 120
+    },
+    "src/app/api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    },
+    "src/app/api/combo-private/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 120
+    },
+    "src/app/api/live-calibration/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 120
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "s-maxage=300, stale-while-revalidate=600" }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/admin/cleanup?dryRun=false",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron?action=verify-evening",
+      "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron?action=verify-morning",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron?action=verify-night",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron?action=train-ml",
+      "schedule": "15 5 * * *"
+    },
+    {
+      "path": "/api/cron?action=backtest",
+      "schedule": "30 5 * * 0"
+    },
+    {
+      "path": "/api/cron?action=update-fundamentals",
+      "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/generate-daily",
+      "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-summary",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-valuebets",
+      "schedule": "15 7 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-combo",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-results",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-auto-publish?mode=summary",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-auto-publish?mode=results",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-kamikaze",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-summary",
+      "schedule": "0 18 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-monthly",
+      "schedule": "0 4 1 * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-combo",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/cron?action=telegram-combo",
+      "schedule": "0 17 * * *"
+    },
+    {
+      "path": "/api/cron?action=mlb-palier",
+      "schedule": "0 8 * * 2"
+    },
+    {
+      "path": "/api/combo-private",
+      "schedule": "0 19 * * *"
+    }
+  ]
+}

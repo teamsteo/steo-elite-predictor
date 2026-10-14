@@ -1,0 +1,173 @@
+# ============================================
+# Steo Élite Predictor - Pré-calcul Quotidien
+# ============================================
+
+name: Daily Precalculation
+
+on:
+  schedule:
+    - cron: '30 6 * * *'  # 06:30 UTC = 07h30 Paris (après entraînement)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  precalc:
+    name: Pré-calcul des pronostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Pronostiqueur Pro - Verification & Learning
+      - name: Pro verify results and learn
+        run: bun run scripts/pro-verify-learn.ts
+        continue-on-error: true
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+
+      # ML Results Tracking - Suivi des performances
+      - name: Track ML results and calculate ratio
+        run: bun run scripts/ml-results-tracker.ts
+        continue-on-error: true
+
+      # Tennis Data Collection
+      - name: Fetch ATP WTA Rankings
+        run: bun run scripts/fetch-tennis-rankings.ts
+        continue-on-error: true
+
+      - name: Collect tennis player data
+        run: bun run scripts/tennis-data-collector.ts
+        continue-on-error: true
+
+      - name: Generate tennis predictions
+        run: bun run scripts/tennis-precalc.ts
+        continue-on-error: true
+
+      # Football/Basket Data
+      - name: Fetch real matches from ESPN
+        run: bun run scripts/fetch-real-matches.ts
+
+      - name: Generate expert advices
+        run: bun run scripts/quick-precalc-expert.ts
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          if git diff --quiet data/; then
+            echo "⚠️ Aucun changement à commiter"
+            exit 0
+          fi
+          
+          # Set remote with token for all operations
+          REMOTE_URL="https://x-access-token:${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git remote set-url origin "$REMOTE_URL"
+          
+          git add data/
+          git commit -m "🎯 Pré-calcul automatique du $(date '+%Y-%m-%d %H:%M') UTC"
+          
+          # Retry loop for push (handles race conditions)
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "🔄 Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+            
+            # Fetch and merge (not rebase - avoids conflicts)
+            git fetch origin master
+            
+            # Try merge with --no-edit (auto accept merge message)
+            if git merge origin/master --no-edit -X theirs; then
+              echo "✅ Merge successful"
+            else
+              # If merge fails, reset and skip (remote already has newer data)
+              echo "⚠️ Merge failed, using remote version"
+              git merge --abort 2>/dev/null || true
+              git reset --hard origin/master
+              exit 0
+            fi
+            
+            # Try to push
+            if git push origin master; then
+              echo "✅ Push successful!"
+              exit 0
+            fi
+            
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "⚠️ Push failed, retrying in 5 seconds..."
+            sleep 5
+          done
+          
+          echo "❌ Failed to push after $MAX_RETRIES attempts"
+          exit 1
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## 📊 Résumé du pré-calcul" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Pronostiqueur Pro
+          if [ -f data/pronostiqueur-pro.json ]; then
+            PRO_TOTAL=$(cat data/pronostiqueur-pro.json | grep -o '"totalPredictions": [0-9]*' | grep -o '[0-9]*' || echo "0")
+            PRO_WR=$(cat data/pronostiqueur-pro.json | grep -o '"winRate": [0-9.]*' | head -1 | grep -o '[0-9.]*' || echo "0")
+            PRO_ROI=$(cat data/pronostiqueur-pro.json | grep -o '"roi": [0-9.-]*' | grep -o '[0-9.-]*' || echo "0")
+            echo "🎯 **Pronostiqueur Pro:** ${PRO_TOTAL} prédictions, ${PRO_WR}% WR, ${PRO_ROI}% ROI" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # ML Results Tracking
+          if [ -f data/ml-results-tracking.json ]; then
+            ML_VISIBLE=$(cat data/ml-results-tracking.json | grep -o '"expertMLVisible": [a-z]*' | grep -o '[a-z]*' || echo "false")
+            ML_RATIO=$(cat data/ml-results-tracking.json | grep -o '"weeklyRatio": [0-9]*' | grep -o '[0-9]*' || echo "0")
+            ML_WON=$(cat data/ml-results-tracking.json | grep -o '"won": [0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+            ML_TOTAL=$(cat data/ml-results-tracking.json | grep -o '"total": [0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+            if [ "$ML_VISIBLE" = "true" ]; then
+              echo "✅ **Expert ML:** VISIBLE - ${ML_WON}/${ML_TOTAL} réussis (${ML_RATIO}%)" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⏳ **Expert ML:** En apprentissage - ${ML_WON}/${ML_TOTAL} (${ML_RATIO}%) - Besoin 70%+" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          # Football/Basket predictions
+          if [ -f data/predictions.json ]; then
+            TOTAL=$(cat data/predictions.json | grep -o '"matchId"' | wc -l)
+            echo "⚽🏀 **Pronostics:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Expert advices
+          if [ -f data/expert-advices.json ]; then
+            EXPERT=$(cat data/expert-advices.json | grep -o '"totalAdvices": [0-9]*' | grep -o '[0-9]*' || echo "0")
+            echo "🎯 **Conseils expert:** ${EXPERT}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Tennis predictions
+          if [ -f data/tennis-predictions.json ]; then
+            TENNIS=$(cat data/tennis-predictions.json | grep -o '"totalMatches": [0-9]*' | grep -o '[0-9]*' || echo "0")
+            HIGH_CONF=$(cat data/tennis-predictions.json | grep -o '"high": [0-9]*' | head -1 | grep -o '[0-9]*' || echo "0")
+            echo "🎾 **Tennis:** ${TENNIS} matchs (${HIGH_CONF} haute confiance)" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Tennis player database
+          if [ -f data/tennis-players.json ]; then
+            PLAYERS=$(cat data/tennis-players.json | grep -o '"player_' | wc -l)
+            echo "👥 **Joueurs tennis:** ${PLAYERS}" >> $GITHUB_STEP_SUMMARY
+          fi

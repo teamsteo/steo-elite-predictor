@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<style>
+@page { size: 210mm 297mm; margin: 0; }
+html, body { margin: 0; padding: 0; width: 210mm; height: 297mm; background: #1c1b19; font-family: 'Inter', 'Noto Sans SC', sans-serif; }
+.cover { width: 210mm; height: 297mm; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; }
+.bg-bar { position: absolute; top: 0; left: 0; width: 100%; height: 6mm; background: #8c7738; }
+.bg-accent { position: absolute; bottom: 0; left: 0; width: 100%; height: 85mm; background: linear-gradient(transparent, rgba(140,119,56,0.15)); }
+.content { position: relative; z-index: 2; padding: 30mm 25mm 25mm; }
+.tag { font-size: 9pt; letter-spacing: 3px; text-transform: uppercase; color: #94771d; margin-bottom: 8mm; font-weight: 600; }
+.title { font-size: 32pt; font-weight: 900; color: #f6f5f4; line-height: 1.1; margin-bottom: 6mm; }
+.subtitle { font-size: 12pt; color: #908e87; line-height: 1.6; max-width: 130mm; margin-bottom: 8mm; }
+.meta-row { display: flex; gap: 20mm; margin-top: 6mm; }
+.meta-item { font-size: 8.5pt; color: #908e87; }
+.meta-label { color: #94771d; font-weight: 600; margin-bottom: 1mm; }
+.divider { width: 50mm; height: 0.5mm; background: #8c7738; margin-bottom: 14mm; }
+.corner-mark { position: absolute; top: 15mm; right: 20mm; font-size: 8pt; color: #908e87; font-weight: 400; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <div class="bg-bar"></div>
+  <div class="bg-accent"></div>
+  <div class="corner-mark">PHASE 4 PIPELINE AUDIT</div>
+  <div class="content">
+    <div class="tag">RAPPORT D'AUDIT</div>
+    <div class="title">Audit Complet<br>Securite, Logiciel<br>& Architecture</div>
+    <div class="subtitle">Pipeline ML : XGBoost, Calibration Platt/Isotonic, CLV Market Alignment, Brier Score. Analyse de securite, coherence logicielle et modifications permanentes.</div>
+    <div class="meta-row">
+      <div class="meta-item"><div class="meta-label">DATE</div><div>3 aout 2026</div></div>
+      <div class="meta-item"><div class="meta-label">VERSION</div><div>v4.0-final</div></div>
+      <div class="meta-item"><div class="meta-label">CLASSIFICATION</div><div>Confidentiel</div></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,66 @@
+{
+  "lastUpdate": "2026-04-02T12:00:00.000Z",
+  "version": "3.0",
+  "dailyStats": [],
+  "summary": {
+    "total": 0,
+    "wins": 0,
+    "losses": 0,
+    "winRate": 0,
+    "bySport": {
+      "football": {
+        "total": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "details": {
+          "resultats": { "total": 0, "wins": 0, "winRate": 0 },
+          "buts": { "total": 0, "wins": 0, "winRate": 0 },
+          "btts": { "total": 0, "wins": 0, "winRate": 0 }
+        }
+      },
+      "basketball": {
+        "total": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "details": {
+          "resultats": { "total": 0, "wins": 0, "winRate": 0 },
+          "buts": { "total": 0, "wins": 0, "winRate": 0 },
+          "btts": { "total": 0, "wins": 0, "winRate": 0 }
+        }
+      },
+      "hockey": {
+        "total": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "details": {
+          "resultats": { "total": 0, "wins": 0, "winRate": 0 },
+          "buts": { "total": 0, "wins": 0, "winRate": 0 },
+          "btts": { "total": 0, "wins": 0, "winRate": 0 }
+        }
+      },
+      "tennis": {
+        "total": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "details": {
+          "resultats": { "total": 0, "wins": 0, "winRate": 0 }
+        }
+      },
+      "baseball": {
+        "total": 0,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "details": {
+          "resultats": { "total": 0, "wins": 0, "winRate": 0 }
+        }
+      }
+    },
+    "expertAdvisor": null,
+    "note": "Statistiques réinitialisées le 2 avril 2026 - Nouveau départ"
+  }
+}

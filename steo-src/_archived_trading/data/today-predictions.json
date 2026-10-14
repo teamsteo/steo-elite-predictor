@@ -1,0 +1,321 @@
+{
+  "generatedAt": "2026-03-21T06:33:39.389Z",
+  "date": "21/03/2026",
+  "summary": {
+    "totalMatches": 17,
+    "validPredictions": 17,
+    "highConfidence": 9,
+    "mediumConfidence": 8,
+    "totalStake": 170,
+    "expectedValue": 119.75,
+    "expectedROI": "70%"
+  },
+  "predictions": [
+    {
+      "sport": "football",
+      "league": "Premier League",
+      "match": "Arsenal vs Chelsea",
+      "recommendation": "Arsenal",
+      "prediction": "home",
+      "odds": 1.85,
+      "probability": 50.78597339782346,
+      "edge": -3.2680806562305875,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 7.945,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-3.3%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Premier League",
+      "match": "Liverpool vs Man City",
+      "recommendation": "Liverpool",
+      "prediction": "home",
+      "odds": 2.1,
+      "probability": 44.36536180308423,
+      "edge": -3.2536858159633866,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 10.37,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-3.3%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Premier League",
+      "match": "Tottenham vs Newcastle",
+      "recommendation": "Tottenham",
+      "prediction": "home",
+      "odds": 2.25,
+      "probability": 41.883568448241604,
+      "edge": -2.5608759962028387,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 11.825000000000001,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-2.6%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "La Liga",
+      "match": "Real Madrid vs Athletic Bilbao",
+      "recommendation": "Real Madrid",
+      "prediction": "home",
+      "odds": 1.4,
+      "probability": 67.28971962616822,
+      "edge": -4.1388518024032095,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 3.999999999999999,
+      "reasons": [
+        "🏆 Favori solide avec 67% de probabilité",
+        "📊 Cote attractive @1.40",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "La Liga",
+      "match": "Barcelona vs Girona",
+      "recommendation": "Barcelona",
+      "prediction": "home",
+      "odds": 1.35,
+      "probability": 68.96551724137932,
+      "edge": -5.1085568326947595,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 3.500000000000001,
+      "reasons": [
+        "🏆 Favori solide avec 69% de probabilité",
+        "📊 Cote attractive @1.35",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Serie A",
+      "match": "Inter Milan vs Fiorentina",
+      "recommendation": "Inter Milan",
+      "prediction": "home",
+      "odds": 1.55,
+      "probability": 59.18165085657652,
+      "edge": -5.3344781756815465,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 5.5,
+      "reasons": [
+        "🏆 Favori solide avec 59% de probabilité",
+        "📊 Cote attractive @1.55",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Serie A",
+      "match": "Napoli vs Roma",
+      "recommendation": "Napoli",
+      "prediction": "home",
+      "odds": 1.9,
+      "probability": 48.95104895104895,
+      "edge": -3.680529996319464,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 8.43,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-3.7%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Bundesliga",
+      "match": "Bayern Munich vs Stuttgart",
+      "recommendation": "Bayern Munich",
+      "prediction": "home",
+      "odds": 1.3,
+      "probability": 72.42136064374542,
+      "edge": -4.501716279331504,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 3.0000000000000004,
+      "reasons": [
+        "🏆 Favori solide avec 72% de probabilité",
+        "📊 Cote attractive @1.30",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Bundesliga",
+      "match": "Dortmund vs Leverkusen",
+      "recommendation": "Dortmund",
+      "prediction": "home",
+      "odds": 2.4,
+      "probability": 38.69346733668342,
+      "edge": -2.9731993299832524,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 13.279999999999998,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-3.0%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Ligue 1",
+      "match": "PSG vs Lyon",
+      "recommendation": "PSG",
+      "prediction": "home",
+      "odds": 1.45,
+      "probability": 64.41717791411044,
+      "edge": -4.548339327268877,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 4.5,
+      "reasons": [
+        "🏆 Favori solide avec 64% de probabilité",
+        "📊 Cote attractive @1.45",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "football",
+      "league": "Ligue 1",
+      "match": "Monaco vs Marseille",
+      "recommendation": "Monaco",
+      "prediction": "home",
+      "odds": 2,
+      "probability": 46.303501945525284,
+      "edge": -3.6964980544747164,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 9.399999999999999,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-3.7%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "basketball",
+      "league": "NBA",
+      "match": "Boston Celtics vs Miami Heat",
+      "recommendation": "Boston Celtics",
+      "prediction": "home",
+      "odds": 1.45,
+      "probability": 64.19753086419753,
+      "edge": -4.767986377181785,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 4.5,
+      "reasons": [
+        "🏆 Favori solide avec 64% de probabilité",
+        "📊 Cote attractive @1.45",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "basketball",
+      "league": "NBA",
+      "match": "LA Lakers vs Golden State Warriors",
+      "recommendation": "LA Lakers",
+      "prediction": "home",
+      "odds": 1.85,
+      "probability": 51.315789473684205,
+      "edge": -2.7382645803698438,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 8.5,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-2.7%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "basketball",
+      "league": "NBA",
+      "match": "Denver Nuggets vs Phoenix Suns",
+      "recommendation": "Denver Nuggets",
+      "prediction": "home",
+      "odds": 1.55,
+      "probability": 60.256410256410255,
+      "edge": -4.259718775847809,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 5.5,
+      "reasons": [
+        "🏆 Favori solide avec 60% de probabilité",
+        "📊 Cote attractive @1.55",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "basketball",
+      "league": "NBA",
+      "match": "Milwaukee Bucks vs Philadelphia 76ers",
+      "recommendation": "Milwaukee Bucks",
+      "prediction": "home",
+      "odds": 1.65,
+      "probability": 57.14285714285715,
+      "edge": -3.463203463203456,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 6.499999999999999,
+      "reasons": [
+        "🏆 Favori solide avec 57% de probabilité",
+        "📊 Cote attractive @1.65",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    },
+    {
+      "sport": "basketball",
+      "league": "NBA",
+      "match": "Dallas Mavericks vs Memphis Grizzlies",
+      "recommendation": "Dallas Mavericks",
+      "prediction": "home",
+      "odds": 1.8,
+      "probability": 52.63157894736842,
+      "edge": -2.9239766081871394,
+      "confidence": "medium",
+      "stake": 10,
+      "expectedValue": 8,
+      "reasons": [
+        "⚖️ Match équilibré, léger avantage domicile",
+        "📈 Edge: +-2.9%",
+        "✅ Backtest: 97% win rate MEDIUM confidence"
+      ]
+    },
+    {
+      "sport": "basketball",
+      "league": "NBA",
+      "match": "Cleveland Cavaliers vs New York Knicks",
+      "recommendation": "Cleveland Cavaliers",
+      "prediction": "home",
+      "odds": 1.5,
+      "probability": 62.5,
+      "edge": -4.166666666666657,
+      "confidence": "high",
+      "stake": 10,
+      "expectedValue": 5,
+      "reasons": [
+        "🏆 Favori solide avec 63% de probabilité",
+        "📊 Cote attractive @1.50",
+        "✅ Backtest: 100% win rate HIGH confidence"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "match": {
+    "home_team": "Cerro Porteño",
+    "away_team": "Nacional Asunción",
+    "league": "Paraguay Primera División · Clausura",
+    "kickoff_utc": "2026-09-07T21:30:00Z",
+    "minute": 45,
+    "score": { "home": 0, "away": 0 },
+    "match_id": "manual-cerro-nacional-ht-20260907"
+  },
+  "stats": {
+    "xg": { "home": 0.20, "away": 0.38 },
+    "shots": { "home": 5, "away": 14 },
+    "shots_on_target": { "home": 1, "away": 3 },
+    "big_chances": { "home": 0, "away": 0 },
+    "penalties": { "home": 0, "away": 0 },
+    "possession_pct": { "home": 48, "away": 52 },
+    "corners": { "home": 2, "away": 3 },
+    "cards": { "home_yellow": 0, "away_yellow": 0, "home_red": 0, "away_red": 0 },
+    "momentum": [
+      { "window_start": 0,  "window_end": 15, "xg_home": 0.06, "xg_away": 0.05 },
+      { "window_start": 15, "window_end": 30, "xg_home": 0.11, "xg_away": 0.11 },
+      { "window_start": 30, "window_end": 45, "xg_home": 0.03, "xg_away": 0.22 }
+    ]
+  },
+  "pre_match": {
+    "odds": { "home": 2.50, "draw": 2.45, "away": 3.10 }
+  },
+  "live_odds": {
+    "home_win": 2.80, "draw": 2.10, "away_win": 3.40,
+    "over_2_5": 5.70, "under_2_5": 1.06,
+    "btts_yes": 3.90, "btts_no": 1.16
+  }
+}

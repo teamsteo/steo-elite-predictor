@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Voici le détail complet des 4 matchs de tennis visibles sur cette capture d'écran de l'application **Betclic** (onglet \"Terminés\") :\n\n---\n\n### 🎾 Match 1\n*   **Joueurs :** Elisabetta Cocciaretto vs Clara Tauson\n*   **Type de pari :** Vainqueur du match (1N2)\n*   **Pronostic :** Clara Tauson\n*   **Cote :** **1,39**\n*   **Score final :** 4-7, 7-6, 7-6 (victoire de Cocciaretto)\n*   **Statut :** ❌ **Perdu**\n\n---\n\n### 🎾 Match 2\n*   **Joueurs :** Taylor Fritz vs Zizou Bergs\n*   **Type de pari :** Vainqueur du match (1N2)\n*   **Pronostic :** Taylor Fritz\n*   **Cote :** **1,23**\n*   **Score final :** 6-3, 6-4 (victoire de Fritz)\n*   **Statut :** ✅ **Gagné**\n\n---\n\n### 🎾 Match 3\n*   **Joueurs :** Liudmila Samsonova vs Madison Keys\n*   **Type de pari :** Vainqueur du match (1N2)\n*   **Pronostic :** Madison Keys\n*   **Cote :** **1,29**\n*   **Score final :** 3-6, 6-4, 6-4 (victoire de Samsonova)\n*   **Statut :** ❌ **Perdu**\n\n---\n\n### 🎾 Match 4\n*   **Joueurs :** Frances Tiafoe vs Terence Atmane\n*   **Type de pari :** Vainqueur du match (1N2)\n*   **Pronostic :** Frances Tiafoe\n*   **Cote :** **1,38**\n*   **Score final :** 6-4, 3-6, 4-6 (victoire d'Atmane)\n*   **Statut :** ❌ **Perdu**\n\n---\n\n### 📊 Résumé du ticket\n*   **Total des paris :** 4\n*   **Paris gagnés :** 1 (Taylor Fritz)\n*   **Paris perdus :** 3 (Tauson, Keys, Tiafoe)\n*   **Indicateur global :** Le badge rouge **\"Perdu\"** en haut à droite confirme que l'ensemble du ticket (probablement un combiné) est perdant.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1785268575,
+  "id": "20260729035608dca0cebeaefa4719",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "20260729035608dca0cebeaefa4719",
+  "usage": {
+    "completion_tokens": 599,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 3435,
+    "prompt_tokens_details": {
+      "cached_tokens": 2
+    },
+    "total_tokens": 4034
+  }
+}

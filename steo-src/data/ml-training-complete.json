@@ -1,0 +1,35 @@
+{
+  "id": "training_1774578992615",
+  "sport": "all",
+  "training_date": "2026-03-27T02:36:32.615Z",
+  "total_matches": 3149,
+  "patterns_count": 7,
+  "accuracy": 35,
+  "win_rate": 35,
+  "roi": 2,
+  "details": [
+    {
+      "sport": "football",
+      "totalMatches": 2741,
+      "trainingMatches": 2192,
+      "testMatches": 549,
+      "accuracy": 70,
+      "patternsFound": 5,
+      "patternsKept": 5,
+      "roi": 3,
+      "winRate": 70
+    },
+    {
+      "sport": "basketball",
+      "totalMatches": 408,
+      "trainingMatches": 326,
+      "testMatches": 82,
+      "accuracy": 0,
+      "patternsFound": 2,
+      "patternsKept": 2,
+      "roi": 0,
+      "winRate": 0
+    }
+  ],
+  "created_at": "2026-03-27T02:36:32.615Z"
+}

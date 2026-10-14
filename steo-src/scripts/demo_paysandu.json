@@ -1,0 +1,17 @@
+{
+  "match": {
+    "home_team": "Paysandu PA",
+    "away_team": "Brusque",
+    "league": "Brésil Série C · Gr. C, J1",
+    "minute": 45,
+    "score": { "home": 1, "away": 2 },
+    "anchor_minute": 37,
+    "anchor_score": { "home": 0, "away": 2 }
+  },
+  "pre_match": {
+    "odds": { "home": 6.00, "draw": 4.30, "away": 1.35 }
+  },
+  "live_odds": {
+    "home_win": 3.7, "draw": 2.9, "away_win": 2.1
+  }
+}

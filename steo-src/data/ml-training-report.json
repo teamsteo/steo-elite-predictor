@@ -1,0 +1,258 @@
+{
+  "generatedAt": "2026-03-27T02:07:05.161Z",
+  "version": "2.0",
+  "football": {
+    "training": {
+      "sport": "football",
+      "totalMatches": 1000,
+      "trainingMatches": 800,
+      "testMatches": 200,
+      "accuracy": 0.875,
+      "precision": 0.8518518518518519,
+      "recall": 0.8414634146341463,
+      "f1Score": 0.8466257668711655,
+      "patterns": [
+        {
+          "id": "foot_home_favorite_1774577223929",
+          "sport": "football",
+          "pattern_type": "home_favorite_low",
+          "condition": "odds_home < 1.5",
+          "outcome": "home_win",
+          "sample_size": 40,
+          "success_rate": 88,
+          "confidence": 0.5,
+          "last_updated": "2026-03-27T02:07:03.929Z"
+        },
+        {
+          "id": "foot_xg_diff_1774577223930",
+          "sport": "football",
+          "pattern_type": "xg_differential",
+          "condition": "abs(home_xg - away_xg) > 0.5",
+          "outcome": "xg_favorite_wins",
+          "sample_size": 540,
+          "success_rate": 93,
+          "confidence": 0.9,
+          "last_updated": "2026-03-27T02:07:03.930Z"
+        },
+        {
+          "id": "foot_over_xg_1774577223930",
+          "sport": "football",
+          "pattern_type": "over_xg_threshold",
+          "condition": "home_xg + away_xg > 2.8",
+          "outcome": "over_2.5",
+          "sample_size": 567,
+          "success_rate": 84,
+          "confidence": 0.9,
+          "last_updated": "2026-03-27T02:07:03.930Z"
+        },
+        {
+          "id": "foot_under_xg_1774577223930",
+          "sport": "football",
+          "pattern_type": "under_xg_threshold",
+          "condition": "home_xg + away_xg < 2.2",
+          "outcome": "under_2.5",
+          "sample_size": 115,
+          "success_rate": 100,
+          "confidence": 0.9,
+          "last_updated": "2026-03-27T02:07:03.930Z"
+        }
+      ],
+      "featureImportance": {
+        "homeWin": 0.374,
+        "draw": 0.277,
+        "awayWin": 0.349,
+        "totalGoals": 2.967,
+        "goalDiff": 0.085,
+        "over25": 0.606,
+        "over35": 0.361,
+        "bothTeamsScored": 0.562,
+        "possessionDiff": 0,
+        "shotsDiff": 0,
+        "shotsOnTargetDiff": 0,
+        "cornersDiff": 0,
+        "xgDiff": 0.004700000000000001,
+        "oddsHome": 2.9510400000000074,
+        "oddsDraw": 3.3970099999999928,
+        "oddsAway": 3.362350000000007,
+        "impliedHomeProb": 0.3651243060031106,
+        "impliedAwayProb": 0.3264158473685014,
+        "favoriteWon": 0.245
+      },
+      "confusionMatrix": {
+        "TP": 69,
+        "TN": 106,
+        "FP": 12,
+        "FN": 13
+      }
+    },
+    "backtest": {
+      "sport": "football",
+      "totalBets": 1000,
+      "wins": 796,
+      "losses": 204,
+      "winRate": 80,
+      "totalStake": 10000,
+      "totalReturn": 23014.600000000002,
+      "profit": 13014.600000000002,
+      "roi": 130,
+      "byConfidence": {
+        "very_high": {
+          "bets": 31,
+          "wins": 27,
+          "winRate": 87,
+          "profit": 40.7
+        },
+        "high": {
+          "bets": 65,
+          "wins": 44,
+          "winRate": 68,
+          "profit": 49.800000000000026
+        },
+        "medium": {
+          "bets": 125,
+          "wins": 60,
+          "winRate": 48,
+          "profit": 66.79999999999995
+        },
+        "low": {
+          "bets": 779,
+          "wins": 665,
+          "winRate": 85,
+          "profit": 12857.300000000003
+        }
+      },
+      "byLeague": {
+        "Premier League": {
+          "bets": 132,
+          "wins": 121,
+          "winRate": 92
+        },
+        "La Liga": {
+          "bets": 165,
+          "wins": 133,
+          "winRate": 81
+        },
+        "Bundesliga": {
+          "bets": 123,
+          "wins": 101,
+          "winRate": 82
+        },
+        "Serie A": {
+          "bets": 217,
+          "wins": 158,
+          "winRate": 73
+        },
+        "Ligue 1": {
+          "bets": 229,
+          "wins": 166,
+          "winRate": 72
+        },
+        "Champions League": {
+          "bets": 134,
+          "wins": 117,
+          "winRate": 87
+        }
+      }
+    }
+  },
+  "basketball": {
+    "training": {
+      "sport": "basketball",
+      "totalMatches": 408,
+      "trainingMatches": 326,
+      "testMatches": 82,
+      "accuracy": 0.45121951219512196,
+      "precision": 0.5128205128205128,
+      "recall": 0.43478260869565216,
+      "f1Score": 0.47058823529411764,
+      "patterns": [
+        {
+          "id": "basket_over_rate_1774577223934",
+          "sport": "basketball",
+          "pattern_type": "league_scoring_rate",
+          "condition": "league_avg > 220",
+          "outcome": "over_220",
+          "sample_size": 408,
+          "success_rate": 75,
+          "confidence": 0.8,
+          "last_updated": "2026-03-27T02:07:03.934Z"
+        }
+      ],
+      "featureImportance": {
+        "homeWin": 0.5318627450980392,
+        "awayWin": 0.4681372549019608,
+        "totalPoints": 229.9142156862745,
+        "pointDiff": 1.5563725490196079,
+        "over220": 0.7475490196078431,
+        "over230": 0.5098039215686274,
+        "fgPctDiff": 0,
+        "threePctDiff": 0,
+        "reboundsDiff": 0,
+        "assistsDiff": 0,
+        "oddsHome": 1.9961985294117648,
+        "oddsAway": 1.993691176470588,
+        "impliedHomeProb": 0.5020300920625854,
+        "impliedAwayProb": 0.5026184950523469,
+        "spread": 0,
+        "favoriteWon": 0.47549019607843135
+      },
+      "confusionMatrix": {
+        "TP": 20,
+        "TN": 17,
+        "FP": 19,
+        "FN": 26
+      }
+    },
+    "backtest": {
+      "sport": "basketball",
+      "totalBets": 408,
+      "wins": 196,
+      "losses": 212,
+      "winRate": 48,
+      "totalStake": 4080,
+      "totalReturn": 3807.5400000000013,
+      "profit": -272.4599999999987,
+      "roi": -7,
+      "byConfidence": {
+        "very_high": {
+          "bets": 0,
+          "wins": 0,
+          "winRate": 0,
+          "profit": 0
+        },
+        "high": {
+          "bets": 1,
+          "wins": 1,
+          "winRate": 100,
+          "profit": 5
+        },
+        "medium": {
+          "bets": 310,
+          "wins": 145,
+          "winRate": 47,
+          "profit": -327.45000000000005
+        },
+        "low": {
+          "bets": 97,
+          "wins": 50,
+          "winRate": 52,
+          "profit": 49.99000000000001
+        }
+      },
+      "byLeague": {
+        "NBA": {
+          "bets": 408,
+          "wins": 196,
+          "winRate": 48
+        }
+      }
+    }
+  },
+  "summary": {
+    "totalMatches": 1408,
+    "totalPatterns": 5,
+    "avgAccuracy": "66.3%",
+    "totalProfit": 12742.140000000003,
+    "totalROI": 61.5
+  }
+}

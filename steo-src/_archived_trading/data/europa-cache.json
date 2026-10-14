@@ -1,0 +1,12 @@
+{
+  "matches": [],
+  "lastUpdate": "",
+  "expiresAt": "",
+  "quotaUsed": 0,
+  "quotaRemaining": 500,
+  "stats": {
+    "total": 0,
+    "byLeague": {}
+  },
+  "_comment": "Cache for European matches (Champions League, Europa League, Conference League) - TTL: 30 minutes"
+}

@@ -1,0 +1,1278 @@
+/**
+ * Unified ML Service - Service ML Unifié avec persistance Supabase
+ * 
+ * PROBLÈMES RÉSOLUS:
+ * 1. Persistance du modèle sur Vercel (read-only filesystem) → Stockage Supabase
+ * 2. Synchronisation async/sync → Tout est async maintenant
+ * 3. Apprentissage automatique → Intégré dans le cron
+ * 
+ * FONCTIONNALITÉS:
+ * - Découverte de patterns depuis les résultats passés
+ * - Mise à jour des seuils adaptatifs
+ * - Persistance permanente dans Supabase
+ * - Filtrage du bruit (patterns < 55% de succès ignorés)
+ */
+
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+// Configuration Supabase
+// SECURITY: Require service role key for server-side ML operations (not anon key)
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Type pour le client Supabase
+type GenericSupabaseClient = SupabaseClient<any, any, any>;
+
+// ============================================
+// TYPES
+// ============================================
+
+export interface MLPattern {
+  id: string;
+  sport: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis';
+  pattern_type: string;
+  condition: string;
+  outcome: string;
+  sample_size: number;
+  success_rate: number;
+  confidence: number;
+  description: string;
+  last_updated: string;
+  created_at?: string;
+}
+
+export interface MLModel {
+  id?: string;
+  version: string;
+  edge_threshold: number;
+  injury_impact_factor: number;
+  form_weight: number;
+  xg_weight: number;
+  net_rating_weight: number;
+  min_data_quality: number;
+  confidence_weights: {
+    very_high: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+  samples_used: number;
+  accuracy: number;
+  last_trained: string;
+  created_at?: string;
+  // XGBoost params (from Python training script)
+  xgboost_params?: XGBoostParams | null;
+}
+
+export interface XGBoostParams {
+  trained: boolean;
+  sports: Record<string, XGBoostSportParams>;
+  global_cv_accuracy: number;
+  total_samples: number;
+  best_edge_threshold: number;
+}
+
+export interface XGBoostSportParams {
+  cv_accuracy: number;
+  best_confidence_threshold: number;
+  top_features: [string, number][];
+  feature_importance: Record<string, number>;
+  samples: number;
+  version: string;
+  trained_at: string;
+}
+
+export interface TrainingResult {
+  success: boolean;
+  samplesUsed: number;
+  patternsDiscovered: number;
+  patternsSaved: number;
+  patternsUpdated: number;
+  accuracy: number;
+  improvements: string[];
+  errors: string[];
+}
+
+export interface MatchForTraining {
+  id: string;
+  sport: string;
+  home_team: string;
+  away_team: string;
+  home_score?: number;
+  away_score?: number;
+  status: string;
+  date: string;
+  home_xg?: number;
+  away_xg?: number;
+  odds_home?: number;
+  odds_away?: number;
+  odds_draw?: number;
+  league?: string;
+  predicted_result?: string;
+  result_match?: boolean;
+  // Tennis fields
+  home_sets_won?: number;
+  away_sets_won?: number;
+  league_tournament?: string;
+}
+
+// Client Supabase singleton
+let supabaseClient: GenericSupabaseClient | null = null;
+
+// Cache local pour les patterns
+let patternsCache: MLPattern[] = [];
+let modelCache: MLModel | null = null;
+let lastCacheUpdate = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// ============================================
+// CONNEXION SUPABASE
+// ============================================
+
+function getSupabase(): GenericSupabaseClient | null {
+  if (!supabaseClient) {
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      console.warn('⚠️ UnifiedML: Supabase non configuré');
+      return null;
+    }
+    supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    });
+  }
+  return supabaseClient;
+}
+
+// ============================================
+// GESTION DU MODÈLE
+// ============================================
+
+/**
+ * Charge le modèle ML depuis Supabase
+ */
+export async function loadMLModel(): Promise<MLModel> {
+  const now = Date.now();
+  
+  // Utiliser le cache si valide
+  if (modelCache && (now - lastCacheUpdate) < CACHE_DURATION) {
+    return modelCache;
+  }
+  
+  const supabase = getSupabase();
+  
+  // Modèle par défaut
+  const defaultModel: MLModel = {
+    version: '1.0.0',
+    edge_threshold: 0.03,
+    injury_impact_factor: 1.0,
+    form_weight: 0.05,
+    xg_weight: 0.03,
+    net_rating_weight: 0.03,
+    min_data_quality: 50,
+    confidence_weights: {
+      very_high: 0.5,
+      high: 0.4,
+      medium: 0.25,
+      low: 0.1
+    },
+    samples_used: 0,
+    accuracy: 0,
+    last_trained: new Date().toISOString()
+  };
+  
+  if (!supabase) {
+    console.warn('⚠️ UnifiedML: Supabase non disponible, modèle par défaut');
+    return defaultModel;
+  }
+  
+  try {
+    // Essayer de charger depuis la table ml_model
+    const { data, error } = await supabase
+      .from('ml_model')
+      .select('*')
+      .order('last_trained', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (error) {
+      // Si la table n'existe pas, créer le modèle par défaut
+      if (error.code === 'PGRST116' || error.message.includes('does not exist')) {
+        console.log('📦 UnifiedML: Création du modèle initial...');
+        
+        // Insérer le modèle par défaut
+        await supabase.from('ml_model').insert({
+          ...defaultModel,
+          id: 'default_model'
+        });
+        
+        modelCache = defaultModel;
+        lastCacheUpdate = now;
+        return defaultModel;
+      }
+      
+      console.warn('⚠️ UnifiedML: Erreur chargement modèle:', error.message);
+      return defaultModel;
+    }
+    
+    if (data) {
+      modelCache = {
+        ...data,
+        confidence_weights: typeof data.confidence_weights === 'string' 
+          ? JSON.parse(data.confidence_weights) 
+          : data.confidence_weights,
+        xgboost_params: data.xgboost_params 
+          ? (typeof data.xgboost_params === 'string' ? JSON.parse(data.xgboost_params) : data.xgboost_params)
+          : null
+      } as MLModel;
+      lastCacheUpdate = now;
+      const xgbStatus = modelCache.xgboost_params?.trained ? `XGBoost ✅ (${modelCache.xgboost_params.total_samples} samples)` : 'heuristiques';
+      console.log(`✅ UnifiedML: Modèle v${modelCache.version} chargé (${modelCache.samples_used} échantillons, ${modelCache.accuracy}% accuracy) [${xgbStatus}]`);
+      return modelCache;
+    }
+    
+    return defaultModel;
+  } catch (e) {
+    console.error('❌ UnifiedML: Exception chargement modèle:', e);
+    return defaultModel;
+  }
+}
+
+/**
+ * Sauvegarde le modèle ML dans Supabase
+ */
+export async function saveMLModel(model: MLModel): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  
+  try {
+    const { error } = await supabase
+      .from('ml_model')
+      .upsert({
+        id: 'default_model',
+        ...model,
+        confidence_weights: model.confidence_weights,
+        last_trained: new Date().toISOString()
+      });
+    
+    if (error) {
+      console.error('❌ UnifiedML: Erreur sauvegarde modèle:', error.message);
+      return false;
+    }
+    
+    // Mettre à jour le cache
+    modelCache = model;
+    lastCacheUpdate = Date.now();
+    
+    console.log(`✅ UnifiedML: Modèle v${model.version} sauvegardé`);
+    return true;
+  } catch (e) {
+    console.error('❌ UnifiedML: Exception sauvegarde modèle:', e);
+    return false;
+  }
+}
+
+// ============================================
+// GESTION DES PATTERNS
+// ============================================
+
+/**
+ * Charge les patterns ML depuis Supabase
+ */
+export async function loadMLPatterns(forceRefresh = false): Promise<MLPattern[]> {
+  const now = Date.now();
+  
+  // Utiliser le cache si valide
+  if (!forceRefresh && patternsCache.length > 0 && (now - lastCacheUpdate) < CACHE_DURATION) {
+    return patternsCache;
+  }
+  
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  
+  try {
+    const { data, error } = await supabase
+      .from('ml_patterns')
+      .select('*')
+      .order('success_rate', { ascending: false });
+    
+    if (error) {
+      console.error('❌ UnifiedML: Erreur chargement patterns:', error.message);
+      return patternsCache;
+    }
+    
+    if (data && data.length > 0) {
+      patternsCache = data as MLPattern[];
+      lastCacheUpdate = now;
+      console.log(`🧠 UnifiedML: ${patternsCache.length} patterns chargés`);
+    }
+    
+    return patternsCache;
+  } catch (e) {
+    console.error('❌ UnifiedML: Exception chargement patterns:', e);
+    return patternsCache;
+  }
+}
+
+/**
+ * Sauvegarde un nouveau pattern
+ */
+export async function saveMLPattern(pattern: Omit<MLPattern, 'id' | 'last_updated' | 'created_at'>): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  
+  try {
+    const { error } = await supabase
+      .from('ml_patterns')
+      .insert({
+        ...pattern,
+        last_updated: new Date().toISOString()
+      });
+    
+    if (error) {
+      console.error('❌ UnifiedML: Erreur sauvegarde pattern:', error.message);
+      return false;
+    }
+    
+    // Rafraîchir le cache
+    patternsCache = [];
+    await loadMLPatterns(true);
+    
+    console.log(`✅ UnifiedML: Pattern "${pattern.pattern_type}" sauvegardé (${pattern.success_rate}% succès)`);
+    return true;
+  } catch (e) {
+    console.error('❌ UnifiedML: Exception sauvegarde pattern:', e);
+    return false;
+  }
+}
+
+/**
+ * Met à jour un pattern existant
+ */
+export async function updateMLPattern(patternId: string, sampleSize: number, successRate: number): Promise<boolean> {
+  const supabase = getSupabase();
+  if (!supabase) return false;
+  
+  try {
+    const { error } = await supabase
+      .from('ml_patterns')
+      .update({
+        sample_size: sampleSize,
+        success_rate: successRate,
+        last_updated: new Date().toISOString()
+      })
+      .eq('id', patternId);
+    
+    if (error) {
+      console.error('❌ UnifiedML: Erreur mise à jour pattern:', error.message);
+      return false;
+    }
+    
+    // Rafraîchir le cache
+    patternsCache = [];
+    await loadMLPatterns(true);
+    
+    return true;
+  } catch (e) {
+    console.error('❌ UnifiedML: Exception mise à jour pattern:', e);
+    return false;
+  }
+}
+
+// ============================================
+// DÉCOUVERTE DE PATTERNS
+// ============================================
+
+interface PatternDiscovery {
+  sport: string;
+  pattern_type: string;
+  condition: string;
+  outcome: string;
+  success_rate: number;
+  sample_size: number;
+  description: string;
+}
+
+/**
+ * Détecte les patterns Football depuis les matchs
+ */
+function detectFootballPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+  
+  // Pattern: xG differential > 0.5 = favori gagne
+  const xgDiffMatches = matches.filter(m => 
+    m.home_xg !== undefined && m.away_xg !== undefined && 
+    Math.abs(m.home_xg - m.away_xg) >= 0.5 &&
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+  
+  if (xgDiffMatches.length >= 5) {
+    const successCount = xgDiffMatches.filter(m => {
+      const favorite = m.home_xg! > m.away_xg! ? 'home' : 'away';
+      const actualWinner = m.home_score! > m.away_score! ? 'home' : 
+                          m.away_score! > m.home_score! ? 'away' : 'draw';
+      return favorite === actualWinner;
+    }).length;
+    
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'xg_differential',
+      condition: 'xG_diff >= 0.5',
+      outcome: 'xg_favorite_wins',
+      success_rate: Math.round((successCount / xgDiffMatches.length) * 100),
+      sample_size: xgDiffMatches.length,
+      description: `Écart xG >= 0.5: favori gagne ${Math.round((successCount / xgDiffMatches.length) * 100)}%`
+    });
+  }
+  
+  // Pattern: Under 2.5 quand xG total < 2.2
+  const lowXgMatches = matches.filter(m => 
+    m.home_xg !== undefined && m.away_xg !== undefined && 
+    (m.home_xg + m.away_xg) < 2.2 &&
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+  
+  if (lowXgMatches.length >= 5) {
+    const underCount = lowXgMatches.filter(m => 
+      (m.home_score! + m.away_score!) < 2.5
+    ).length;
+    
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'under_xg_threshold',
+      condition: 'xG_total < 2.2',
+      outcome: 'under_2.5',
+      success_rate: Math.round((underCount / lowXgMatches.length) * 100),
+      sample_size: lowXgMatches.length,
+      description: `xG total < 2.2: Under 2.5 réussit ${Math.round((underCount / lowXgMatches.length) * 100)}%`
+    });
+  }
+  
+  // Pattern: Over 2.5 quand xG total > 2.8
+  const highXgMatches = matches.filter(m => 
+    m.home_xg !== undefined && m.away_xg !== undefined && 
+    (m.home_xg + m.away_xg) >= 2.8 &&
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+  
+  if (highXgMatches.length >= 5) {
+    const overCount = highXgMatches.filter(m => 
+      (m.home_score! + m.away_score!) >= 2.5
+    ).length;
+    
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'over_xg_threshold',
+      condition: 'xG_total >= 2.8',
+      outcome: 'over_2.5',
+      success_rate: Math.round((overCount / highXgMatches.length) * 100),
+      sample_size: highXgMatches.length,
+      description: `xG total >= 2.8: Over 2.5 réussit ${Math.round((overCount / highXgMatches.length) * 100)}%`
+    });
+  }
+  
+  // Pattern: Favori à domicile (cotes < 1.5)
+  const homeFavoriteMatches = matches.filter(m => 
+    m.odds_home !== undefined && m.odds_home < 1.5 &&
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+  
+  if (homeFavoriteMatches.length >= 5) {
+    const homeWinCount = homeFavoriteMatches.filter(m => 
+      m.home_score! > m.away_score!
+    ).length;
+    
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'home_favorite',
+      condition: 'odds_home < 1.5',
+      outcome: 'home_win',
+      success_rate: Math.round((homeWinCount / homeFavoriteMatches.length) * 100),
+      sample_size: homeFavoriteMatches.length,
+      description: `Favori domicile (cote < 1.5): gagne ${Math.round((homeWinCount / homeFavoriteMatches.length) * 100)}%`
+    });
+  }
+  
+  // Pattern: Pronostics corrects par niveau de confiance
+  const predictionsWithResults = matches.filter(m => 
+    m.predicted_result && m.result_match !== undefined
+  );
+  
+  if (predictionsWithResults.length >= 10) {
+    const correctCount = predictionsWithResults.filter(m => m.result_match === true).length;
+    
+    patterns.push({
+      sport: 'football',
+      pattern_type: 'prediction_accuracy',
+      condition: 'all_predictions',
+      outcome: 'correct_prediction',
+      success_rate: Math.round((correctCount / predictionsWithResults.length) * 100),
+      sample_size: predictionsWithResults.length,
+      description: `Taux de réussite global: ${Math.round((correctCount / predictionsWithResults.length) * 100)}%`
+    });
+  }
+  
+  return patterns;
+}
+
+/**
+ * Détecte les patterns Basketball (NBA) depuis les matchs
+ */
+function detectBasketballPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+  
+  const nbaMatches = matches.filter(m => 
+    m.sport === 'basketball' || m.sport === 'nba' || m.sport === 'Basket'
+  );
+  
+  if (nbaMatches.length < 5) return patterns;
+  
+  // Pattern: Avantage domicile NBA
+  const homeWinCount = nbaMatches.filter(m => 
+    m.home_score !== undefined && m.away_score !== undefined &&
+    m.home_score > m.away_score
+  ).length;
+  
+  const matchesWithScores = nbaMatches.filter(m => 
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+  
+  if (matchesWithScores.length >= 10) {
+    patterns.push({
+      sport: 'basketball',
+      pattern_type: 'home_advantage',
+      condition: 'NBA home game',
+      outcome: 'home_win',
+      success_rate: Math.round((homeWinCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Avantage domicile NBA: ${Math.round((homeWinCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+  
+  // Pattern: Over 220 points
+  const overMatches = matchesWithScores.filter(m => 
+    (m.home_score! + m.away_score!) >= 220
+  );
+  
+  if (matchesWithScores.length >= 10) {
+    patterns.push({
+      sport: 'basketball',
+      pattern_type: 'over_threshold',
+      condition: 'NBA total points',
+      outcome: 'over_220',
+      success_rate: Math.round((overMatches.length / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Over 220 points NBA: ${Math.round((overMatches.length / matchesWithScores.length) * 100)}%`
+    });
+  }
+  
+  return patterns;
+}
+
+/**
+ * Détecte les patterns Hockey (NHL) depuis les matchs
+ */
+function detectHockeyPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+  
+  const nhlMatches = matches.filter(m => 
+    m.sport === 'hockey' || m.sport === 'nhl'
+  );
+  
+  if (nhlMatches.length < 5) return patterns;
+  
+  const matchesWithScores = nhlMatches.filter(m => 
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+  
+  // Pattern: Avantage domicile NHL
+  const homeWinCount = matchesWithScores.filter(m => 
+    m.home_score! > m.away_score!
+  ).length;
+  
+  if (matchesWithScores.length >= 10) {
+    patterns.push({
+      sport: 'hockey',
+      pattern_type: 'home_advantage',
+      condition: 'NHL home game',
+      outcome: 'home_win',
+      success_rate: Math.round((homeWinCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Avantage domicile NHL: ${Math.round((homeWinCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Over 5.5 buts NHL
+  if (matchesWithScores.length >= 10) {
+    const overCount = matchesWithScores.filter(m =>
+      (m.home_score! + m.away_score!) >= 6
+    ).length;
+    patterns.push({
+      sport: 'hockey',
+      pattern_type: 'total_goals',
+      condition: 'NHL total goals',
+      outcome: 'over_5.5',
+      success_rate: Math.round((overCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Over 5.5 buts NHL: ${Math.round((overCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  return patterns;
+}
+
+/**
+ * Détecte les patterns Tennis depuis les matchs
+ */
+function detectTennisPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+
+  const tennisMatches = matches.filter(m =>
+    m.sport === 'tennis' || m.sport === 'Tennis'
+  );
+
+  if (tennisMatches.length < 5) return patterns;
+
+  const matchesWithScores = tennisMatches.filter(m =>
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+
+  if (matchesWithScores.length < 5) return patterns;
+
+  // Pattern: Gros favori (cote < 1.4) gagne
+  const favoriteMatches = matchesWithScores.filter(m =>
+    m.odds_home !== undefined && m.odds_home < 1.4
+  );
+
+  if (favoriteMatches.length >= 5) {
+    const favWinCount = favoriteMatches.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'heavy_favorite',
+      condition: 'odds_home < 1.4',
+      outcome: 'player1_win',
+      success_rate: Math.round((favWinCount / favoriteMatches.length) * 100),
+      sample_size: favoriteMatches.length,
+      description: `Gros favori tennis (< 1.4): gagne ${Math.round((favWinCount / favoriteMatches.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Underdog gagne quand cote > 3.0
+  const underdogMatches = matchesWithScores.filter(m =>
+    m.odds_home !== undefined && m.odds_home > 3.0
+  );
+
+  if (underdogMatches.length >= 5) {
+    const dogWinCount = underdogMatches.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'underdog_win',
+      condition: 'odds_home > 3.0',
+      outcome: 'player1_win',
+      success_rate: Math.round((dogWinCount / underdogMatches.length) * 100),
+      sample_size: underdogMatches.length,
+      description: `Outsider tennis (> 3.0): gagne ${Math.round((dogWinCount / underdogMatches.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Match serré (3 sets)
+  const closeMatches = matchesWithScores.filter(m => {
+    if (m.home_sets_won !== undefined && m.away_sets_won !== undefined) {
+      return (m.home_sets_won + m.away_sets_won) === 3;
+    }
+    return (m.home_score! >= 2 && m.away_score! >= 1) || (m.home_score! >= 1 && m.away_score! >= 2);
+  });
+
+  if (closeMatches.length >= 5) {
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'three_set_match',
+      condition: 'close match 3 sets',
+      outcome: 'competitive',
+      success_rate: Math.round((closeMatches.length / matchesWithScores.length) * 100),
+      sample_size: closeMatches.length,
+      description: `Match serré 3 sets: ${Math.round((closeMatches.length / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Avantage J1 Grand Slam
+  const gsKeywords = ['grand slam', 'wimbledon', 'roland garros', 'us open', 'australian open'];
+  const gsMatches = matchesWithScores.filter(m => {
+    const league = (m.league || '').toLowerCase();
+    return gsKeywords.some(k => league.includes(k));
+  });
+
+  if (gsMatches.length >= 5) {
+    const j1Win = gsMatches.filter(m => m.home_score! > m.away_score!).length;
+    patterns.push({
+      sport: 'tennis',
+      pattern_type: 'grand_slam_home_advantage',
+      condition: 'Grand Slam tournament',
+      outcome: 'player1_win',
+      success_rate: Math.round((j1Win / gsMatches.length) * 100),
+      sample_size: gsMatches.length,
+      description: `Avantage J1 Grand Slam: ${Math.round((j1Win / gsMatches.length) * 100)}%`
+    });
+  }
+
+  return patterns;
+}
+
+/**
+ * Détecte les patterns Baseball (MLB) depuis les matchs
+ */
+function detectBaseballPatterns(matches: MatchForTraining[]): PatternDiscovery[] {
+  const patterns: PatternDiscovery[] = [];
+
+  const mlbMatches = matches.filter(m =>
+    m.sport === 'baseball' || m.sport === 'mlb'
+  );
+
+  if (mlbMatches.length < 5) return patterns;
+
+  const matchesWithScores = mlbMatches.filter(m =>
+    m.home_score !== undefined && m.away_score !== undefined
+  );
+
+  if (matchesWithScores.length < 5) return patterns;
+
+  // Pattern: Avantage domicile MLB
+  if (matchesWithScores.length >= 10) {
+    const homeWinCount = matchesWithScores.filter(m =>
+      m.home_score! > m.away_score!
+    ).length;
+    patterns.push({
+      sport: 'baseball',
+      pattern_type: 'home_advantage',
+      condition: 'MLB home game',
+      outcome: 'home_win',
+      success_rate: Math.round((homeWinCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Avantage domicile MLB: ${Math.round((homeWinCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  // Pattern: Over 8.5 points MLB
+  if (matchesWithScores.length >= 10) {
+    const overCount = matchesWithScores.filter(m =>
+      (m.home_score! + m.away_score!) >= 9
+    ).length;
+    patterns.push({
+      sport: 'baseball',
+      pattern_type: 'total_runs',
+      condition: 'MLB total runs',
+      outcome: 'over_8.5',
+      success_rate: Math.round((overCount / matchesWithScores.length) * 100),
+      sample_size: matchesWithScores.length,
+      description: `Over 8.5 points MLB: ${Math.round((overCount / matchesWithScores.length) * 100)}%`
+    });
+  }
+
+  return patterns;
+}
+
+// ============================================
+// SEUILS DYNAMIQUES PAR SPORT
+// ============================================
+
+const SPORT_THRESHOLDS: Record<string, number> = {
+  football: 55,
+  basketball: 52,
+  hockey: 52,
+  baseball: 50,
+  tennis: 52
+};
+
+// ============================================
+// ENTRAÎNEMENT PRINCIPAL
+// ============================================
+
+/**
+ * Entraîne le modèle ML avec les données disponibles
+ */
+export async function trainUnifiedML(sport?: 'football' | 'basketball' | 'hockey' | 'baseball' | 'tennis' | 'all'): Promise<TrainingResult> {
+  const result: TrainingResult = {
+    success: false,
+    samplesUsed: 0,
+    patternsDiscovered: 0,
+    patternsSaved: 0,
+    patternsUpdated: 0,
+    accuracy: 0,
+    improvements: [],
+    errors: []
+  };
+  
+  const supabase = getSupabase();
+  if (!supabase) {
+    result.errors.push('Supabase non configuré');
+    return result;
+  }
+  
+  console.log('🧠 UnifiedML: Démarrage de l\'entraînement...');
+  
+  try {
+    // 1. Charger les matchs terminés depuis Supabase
+    const { data: matches, error: matchError } = await supabase
+      .from('predictions')
+      .select('*')
+      .eq('status', 'completed')
+      .not('home_score', 'is', null)
+      .not('away_score', 'is', null)
+      .order('match_date', { ascending: false })
+      .limit(1000);
+    
+    if (matchError) {
+      result.errors.push('Erreur chargement matchs: ' + matchError.message);
+      return result;
+    }
+    
+    if (!matches || matches.length === 0) {
+      result.errors.push('Aucun match terminé disponible');
+      return result;
+    }
+    
+    result.samplesUsed = matches.length;
+    console.log(`📊 UnifiedML: ${matches.length} matchs analysés`);
+    
+    // 2. Détecter les patterns par sport
+    let allPatterns: PatternDiscovery[] = [];
+    
+    if (!sport || sport === 'all' || sport === 'football') {
+      const footballMatches = matches.filter(m => 
+        m.sport === 'football' || m.sport === 'soccer' || m.sport === 'Foot'
+      );
+      allPatterns = [...allPatterns, ...detectFootballPatterns(footballMatches as MatchForTraining[])];
+    }
+    
+    if (!sport || sport === 'all' || sport === 'basketball') {
+      const basketballMatches = matches.filter(m => 
+        m.sport === 'basketball' || m.sport === 'nba' || m.sport === 'Basket'
+      );
+      allPatterns = [...allPatterns, ...detectBasketballPatterns(basketballMatches as MatchForTraining[])];
+    }
+    
+    if (!sport || sport === 'all' || sport === 'hockey') {
+      const hockeyMatches = matches.filter(m => 
+        m.sport === 'hockey' || m.sport === 'nhl'
+      );
+      allPatterns = [...allPatterns, ...detectHockeyPatterns(hockeyMatches as MatchForTraining[])];
+    }
+    
+    if (!sport || sport === 'all' || sport === 'tennis') {
+      const tennisMatches = matches.filter(m => 
+        m.sport === 'tennis' || m.sport === 'Tennis'
+      );
+      allPatterns = [...allPatterns, ...detectTennisPatterns(tennisMatches as MatchForTraining[])];
+    }
+    
+    if (!sport || sport === 'all' || sport === 'baseball') {
+      const baseballMatches = matches.filter(m => 
+        m.sport === 'baseball' || m.sport === 'mlb'
+      );
+      allPatterns = [...allPatterns, ...detectBaseballPatterns(baseballMatches as MatchForTraining[])];
+    }
+    
+    result.patternsDiscovered = allPatterns.length;
+    console.log(`🔍 UnifiedML: ${allPatterns.length} patterns découverts`);
+    
+    // 3. Charger les patterns existants
+    const existingPatterns = await loadMLPatterns();
+    
+    // 4. Sauvegarder/mettre à jour les patterns (filtrer le bruit avec seuils dynamiques par sport)
+    for (const pattern of allPatterns) {
+      const sportThreshold = SPORT_THRESHOLDS[pattern.sport] || 55;
+      if (pattern.success_rate < sportThreshold) {
+        console.log(`🔇 UnifiedML: Pattern "${pattern.pattern_type}" ignoré (${pattern.sport}: ${pattern.success_rate}% < ${sportThreshold}%)`);
+        continue;
+      }
+      
+      const existing = existingPatterns.find(
+        p => p.sport === pattern.sport && p.pattern_type === pattern.pattern_type
+      );
+      
+      if (existing) {
+        // Mettre à jour le pattern existant
+        const newSampleSize = existing.sample_size + pattern.sample_size;
+        const newSuccessRate = Math.round(
+          (existing.success_rate * existing.sample_size + 
+           pattern.success_rate * pattern.sample_size) / newSampleSize
+        );
+        
+        const updated = await updateMLPattern(existing.id, newSampleSize, newSuccessRate);
+        if (updated) {
+          result.patternsUpdated++;
+          result.improvements.push(`Pattern "${pattern.pattern_type}" mis à jour: ${newSuccessRate}% (${newSampleSize} échantillons)`);
+        }
+      } else {
+        // Créer un nouveau pattern
+        const saved = await saveMLPattern({
+          sport: pattern.sport as MLPattern['sport'],
+          pattern_type: pattern.pattern_type,
+          condition: pattern.condition,
+          outcome: pattern.outcome,
+          sample_size: pattern.sample_size,
+          success_rate: pattern.success_rate,
+          confidence: Math.min(pattern.success_rate / 100, 0.95),
+          description: pattern.description
+        });
+        
+        if (saved) {
+          result.patternsSaved++;
+          result.improvements.push(`Nouveau pattern "${pattern.pattern_type}": ${pattern.success_rate}% (${pattern.sample_size} échantillons)`);
+        }
+      }
+    }
+    
+    // 5. Mettre à jour le modèle ML
+    const model = await loadMLModel();
+    
+    // Calculer l'accuracy globale
+    const completedWithResults = matches.filter(m => m.result_match !== undefined);
+    const correctCount = completedWithResults.filter(m => m.result_match === true).length;
+    const newAccuracy = completedWithResults.length > 0 
+      ? Math.round((correctCount / completedWithResults.length) * 100) 
+      : 0;
+    
+    // Optimiser le seuil d'edge
+    let bestEdgeThreshold = model.edge_threshold;
+    let bestEdgeAccuracy = 0;
+    
+    for (let threshold = 0.01; threshold <= 0.10; threshold += 0.005) {
+      const aboveThreshold = completedWithResults.filter(m => {
+        // Utiliser les odds pour calculer l'edge si disponible
+        if (m.odds_home && m.odds_away) {
+          const impliedProb = 1 / m.odds_home;
+          const edge = Math.abs(impliedProb - 0.5); // Simplifié
+          return edge >= threshold;
+        }
+        return true;
+      });
+      
+      if (aboveThreshold.length >= 10) {
+        const correctAbove = aboveThreshold.filter(m => m.result_match === true).length;
+        const accuracy = correctAbove / aboveThreshold.length;
+        
+        if (accuracy > bestEdgeAccuracy) {
+          bestEdgeAccuracy = accuracy;
+          bestEdgeThreshold = threshold;
+        }
+      }
+    }
+    
+    // Mettre à jour le modèle
+    const updatedModel: MLModel = {
+      ...model,
+      version: incrementVersion(model.version),
+      edge_threshold: bestEdgeThreshold,
+      samples_used: matches.length,
+      accuracy: newAccuracy,
+      last_trained: new Date().toISOString()
+    };
+    
+    await saveMLModel(updatedModel);
+    
+    result.accuracy = newAccuracy;
+    result.success = true;
+    
+    console.log(`✅ UnifiedML: Entraînement terminé - ${result.patternsSaved} nouveaux, ${result.patternsUpdated} mis à jour, ${newAccuracy}% accuracy`);
+    
+    return result;
+    
+  } catch (e) {
+    console.error('❌ UnifiedML: Exception entraînement:', e);
+    result.errors.push(String(e));
+    return result;
+  }
+}
+
+/**
+ * Incrémente la version du modèle
+ */
+function incrementVersion(version: string): string {
+  const parts = version.split('.').map(Number);
+  parts[2] = (parts[2] || 0) + 1;
+  return parts.join('.');
+}
+
+// ============================================
+// XGBOOST PREDICTION ENGINE
+// ============================================
+
+/**
+ * Score une prédiction en utilisant les paramètres XGBoost entraînés.
+ * Simule un modèle XGBoost en appliquant les feature importances apprises.
+ *
+ * Retourne un score 0-1 et un ajustement de confiance basé sur le modèle.
+ */
+export function scoreWithXGBoost(
+  sport: string,
+  features: Record<string, number>,
+  model: MLModel
+): {
+  score: number;
+  isXGBoostTrained: boolean;
+  cvAccuracy: number;
+  confidenceThreshold: number;
+  featureContributions: { feature: string; weight: number; value: number }[];
+  recommendation: string;
+} {
+  // Default: no XGBoost trained
+  const defaultResponse = {
+    score: 0.5,
+    isXGBoostTrained: false,
+    cvAccuracy: 0,
+    confidenceThreshold: 0.5,
+    featureContributions: [],
+    recommendation: 'ML heuristique (pas de modèle XGBoost entraîné)'
+  };
+
+  if (!model.xgboost_params?.trained) {
+    return defaultResponse;
+  }
+
+  const sportLower = sport.toLowerCase();
+  const sportParams = model.xgboost_params.sports?.[sportLower] || 
+                     model.xgboost_params.sports?.[sport];
+
+  if (!sportParams) {
+    return defaultResponse;
+  }
+
+  const featureImportance = sportParams.feature_importance || {};
+  if (Object.keys(featureImportance).length === 0) {
+    return defaultResponse;
+  }
+
+  // Calculer le score pondéré par feature importances
+  let weightedScore = 0;
+  let totalWeight = 0;
+  const contributions: { feature: string; weight: number; value: number }[] = [];
+
+  for (const [featureName, importance] of Object.entries(featureImportance)) {
+    const value = features[featureName];
+
+    if (value === undefined || value === null) continue;
+
+    // FIX M5+H1: Normalisation par catégorie avec protection
+    // - prob_* : clamp [0,1] (déjà des probabilités)
+    // - odds_confidence, favorite_confidence : clamp [0,1] (produits de proba)
+    // - odds_ratio : sigmoid pour normaliser range infini
+    // - log_odds_ratio : sigmoid
+    // - favorite_strength : clamp [0,1] (déjà un écart)
+    // - *_diff, margin, spread : sigmoid
+    // - edge : clamp [-1,1] puis shift vers [0,1]
+    // - is_* : clamp [0,1]
+    // - draw_signal : clamp [0,1]
+    let normalizedValue = value;
+    if (featureName.startsWith('is_') || featureName === 'draw_signal') {
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName === 'odds_ratio') {
+      // FIX M4: odds_ratio peut être très grand — sigmoid pour normaliser
+      normalizedValue = 1 / (1 + Math.exp(-(value - 1) * 2)); // centré autour de 1 (50/50)
+    } else if (featureName === 'log_odds_ratio') {
+      normalizedValue = 1 / (1 + Math.exp(-value * 2));
+    } else if (featureName === 'odds_confidence' || featureName === 'favorite_confidence' || featureName === 'favorite_strength') {
+      // FIX H1: Ces features sont déjà dans [0,1] — clamp direct, PAS d'inversion
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName.startsWith('prob_') || featureName.includes('_score') || featureName.includes('_rating') || featureName === 'confidence_numeric') {
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName === 'edge') {
+      // Edge peut être négatif ou positif — normaliser vers [0,1]
+      normalizedValue = Math.max(0, Math.min(1, value + 0.5)); // shift: -0.5→0, 0→0.5, +0.5→1
+    // Phase 3: Normalization for enrichment features
+    } else if (featureName === 'weather_impact') {
+      // Weather impact ranges from -1 (extreme negative) to +1 (perfect)
+      // Shift to [0,1]: -1→0, 0→0.5, +1→1
+      normalizedValue = Math.max(0, Math.min(1, value + 0.5));
+    } else if (featureName === 'weather_risk') {
+      // Weather risk: 0=low, 0.5=medium, 1=high — already in [0,1]
+      normalizedValue = Math.max(0, Math.min(1, value));
+    } else if (featureName.startsWith('fatigue_')) {
+      if (featureName === 'fatigue_diff') {
+        // Fatigue differential: -1 to +1, sigmoid normalization
+        normalizedValue = 1 / (1 + Math.exp(-value * 4));
+      } else {
+        // fatigue_home/away: 0 to 1 — already in [0,1]
+        normalizedValue = Math.max(0, Math.min(1, value));
+      }
+    } else if (featureName.startsWith('record_')) {
+      if (featureName === 'record_diff') {
+        // Record strength diff: -1 to +1, sigmoid normalization
+        normalizedValue = 1 / (1 + Math.exp(-value * 4));
+      } else {
+        // record_home_pct/away_pct: 0 to 1 — already in [0,1]
+        normalizedValue = Math.max(0, Math.min(1, value));
+      }
+    } else if (featureName.includes('_diff') || featureName.includes('margin') || featureName.includes('spread')) {
+      normalizedValue = 1 / (1 + Math.exp(-value * 2));
+    } else {
+      // Par défaut: clamp [0,1]
+      normalizedValue = Math.max(0, Math.min(1, value));
+    }
+
+    const contribution = importance * normalizedValue;
+    weightedScore += contribution;
+    totalWeight += importance;
+
+    contributions.push({
+      feature: featureName,
+      weight: importance,
+      value: value
+    });
+  }
+
+  // Score final normalisé
+  const finalScore = totalWeight > 0 ? Math.max(0.05, Math.min(0.95, weightedScore / totalWeight)) : 0.5;
+
+  // Trier les contributions par importance
+  contributions.sort((a, b) => b.weight - a.weight);
+
+  // Générer une recommandation
+  const isAboveThreshold = finalScore >= sportParams.best_confidence_threshold;
+  let recommendation = '';
+  if (isAboveThreshold && finalScore >= 0.7) {
+    recommendation = `🏆 XGBoost CONFORT (${(finalScore * 100).toFixed(0)}%) — ${sportParams.cv_accuracy > 0.6 ? 'fiable' : 'prudent'}`;
+  } else if (isAboveThreshold) {
+    recommendation = `✅ XGBoost favorable (${(finalScore * 100).toFixed(0)}%)`;
+  } else {
+    recommendation = `⚠️ XGBoost incertain (${(finalScore * 100).toFixed(0)}%)`;
+  }
+
+  return {
+    score: finalScore,
+    isXGBoostTrained: true,
+    cvAccuracy: sportParams.cv_accuracy,
+    confidenceThreshold: sportParams.best_confidence_threshold,
+    featureContributions: contributions.slice(0, 5), // Top 5
+    recommendation
+  };
+}
+
+/**
+ * Obtient les stats XGBoost pour affichage
+ */
+export function getXGBoostStatus(model: MLModel): {
+  trained: boolean;
+  totalSamples: number;
+  globalCvAccuracy: number;
+  bestEdgeThreshold: number;
+  sports: { sport: string; cvAccuracy: number; samples: number; topFeatures: string[] }[];
+  lastTrained: string;
+  version: string;
+} {
+  if (!model.xgboost_params?.trained) {
+    return {
+      trained: false,
+      totalSamples: 0,
+      globalCvAccuracy: 0,
+      bestEdgeThreshold: model.edge_threshold,
+      sports: [],
+      lastTrained: model.last_trained,
+      version: model.version
+    };
+  }
+
+  const xgb = model.xgboost_params;
+  const sportList = Object.entries(xgb.sports || {}).map(([sport, params]) => ({
+    sport,
+    cvAccuracy: params.cv_accuracy,
+    samples: params.samples,
+    topFeatures: (params.top_features || []).slice(0, 5).map(f => f[0])
+  }));
+
+  return {
+    trained: true,
+    totalSamples: xgb.total_samples,
+    globalCvAccuracy: xgb.global_cv_accuracy,
+    bestEdgeThreshold: xgb.best_edge_threshold,
+    sports: sportList,
+    lastTrained: model.last_trained,
+    version: model.version
+  };
+}
+
+// ============================================
+// STATISTIQUES
+// ============================================
+
+/**
+ * Obtient les statistiques ML globales
+ */
+export async function getUnifiedMLStats(): Promise<{
+  model: MLModel | null;
+  patterns: {
+    total: number;
+    football: number;
+    basketball: number;
+    hockey: number;
+    tennis: number;
+    baseball: number;
+    avgSuccessRate: number;
+  };
+  recentTraining: {
+    lastTrained: string;
+    samplesUsed: number;
+    accuracy: number;
+  };
+}> {
+  const model = await loadMLModel();
+  const patterns = await loadMLPatterns();
+  
+  const football = patterns.filter(p => p.sport === 'football');
+  const basketball = patterns.filter(p => p.sport === 'basketball');
+  const hockey = patterns.filter(p => p.sport === 'hockey');
+  const tennis = patterns.filter(p => p.sport === 'tennis');
+  const baseball = patterns.filter(p => p.sport === 'baseball');
+  
+  return {
+    model,
+    patterns: {
+      total: patterns.length,
+      football: football.length,
+      basketball: basketball.length,
+      hockey: hockey.length,
+      tennis: tennis.length,
+      baseball: baseball.length,
+      avgSuccessRate: patterns.length > 0 
+        ? Math.round(patterns.reduce((sum, p) => sum + p.success_rate, 0) / patterns.length)
+        : 0
+    },
+    recentTraining: {
+      lastTrained: model?.last_trained || 'Jamais',
+      samplesUsed: model?.samples_used || 0,
+      accuracy: model?.accuracy || 0
+    }
+  };
+}
+
+/**
+ * Rafraîchit le cache ML
+ */
+export async function refreshMLCache(): Promise<void> {
+  patternsCache = [];
+  modelCache = null;
+  lastCacheUpdate = 0;
+  
+  await Promise.all([
+    loadMLPatterns(true),
+    loadMLModel()
+  ]);
+  
+  console.log('🔄 UnifiedML: Cache rafraîchi');
+}
+
+// Export par défaut
+export default {
+  loadMLModel,
+  saveMLModel,
+  loadMLPatterns,
+  saveMLPattern,
+  updateMLPattern,
+  trainUnifiedML,
+  getUnifiedMLStats,
+  refreshMLCache,
+  scoreWithXGBoost,
+  getXGBoostStatus
+};

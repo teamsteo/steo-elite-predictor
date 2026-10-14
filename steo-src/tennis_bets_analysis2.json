@@ -1,0 +1,28 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "D'après mon analyse minutieuse de l'image, je compte **exactement 3 matchs/pronos complets** affichés. Il n'y a pas de 4ème match partiellement visible (le texte en bas \"Championnat RAS\" appartient au 3ème match).\n\nVoici le détail pour chaque match trouvé :\n\n**Match 1 :**\n*   **Joueurs :** Matteo Arnaldi vs Lorenzo Musetti\n*   **Cotes :** 1: 4.67 / 2: 1.23\n*   **Pronostic :** 2 (Lorenzo Musetti)\n*   **Statut :** Gagné (ENJEU: RAS / Safe)\n\n**Match 2 :**\n*   **Joueurs :** Taylor Fritz vs Zizou Bergs\n*   **Cotes :** 1: 1.26 / 2: 4.23\n*   **Pronostic :** 1 (Taylor Fritz)\n*   **Statut :** Gagné (ENJEU: RAS / Safe)\n\n**Match 3 :**\n*   **Joueurs :** Liudmila Samsonova vs Madison Keys\n*   **Cotes :** 1: 3.80 / 2: 1.31\n*   **Pronostic :** 2 (Madison Keys)\n*   **Statut :** En cours ou gagné (Safe, mais statut final non confirmé par un \"RAS\" explicite pour celui-ci sur la ligne visible, bien que le format suggère une validation)\n\n**Note :** L'en-tête mentionne \"7 matches\", ce qui indique qu'il s'agit d'une liste plus longue, mais seuls ces 3-là sont visibles dans cette capture d'écran spécifique.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 1785267851,
+  "id": "202607290344078db64ecce5414d6c",
+  "model": "glm-5v-turbo",
+  "object": "chat.completion",
+  "request_id": "202607290344078db64ecce5414d6c",
+  "usage": {
+    "completion_tokens": 401,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "prompt_tokens": 3489,
+    "prompt_tokens_details": {
+      "cached_tokens": 2
+    },
+    "total_tokens": 3890
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "next build",
+  "installCommand": "bun install",
+  "framework": "nextjs",
+  "regions": ["cdg1"],
+  "functions": {
+    "src/app/api/**/*.ts": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "s-maxage=300, stale-while-revalidate=600" }
+      ]
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron?action=precalc",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron?action=verify",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron-ml?action=auto",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-auto-publish?action=daily",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-auto-publish?action=valuebets",
+      "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-auto-publish?action=learn",
+      "schedule": "0 20 * * *"
+    },
+    {
+      "path": "/api/cron/tennis-auto-publish?action=backtest",
+      "schedule": "0 9 * * 0"
+    }
+  ]
+}

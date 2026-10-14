@@ -1,0 +1,28 @@
+-- =============================================================================
+-- MIGRATION COMPLÈTE - STEO ÉLITE → ELITEPRONOSPRO
+-- =============================================================================
+-- 
+-- Ce dossier contient les scripts SQL pour migrer toutes les données
+-- de l'ancienne base vers la nouvelle base Supabase.
+--
+-- 📁 FICHIERS À EXÉCUTER DANS L'ORDRE:
+-- =============================================================================
+-- 1. 01_ACTIVER_RLS.sql          - Activer la sécurité sur les tables
+-- 2. ml_patterns.sql             - 5 patterns ML (85-100% succès)
+-- 3. football_matches.sql        - 2 741 matches de football
+-- 4. basketball_matches.sql      - 408 matches de basketball  
+-- 5. nhl_matches.sql             - 1 400 matches NHL
+-- 6. mlb_matches.sql             - 4 935 matches MLB
+-- =============================================================================
+-- TOTAL: 9 489 enregistrements à migrer
+-- =============================================================================
+--
+-- 📋 COMMENT PROCÉDER:
+-- 1. Ouvrir le SQL Editor dans la NOUVELLE base Supabase
+--    (https://supabase.com/dashboard/project/jlqfcyphqpqzmerqzncr/sql)
+-- 2. Exécuter chaque fichier dans l'ordre ci-dessus
+-- 3. Pour les gros fichiers, utiliser l'import ou les exécuter par parties
+--
+-- ⚠️ IMPORTANT: Les tables doivent déjà exister (exécuter d'abord
+--    le script NOUVELLE_BASE_SUPABASE.sql si ce n'est pas fait)
+-- =============================================================================

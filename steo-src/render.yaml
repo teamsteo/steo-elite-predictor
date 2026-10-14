@@ -1,0 +1,65 @@
+# ============================================
+# DEPLOYMENT SUR RENDER.COM (GRATUIT)
+# ============================================
+# 
+# Render offre un plan gratuit illimité pour les Web Services
+# avec des cron jobs intégrés.
+# 
+# ÉTAPES:
+# 1. Créer un compte sur https://render.com
+# 2. Connecter votre repo GitHub
+# 3. Créer un "Cron Job" (pas un Web Service)
+# 4. Configurer les variables d'environnement
+# 5. Définir le schedule (ex: tous les jours à 5h UTC)
+#
+
+# Configuration du Cron Job Render
+# Schedule: "0 5 * * *" (tous les jours à 5h UTC)
+
+# Commande à exécuter
+# npx ts-node scripts/independent-scraper.ts
+
+# Variables d'environnement requises:
+# - NEXT_PUBLIC_SUPABASE_URL
+# - SUPABASE_SERVICE_ROLE_KEY
+# - SCRAPER_DELAY=2000 (optionnel)
+# - SCRAPER_SOURCE_DELAY=5000 (optionnel)
+
+specVersion: "1.0"
+type: Cron Job
+
+# Nom du job
+name: elitepronos-scraper
+
+# Plan gratuit
+plan: free
+
+# Région (plus proche de l'Europe)
+region: frankfurt
+
+# Branche à utiliser
+branch: main
+
+# Commande de build (installation des dépendances)
+buildCommand: npm install
+
+# Commande à exécuter
+schedule: "0 5 * * *"  # Tous les jours à 5h UTC
+
+# Script principal
+command: npx ts-node scripts/independent-scraper.ts
+
+# Variables d'environnement (à configurer dans Render Dashboard)
+envVars:
+  - key: NEXT_PUBLIC_SUPABASE_URL
+    sync: false  # Ne pas synchroniser avec le repo
+  - key: SUPABASE_SERVICE_ROLE_KEY
+    sync: false
+  - key: SCRAPER_DELAY
+    value: "2000"
+  - key: SCRAPER_SOURCE_DELAY
+    value: "5000"
+
+# Notifications (optionnel)
+# notifyOnSuccess: false
+# notifyOnFailure: true

@@ -1,0 +1,44 @@
+# ============================================
+# CONFIGURATION CRON POUR LE SCRAPER
+# ============================================
+#
+# Ce fichier contient les entrées cron pour exécuter
+# le scraper indépendant automatiquement.
+#
+# INSTALLATION:
+# crontab -e
+# Copier les lignes ci-dessous
+#
+# LOGS:
+# Les logs sont redirigés vers /var/log/elitepronos/
+# Créer le dossier: sudo mkdir -p /var/log/elitepronos
+# Permissions: sudo chown $USER:$USER /var/log/elitepronos
+
+# Variables d'environnement (adapter selon votre setup)
+SUPABASE_URL=votre_url_supabase
+SUPABASE_SERVICE_ROLE_KEY=votre_cle_service
+
+# ============================================
+# SCRAPING PRINCIPAL - Toutes les 4 heures
+# ============================================
+# Récupère les matchs, génère les prédictions
+0 */4 * * * cd /home/user/elitepronospro && ./scripts/run-scraper.sh >> /var/log/elitepronos/scraper.log 2>&1
+
+# ============================================
+# VÉRIFICATION DES RÉSULTATS - 3 fois par jour
+# ============================================
+# Vérifie les résultats des matchs terminés
+0 0 * * * cd /home/user/elitepronospro && SUPABASE_URL=votre_url SUPABASE_SERVICE_ROLE_KEY=votre_cle npx tsx scripts/standalone-scraper.ts --verify >> /var/log/elitepronos/verify.log 2>&1
+0 6 * * * cd /home/user/elitepronospro && SUPABASE_URL=votre_url SUPABASE_SERVICE_ROLE_KEY=votre_cle npx tsx scripts/standalone-scraper.ts --verify >> /var/log/elitepronos/verify.log 2>&1
+0 12 * * * cd /home/user/elitepronospro && SUPABASE_URL=votre_url SUPABASE_SERVICE_ROLE_KEY=votre_cle npx tsx scripts/standalone-scraper.ts --verify >> /var/log/elitepronos/verify.log 2>&1
+
+# ============================================
+# NETTOYAGE DES LOGS - Hebdomadaire
+# ============================================
+0 2 * * 0 find /var/log/elitepronos -name "*.log" -mtime +7 -delete
+
+# ============================================
+# ALTERNATIVE: AVEC FICHIER .env
+# ============================================
+# Si vous avez un fichier .env:
+# 0 */4 * * * cd /home/user/elitepronospro && export $(cat .env | xargs) && ./scripts/run-scraper.sh >> /var/log/elitepronos/scraper.log 2>&1

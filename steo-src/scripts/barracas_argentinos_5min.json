@@ -1,0 +1,24 @@
+{
+  "match": {
+    "home_team": "Barracas Central",
+    "away_team": "Argentinos Juniors",
+    "league": "Argentine Liga Profesional · Clausura",
+    "kickoff_utc": "2026-09-07T22:00:00Z",
+    "minute": 12,
+    "score": { "home": 0, "away": 0 }
+  },
+  "stats": {
+    "xg": { "home": 0.01, "away": 0.0 },
+    "shots": { "home": 1, "away": 0 },
+    "shots_on_target": { "home": 0, "away": 0 },
+    "big_chances": { "home": 0, "away": 0 },
+    "penalties": { "home": 0, "away": 0 },
+    "possession_pct": { "home": 44, "away": 56 },
+    "field_tilt_pct": { "home": 47, "away": 53 },
+    "corners": { "home": 0, "away": 0 },
+    "cards": { "home_yellow": 0, "away_yellow": 0, "home_red": 0, "away_red": 0 }
+  },
+  "pre_match": {
+    "odds": { "home": 4.05, "draw": 2.85, "away": 2.03 }
+  }
+}

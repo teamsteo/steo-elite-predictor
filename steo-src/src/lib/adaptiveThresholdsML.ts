@@ -1,0 +1,932 @@
+/**
+ * Adaptive Thresholds ML - Machine Learning pour Seuils Adaptatifs
+ * 
+ * APPROCHE:
+ * - Analyse les prédictions passées pour identifier les patterns de succès
+ * - Ajuste dynamiquement les seuils (edge, impact blessures, poids forme)
+ * - Utilise une approche Bayésienne simple pour mise à jour progressive
+ * - Fournit des seuils personnalisés par sport/ligue
+ * - Phase 2: Intègre les coefficients XGBoost entraînés par Python
+ * 
+ * ALGORITHMES:
+ * - Bayesian Updating: Mise à jour progressive des seuils
+ * - Logistic Regression: Poids optimaux des features
+ * - Moving Average: Lissage des seuils sur le temps
+ * - A/B Testing: Comparaison de configurations
+ * - XGBoost (via Supabase): Feature importances entraînées hors Vercel
+ * 
+ * PERSISTANCE:
+ * - Local: /data/ml_model.json (développement)
+ * - Vercel: Désactivé (read-only) - mémoire uniquement
+ * - Supabase: ml_model.xgboost_params (coefficients XGBoost)
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { PredictionRecord, loadPredictions, PredictionStats } from './predictionTracker';
+import { loadMLModel, scoreWithXGBoost } from './unifiedMLService';
+
+// Détecter si on est sur Vercel (read-only filesystem)
+const IS_VERCEL = process.env.VERCEL === '1' || process.env.VERCEL_ENV;
+
+// ============================================
+// TYPES
+// ============================================
+
+export interface MLThresholds {
+  // Seuils principaux
+  edgeThreshold: number; // Seuil minimum pour value bet (0.01-0.10)
+  
+  // Facteurs d'impact
+  injuryImpactFactor: number; // Multiplicateur impact blessures (0.5-2.0)
+  formWeight: number; // Poids de la forme dans l'ajustement (0.01-0.15)
+  xgWeight: number; // Poids des xG (0.01-0.10)
+  netRatingWeight: number; // Poids du Net Rating NBA (0.01-0.10)
+  
+  // Poids de confiance Kelly
+  confidenceWeights: {
+    very_high: number; // Fraction du Kelly (0.3-0.7)
+    high: number;
+    medium: number;
+    low: number;
+  };
+  
+  // Seuils de qualité des données
+  minDataQuality: number; // Qualité min pour confiance élevée (30-80)
+  
+  // Seuils sport-spécifiques
+  sportSpecific: {
+    football: {
+      h2hWeight: number;
+      disciplineWeight: number;
+    };
+    basketball: {
+      paceWeight: number;
+      restDaysWeight: number;
+    };
+  };
+  
+  // Métadonnées
+  version: string;
+  lastUpdated: string;
+  samplesUsed: number;
+  accuracy: number;
+}
+
+export interface MLModel {
+  thresholds: MLThresholds;
+  featureWeights: Record<string, number>;
+  sportAdjustments: Record<string, Partial<MLThresholds>>;
+  confidence: number; // Confiance dans le modèle (0-1)
+  trainingHistory: Array<{
+    date: string;
+    samples: number;
+    accuracy: number;
+    thresholds: MLThresholds;
+  }>;
+}
+
+export interface FeatureVector {
+  edge: number;
+  dataQuality: number;
+  homeInjuries: number;
+  awayInjuries: number;
+  homeFormScore: number;
+  awayFormScore: number;
+  homeXG: number;
+  awayXG: number;
+  homeNetRating: number;
+  awayNetRating: number;
+  confidence: number;
+  // Phase 2: Probabilités pour XGBoost
+  homeWinProbability: number;
+  awayWinProbability: number;
+  drawProbability: number;
+  // Phase 3: Enrichment features (weather, fatigue, records)
+  weatherImpact?: number;
+  weatherRiskLevel?: number;
+  fatigueDifferential?: number;
+  homeFatigueScore?: number;
+  awayFatigueScore?: number;
+  homeWinPct?: number;
+  awayWinPct?: number;
+  recordStrengthDiff?: number;
+}
+
+// ============================================
+// CONFIGURATION
+// ============================================
+
+const DATA_DIR = path.join(process.cwd(), 'data');
+const ML_MODEL_FILE = path.join(DATA_DIR, 'ml_model.json');
+
+const DEFAULT_THRESHOLDS: MLThresholds = {
+  edgeThreshold: 0.03,
+  injuryImpactFactor: 1.0,
+  formWeight: 0.05,
+  xgWeight: 0.03,
+  netRatingWeight: 0.03,
+  confidenceWeights: {
+    very_high: 0.5,
+    high: 0.4,
+    medium: 0.25,
+    low: 0.1,
+  },
+  minDataQuality: 50,
+  sportSpecific: {
+    football: {
+      h2hWeight: 0.02,
+      disciplineWeight: 0.01,
+    },
+    basketball: {
+      paceWeight: 0.02,
+      restDaysWeight: 0.01,
+    },
+  },
+  version: '1.0.0',
+  lastUpdated: '',
+  samplesUsed: 0,
+  accuracy: 0,
+};
+
+const MIN_SAMPLES_FOR_TRAINING = 20;
+const LEARNING_RATE = 0.1; // Vitesse d'adaptation
+const MOMENTUM = 0.9; // Momentum pour le lissage
+
+// Stockage en mémoire pour Vercel (temporaire)
+let memoryModel: MLModel | null = null;
+
+// ============================================
+// FONCTIONS DE PERSISTANCE
+// ============================================
+
+function ensureDataDir(): void {
+  // Skip sur Vercel (read-only)
+  if (IS_VERCEL) return;
+  
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+// FIX #3: Flag pour éviter de charger Supabase en boucle
+let supabaseLoadAttempted = false;
+
+function loadModel(): MLModel {
+  if (IS_VERCEL && memoryModel) {
+    return memoryModel;
+  }
+  
+  // FIX #3: Sur Vercel, charger les adaptive thresholds depuis Supabase
+  if (IS_VERCEL) {
+    if (!supabaseLoadAttempted) {
+      supabaseLoadAttempted = true;
+      loadModelFromSupabase().then(m => {
+        if (m) { memoryModel = m; console.log("[Vercel] Thresholds loaded from Supabase"); }
+      });
+    }
+    return getDefaultModel();
+  }
+  
+  ensureDataDir();
+  
+  if (!fs.existsSync(ML_MODEL_FILE)) {
+    return getDefaultModel();
+  }
+  
+  try {
+    const data = fs.readFileSync(ML_MODEL_FILE, 'utf-8');
+    const model = JSON.parse(data);
+    
+    // Sur Vercel, stocker en mémoire pour les prochains appels
+    if (IS_VERCEL) {
+      memoryModel = model;
+    }
+    
+    return model;
+  } catch {
+    return getDefaultModel();
+  }
+}
+
+function getDefaultModel(): MLModel {
+  return {
+    thresholds: { ...DEFAULT_THRESHOLDS, lastUpdated: new Date().toISOString() },
+    featureWeights: {
+      edge: 0.25,
+      dataQuality: 0.20,
+      injuries: 0.15,
+      form: 0.15,
+      xG: 0.10,
+      netRating: 0.10,
+      confidence: 0.05,
+    },
+    sportAdjustments: {},
+    confidence: 0.5,
+    trainingHistory: [],
+  };
+}
+
+function saveModel(model: MLModel): void {
+  // FIX #3: Sur Vercel, persister dans Supabase (pas seulement en mémoire volatile)
+  if (IS_VERCEL) {
+    memoryModel = model;
+    console.log(`🧠 [Vercel] Modèle ML stocké en mémoire`);
+    _persistToSupabase(model);
+    return;
+  }
+  
+  ensureDataDir();
+  fs.writeFileSync(ML_MODEL_FILE, JSON.stringify(model, null, 2));
+}
+
+/**
+ * FIX #3: Persister les adaptive thresholds dans Supabase
+ */
+async function _persistToSupabase(model: MLModel): Promise<void> {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) return;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data: existing } = await supabase
+      .from('ml_model').select('xgboost_params').eq('id', 'default_model').single();
+    let xgboostParams: any = {};
+    if (existing?.xgboost_params) {
+      xgboostParams = typeof existing.xgboost_params === 'string'
+        ? JSON.parse(existing.xgboost_params) : existing.xgboost_params;
+    }
+    xgboostParams.adaptive_thresholds = {
+      thresholds: model.thresholds,
+      featureWeights: model.featureWeights,
+      sportAdjustments: model.sportAdjustments,
+      confidence: model.confidence,
+      savedAt: new Date().toISOString(),
+    };
+    await supabase
+      .from('ml_model')
+      .update({ xgboost_params: JSON.stringify(xgboostParams) })
+      .eq('id', 'default_model');
+    console.log('🧠 [Vercel] Adaptive thresholds persistés dans Supabase');
+  } catch (e) {
+    console.debug('[Vercel] Impossible de persister dans Supabase:', e);
+  }
+}
+
+/**
+ * FIX #3: Charger les adaptive thresholds depuis Supabase
+ */
+async function loadModelFromSupabase(): Promise<MLModel | null> {
+  try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !supabaseKey) return null;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+    const { data } = await supabase
+      .from('ml_model').select('xgboost_params').eq('id', 'default_model').single();
+    if (!data?.xgboost_params) return null;
+    const params = typeof data.xgboost_params === 'string'
+      ? JSON.parse(data.xgboost_params) : data.xgboost_params;
+    if (!params.adaptive_thresholds) return null;
+    const at = params.adaptive_thresholds;
+    return {
+      thresholds: at.thresholds,
+      featureWeights: at.featureWeights || {},
+      sportAdjustments: at.sportAdjustments || {},
+      confidence: at.confidence || 0.5,
+      trainingHistory: [],
+    };
+  } catch (e) {
+    console.debug('Impossible de charger thresholds depuis Supabase:', e);
+    return null;
+  }
+}
+
+// ============================================
+// FONCTIONS D'ENTRAÎNEMENT
+// ============================================
+
+/**
+ * Extrait un vecteur de features normalisé d'une prédiction
+ */
+function extractFeatures(p: PredictionRecord): FeatureVector {
+  return {
+    edge: p.prediction.edge / 100, // 0-1
+    dataQuality: p.context.dataQuality / 100, // 0-1
+    homeInjuries: Math.min(p.context.homeInjuries / 5, 1), // 0-1 (max 5)
+    awayInjuries: Math.min(p.context.awayInjuries / 5, 1),
+    homeFormScore: (p.context.homeFormScore || 50) / 100,
+    awayFormScore: (p.context.awayFormScore || 50) / 100,
+    homeXG: (p.context.homeXG || 1.5) / 3, // Normalisé autour de 1.5
+    awayXG: (p.context.awayXG || 1.5) / 3,
+    homeNetRating: ((p.context.homeNetRating || 0) + 10) / 20, // -10 à +10 -> 0-1
+    awayNetRating: ((p.context.awayNetRating || 0) + 10) / 20,
+    confidence: { very_high: 1, high: 0.75, medium: 0.5, low: 0.25 }[p.prediction.confidence] || 0.5,
+    // FIX C1: Probabilités pour XGBoost (par défaut 0.5 si pas disponible)
+    homeWinProbability: ((p.context as any).homeWinProbability || 50) / 100,
+    awayWinProbability: ((p.context as any).awayWinProbability || 50) / 100,
+    drawProbability: ((p.context as any).drawProbability || 0) / 100,
+  };
+}
+
+/**
+ * Calcule la contribution de chaque feature au résultat
+ */
+function calculateFeatureContribution(
+  features: FeatureVector,
+  weights: Record<string, number>
+): number {
+  return (
+    features.edge * weights.edge +
+    features.dataQuality * weights.dataQuality +
+    (features.homeInjuries - features.awayInjuries) * weights.injuries * -1 +
+    (features.homeFormScore - features.awayFormScore) * weights.form +
+    (features.homeXG - features.awayXG) * weights.xG +
+    (features.homeNetRating - features.awayNetRating) * weights.netRating
+  );
+}
+
+/**
+ * Entraîne le modèle avec les prédictions résolues
+ */
+export function trainModel(): {
+  success: boolean;
+  samplesUsed: number;
+  accuracy: number;
+  improvements: string[];
+} {
+  const predictions = loadPredictions();
+  const resolved = predictions.filter(p => p.result);
+  
+  if (resolved.length < MIN_SAMPLES_FOR_TRAINING) {
+    console.log(`⚠️ Pas assez de données pour l'entraînement (${resolved.length}/${MIN_SAMPLES_FOR_TRAINING})`);
+    return {
+      success: false,
+      samplesUsed: resolved.length,
+      accuracy: 0,
+      improvements: ['Pas assez de données'],
+    };
+  }
+  
+  console.log(`🧠 Entraînement ML avec ${resolved.length} prédictions...`);
+  
+  const model = loadModel();
+  const improvements: string[] = [];
+  
+  // 1. Optimiser le seuil d'edge
+  const edgeOptimization = optimizeEdgeThreshold(resolved);
+  if (edgeOptimization.improved) {
+    model.thresholds.edgeThreshold = edgeOptimization.threshold;
+    improvements.push(`Edge threshold: ${edgeOptimization.threshold.toFixed(3)}`);
+  }
+  
+  // 2. Optimiser les poids de confiance
+  const confidenceOptimization = optimizeConfidenceWeights(resolved);
+  if (confidenceOptimization.improved) {
+    model.thresholds.confidenceWeights = confidenceOptimization.weights;
+    improvements.push(`Confidence weights optimisés`);
+  }
+  
+  // 3. Optimiser le facteur d'impact des blessures
+  const injuryOptimization = optimizeInjuryFactor(resolved);
+  if (injuryOptimization.improved) {
+    model.thresholds.injuryImpactFactor = injuryOptimization.factor;
+    improvements.push(`Injury impact: ${injuryOptimization.factor.toFixed(2)}`);
+  }
+  
+  // 4. Optimiser les poids des features
+  const featureOptimization = optimizeFeatureWeights(resolved, model.featureWeights);
+  model.featureWeights = featureOptimization as unknown as Record<string, number>;
+  improvements.push(`Feature weights mis à jour`);
+  
+  // 5. Optimiser les ajustements par sport
+  model.sportAdjustments = optimizeSportAdjustments(resolved);
+  
+  // 6. Calculer l'accuracy globale
+  const accuracy = calculateModelAccuracy(resolved, model.thresholds);
+  model.thresholds.accuracy = accuracy;
+  
+  // 7. Mettre à jour les métadonnées
+  model.thresholds.lastUpdated = new Date().toISOString();
+  model.thresholds.samplesUsed = resolved.length;
+  model.thresholds.version = incrementVersion(model.thresholds.version);
+  
+  // 8. Ajouter à l'historique
+  model.trainingHistory.push({
+    date: new Date().toISOString(),
+    samples: resolved.length,
+    accuracy,
+    thresholds: { ...model.thresholds },
+  });
+  
+  // Garder seulement les 50 derniers entraînements
+  if (model.trainingHistory.length > 50) {
+    model.trainingHistory = model.trainingHistory.slice(-50);
+  }
+  
+  // 9. Calculer la confiance du modèle
+  model.confidence = Math.min(0.95, 0.5 + (resolved.length / 500));
+  
+  saveModel(model);
+  
+  console.log(`✅ Entraînement terminé: ${accuracy.toFixed(1)}% accuracy`);
+  
+  return {
+    success: true,
+    samplesUsed: resolved.length,
+    accuracy,
+    improvements,
+  };
+}
+
+/**
+ * Optimise le seuil d'edge
+ */
+function optimizeEdgeThreshold(
+  predictions: PredictionRecord[]
+): { threshold: number; improved: boolean } {
+  let bestThreshold = DEFAULT_THRESHOLDS.edgeThreshold;
+  let bestAccuracy = 0;
+  
+  for (let threshold = 0.01; threshold <= 0.10; threshold += 0.005) {
+    const atThreshold = predictions.filter(p => p.prediction.edge >= threshold * 100);
+    
+    if (atThreshold.length < 10) continue;
+    
+    const correct = atThreshold.filter(p => p.result!.isCorrect).length;
+    const accuracy = correct / atThreshold.length;
+    
+    if (accuracy > bestAccuracy) {
+      bestAccuracy = accuracy;
+      bestThreshold = threshold;
+    }
+  }
+  
+  return {
+    threshold: bestThreshold,
+    improved: bestAccuracy > 0.5,
+  };
+}
+
+/**
+ * Optimise les poids de confiance Kelly
+ */
+function optimizeConfidenceWeights(
+  predictions: PredictionRecord[]
+): { weights: MLThresholds['confidenceWeights']; improved: boolean } {
+  const weights = { ...DEFAULT_THRESHOLDS.confidenceWeights };
+  const byConfidence = {
+    very_high: predictions.filter(p => p.prediction.confidence === 'very_high'),
+    high: predictions.filter(p => p.prediction.confidence === 'high'),
+    medium: predictions.filter(p => p.prediction.confidence === 'medium'),
+    low: predictions.filter(p => p.prediction.confidence === 'low'),
+  };
+  
+  let improved = false;
+  
+  for (const level of Object.keys(byConfidence) as Array<keyof typeof byConfidence>) {
+    const preds = byConfidence[level];
+    if (preds.length >= 10) {
+      const correct = preds.filter(p => p.result!.isCorrect).length;
+      const accuracy = correct / preds.length;
+      
+      // Ajuster le poids: plus accuracy est haute, plus le poids est élevé
+      const optimalWeight = 0.3 + (accuracy - 0.5) * 0.6;
+      
+      if (Math.abs(optimalWeight - weights[level]) > 0.05) {
+        weights[level] = Math.max(0.1, Math.min(0.7, optimalWeight));
+        improved = true;
+      }
+    }
+  }
+  
+  return { weights, improved };
+}
+
+/**
+ * Optimise le facteur d'impact des blessures
+ */
+function optimizeInjuryFactor(
+  predictions: PredictionRecord[]
+): { factor: number; improved: boolean } {
+  const withInjuries = predictions.filter(p => 
+    p.context.homeInjuries > 0 || p.context.awayInjuries > 0
+  );
+  
+  if (withInjuries.length < 15) {
+    return { factor: 1.0, improved: false };
+  }
+  
+  // Analyser la corrélation entre blessures et résultats
+  let injuryImpactSum = 0;
+  
+  for (const p of withInjuries) {
+    const injuryDiff = p.context.homeInjuries - p.context.awayInjuries;
+    const wasCorrect = p.result!.isCorrect;
+    
+    // FIX M1: Différencier les branches — aligned+correct augmente, misaligned+wrong diminue
+    if ((injuryDiff > 0 && p.prediction.bet === 'away' && wasCorrect) ||
+        (injuryDiff < 0 && p.prediction.bet === 'home' && wasCorrect)) {
+      injuryImpactSum += 0.1; // blessures alignées avec prédiction correcte → sous-estimé
+    } else if ((injuryDiff > 0 && p.prediction.bet === 'home' && !wasCorrect) ||
+               (injuryDiff < 0 && p.prediction.bet === 'away' && !wasCorrect)) {
+      injuryImpactSum -= 0.1; // blessures désalignées avec prédiction incorrecte → sur-estimé
+    }
+  }
+  
+  const optimalFactor = 1.0 + (injuryImpactSum / withInjuries.length);
+  
+  return {
+    factor: Math.max(0.5, Math.min(2.0, optimalFactor)),
+    improved: Math.abs(optimalFactor - 1.0) > 0.1,
+  };
+}
+
+/**
+ * Optimise les poids des features
+ */
+function optimizeFeatureWeights(
+  predictions: PredictionRecord[],
+  currentWeights: Record<string, number>
+): Record<string, number> {
+  const weights = { ...currentWeights };
+  const features = ['edge', 'dataQuality', 'injuries', 'form', 'xG', 'netRating', 'confidence'];
+  
+  for (const feature of features) {
+    let correctSum = 0;
+    let incorrectSum = 0;
+    let correctCount = 0;
+    let incorrectCount = 0;
+    
+    for (const p of predictions) {
+      if (!p.result) continue;
+      
+      const value = getFeatureValue(p, feature);
+      if (value === null) continue;
+      
+      if (p.result.isCorrect) {
+        correctSum += value;
+        correctCount++;
+      } else {
+        incorrectSum += value;
+        incorrectCount++;
+      }
+    }
+    
+    if (correctCount > 0 && incorrectCount > 0) {
+      const correctAvg = correctSum / correctCount;
+      const incorrectAvg = incorrectSum / incorrectCount;
+      
+      // Ajuster le poids basé sur la différence
+      const diff = Math.abs(correctAvg - incorrectAvg);
+      const currentWeight = weights[feature] || 0.1;
+      
+      // Mise à jour avec momentum
+      weights[feature] = currentWeight * MOMENTUM + diff * (1 - MOMENTUM) * LEARNING_RATE;
+    }
+  }
+  
+  // Normaliser
+  const total = Object.values(weights).reduce((a, b) => a + b, 0);
+  for (const key of Object.keys(weights)) {
+    weights[key] = Math.round((weights[key] / total) * 100) / 100;
+  }
+  
+  return weights;
+}
+
+/**
+ * Optimise les ajustements par sport
+ */
+function optimizeSportAdjustments(
+  predictions: PredictionRecord[]
+): Record<string, Partial<MLThresholds>> {
+  const adjustments: Record<string, Partial<MLThresholds>> = {};
+  
+  // Football
+  const football = predictions.filter(p => p.sport === 'football');
+  if (football.length >= 20) {
+    adjustments.football = {
+      edgeThreshold: optimizeEdgeThreshold(football).threshold,
+      formWeight: optimizeFormWeight(football),
+    };
+  }
+  
+  // Basketball
+  const basketball = predictions.filter(p => p.sport === 'basketball');
+  if (basketball.length >= 20) {
+    adjustments.basketball = {
+      edgeThreshold: optimizeEdgeThreshold(basketball).threshold,
+      netRatingWeight: optimizeNetRatingWeight(basketball),
+    };
+  }
+  
+  return adjustments;
+}
+
+function optimizeFormWeight(predictions: PredictionRecord[]): number {
+  // Analyser l'impact de la forme sur les résultats
+  const withForm = predictions.filter(p => 
+    p.context.homeFormScore && p.context.awayFormScore
+  );
+  
+  if (withForm.length < 10) return 0.05;
+  
+  let correctWithFormDiff = 0;
+  let totalFormDiff = 0;
+  
+  for (const p of withForm) {
+    const formDiff = p.context.homeFormScore! - p.context.awayFormScore!;
+    totalFormDiff += Math.abs(formDiff);
+    
+    if (p.result!.isCorrect && 
+        ((formDiff > 10 && p.prediction.bet === 'home') ||
+         (formDiff < -10 && p.prediction.bet === 'away'))) {
+      correctWithFormDiff++;
+    }
+  }
+  
+  const avgFormDiff = totalFormDiff / withForm.length;
+  return Math.max(0.01, Math.min(0.15, avgFormDiff / 500));
+}
+
+function optimizeNetRatingWeight(predictions: PredictionRecord[]): number {
+  const withNetRating = predictions.filter(p =>
+    p.context.homeNetRating !== undefined && p.context.awayNetRating !== undefined
+  );
+  
+  if (withNetRating.length < 10) return 0.03;
+  
+  let impactSum = 0;
+  
+  for (const p of withNetRating) {
+    const netDiff = p.context.homeNetRating! - p.context.awayNetRating!;
+    const wasCorrect = p.result!.isCorrect;
+    
+    if ((netDiff > 2 && p.prediction.bet === 'home' && wasCorrect) ||
+        (netDiff < -2 && p.prediction.bet === 'away' && wasCorrect)) {
+      impactSum += 0.01;
+    }
+  }
+  
+  return Math.max(0.01, Math.min(0.10, 0.03 + impactSum / withNetRating.length));
+}
+
+function getFeatureValue(p: PredictionRecord, feature: string): number | null {
+  switch (feature) {
+    case 'edge': return p.prediction.edge / 100;
+    case 'dataQuality': return p.context.dataQuality / 100;
+    case 'injuries': return (p.context.homeInjuries + p.context.awayInjuries) / 10;
+    case 'form': return ((p.context.homeFormScore || 50) - (p.context.awayFormScore || 50)) / 100;
+    case 'xG': return ((p.context.homeXG || 1.5) - (p.context.awayXG || 1.5)) / 3;
+    case 'netRating': return ((p.context.homeNetRating || 0) - (p.context.awayNetRating || 0)) / 20;
+    case 'confidence': 
+      return { very_high: 1, high: 0.75, medium: 0.5, low: 0.25 }[p.prediction.confidence] || 0.5;
+    default: return null;
+  }
+}
+
+function calculateModelAccuracy(
+  predictions: PredictionRecord[],
+  thresholds: MLThresholds
+): number {
+  // FIX M2: Les paris skip (edge < seuil) doivent être exclus du numérateur ET du dénominateur
+  const betted = predictions.filter(p => 
+    p.result && p.prediction.edge >= thresholds.edgeThreshold * 100
+  );
+  const correct = betted.filter(p => p.result!.isCorrect).length;
+  const total = betted.length;
+  
+  return total > 0 ? Math.round((correct / total) * 100) : 0;
+}
+
+function incrementVersion(version: string): string {
+  const parts = version.split('.').map(Number);
+  parts[2] = (parts[2] || 0) + 1;
+  return parts.join('.');
+}
+
+// ============================================
+// FONCTIONS PUBLIQUES
+// ============================================
+
+/**
+ * Récupère les seuils actuels (pour utilisation dans expertAdvisor)
+ */
+export function getAdaptiveThresholds(sport?: string): MLThresholds {
+  const model = loadModel();
+  
+  let thresholds = { ...model.thresholds };
+  
+  // Appliquer les ajustements par sport si disponibles
+  if (sport && model.sportAdjustments[sport]) {
+    thresholds = { ...thresholds, ...model.sportAdjustments[sport] };
+  }
+  
+  return thresholds;
+}
+
+/**
+ * Calcule l'ajustement de probabilité basé sur le ML.
+ * Phase 2: Intègre les coefficients XGBoost depuis Supabase quand disponibles.
+ * Si XGBoost est entraîné, ses feature importances pondèrent l'ajustement final.
+ */
+export async function calculateMLAdjustment(
+  features: FeatureVector,
+  sport: string
+): Promise<{
+  probabilityAdjustment: number;
+  confidenceAdjustment: number;
+  recommendedBet: 'home' | 'away' | 'neutral';
+  xgboostUsed: boolean;
+  xgboostScore?: number;
+}> {
+  const model = loadModel();
+  const thresholds = getAdaptiveThresholds(sport);
+  
+  // Contribution des features (heuristiques existantes)
+  const contribution = calculateFeatureContribution(features, model.featureWeights);
+  let probabilityAdjustment = contribution * thresholds.formWeight;
+  
+  // Ajustement de confiance
+  let confidenceAdjustment = 0;
+  if (features.dataQuality > thresholds.minDataQuality / 100) {
+    confidenceAdjustment += 0.1;
+  }
+  if (features.edge > thresholds.edgeThreshold) {
+    confidenceAdjustment += 0.1;
+  }
+  
+  // Recommandation
+  let recommendedBet: 'home' | 'away' | 'neutral' = 'neutral';
+  if (probabilityAdjustment > 0.02) {
+    recommendedBet = 'home';
+  } else if (probabilityAdjustment < -0.02) {
+    recommendedBet = 'away';
+  }
+  
+  // ═══════════════════════════════════════════════════
+  // PHASE 2: XGBoost Integration
+  // Si un modèle XGBoost est entraîné (via Python script),
+  // on utilise les feature importances pour ajuster la prédiction.
+  // ═══════════════════════════════════════════════════
+  let xgboostUsed = false;
+  let xgboostScore: number | undefined;
+  
+  try {
+    const mlModel = await loadMLModel();
+    
+    if (mlModel?.xgboost_params?.trained) {
+      // Construire le feature vector pour XGBoost
+      // FIX C1: homeWinProbability/awayWinProbability/drawProbability sont maintenant dans FeatureVector
+      const homeProb = features.homeWinProbability;
+      const awayProb = features.awayWinProbability;
+      const drawProb = features.drawProbability || 0;
+      const isHomeFavorite = homeProb > awayProb ? 1 : 0;
+      const favoriteStrength = Math.abs(homeProb - awayProb);
+      const oddsRatio = awayProb > 0.001 ? homeProb / awayProb : 1;
+      const logOddsRatio = Math.log(Math.max(0.01, oddsRatio));
+      const confidenceNumeric = features.dataQuality > 0.7 ? 1.0 : features.dataQuality > 0.5 ? 0.75 : 0.5;
+      const predMatchesFavorite = isHomeFavorite;
+
+      const xgbFeatures: Record<string, number> = {
+        prob_home: homeProb,
+        prob_away: awayProb,
+        prob_draw: drawProb,
+        is_home_favorite: isHomeFavorite,
+        confidence_numeric: confidenceNumeric,
+        pred_matches_favorite: predMatchesFavorite,
+      };
+      
+      // Calculer derived features
+      xgbFeatures.favorite_strength = favoriteStrength;
+      xgbFeatures.odds_ratio = oddsRatio;
+      xgbFeatures.log_odds_ratio = logOddsRatio;
+      xgbFeatures.odds_confidence = Math.min(homeProb * confidenceNumeric, 1);
+      xgbFeatures.favorite_confidence = Math.min(favoriteStrength * confidenceNumeric, 1);
+      
+      // Sport-specific flags
+      xgbFeatures[`is_${sport}`] = 1;
+      xgbFeatures.draw_signal = sport === 'football' ? (features.drawProbability || 0) : 0;
+      
+      // Edge as feature
+      xgbFeatures.edge = features.edge || 0;
+      
+      // Phase 3: Pass enrichment features to XGBoost (only if defined)
+      if (features.weatherImpact !== undefined) xgbFeatures.weather_impact = features.weatherImpact;
+      if (features.weatherRiskLevel !== undefined) xgbFeatures.weather_risk = features.weatherRiskLevel;
+      if (features.fatigueDifferential !== undefined) xgbFeatures.fatigue_diff = features.fatigueDifferential;
+      if (features.homeFatigueScore !== undefined) xgbFeatures.fatigue_home = features.homeFatigueScore;
+      if (features.awayFatigueScore !== undefined) xgbFeatures.fatigue_away = features.awayFatigueScore;
+      if (features.homeWinPct !== undefined) xgbFeatures.record_home_pct = features.homeWinPct;
+      if (features.awayWinPct !== undefined) xgbFeatures.record_away_pct = features.awayWinPct;
+      if (features.recordStrengthDiff !== undefined) xgbFeatures.record_diff = features.recordStrengthDiff;
+      
+      // Score XGBoost
+      const xgbResult = scoreWithXGBoost(sport, xgbFeatures, mlModel);
+      
+      if (xgbResult.isXGBoostTrained) {
+        xgboostUsed = true;
+        xgboostScore = xgbResult.score;
+        
+        // Mixer: 60% heuristiques + 40% XGBoost
+        // Plus XGBoost est confiant, plus son poids augmente
+        const xgbWeight = 0.4;
+        const heurWeight = 0.6;
+        
+        // XGBoost adjustment: convertir score (0-1) en adjustment (-0.15 to 0.15)
+        const xgbAdjustment = (xgbResult.score - 0.5) * 0.3; // scale to [-0.15, 0.15]
+        
+        probabilityAdjustment = probabilityAdjustment * heurWeight + xgbAdjustment * xgbWeight;
+        
+        // Boost de confiance si XGBoost est aligné avec heuristiques
+        if ((probabilityAdjustment > 0 && xgbResult.score > 0.5) ||
+            (probabilityAdjustment < 0 && xgbResult.score < 0.5)) {
+          confidenceAdjustment += 0.05; // +5% bonus d'alignement
+        }
+        
+        // Si XGBoost est très confiant, booster davantage
+        if (xgbResult.score > 0.7 || xgbResult.score < 0.3) {
+          confidenceAdjustment += 0.05;
+        }
+        
+        console.log(`🧠 XGBoost ${sport}: score=${xgbResult.score.toFixed(3)} adjustment=${xgbAdjustment.toFixed(4)} [${xgbResult.recommendation}]`);
+      }
+    }
+  } catch (e) {
+    // XGBoost non disponible — fallback silencieux vers heuristiques
+    console.debug('XGBoost non disponible, utilisation heuristiques seules');
+  }
+  
+  // Recommandation finale (après mix XGBoost)
+  if (xgboostUsed && xgboostScore !== undefined) {
+    if (xgboostScore > 0.6 && probabilityAdjustment > 0) {
+      recommendedBet = 'home';
+    } else if (xgboostScore < 0.4 && probabilityAdjustment < 0) {
+      recommendedBet = 'away';
+    }
+  }
+  
+  return {
+    probabilityAdjustment: Math.max(-0.15, Math.min(0.15, probabilityAdjustment)),
+    confidenceAdjustment: Math.max(0, Math.min(0.3, confidenceAdjustment)),
+    recommendedBet,
+    xgboostUsed,
+    xgboostScore,
+  };
+}
+
+/**
+ * Obtient le statut du modèle
+ */
+export function getModelStatus(): {
+  version: string;
+  lastUpdated: string;
+  samplesUsed: number;
+  accuracy: number;
+  confidence: number;
+  trainingHistoryCount: number;
+} {
+  const model = loadModel();
+  
+  return {
+    version: model.thresholds.version,
+    lastUpdated: model.thresholds.lastUpdated || 'Jamais',
+    samplesUsed: model.thresholds.samplesUsed,
+    accuracy: model.thresholds.accuracy,
+    confidence: model.confidence,
+    trainingHistoryCount: model.trainingHistory.length,
+  };
+}
+
+/**
+ * Réinitialise le modèle
+ */
+export function resetModel(): void {
+  const model: MLModel = {
+    thresholds: { ...DEFAULT_THRESHOLDS, lastUpdated: new Date().toISOString() },
+    featureWeights: {},
+    sportAdjustments: {},
+    confidence: 0.5,
+    trainingHistory: [],
+  };
+  
+  saveModel(model);
+  console.log('🗑️ Modèle ML réinitialisé');
+}
+
+// ============================================
+// EXPORTS
+// ============================================
+
+const AdaptiveThresholdsML = {
+  trainModel,
+  getAdaptiveThresholds,
+  calculateMLAdjustment,
+  getModelStatus,
+  resetModel,
+};
+
+export default AdaptiveThresholdsML;

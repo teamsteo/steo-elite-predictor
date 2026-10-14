@@ -1,0 +1,3117 @@
+{
+  "analyses": {
+    "espn_401810863": {
+      "matchId": "espn_401810863",
+      "homeTeam": "Charlotte Hornets",
+      "awayTeam": "Orlando Magic",
+      "league": "NBA",
+      "date": "2026-03-19T23:00Z",
+      "oddsHome": 1.46,
+      "oddsDraw": null,
+      "oddsAway": 2.8,
+      "probabilities": {
+        "home": 52,
+        "draw": 21,
+        "away": 27
+      },
+      "riskPercentage": 48,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.787Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810864": {
+      "matchId": "espn_401810864",
+      "homeTeam": "Washington Wizards",
+      "awayTeam": "Detroit Pistons",
+      "league": "NBA",
+      "date": "2026-03-19T23:00Z",
+      "oddsHome": 7.25,
+      "oddsDraw": null,
+      "oddsAway": 1.11,
+      "probabilities": {
+        "home": 10,
+        "draw": 21,
+        "away": 68
+      },
+      "riskPercentage": 32,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.787Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810865": {
+      "matchId": "espn_401810865",
+      "homeTeam": "Miami Heat",
+      "awayTeam": "Los Angeles Lakers",
+      "league": "NBA",
+      "date": "2026-03-20T00:00Z",
+      "oddsHome": 1.49,
+      "oddsDraw": null,
+      "oddsAway": 2.7,
+      "probabilities": {
+        "home": 51,
+        "draw": 21,
+        "away": 28
+      },
+      "riskPercentage": 49,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.788Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810866": {
+      "matchId": "espn_401810866",
+      "homeTeam": "Chicago Bulls",
+      "awayTeam": "Cleveland Cavaliers",
+      "league": "NBA",
+      "date": "2026-03-20T00:00Z",
+      "oddsHome": 5.4,
+      "oddsDraw": null,
+      "oddsAway": 1.17,
+      "probabilities": {
+        "home": 14,
+        "draw": 21,
+        "away": 65
+      },
+      "riskPercentage": 35,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.788Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810867": {
+      "matchId": "espn_401810867",
+      "homeTeam": "New Orleans Pelicans",
+      "awayTeam": "LA Clippers",
+      "league": "NBA",
+      "date": "2026-03-20T00:00Z",
+      "oddsHome": 1.8,
+      "oddsDraw": null,
+      "oddsAway": 2.05,
+      "probabilities": {
+        "home": 42,
+        "draw": 21,
+        "away": 37
+      },
+      "riskPercentage": 58,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.788Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810868": {
+      "matchId": "espn_401810868",
+      "homeTeam": "San Antonio Spurs",
+      "awayTeam": "Phoenix Suns",
+      "league": "NBA",
+      "date": "2026-03-20T00:00Z",
+      "oddsHome": 1.21,
+      "oddsDraw": null,
+      "oddsAway": 4.6,
+      "probabilities": {
+        "home": 62,
+        "draw": 21,
+        "away": 16
+      },
+      "riskPercentage": 38,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.789Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810869": {
+      "matchId": "espn_401810869",
+      "homeTeam": "Utah Jazz",
+      "awayTeam": "Milwaukee Bucks",
+      "league": "NBA",
+      "date": "2026-03-20T01:00Z",
+      "oddsHome": 2.95,
+      "oddsDraw": null,
+      "oddsAway": 1.42,
+      "probabilities": {
+        "home": 26,
+        "draw": 21,
+        "away": 53
+      },
+      "riskPercentage": 47,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.789Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401810870": {
+      "matchId": "espn_401810870",
+      "homeTeam": "Sacramento Kings",
+      "awayTeam": "Philadelphia 76ers",
+      "league": "NBA",
+      "date": "2026-03-20T02:00Z",
+      "oddsHome": 2.2,
+      "oddsDraw": null,
+      "oddsAway": 1.7,
+      "probabilities": {
+        "home": 34,
+        "draw": 21,
+        "away": 44
+      },
+      "riskPercentage": 56,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.790Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803434": {
+      "matchId": "espn_401803434",
+      "homeTeam": "Boston Bruins",
+      "awayTeam": "Winnipeg Jets",
+      "league": "NHL",
+      "date": "2026-03-19T23:00Z",
+      "oddsHome": 1.7,
+      "oddsDraw": null,
+      "oddsAway": 2.2,
+      "probabilities": {
+        "home": 44,
+        "draw": 21,
+        "away": 34
+      },
+      "riskPercentage": 56,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.790Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803435": {
+      "matchId": "espn_401803435",
+      "homeTeam": "Ottawa Senators",
+      "awayTeam": "New York Islanders",
+      "league": "NHL",
+      "date": "2026-03-19T23:00Z",
+      "oddsHome": 1.74,
+      "oddsDraw": null,
+      "oddsAway": 2.14,
+      "probabilities": {
+        "home": 43,
+        "draw": 21,
+        "away": 35
+      },
+      "riskPercentage": 57,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.791Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803436": {
+      "matchId": "espn_401803436",
+      "homeTeam": "Detroit Red Wings",
+      "awayTeam": "Montreal Canadiens",
+      "league": "NHL",
+      "date": "2026-03-19T23:00Z",
+      "oddsHome": 1.91,
+      "oddsDraw": null,
+      "oddsAway": 1.91,
+      "probabilities": {
+        "home": 39,
+        "draw": 21,
+        "away": 39
+      },
+      "riskPercentage": 61,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.792Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803437": {
+      "matchId": "espn_401803437",
+      "homeTeam": "Columbus Blue Jackets",
+      "awayTeam": "New York Rangers",
+      "league": "NHL",
+      "date": "2026-03-19T23:00Z",
+      "oddsHome": 1.46,
+      "oddsDraw": null,
+      "oddsAway": 2.8,
+      "probabilities": {
+        "home": 52,
+        "draw": 21,
+        "away": 27
+      },
+      "riskPercentage": 48,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.792Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803439": {
+      "matchId": "espn_401803439",
+      "homeTeam": "Minnesota Wild",
+      "awayTeam": "Chicago Blackhawks",
+      "league": "NHL",
+      "date": "2026-03-19T23:30Z",
+      "oddsHome": 1.44,
+      "oddsDraw": null,
+      "oddsAway": 2.85,
+      "probabilities": {
+        "home": 52,
+        "draw": 21,
+        "away": 26
+      },
+      "riskPercentage": 48,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.793Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803438": {
+      "matchId": "espn_401803438",
+      "homeTeam": "Nashville Predators",
+      "awayTeam": "Seattle Kraken",
+      "league": "NHL",
+      "date": "2026-03-20T00:00Z",
+      "oddsHome": 1.74,
+      "oddsDraw": null,
+      "oddsAway": 2.14,
+      "probabilities": {
+        "home": 43,
+        "draw": 21,
+        "away": 35
+      },
+      "riskPercentage": 57,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.793Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803440": {
+      "matchId": "espn_401803440",
+      "homeTeam": "Edmonton Oilers",
+      "awayTeam": "Florida Panthers",
+      "league": "NHL",
+      "date": "2026-03-20T01:00Z",
+      "oddsHome": 1.62,
+      "oddsDraw": null,
+      "oddsAway": 2.36,
+      "probabilities": {
+        "home": 47,
+        "draw": 21,
+        "away": 32
+      },
+      "riskPercentage": 53,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.794Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803441": {
+      "matchId": "espn_401803441",
+      "homeTeam": "Vancouver Canucks",
+      "awayTeam": "Tampa Bay Lightning",
+      "league": "NHL",
+      "date": "2026-03-20T02:00Z",
+      "oddsHome": 3.45,
+      "oddsDraw": null,
+      "oddsAway": 1.33,
+      "probabilities": {
+        "home": 22,
+        "draw": 21,
+        "away": 57
+      },
+      "riskPercentage": 43,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.794Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803442": {
+      "matchId": "espn_401803442",
+      "homeTeam": "Vegas Golden Knights",
+      "awayTeam": "Utah Mammoth",
+      "league": "NHL",
+      "date": "2026-03-20T02:00Z",
+      "oddsHome": 1.77,
+      "oddsDraw": null,
+      "oddsAway": 2.1,
+      "probabilities": {
+        "home": 43,
+        "draw": 21,
+        "away": 36
+      },
+      "riskPercentage": 57,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.795Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803443": {
+      "matchId": "espn_401803443",
+      "homeTeam": "San Jose Sharks",
+      "awayTeam": "Buffalo Sabres",
+      "league": "NHL",
+      "date": "2026-03-20T02:00Z",
+      "oddsHome": 2.2,
+      "oddsDraw": null,
+      "oddsAway": 1.7,
+      "probabilities": {
+        "home": 34,
+        "draw": 21,
+        "away": 44
+      },
+      "riskPercentage": 56,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.795Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401803444": {
+      "matchId": "espn_401803444",
+      "homeTeam": "Los Angeles Kings",
+      "awayTeam": "Philadelphia Flyers",
+      "league": "NHL",
+      "date": "2026-03-20T02:30Z",
+      "oddsHome": 1.59,
+      "oddsDraw": null,
+      "oddsAway": 2.42,
+      "probabilities": {
+        "home": 48,
+        "draw": 21,
+        "away": 31
+      },
+      "riskPercentage": 52,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.796Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862875": {
+      "matchId": "espn_401862875",
+      "homeTeam": "FC Midtjylland",
+      "awayTeam": "Nottingham Forest",
+      "league": "Europa League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 2.85,
+      "oddsDraw": 3.35,
+      "oddsAway": 2.5,
+      "probabilities": {
+        "home": 33,
+        "draw": 28,
+        "away": 38
+      },
+      "riskPercentage": 62,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 58%",
+          "type": "over_2.5",
+          "probability": 57.599999999999994,
+          "odds": 1.9,
+          "value": 5,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "X2 - 66%",
+          "type": "away_or_draw",
+          "probability": 66,
+          "odds": 1.35,
+          "value": -8,
+          "stake": 0,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "-2.5 buts - 42%",
+          "type": "under_2.5",
+          "probability": 42.400000000000006,
+          "odds": 1.9,
+          "value": -10.2,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 46%",
+          "type": "btts_yes",
+          "probability": 45.5,
+          "odds": 1.75,
+          "value": -11.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "1X - 61%",
+          "type": "home_or_draw",
+          "probability": 61,
+          "odds": 1.35,
+          "value": -13,
+          "stake": 0,
+          "recommendation": "moderate"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "X2 - 66%",
+          "edge": -8,
+          "confidence": "moderate"
+        },
+        {
+          "type": "1X - 61%",
+          "edge": -13,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.796Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862876": {
+      "matchId": "espn_401862876",
+      "homeTeam": "Lyon",
+      "awayTeam": "Celta Vigo",
+      "league": "Europa League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 2.15,
+      "oddsDraw": 3.3,
+      "oddsAway": 3.65,
+      "probabilities": {
+        "home": 45,
+        "draw": 29,
+        "away": 26
+      },
+      "riskPercentage": 55,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 58%",
+          "type": "over_2.5",
+          "probability": 57.599999999999994,
+          "odds": 1.9,
+          "value": 5,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "1X - 74%",
+          "type": "home_or_draw",
+          "probability": 74,
+          "odds": 1.35,
+          "value": 0,
+          "stake": 0,
+          "recommendation": "strong"
+        },
+        {
+          "label": "-2.5 buts - 42%",
+          "type": "under_2.5",
+          "probability": 42.400000000000006,
+          "odds": 1.9,
+          "value": -10.2,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 46%",
+          "type": "btts_yes",
+          "probability": 45.5,
+          "odds": 1.75,
+          "value": -11.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 74%",
+          "edge": 0,
+          "confidence": "strong"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.797Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862873": {
+      "matchId": "espn_401862873",
+      "homeTeam": "SC Freiburg",
+      "awayTeam": "Racing Genk",
+      "league": "Europa League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 1.56,
+      "oddsDraw": 4.3,
+      "oddsAway": 6,
+      "probabilities": {
+        "home": 62,
+        "draw": 22,
+        "away": 16
+      },
+      "riskPercentage": 38,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "1X - 84%",
+          "type": "home_or_draw",
+          "probability": 84,
+          "odds": 1.35,
+          "value": 10,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 84%",
+          "edge": 10,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.797Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862874": {
+      "matchId": "espn_401862874",
+      "homeTeam": "AS Roma",
+      "awayTeam": "Bologna",
+      "league": "Europa League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 1.71,
+      "oddsDraw": 3.65,
+      "oddsAway": 5.25,
+      "probabilities": {
+        "home": 56,
+        "draw": 26,
+        "away": 18
+      },
+      "riskPercentage": 44,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "1X - 82%",
+          "type": "home_or_draw",
+          "probability": 82,
+          "odds": 1.35,
+          "value": 8,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 59%",
+          "type": "over_2.5",
+          "probability": 59.4,
+          "odds": 1.9,
+          "value": 6.8,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 47%",
+          "type": "btts_yes",
+          "probability": 47,
+          "odds": 1.75,
+          "value": -10.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 41%",
+          "type": "under_2.5",
+          "probability": 40.6,
+          "odds": 1.9,
+          "value": -12,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 82%",
+          "edge": 8,
+          "confidence": "strong"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.798Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862759": {
+      "matchId": "espn_401862759",
+      "homeTeam": "Aston Villa",
+      "awayTeam": "Lille",
+      "league": "Europa League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 1.67,
+      "oddsDraw": 3.95,
+      "oddsAway": 5,
+      "probabilities": {
+        "home": 57,
+        "draw": 24,
+        "away": 19
+      },
+      "riskPercentage": 43,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 61%",
+          "type": "over_2.5",
+          "probability": 60.6,
+          "odds": 1.9,
+          "value": 8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "1X - 81%",
+          "type": "home_or_draw",
+          "probability": 81,
+          "odds": 1.35,
+          "value": 7,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "Les deux marquent - 48%",
+          "type": "btts_yes",
+          "probability": 48,
+          "odds": 1.75,
+          "value": -9.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 39%",
+          "type": "under_2.5",
+          "probability": 39.4,
+          "odds": 1.9,
+          "value": -13.2,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 61%",
+          "edge": 8,
+          "confidence": "moderate"
+        },
+        {
+          "type": "1X - 81%",
+          "edge": 7,
+          "confidence": "strong"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.798Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862756": {
+      "matchId": "espn_401862756",
+      "homeTeam": "FC Porto",
+      "awayTeam": "VfB Stuttgart",
+      "league": "Europa League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 2.55,
+      "oddsDraw": 3.4,
+      "oddsAway": 2.8,
+      "probabilities": {
+        "home": 38,
+        "draw": 28,
+        "away": 34
+      },
+      "riskPercentage": 62,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 58%",
+          "type": "over_2.5",
+          "probability": 58.199999999999996,
+          "odds": 1.9,
+          "value": 5.6,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "1X - 66%",
+          "type": "home_or_draw",
+          "probability": 66,
+          "odds": 1.35,
+          "value": -8,
+          "stake": 0,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "-2.5 buts - 42%",
+          "type": "under_2.5",
+          "probability": 41.800000000000004,
+          "odds": 1.9,
+          "value": -10.8,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 46%",
+          "type": "btts_yes",
+          "probability": 46,
+          "odds": 1.75,
+          "value": -11.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "X2 - 62%",
+          "type": "away_or_draw",
+          "probability": 62,
+          "odds": 1.35,
+          "value": -12,
+          "stake": 0,
+          "recommendation": "moderate"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 66%",
+          "edge": -8,
+          "confidence": "moderate"
+        },
+        {
+          "type": "X2 - 62%",
+          "edge": -12,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.799Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862757": {
+      "matchId": "espn_401862757",
+      "homeTeam": "Real Betis",
+      "awayTeam": "Panathinaikos",
+      "league": "Europa League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 1.42,
+      "oddsDraw": 4.8,
+      "oddsAway": 7.5,
+      "probabilities": {
+        "home": 67,
+        "draw": 20,
+        "away": 13
+      },
+      "riskPercentage": 33,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "1X - 87%",
+          "type": "home_or_draw",
+          "probability": 87,
+          "odds": 1.35,
+          "value": 13,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 63%",
+          "type": "over_2.5",
+          "probability": 63,
+          "odds": 1.9,
+          "value": 10.4,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 50,
+          "odds": 1.75,
+          "value": -7.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 37%",
+          "type": "under_2.5",
+          "probability": 37,
+          "odds": 1.9,
+          "value": -15.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 87%",
+          "edge": 13,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 63%",
+          "edge": 10.4,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.800Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862851": {
+      "matchId": "espn_401862851",
+      "homeTeam": "AEK Athens",
+      "awayTeam": "NK Celje",
+      "league": "Conference League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 1.28,
+      "oddsDraw": 6,
+      "oddsAway": 10,
+      "probabilities": {
+        "home": 75,
+        "draw": 16,
+        "away": 10
+      },
+      "riskPercentage": 25,
+      "confidence": "very_high",
+      "recommendations": [
+        {
+          "label": "1X - 91%",
+          "type": "home_or_draw",
+          "probability": 91,
+          "odds": 1.35,
+          "value": 17,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 66%",
+          "type": "over_2.5",
+          "probability": 66,
+          "odds": 1.9,
+          "value": 13.4,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 53%",
+          "type": "btts_yes",
+          "probability": 52.5,
+          "odds": 1.75,
+          "value": -4.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 34%",
+          "type": "under_2.5",
+          "probability": 34,
+          "odds": 1.9,
+          "value": -18.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 91%",
+          "edge": 17,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 66%",
+          "edge": 13.4,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.801Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862858": {
+      "matchId": "espn_401862858",
+      "homeTeam": "AEK Larnaca",
+      "awayTeam": "Crystal Palace",
+      "league": "Conference League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 7,
+      "oddsDraw": 4,
+      "oddsAway": 1.51,
+      "probabilities": {
+        "home": 14,
+        "draw": 24,
+        "away": 63
+      },
+      "riskPercentage": 37,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "X2 - 87%",
+          "type": "away_or_draw",
+          "probability": 87,
+          "odds": 1.35,
+          "value": 13,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 61%",
+          "type": "over_2.5",
+          "probability": 61.2,
+          "odds": 1.9,
+          "value": 8.6,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 48.5,
+          "odds": 1.75,
+          "value": -8.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 39%",
+          "type": "under_2.5",
+          "probability": 38.8,
+          "odds": 1.9,
+          "value": -13.8,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "X2 - 87%",
+          "edge": 13,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 61%",
+          "edge": 8.6,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.801Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862859": {
+      "matchId": "espn_401862859",
+      "homeTeam": "Mainz",
+      "awayTeam": "Sigma Olomouc",
+      "league": "Conference League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 1.3,
+      "oddsDraw": 5.25,
+      "oddsAway": 11,
+      "probabilities": {
+        "home": 73,
+        "draw": 18,
+        "away": 9
+      },
+      "riskPercentage": 27,
+      "confidence": "very_high",
+      "recommendations": [
+        {
+          "label": "1X - 91%",
+          "type": "home_or_draw",
+          "probability": 91,
+          "odds": 1.35,
+          "value": 17,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 64%",
+          "type": "over_2.5",
+          "probability": 64.19999999999999,
+          "odds": 1.9,
+          "value": 11.6,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 51%",
+          "type": "btts_yes",
+          "probability": 51,
+          "odds": 1.75,
+          "value": -6.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 36%",
+          "type": "under_2.5",
+          "probability": 35.80000000000001,
+          "odds": 1.9,
+          "value": -16.8,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 91%",
+          "edge": 17,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 64%",
+          "edge": 11.6,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.802Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862849": {
+      "matchId": "espn_401862849",
+      "homeTeam": "Raków Czestochowa",
+      "awayTeam": "Fiorentina",
+      "league": "Conference League",
+      "date": "2026-03-19T17:45Z",
+      "oddsHome": 2.65,
+      "oddsDraw": 3.3,
+      "oddsAway": 2.7,
+      "probabilities": {
+        "home": 36,
+        "draw": 29,
+        "away": 35
+      },
+      "riskPercentage": 64,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 58%",
+          "type": "over_2.5",
+          "probability": 57.599999999999994,
+          "odds": 1.9,
+          "value": 5,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "1X - 65%",
+          "type": "home_or_draw",
+          "probability": 65,
+          "odds": 1.35,
+          "value": -9,
+          "stake": 0,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "X2 - 64%",
+          "type": "away_or_draw",
+          "probability": 64,
+          "odds": 1.35,
+          "value": -10,
+          "stake": 0,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "-2.5 buts - 42%",
+          "type": "under_2.5",
+          "probability": 42.400000000000006,
+          "odds": 1.9,
+          "value": -10.2,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 46%",
+          "type": "btts_yes",
+          "probability": 45.5,
+          "odds": 1.75,
+          "value": -11.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 65%",
+          "edge": -9,
+          "confidence": "moderate"
+        },
+        {
+          "type": "X2 - 64%",
+          "edge": -10,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.803Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862852": {
+      "matchId": "espn_401862852",
+      "homeTeam": "Rayo Vallecano",
+      "awayTeam": "Samsunspor",
+      "league": "Conference League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 1.61,
+      "oddsDraw": 3.85,
+      "oddsAway": 6,
+      "probabilities": {
+        "home": 59,
+        "draw": 25,
+        "away": 16
+      },
+      "riskPercentage": 41,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "1X - 84%",
+          "type": "home_or_draw",
+          "probability": 84,
+          "odds": 1.35,
+          "value": 10,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 60%",
+          "type": "over_2.5",
+          "probability": 60,
+          "odds": 1.9,
+          "value": 7.4,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 48%",
+          "type": "btts_yes",
+          "probability": 47.5,
+          "odds": 1.75,
+          "value": -9.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 40%",
+          "type": "under_2.5",
+          "probability": 40,
+          "odds": 1.9,
+          "value": -12.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 84%",
+          "edge": 10,
+          "confidence": "strong"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.804Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862860": {
+      "matchId": "espn_401862860",
+      "homeTeam": "Shakhtar Donetsk",
+      "awayTeam": "Lech Poznan",
+      "league": "Conference League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 2.2,
+      "oddsDraw": 3.6,
+      "oddsAway": 3.15,
+      "probabilities": {
+        "home": 43,
+        "draw": 26,
+        "away": 30
+      },
+      "riskPercentage": 57,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 59%",
+          "type": "over_2.5",
+          "probability": 58.8,
+          "odds": 1.9,
+          "value": 6.2,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "1X - 69%",
+          "type": "home_or_draw",
+          "probability": 69,
+          "odds": 1.35,
+          "value": -5,
+          "stake": 0,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 47%",
+          "type": "btts_yes",
+          "probability": 46.5,
+          "odds": 1.75,
+          "value": -10.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 41%",
+          "type": "under_2.5",
+          "probability": 41.2,
+          "odds": 1.9,
+          "value": -11.4,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "X2 - 56%",
+          "type": "away_or_draw",
+          "probability": 56,
+          "odds": 1.35,
+          "value": -18,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 69%",
+          "edge": -5,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.804Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862857": {
+      "matchId": "espn_401862857",
+      "homeTeam": "Sparta Prague",
+      "awayTeam": "AZ Alkmaar",
+      "league": "Conference League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 2.35,
+      "oddsDraw": 3.6,
+      "oddsAway": 2.9,
+      "probabilities": {
+        "home": 41,
+        "draw": 27,
+        "away": 33
+      },
+      "riskPercentage": 59,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 59%",
+          "type": "over_2.5",
+          "probability": 59.4,
+          "odds": 1.9,
+          "value": 6.8,
+          "stake": 10,
+          "recommendation": "weak"
+        },
+        {
+          "label": "1X - 68%",
+          "type": "home_or_draw",
+          "probability": 68,
+          "odds": 1.35,
+          "value": -6,
+          "stake": 0,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 47%",
+          "type": "btts_yes",
+          "probability": 47,
+          "odds": 1.75,
+          "value": -10.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 41%",
+          "type": "under_2.5",
+          "probability": 40.6,
+          "odds": 1.9,
+          "value": -12,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "X2 - 60%",
+          "type": "away_or_draw",
+          "probability": 60,
+          "odds": 1.35,
+          "value": -14,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 68%",
+          "edge": -6,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.805Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "espn_401862850": {
+      "matchId": "espn_401862850",
+      "homeTeam": "Strasbourg",
+      "awayTeam": "Rijeka",
+      "league": "Conference League",
+      "date": "2026-03-19T20:00Z",
+      "oddsHome": 1.42,
+      "oddsDraw": 4.9,
+      "oddsAway": 7.5,
+      "probabilities": {
+        "home": 68,
+        "draw": 20,
+        "away": 13
+      },
+      "riskPercentage": 32,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "1X - 88%",
+          "type": "home_or_draw",
+          "probability": 88,
+          "odds": 1.35,
+          "value": 14,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 64%",
+          "type": "over_2.5",
+          "probability": 63.6,
+          "odds": 1.9,
+          "value": 11,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 51%",
+          "type": "btts_yes",
+          "probability": 50.5,
+          "odds": 1.75,
+          "value": -6.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 36%",
+          "type": "under_2.5",
+          "probability": 36.4,
+          "odds": 1.9,
+          "value": -16.2,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 88%",
+          "edge": 14,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 64%",
+          "edge": 11,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.806Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_ae308aa4ea2b0438786e027e65ebb198": {
+      "matchId": "odds_ae308aa4ea2b0438786e027e65ebb198",
+      "homeTeam": "Zhizhen Zhang",
+      "awayTeam": "Adrian Mannarino",
+      "league": "ATP Miami Open",
+      "date": "2026-03-19T15:00:00Z",
+      "oddsHome": 1.17,
+      "oddsDraw": null,
+      "oddsAway": 6.4,
+      "probabilities": {
+        "home": 66,
+        "draw": 22,
+        "away": 12
+      },
+      "riskPercentage": 34,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.807Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_da9ca39bc3abf8e10ef7d0372f9e3aca": {
+      "matchId": "odds_da9ca39bc3abf8e10ef7d0372f9e3aca",
+      "homeTeam": "Alexandra Eala",
+      "awayTeam": "Laura Siegemund",
+      "league": "WTA Miami Open",
+      "date": "2026-03-19T16:00:00Z",
+      "oddsHome": 1.28,
+      "oddsDraw": null,
+      "oddsAway": 4.4,
+      "probabilities": {
+        "home": 61,
+        "draw": 22,
+        "away": 18
+      },
+      "riskPercentage": 39,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.808Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_8657f22f7c35d33a143c98c001d9954a": {
+      "matchId": "odds_8657f22f7c35d33a143c98c001d9954a",
+      "homeTeam": "Anastasia Zakharova",
+      "awayTeam": "Anna Bondár",
+      "league": "WTA Miami Open",
+      "date": "2026-03-19T16:12:00Z",
+      "oddsHome": 1.75,
+      "oddsDraw": null,
+      "oddsAway": 2.05,
+      "probabilities": {
+        "home": 43,
+        "draw": 21,
+        "away": 36
+      },
+      "riskPercentage": 57,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.808Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_ffe3c0fdb29507477476637fcbc795cf": {
+      "matchId": "odds_ffe3c0fdb29507477476637fcbc795cf",
+      "homeTeam": "Ohio State Buckeyes",
+      "awayTeam": "TCU Horned Frogs",
+      "league": "NCAAB",
+      "date": "2026-03-19T16:16:12Z",
+      "oddsHome": 5,
+      "oddsDraw": null,
+      "oddsAway": 1.17,
+      "probabilities": {
+        "home": 15,
+        "draw": 21,
+        "away": 64
+      },
+      "riskPercentage": 36,
+      "confidence": "high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.809Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_e739a29dc4be6aa3167f6b655adacad6": {
+      "matchId": "odds_e739a29dc4be6aa3167f6b655adacad6",
+      "homeTeam": "Darwin Blanch",
+      "awayTeam": "Jan-Lennard Struff",
+      "league": "ATP Miami Open",
+      "date": "2026-03-19T16:35:00Z",
+      "oddsHome": 1.55,
+      "oddsDraw": null,
+      "oddsAway": 2.8,
+      "probabilities": {
+        "home": 50,
+        "draw": 22,
+        "away": 28
+      },
+      "riskPercentage": 50,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.810Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_c657ae62bf872244dde8bc947e6cc77b": {
+      "matchId": "odds_c657ae62bf872244dde8bc947e6cc77b",
+      "homeTeam": "Ethan Quinn",
+      "awayTeam": "Hubert Hurkacz",
+      "league": "ATP Miami Open",
+      "date": "2026-03-19T16:40:00Z",
+      "oddsHome": 1.34,
+      "oddsDraw": null,
+      "oddsAway": 3.75,
+      "probabilities": {
+        "home": 58,
+        "draw": 22,
+        "away": 21
+      },
+      "riskPercentage": 42,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.811Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_df39114e937cbae1271ab4267afae55d": {
+      "matchId": "odds_df39114e937cbae1271ab4267afae55d",
+      "homeTeam": "Nebraska Cornhuskers",
+      "awayTeam": "Troy Trojans",
+      "league": "NCAAB",
+      "date": "2026-03-19T16:41:10Z",
+      "oddsHome": 1.03,
+      "oddsDraw": null,
+      "oddsAway": 11.02,
+      "probabilities": {
+        "home": 72,
+        "draw": 21,
+        "away": 7
+      },
+      "riskPercentage": 28,
+      "confidence": "very_high",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.812Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_b2b832b2fcc9a9fdd3753dcf2ff90af4": {
+      "matchId": "odds_b2b832b2fcc9a9fdd3753dcf2ff90af4",
+      "homeTeam": "Marcos Giron",
+      "awayTeam": "Martin Landaluce",
+      "league": "ATP Miami Open",
+      "date": "2026-03-19T16:45:00Z",
+      "oddsHome": 3.05,
+      "oddsDraw": null,
+      "oddsAway": 1.45,
+      "probabilities": {
+        "home": 25,
+        "draw": 22,
+        "away": 53
+      },
+      "riskPercentage": 47,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.813Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_1bc794aa1852c001d863744081a69537": {
+      "matchId": "odds_1bc794aa1852c001d863744081a69537",
+      "homeTeam": "Valencia Basket",
+      "awayTeam": "FC Barcelona Bàsquet",
+      "league": "Basketball Euroleague",
+      "date": "2026-03-19T17:00:00Z",
+      "oddsHome": 1.96,
+      "oddsDraw": null,
+      "oddsAway": 1.82,
+      "probabilities": {
+        "home": 38,
+        "draw": 21,
+        "away": 41
+      },
+      "riskPercentage": 59,
+      "confidence": "low",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.814Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_9ca0d9e8fe947b44fbb1676fa71c8a69": {
+      "matchId": "odds_9ca0d9e8fe947b44fbb1676fa71c8a69",
+      "homeTeam": "Besiktas JK",
+      "awayTeam": "Kasimpasa SK",
+      "league": "Turkey Super League",
+      "date": "2026-03-19T17:01:00Z",
+      "oddsHome": 1.32,
+      "oddsDraw": 5.09,
+      "oddsAway": 8.08,
+      "probabilities": {
+        "home": 70,
+        "draw": 18,
+        "away": 11
+      },
+      "riskPercentage": 30,
+      "confidence": "very_high",
+      "recommendations": [
+        {
+          "label": "1X - 88%",
+          "type": "home_or_draw",
+          "probability": 88,
+          "odds": 1.35,
+          "value": 14,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 64%",
+          "type": "over_2.5",
+          "probability": 63.6,
+          "odds": 1.9,
+          "value": 11,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 51%",
+          "type": "btts_yes",
+          "probability": 50.5,
+          "odds": 1.75,
+          "value": -6.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 36%",
+          "type": "under_2.5",
+          "probability": 36.4,
+          "odds": 1.9,
+          "value": -16.2,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "1X - 88%",
+          "edge": 14,
+          "confidence": "strong"
+        },
+        {
+          "type": "+2.5 buts - 64%",
+          "edge": 11,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.815Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_8bce05836568e8d16d29a326a1761b37": {
+      "matchId": "odds_8bce05836568e8d16d29a326a1761b37",
+      "homeTeam": "Torku Konyaspor",
+      "awayTeam": "Genclerbirligi SK",
+      "league": "Turkey Super League",
+      "date": "2026-03-19T17:01:00Z",
+      "oddsHome": 4.1,
+      "oddsDraw": 2.8,
+      "oddsAway": 1.91,
+      "probabilities": {
+        "home": 22,
+        "draw": 32,
+        "away": 47
+      },
+      "riskPercentage": 53,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "X2 - 79%",
+          "type": "away_or_draw",
+          "probability": 79,
+          "odds": 1.35,
+          "value": 5,
+          "stake": 10,
+          "recommendation": "strong"
+        },
+        {
+          "label": "+2.5 buts - 56%",
+          "type": "over_2.5",
+          "probability": 56.4,
+          "odds": 1.9,
+          "value": 3.8,
+          "stake": 7.955555555555543,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 44%",
+          "type": "under_2.5",
+          "probability": 43.6,
+          "odds": 1.9,
+          "value": -9,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "Les deux marquent - 45%",
+          "type": "btts_yes",
+          "probability": 44.5,
+          "odds": 1.75,
+          "value": -12.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "X2 - 79%",
+          "edge": 5,
+          "confidence": "strong"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.816Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_682f620f3a61dab99474e29449965273": {
+      "matchId": "odds_682f620f3a61dab99474e29449965273",
+      "homeTeam": "Anadolu Efes",
+      "awayTeam": "AS Monaco",
+      "league": "Basketball Euroleague",
+      "date": "2026-03-19T17:30:00Z",
+      "oddsHome": 1.5,
+      "oddsDraw": null,
+      "oddsAway": 2.6,
+      "probabilities": {
+        "home": 50,
+        "draw": 21,
+        "away": 29
+      },
+      "riskPercentage": 50,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.817Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_db08cdfe67daa80b9c4d2f71d7d93722": {
+      "matchId": "odds_db08cdfe67daa80b9c4d2f71d7d93722",
+      "homeTeam": "Lilli Tagger",
+      "awayTeam": "Ella Seidel",
+      "league": "WTA Miami Open",
+      "date": "2026-03-19T17:30:00Z",
+      "oddsHome": 2.19,
+      "oddsDraw": null,
+      "oddsAway": 1.68,
+      "probabilities": {
+        "home": 34,
+        "draw": 21,
+        "away": 45
+      },
+      "riskPercentage": 55,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.818Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_df354fbc7239b2933053f91cbcc11083": {
+      "matchId": "odds_df354fbc7239b2933053f91cbcc11083",
+      "homeTeam": "Emiliana Arango",
+      "awayTeam": "Oksana Selekhmeteva",
+      "league": "WTA Miami Open",
+      "date": "2026-03-19T17:30:00Z",
+      "oddsHome": 3.15,
+      "oddsDraw": null,
+      "oddsAway": 1.4,
+      "probabilities": {
+        "home": 24,
+        "draw": 21,
+        "away": 54
+      },
+      "riskPercentage": 46,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 61.800000000000004,
+          "odds": 1.9,
+          "value": 9.2,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 49%",
+          "type": "btts_yes",
+          "probability": 49,
+          "odds": 1.75,
+          "value": -8.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 38.199999999999996,
+          "odds": 1.9,
+          "value": -14.4,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.2,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.819Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_5fd71efe9f9da38f3678e764bea2f9d0": {
+      "matchId": "odds_5fd71efe9f9da38f3678e764bea2f9d0",
+      "homeTeam": "Viktorija Golubic",
+      "awayTeam": "Peyton Stearns",
+      "league": "WTA Miami Open",
+      "date": "2026-03-19T17:30:00Z",
+      "oddsHome": 1.38,
+      "oddsDraw": null,
+      "oddsAway": 3.2,
+      "probabilities": {
+        "home": 55,
+        "draw": 21,
+        "away": 24
+      },
+      "riskPercentage": 45,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.820Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_f7b3bd4eccbe852bda4d3446090eedad": {
+      "matchId": "odds_f7b3bd4eccbe852bda4d3446090eedad",
+      "homeTeam": "Louisville Cardinals",
+      "awayTeam": "South Florida Bulls",
+      "league": "NCAAB",
+      "date": "2026-03-19T17:30:34Z",
+      "oddsHome": 1.36,
+      "oddsDraw": null,
+      "oddsAway": 2.85,
+      "probabilities": {
+        "home": 54,
+        "draw": 20,
+        "away": 26
+      },
+      "riskPercentage": 46,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 63%",
+          "type": "over_2.5",
+          "probability": 63,
+          "odds": 1.9,
+          "value": 10.4,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 50,
+          "odds": 1.75,
+          "value": -7.1,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 37%",
+          "type": "under_2.5",
+          "probability": 37,
+          "odds": 1.9,
+          "value": -15.6,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 63%",
+          "edge": 10.4,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.821Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    },
+    "odds_46b240853dac06944f5d690e7659c72e": {
+      "matchId": "odds_46b240853dac06944f5d690e7659c72e",
+      "homeTeam": "Denis Shapovalov",
+      "awayTeam": "Botic van de Zandschulp",
+      "league": "ATP Miami Open",
+      "date": "2026-03-19T17:40:00Z",
+      "oddsHome": 2.55,
+      "oddsDraw": null,
+      "oddsAway": 1.57,
+      "probabilities": {
+        "home": 30,
+        "draw": 21,
+        "away": 49
+      },
+      "riskPercentage": 51,
+      "confidence": "medium",
+      "recommendations": [
+        {
+          "label": "+2.5 buts - 62%",
+          "type": "over_2.5",
+          "probability": 62.400000000000006,
+          "odds": 1.9,
+          "value": 9.8,
+          "stake": 10,
+          "recommendation": "moderate"
+        },
+        {
+          "label": "Les deux marquent - 50%",
+          "type": "btts_yes",
+          "probability": 49.5,
+          "odds": 1.75,
+          "value": -7.6,
+          "stake": 0,
+          "recommendation": "weak"
+        },
+        {
+          "label": "-2.5 buts - 38%",
+          "type": "under_2.5",
+          "probability": 37.599999999999994,
+          "odds": 1.9,
+          "value": -15,
+          "stake": 0,
+          "recommendation": "weak"
+        }
+      ],
+      "valueBets": [
+        {
+          "type": "+2.5 buts - 62%",
+          "edge": 9.8,
+          "confidence": "moderate"
+        }
+      ],
+      "analyzedAt": "2026-03-19T17:33:30.823Z",
+      "dataQuality": "real",
+      "apiCreditsUsed": 1
+    }
+  },
+  "lastUpdate": "2026-03-19T17:33:30.823Z",
+  "totalCreditsUsed": 51,
+  "dailyCreditsUsed": 51,
+  "dailyCreditsDate": "Thu Mar 19 2026"
+}
