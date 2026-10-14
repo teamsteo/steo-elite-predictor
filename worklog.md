@@ -1695,3 +1695,49 @@ Stage Summary:
 - Verdict: SEULE poche réellement rentable = football fiable/modéré en VN (+6.4%, WR 91.8%); NHL affiché +77% mais cotes synthétiques (non prouvé, WR 80% réel quand même); foot risqué ≈ neutre (-2.1%); MLB ≈ neutre (-1.8%); NBA perdant (-20.8%) → candidat refonte/STOP
 - Toute métrique ROI foot historique basée sur odds stockées est gonflée par le mix VN/1X2 — à l'avenir, stocker la cote VN à la publication (recommandation)
 - oddsDraw+riskPercentage exposés dans /api/history (déployé prod); scripts/analysis_roi_sports.ts réexécutable
+
+---
+Task ID: 45
+Agent: main
+Task: "Vérifie les matchs de basket publié sur telegram et le site web. Il y a un problème"
+
+Work Log:
+- Diagnostic croisé /api/matches (site) × /api/history (bilans = publié Telegram):
+  1. SITE: riskPercentage = 100 − maxProb (favori modèle) au lieu du côté recommandé
+     → Spurs-Suns reco=away (pAway 33%) affiché "Modéré 33" sur le site alors que le
+     cron Telegram calcule riskPct = 100 − winProb = 67 "Kamikaze" — contradiction directe
+  2. TELEGRAM: Clippers–Nuggets publié 3× le 14 oct dans 3 combos différents
+     (07h30/12h30/17h00 + combo-private 19h = 4 flux combo, zéro dedup inter-combos)
+  3. BILAN: legs combo match_date placeholder T12:00Z (legs sans champ date), cotes à un
+     seul côté (odds_home null si reco=away), match_id = date de sauvegarde + hex aléatoire
+     (C9A5/1233/3534) → dedup addPredictions inopérant, même match compté 2× (OKC combo+summary)
+  4. VÉRIFICATION NBA: matchPredictionWithResult = noms SEULES, aucune date → un pick
+     pouvait être vérifié contre le score d'une autre rencontre (fenêtre 8 jours);
+     fetchNBAResults n'attachait pas espnDate (MLB oui)
+
+- FIXES (commit 8206fea):
+  • matches/route.ts mapUnifiedToEnrichedMatch: risk = 100 − proba du côté recommandé
+    (rec.bet home/away/draw; avoid → maxProb conservé) — aligné sur le cron Telegram
+  • comboService.ts: legs portent désormais date + oddsHome/oddsDraw/oddsAway
+  • cron combo save (×2: telegram-combo ET combo-private POST): match_date = leg.date,
+    match_id déterministe (date+heure du match → dedup inter-flows opérationnel),
+    cotes complètes 3 issues, dedup inter-combos via today's is_combo rows
+  • cron verifyNBAResults: pickDatedResultMatch (tolérance ±1.5j vs espnDate; placeholder
+    T12:00 → comportement antérieur; résultats sans espnDate → conservés non-régressif)
+  • fetchNBAResults: espnDate: dateStr attaché
+- Incident au passage: MainApp.tsx/football-analyzer.ts/footballAdvancedModel.ts réapparus
+  sur DISQUE via snapshot environnement (absents de HEAD, déploiement prod jamais impacté)
+  → nettoyés; test Task 43 repasse 33/33
+- TESTS: scripts/test_task45_basket.ts 23/23 ✅ (mapping site, legs combo, match_id,
+  dedup, date-aware + sémantique espnDateToISO/dayDistance); régression: coupon 21/21,
+  task43 33/33; tsc 0
+- PROD vérifiée post-deploy (8206fea): Spurs-Suns site risk 33→67 "Risqué" ✅;
+  Dallas 47/Milwaukee 35 inchangés ✅; avoid conservent maxProb (voulu)
+
+Stage Summary:
+- 4 anomalies basket corrigées et déployées; les anciens doublons du 14 oct restent en DB
+  (historique intact, honnêteté) mais ne peuvent plus se reproduire (dedup actif sur les
+  4 flux combo dès le prochain cron 17h00 UTC)
+- Site et Telegram affichent désormais le MÊME risque pour le même pick (barème unifié
+  côté recommandé)
+- Vérification NBA immunisée contre le cross-day matching
