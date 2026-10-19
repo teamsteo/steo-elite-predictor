@@ -44,6 +44,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+// 🎯 Task 47 — calibration Platt football (VN)
+import {
+  calibrateFootballVN,
+  classifyByCalibratedVN,
+  computeVNProbFromRiskAndOdds,
+  doubleChanceOddsFromOdds,
+  marketVNProb,
+} from './calibration';
+
 // ⚠️ LIMITATION: This service uses fs/path for file I/O.
 // On Vercel, the filesystem is READ-ONLY after build.
 // This service is only called by /api/cron/generate-daily (which runs via a Vercel Cron),
@@ -98,6 +107,14 @@ export interface DailyPrediction {
   valueBetType?: string;
   expectedValue?: number;
   kellyStake?: number;
+
+  // 🎯 Task 47 — VN (Double Chance) football fields
+  // Pour football: la cote 1X2 pure ne reflète pas le pari VN (nul = gagné).
+  // On calcule et propage la vraie cote DC + proba calibrée + edge.
+  vnOdds?: number | null;              // cote Double Chance bookmaker
+  vnProbCalibrated?: number | null;    // proba VN calibrée Platt (0-1)
+  vnEdge?: number | null;              // p_calibrée - p_marché_dévig (en points %)
+  vnTier?: 'fiable' | 'modere' | 'risque' | 'avoid' | null;
   
   // Analyse
   reasons: string[];
@@ -526,6 +543,33 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
           : mlPrediction.mlPrediction.homeProb
     );
     
+    // 🎯 Task 47 — calibration VN football
+    // Le modèle publie p_side (côté recommandé); on combine avec p_nul marché
+    // dévigorisé pour obtenir la proba VN modèle-hybride, puis on applique
+    // la calibration Platt (vois src/lib/calibration.ts).
+    const finalOddsHome = mlPrediction.odds.home;
+    const finalOddsAway = mlPrediction.odds.away;
+    const finalOddsDraw = mlPrediction.odds.draw ?? null;
+    const riskPct = 100 - recProb;
+    
+    const pVNRaw = computeVNProbFromRiskAndOdds(
+      riskPct, finalOddsHome, finalOddsDraw, finalOddsAway
+    );
+    // Bucket: risque si risk>50 (côté prédit <50%), fiable sinon
+    const bucket = riskPct > 50 ? 'risque' : 'fiable';
+    const pVNCalibrated = calibrateFootballVN(pVNRaw, bucket);
+    const vnTier = classifyByCalibratedVN(pVNCalibrated);
+    // Cote DC bookmaker = 1 / (1/O_side + 1/O_draw)
+    const sideOdds = recBet === 'away' ? finalOddsAway : finalOddsHome;
+    const vnOdds = doubleChanceOddsFromOdds(sideOdds, finalOddsDraw);
+    // Edge = p_calibrée - p_marché_dévig (en points de %)
+    const pVNMarket = recBet === 'away'
+      ? marketVNProb('away', finalOddsHome, finalOddsDraw, finalOddsAway)
+      : marketVNProb('home', finalOddsHome, finalOddsDraw, finalOddsAway);
+    const vnEdge = pVNMarket !== null
+      ? Math.round((pVNCalibrated - pVNMarket) * 1000) / 10
+      : null;
+    
     return {
       id: mlPrediction.matchId,
       sport: 'football',
@@ -533,9 +577,9 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
       homeTeam,
       awayTeam,
       date: event.date,
-      oddsHome: mlPrediction.odds.home,
-      oddsAway: mlPrediction.odds.away,
-      oddsDraw: mlPrediction.odds.draw ?? undefined,
+      oddsHome: finalOddsHome,
+      oddsAway: finalOddsAway,
+      oddsDraw: finalOddsDraw ?? undefined,
       recommendation: mlPrediction.recommendation.bet === 'home' 
         ? homeTeam 
         : mlPrediction.recommendation.bet === 'away' 
@@ -550,6 +594,11 @@ async function createFootballPrediction(event: any, home: any, away: any): Promi
       valueBetType: mlPrediction.mlPrediction.valueBetType || undefined,
       expectedValue: mlPrediction.recommendation.expectedValue,
       kellyStake: mlPrediction.recommendation.kellyStake,
+      // 🎯 Task 47 — VN fields
+      vnOdds,
+      vnProbCalibrated: Math.round(pVNCalibrated * 1000) / 1000,
+      vnEdge,
+      vnTier,
       reasons: mlPrediction.recommendation.reasoning,
       warnings: mlPrediction.recommendation.riskLevel === 'high' ? ['⚠️ Risque élevé'] : [],
       source: 'unified-ml',

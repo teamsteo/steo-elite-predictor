@@ -57,6 +57,11 @@ interface Prediction {
   createdAt: string;
   checkedAt?: string;
   signature?: string;
+  // 🎯 Task 47 — VN (Double Chance) football fields
+  vnOdds?: number | null;
+  vnProbCalibrated?: number | null;
+  vnEdge?: number | null;
+  vnTier?: 'fiable' | 'modere' | 'risque' | 'avoid' | null;
 }
 
 interface DataStore {
@@ -199,7 +204,12 @@ async function loadFromSupabase(): Promise<DataStore | null> {
       resultMatch: p.result_match,
       goalsMatch: p.goals_match,
       createdAt: p.created_at || new Date().toISOString(),
-      checkedAt: p.checked_at
+      checkedAt: p.checked_at,
+      // 🎯 Task 47 — VN (Double Chance) football fields
+      vnOdds: p.vn_odds ?? null,
+      vnProbCalibrated: p.vn_prob_calibrated ?? null,
+      vnEdge: p.vn_edge ?? null,
+      vnTier: p.vn_tier as Prediction['vnTier'] ?? null,
     }));
     
     console.log(`📊 Store: ${localPredictions.length} prédictions chargées depuis Supabase`);

@@ -2797,6 +2797,11 @@ export async function GET(request: NextRequest) {
                   risk_percentage: p.riskPercentage ?? 50,
                   is_value_bet: p.valueBetDetected === true,
                   edge_value: p._mlEdge || (p.valueBetDetected ? (p.edge || 0) : 0),
+                  // 🎯 Task 47 — VN champs propagés (football seulement)
+                  vn_odds: (p.sport || '').toLowerCase().includes('foot') ? (p.vnOdds ?? null) : null,
+                  vn_prob_calibrated: (p.sport || '').toLowerCase().includes('foot') ? (p.vnProbCalibrated ?? null) : null,
+                  vn_edge: (p.sport || '').toLowerCase().includes('foot') ? (p.vnEdge ?? null) : null,
+                  vn_tier: (p.sport || '').toLowerCase().includes('foot') ? (p.vnTier ?? null) : null,
                   status: 'pending' as const,
                 };
               });

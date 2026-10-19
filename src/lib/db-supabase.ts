@@ -79,7 +79,15 @@ export interface DbPrediction {
   // Value bet tracking
   is_value_bet?: boolean;
   edge_value?: number; // % edge (model prob - market implied prob)
-  
+
+  // 🎯 Task 47 — VN (Double Chance) fields
+  // Pour football: la cote 1X2 pure ne reflète pas le pari VN réellement vérifié
+  // (nul = gagné). On stocke en plus la cote Double Chance réelle bookmaker.
+  vn_odds?: number | null;              // 1 / (1/O_side + 1/O_draw) — cote bookmaker
+  vn_prob_calibrated?: number | null;  // proba VN calibrée Platt (0.001-0.999)
+  vn_edge?: number | null;             // p_calibrée - p_marché_dévig (en points %)
+  vn_tier?: 'fiable' | 'modere' | 'risque' | 'avoid' | null;
+
   created_at?: string;
   checked_at?: string;
 }
@@ -311,6 +319,12 @@ export const SupabaseStore = {
         predicted_result: pr ? normalizeResult(pr as string) : 'home',
         confidence: normalizeConfidence((p.confidence || 'medium') as string),
         risk_percentage: p.risk_percentage ?? 50,
+        // 🎯 Task 47 — VN (Double Chance) fields (optionnel — si absents,
+        // la lecture recalculera à la volée depuis odds_home/draw/away).
+        vn_odds: p.vn_odds ?? null,
+        vn_prob_calibrated: p.vn_prob_calibrated ?? null,
+        vn_edge: p.vn_edge ?? null,
+        vn_tier: p.vn_tier ?? null,
         is_value_bet: p.is_value_bet === true,
         edge_value: p.edge_value || 0,
         is_combo: p.is_combo === true,

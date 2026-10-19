@@ -99,7 +99,12 @@ export async function GET(request: Request) {
         actualResult: p.actualResult,
         resultMatch: p.resultMatch,
         goalsMatch: p.goalsMatch,
-        checkedAt: p.checkedAt
+        checkedAt: p.checkedAt,
+        // 🎯 Task 47 — VN (Double Chance) football fields
+        vnOdds: (p as any).vnOdds ?? null,
+        vnProbCalibrated: (p as any).vnProbCalibrated ?? null,
+        vnEdge: (p as any).vnEdge ?? null,
+        vnTier: (p as any).vnTier ?? null,
       })),
       stats: {
         results: resultStats,
