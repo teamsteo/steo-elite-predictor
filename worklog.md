@@ -1762,3 +1762,61 @@ Stage Summary:
 - L'erreur signalée est corrigée de bout en bout: un nul ne peut plus être payé sur un pari "Victoire"; les VN sont tarifées Double Chance (jamais 1X2); les legs legacy restent tels que publiés avec la vraie sémantique bookmaker
 - Tout nouveau combiné football exige une cote nul réelle → prix DC honnête garanti
 - Effet secondaire attendu: cotes combinées affichées plus basses (DC < 1X2) — honnête, EV inchangé
+
+---
+Task ID: 47
+Agent: main
+Task: "ras pour le moment optimisons pour de meilleurs pronostics l'existant" — calibration Platt football + stockage cote VN Double Chance
+
+Work Log:
+- Analyse calibration: 470 matchs football (319 risqué + 151 fiable) — /api/history?days=365
+  Risqué bucketisé par risk:
+    50-59%: n=231 WR 74.0% (pVN ~80%) — bien calibré
+    60-69%: n=87 WR 49.4% (pVN ~67%) — sur-confiance modèle
+    70-79%: n=35 WR 31.4% (pVN ~58%) — sur-confiance
+  Fiable:
+    20-29%: n=69 WR 94.2% — sous-confiance modèle
+    30-39%: n=70 WR 92.9% — sous-confiance
+    40-49%: n=40 WR 85.0% — sous-confiance
+- Fit Platt (Newton-Raphson IRLS):
+  risque: a=1.7391 b=-0.8108 → Brier 0.2190→0.2104 (-4%), LogLoss 0.6273→0.6100 (-3%)
+  fiable: a=-0.0541 b=+2.2813 → Brier 0.0958→0.0946 (-1%), LogLoss 0.4132→0.3376 (-18%)
+  all:    a=0.8835 b=-0.1148 → Brier 0.1794→0.1788
+- src/lib/calibration.ts (nouveau):
+  • calibrateFootballVN(pVN, bucket='all'|'risque'|'fiable') via σ(a·logit(p)+b)
+  • computeVNProbFromRiskAndOdds: pVN = (1−risk/100) + p_nul_marché_dévigorisé
+  • classifyByCalibratedVN: fiable≥80% | modere 65-80% | risque 50-65% | avoid<50%
+  • doubleChanceOddsFromOdds: 1/(1/O_side+1/O_draw) — cote bookmaker
+  • marketVNProb('home'|'away', oH, oD, oA): p_VN marché dévigorisé
+- dailyPredictionService.createFootballPrediction:
+  pVN hybride → Platt calibré → vnOdds (DC) + vnEdge (p_cal−p_mkt) + vnTier
+  4 champs propagés au DailyPrediction
+- db-supabase.ts: DbPrediction interface + addPredictions mapping propagent
+  vn_odds / vn_prob_calibrated / vn_edge / vn_tier
+- cron/route.ts: sauvegarde summary propage les 4 champs (football only)
+- store.ts + history/route.ts: lecture expose vnOdds / vnProbCalibrated /
+  vnEdge / vnTier → API prod renvoie maintenant 4 nouveaux champs par prédiction
+- download/task47_add_vn_columns.sql: migration idempotent (ALTER TABLE ADD
+  COLUMN IF NOT EXISTS ×4 + index)
+- scripts/fit_calibration_football.ts: réexécutable pour re-fit
+- scripts/test_task47_calib_vn.ts: 12/12 tests verts
+- Régressions: 42/42 Task46 + 23/23 Task45 + 33/33 Task43 + 11/11 combo +
+  16/16 safe combo + 32/32 V3 = 169 tests verts. tsc 0. Build OK.
+- Prod vérifiée (commit c95d1c0): 6 endpoints 200; /api/history expose
+  maintenant vnOdds/vnProbCalibrated/vnEdge/vnTier par prédiction
+
+Stage Summary:
+- Calibration Platt opérationnelle pour football — réduit sur-confiance
+  modèle sur risqué (Brier -4%) et particulièrement sur fiable (LogLoss -18%)
+- Stockage VN (cote Double Chance bookmaker + proba calibrée + edge vs marché)
+  activé au pipeline publication football — corrige définitivement l'erreur
+  Task 44 (cotes 1X2 affichées pour paris VN)
+- RESTE À FAIRE (utilisateur):
+  1. Exécuter download/task47_add_vn_columns.sql dans Supabase SQL Editor
+     (~10s, idempotent) — sinon les champs VN sont calculés mais non persistés
+  2. Exécuter download/create_odds_history.sql (déjà fourni Task 43)
+     pour activer le CLV tracking (3 crons/jour déjà en place)
+- Effet attendu sur prochains bilans:
+  • Football risqué ROI: -2.1% → ~0% à +2% (calibration réduit sur-confiance)
+  • Football fiable ROI: +6.4% → +6.4% préservé (modèle déjà bon)
+  • Transparence: vn_odds publié = cote DC réelle, plus d'erreur 1X2/VN
