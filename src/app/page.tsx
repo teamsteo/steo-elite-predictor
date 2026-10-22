@@ -6,6 +6,7 @@ import SystemAlerts, { MLBSeasonAlert } from './components/SystemAlerts';
 import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
 import { ExportManager } from '@/components/ExportManager';
 import { ParlayBuilder } from '@/components/ParlayBuilder';
+import { ComboLotoSection } from '@/components/ComboLotoSection';
 import { NotificationManager } from '@/components/NotificationManager';
 import LiveMatchesGrid from '@/components/LiveMatchesGrid';
 import { findBestCombinations } from '@/lib/safeComboGenerator';
@@ -4130,7 +4131,7 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
   const [activeTab, setActiveTab] = useState<'safes' | 'moderate' | 'risky' | 'live' | 'finished' | 'all'>('safes');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [apiStatus, setApiStatus] = useState<'online' | 'offline' | 'loading'>('loading');
-  const [activeSection, setActiveSection] = useState<'football' | 'basketball' | 'nhl' | 'nfl' | 'mlb' | 'tennis' | 'challenges' | 'expert' | 'analyse' | 'antitrap' | 'bankroll' | 'results' | 'pronostiqueur' | 'admin' | 'apistatus' | 'parlay' | 'notifications' | 'calibration'>('football');
+  const [activeSection, setActiveSection] = useState<'football' | 'basketball' | 'nhl' | 'nfl' | 'mlb' | 'tennis' | 'challenges' | 'expert' | 'analyse' | 'antitrap' | 'bankroll' | 'results' | 'pronostiqueur' | 'admin' | 'apistatus' | 'parlay' | 'comboloto' | 'notifications' | 'calibration'>('football');
   const [timing, setTiming] = useState<TimingInfo>({
     currentHour: new Date().getHours(),
     canRefresh: true,
@@ -4432,6 +4433,7 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
         {/* Bank - MASQUÉ */}
         {/* <NavButton icon="💰" label="Bank" active={activeSection === 'bankroll'} onClick={() => setActiveSection('bankroll')} color="#22c55e" /> */}
         <NavButton icon="🎰" label="Combiné" active={activeSection === 'parlay'} onClick={() => setActiveSection('parlay')} color="#a855f7" />
+        <NavButton icon="🍀" label="Loto" active={activeSection === 'comboloto'} onClick={() => setActiveSection('comboloto')} color="#22c55e" />
         <NavButton icon="🔔" label="Notif" active={activeSection === 'notifications'} onClick={() => setActiveSection('notifications')} color="#06b6d4" />
         
         {/* API Status - Visible uniquement pour les admins */}
@@ -4763,6 +4765,11 @@ function AppDashboard({ onLogout, userInfo }: { onLogout: () => void; userInfo: 
             </div>
             <ParlayBuilder matches={matches} />
           </div>
+        )}
+
+        {/* Section Combo Loto — Combiné du jour tout sport, risque faible, copiable */}
+        {activeSection === 'comboloto' && (
+          <ComboLotoSection matches={matches} />
         )}
 
         {/* Section Notifications PWA */}
