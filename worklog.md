@@ -1820,3 +1820,37 @@ Stage Summary:
   • Football risqué ROI: -2.1% → ~0% à +2% (calibration réduit sur-confiance)
   • Football fiable ROI: +6.4% → +6.4% préservé (modèle déjà bon)
   • Transparence: vn_odds publié = cote DC réelle, plus d'erreur 1X2/VN
+
+---
+Task ID: 48
+Agent: main
+Task: "Crée une nouvelle section sur le site web appelée Combo Loto — ensemble des pronostics du jour tout sport confondu, risque faible, copiable, balises pour filtrer la sélection, base = pronostics déjà publiés sur le site (aucun nouveau scraping)"
+
+Work Log:
+- src/components/ComboLotoSection.tsx (nouveau, 637 lignes):
+  • Section "Combo Loto" — combiné du jour tout sport, filtre risque faible
+  • Récupère matches via props (depuis /api/matches déjà chargé par AppDashboard)
+  • Filtres balises: risque max (≤20/30/40/50/60%/Tous), sport, ligue, cote max
+  • Auto-sélection Top 3/5/8/10/Tout triés par risque croissant
+  • Sélection manuelle case-à-cocher (toggle individuel)
+  • Calcul cote combinée + proba impliquée + gain potentiel (palier 25/50/75k F)
+  • Règle bookmaker alignée Task 46: football+cote draw → "X ou Nul" @DC,
+    football legacy sans draw → "Victoire" @1X2, sports US → "Victoire" pure
+  • Bouton COPIER (format Betclic-friendly, fallback execCommand mobile)
+  • Sticky récap en bas avec détail picks + avertissement jeu responsable
+- src/app/page.tsx:
+  • Import ComboLotoSection
+  • Type activeSection étendu avec 'comboloto'
+  • NavButton "🍀 Loto" ajouté dans la navbar (entre Combiné et Notif)
+  • Rendu conditionnel {activeSection === 'comboloto' && <ComboLotoSection />}
+- Tests: tsc 0 erreur, Next build OK
+- Prod déployée (commit 983618f): page d'accueil 200, /api/matches 200
+
+Stage Summary:
+- Nouvelle section "Combo Loto" disponible sur le site (bouton 🍀 Loto dans navbar)
+- Aucun nouveau scraping: réutilise les matches déjà chargés par /api/matches
+- Règle bookmaker Task 46 respectée: football avec cote draw → Double Chance,
+  sinon Victoire pure; combiné = 1 option par match avec cote correspondante
+- Filtres: risque max, sport, ligue, cote max + auto-sélection par risque croissant
+- Bouton COPIER génère un texte Betclic-friendly (une ligne par pick) avec
+  mise conseillée, cote combinée, proba impliquée, gain potentiel
