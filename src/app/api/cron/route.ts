@@ -2667,7 +2667,13 @@ export async function GET(request: NextRequest) {
                   // 🏆 Enjeu du match (phase saison, type compétition, importance)
                   _matchImportance: p.factors?.matchImportance || undefined,
                   // 🏥 Blessures détaillées (noms, impact, count)
-                  _injuries: p.factors?.injuries || undefined,
+                  _injuries: p.factors?.injuries
+                    ? {
+                        ...p.factors.injuries,
+                        homeNames: (p.factors.injuries as any).homeNames || [],
+                        awayNames: (p.factors.injuries as any).awayNames || [],
+                      }
+                    : undefined,
                   // 🌤️ Météo (condition, température, impact)
                   _weather: p.factors?.weather || undefined,
                   // 📊 xG différentiel (football — expected goals)

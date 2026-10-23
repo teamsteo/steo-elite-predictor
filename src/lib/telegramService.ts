@@ -13,6 +13,7 @@ import { predictGoalsEnriched, type GoalsPredictionResult } from './dixonColesMo
 import { getMatchTeamStats } from './teamStatsService';
 import SupabaseStore, { type DbPrediction } from './db-supabase';
 import { comboLegIsVn, doubleChanceOdds, vnPickLabel } from './resultPolicy';
+import { buildLineupDisclaimerHTML, shouldShowLineupDisclaimer } from './lineupDisclaimer';
 import { getDailyCalibrations, type StoredCalibration } from './liveCalibration/store';
 import { updateFinalScore } from './liveCalibration/store';
 import { fetchFinalScoresBatch } from './liveCalibration/finalScores';
@@ -992,6 +993,10 @@ interface TelegramMatch {
     away: number;
     homeImpact: number;
     awayImpact: number;
+    // 🎯 Task: disclaimer composition — noms des joueurs clés absents
+    // (récupérés depuis matchContextService.keyAbsentees)
+    homeNames?: string[];
+    awayNames?: string[];
   };
   // Météo
   _weather?: {
@@ -1291,6 +1296,22 @@ async function formatMatchBlock(
     for (const line of contextLines.slice(0, 12)) { // Max 12 lignes (plus de place maintenant)
       block += `    ${line}\n`;
     }
+  }
+
+  // 🎯 Task: disclaimer composition — toujours affiché (football + US sports),
+  // rappelle à l'utilisateur de vérifier la compo 1h avant le kickoff et
+  // liste les joueurs clés déjà identifiés comme absents.
+  if (shouldShowLineupDisclaimer(m.sport)) {
+    block += buildLineupDisclaimerHTML({
+      sport: m.sport,
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      homeInjuries: m._injuries?.homeNames,
+      awayInjuries: m._injuries?.awayNames,
+      homeImpact: m._injuries?.homeImpact,
+      awayImpact: m._injuries?.awayImpact,
+    });
+    block += '\n';
   }
 
   block += '\n';

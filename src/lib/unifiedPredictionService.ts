@@ -224,7 +224,15 @@ export interface UnifiedPrediction {
   factors: {
     form: { home: number; away: number };
     h2h: { homeWins: number; draws: number; awayWins: number };
-    injuries: { home: number; away: number; homeImpact: number; awayImpact: number };
+    injuries: {
+      home: number;
+      away: number;
+      homeImpact: number;
+      awayImpact: number;
+      // 🎯 Task: disclaimer composition — noms des joueurs clés absents
+      homeNames?: string[];
+      awayNames?: string[];
+    };
     xg: { home: number | null; away: number | null };
     weather?: {
       condition: string;
@@ -1111,6 +1119,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       away: context?.injuries.away.length || 0,
       homeImpact: context?.injuries.homeImpact || 0,
       awayImpact: context?.injuries.awayImpact || 0,
+      // 🎯 Task: disclaimer composition — noms des joueurs clés absents
+      homeNames: context?.injuries.keyAbsentees?.home || [],
+      awayNames: context?.injuries.keyAbsentees?.away || [],
     },
     xg: {
       home: context?.fbref?.homeXG?.xGDPer90 || null,

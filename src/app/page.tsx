@@ -5384,6 +5384,19 @@ function NBAMatchCard({ match, index }: { match: Match; index: number }) {
           {match.awayTeam.slice(0, 10)}: {formatOdds(match.oddsAway)}
         </span>
       </div>
+      {/* 🎯 Disclaimer NBA — DNP et lineup à vérifier 1h avant */}
+      <div style={{
+        color: '#eab308',
+        fontSize: '9px',
+        marginTop: '6px',
+        padding: '3px 6px',
+        background: '#eab30810',
+        borderRadius: '4px',
+        border: '1px solid #eab30830',
+        textAlign: 'center'
+      }}>
+        ⚠️ Vérifie DNP / lineup 1h avant · official inactive list non prise en compte
+      </div>
     </div>
   );
 }
@@ -5637,6 +5650,24 @@ function FootballMatchCard({ match, index }: { match: Match; index: number }) {
               )}
             </div>
           )}
+          {/* 🎯 Disclaimer composition — vérifier la compo 1h avant le match */}
+          <div style={{
+            color: '#eab308',
+            fontSize: '9px',
+            marginTop: '3px',
+            padding: '3px 6px',
+            background: '#eab30810',
+            borderRadius: '4px',
+            border: '1px solid #eab30830'
+          }}>
+            ⚠️ Vérifie la compo 1h avant · lineup officiel non pris en compte
+            {enrichment?.homeTeam?.keyInjuries && enrichment.homeTeam.keyInjuries.length > 0 && (
+              <span style={{ color: '#fca5a5' }}> · absents {match.homeTeam.slice(0, 12)}: {enrichment.homeTeam.keyInjuries.slice(0, 2).join(', ')}</span>
+            )}
+            {enrichment?.awayTeam?.keyInjuries && enrichment.awayTeam.keyInjuries.length > 0 && (
+              <span style={{ color: '#fca5a5' }}> · absents {match.awayTeam.slice(0, 12)}: {enrichment.awayTeam.keyInjuries.slice(0, 2).join(', ')}</span>
+            )}
+          </div>
         </div>
         
         {/* Odds */}
