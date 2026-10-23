@@ -2672,6 +2672,9 @@ export async function GET(request: NextRequest) {
                         ...p.factors.injuries,
                         homeNames: (p.factors.injuries as any).homeNames || [],
                         awayNames: (p.factors.injuries as any).awayNames || [],
+                        // 🎯 Task: disclaimer détaillé — keyPlayers avec type + statut
+                        homeKeyPlayers: (p.factors.injuries as any).homeKeyPlayers || [],
+                        awayKeyPlayers: (p.factors.injuries as any).awayKeyPlayers || [],
                       }
                     : undefined,
                   // 🌤️ Météo (condition, température, impact)

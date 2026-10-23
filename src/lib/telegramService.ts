@@ -998,6 +998,9 @@ interface TelegramMatch {
     // (récupérés depuis matchContextService.keyAbsentees)
     homeNames?: string[];
     awayNames?: string[];
+    // 🎯 Task: disclaimer détaillé — joueurs avec type de blessure + statut
+    homeKeyPlayers?: { name: string; type: string; status: string }[];
+    awayKeyPlayers?: { name: string; type: string; status: string }[];
   };
   // Météo
   _weather?: {
@@ -1343,6 +1346,8 @@ async function formatMatchBlock(
       awayTeam: m.awayTeam,
       homeInjuries: m._injuries?.homeNames,
       awayInjuries: m._injuries?.awayNames,
+      homeKeyPlayers: m._injuries?.homeKeyPlayers,
+      awayKeyPlayers: m._injuries?.awayKeyPlayers,
       homeImpact: m._injuries?.homeImpact,
       awayImpact: m._injuries?.awayImpact,
     });
@@ -1351,6 +1356,87 @@ async function formatMatchBlock(
 
   block += '\n';
   return block;
+}
+
+/**
+ * 🎯 Task: contexte football économique + disclaimer composition
+ * Helper réutilisable pour tous les flux (VB, Kamikaze, Combo, etc.)
+ * qui n'appellent pas formatMatchBlock mais veulent quand même les infos.
+ *
+ * Format:
+ *   ┄┄┄┄ contexte ┄┄┄┄
+ *   📊 PSG #1/20 vs Marseille #5/20
+ *   ⚔️ H2H: PSG 4V-1N-1M (6 matchs · dernier: PSG 2-1 OM)
+ *   📈 PSG WWDLW (10pts) · Marseille WDWLW (8pts)
+ *   ⚠️ Vérifie la composition 1h avant le match
+ *   Absents PSG: Mbappé (cuisse, 🚫), Hakimi (cuisse, 🚫)
+ */
+function formatFootballContextAndDisclaimer(m: TelegramMatch): string {
+  let out = '';
+  const isFootball = isFootballMatch(m.sport);
+  if (!isFootball) {
+    // Sports US: juste le disclaimer
+    if (shouldShowLineupDisclaimer(m.sport)) {
+      out += buildLineupDisclaimerHTML({
+        sport: m.sport,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        homeKeyPlayers: m._injuries?.homeKeyPlayers,
+        awayKeyPlayers: m._injuries?.awayKeyPlayers,
+        homeInjuries: m._injuries?.homeNames,
+        awayInjuries: m._injuries?.awayNames,
+        homeImpact: m._injuries?.homeImpact,
+        awayImpact: m._injuries?.awayImpact,
+      });
+      out += '\n';
+    }
+    return out;
+  }
+
+  // Football: contexte économique + disclaimer
+  const ctx = formatFootballContext({
+    homeTeam: m.homeTeam,
+    awayTeam: m.awayTeam,
+    league: m.league,
+    homeRank: m._teamStats?.homeRank,
+    awayRank: m._teamStats?.awayRank,
+    totalTeams: m._teamStats?.totalTeams,
+    homeFormStr: m._teamStats?.homeFormStr,
+    awayFormStr: m._teamStats?.awayFormStr,
+    homeFormPoints: m._form?.home,
+    awayFormPoints: m._form?.away,
+    h2h: m._fbrefH2H && m._fbrefH2H.totalMatches > 0 ? {
+      team1: m.homeTeam,
+      team2: m.awayTeam,
+      totalMatches: m._fbrefH2H.totalMatches,
+      team1Wins: m._fbrefH2H.homeWins,
+      team2Wins: m._fbrefH2H.awayWins,
+      draws: m._fbrefH2H.draws,
+      team1Goals: 0,
+      team2Goals: 0,
+      lastMatches: (m._fbrefH2H.lastMatches || []) as any,
+    } as any : null,
+  });
+
+  if (ctx.lines.length > 0) {
+    out += '    ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n';
+    for (const line of ctx.lines) out += `    ${line}\n`;
+  }
+
+  // Disclaimer avec joueurs détaillés
+  out += buildLineupDisclaimerHTML({
+    sport: m.sport,
+    homeTeam: m.homeTeam,
+    awayTeam: m.awayTeam,
+    homeKeyPlayers: m._injuries?.homeKeyPlayers,
+    awayKeyPlayers: m._injuries?.awayKeyPlayers,
+    homeInjuries: m._injuries?.homeNames,
+    awayInjuries: m._injuries?.awayNames,
+    homeImpact: m._injuries?.homeImpact,
+    awayImpact: m._injuries?.awayImpact,
+  });
+  out += '\n';
+  return out;
 }
 
 // ============================================
@@ -2097,6 +2183,12 @@ export async function publishValueBetsToTelegram(predictions: TelegramMatch[]): 
       }
       message += '\n';
     }
+
+    // 🎯 Task: contexte football économique + disclaimer composition
+    // (ajouté pour TOUS les flux VB football, demande utilisateur)
+    if (isFootballMatch(m.sport)) {
+      message += formatFootballContextAndDisclaimer(m);
+    }
     message += '\n';
   }
 
@@ -2212,7 +2304,11 @@ export async function publishKamikazeToTelegram(predictions: TelegramMatch[]): P
         }
       }
     }
-    
+
+    // 🎯 Task: contexte football économique + disclaimer composition
+    // (ajouté pour TOUS les flux kamikaze, demande utilisateur)
+    message += formatFootballContextAndDisclaimer(m);
+
     message += '\n';
   }
 
@@ -3754,6 +3850,24 @@ export async function publishComboToTelegram(combo: any): Promise<boolean> {
     message += `    📊 Cote: <b>${leg.odds.toFixed(2)}</b> · Chance: <b>${leg.winProbability}%</b>\n`;
     if (leg.reasoning) {
       message += `    💡 ${leg.reasoning}\n`;
+    }
+
+    // 🎯 Task: disclaimer composition pour chaque leg du combo
+    // (règle bookmaker: 1 option par match + cote correspondante déjà appliquée)
+    // Pour football on ajoute le disclaimer ligneux + joueurs absents
+    const legIsFoot = (leg.sport || '').toLowerCase().includes('foot');
+    if (legIsFoot || shouldShowLineupDisclaimer(leg.sport)) {
+      const disclaimer = buildLineupDisclaimerHTML({
+        sport: leg.sport,
+        homeTeam: leg.homeTeam,
+        awayTeam: leg.awayTeam,
+        // legs n'ont pas le détail des blessures, mais on affiche le disclaimer générique
+        homeKeyPlayers: (leg as any)._injuries?.homeKeyPlayers,
+        awayKeyPlayers: (leg as any)._injuries?.awayKeyPlayers,
+        homeInjuries: (leg as any)._injuries?.homeNames,
+        awayInjuries: (leg as any)._injuries?.awayNames,
+      });
+      message += `    ${disclaimer.trim()}\n`;
     }
     message += '\n';
   }

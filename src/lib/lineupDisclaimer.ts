@@ -16,11 +16,13 @@
  *  - + liste des joueurs clés dont l'absence peut impacter le pronostic
  *    (ceux déjà détectés + ceux à surveiller)
  *
- * Le disclaimer est adaptatif:
- *  - football: liste les joueurs "out" déjà scrapés (impact -3 minimum)
- *    + rappel de vérifier les compos à -1h
- *  - sports US: liste les "out" + "questionable" déjà détectés
- *  - aucun joueur connu: disclaimer générique court
+ * Format détaillé (avec keyPlayers détaillés):
+ *   ⚠️ Vérifie la composition 1h avant le match
+ *   Absents PSG: Mbappé (cuisse, out), Hakimi (cuisse, out)
+ *   Absents Marseille: Rongier (genou, out)
+ *
+ * Format simple (noms seulement):
+ *   ⚠️ Vérifie la composition 1h avant le match · Joueurs clés absents PSG: Mbappé, Hakimi
  */
 
 export interface DisclaimerKeyPlayer {
@@ -28,6 +30,13 @@ export interface DisclaimerKeyPlayer {
   team: 'home' | 'away';
   status: 'out' | 'questionable' | 'monitor';
   reason?: string; // blessure / suspension / repos
+}
+
+/** Joueur détaillé avec type de blessure */
+export interface DetailedKeyPlayer {
+  name: string;
+  type: string;
+  status: string;
 }
 
 export interface LineupDisclaimer {
@@ -43,124 +52,149 @@ export interface LineupDisclaimer {
   shouldShow: boolean;
 }
 
-/**
- * Génère le disclaimer composition pour un match.
- *
- * @param sport           Sport du match ('football', 'basketball', etc.)
- * @param homeTeam        Nom équipe domicile
- * @param awayTeam        Nom équipe extérieur
- * @param homeInjuries    Liste joueurs blessés/absents domicile (optionnel)
- * @param awayInjuries    Liste joueurs blessés/absents extérieur (optionnel)
- * @param homeImpact      Impact numérique des blessures dom (-10 à 0)
- * @param awayImpact      Impact numérique des blessures ext (-10 à 0)
- * @returns Disclaimer formatté
- */
-export function buildLineupDisclaimer(opts: {
+export interface LineupDisclaimerInput {
   sport: string;
   homeTeam: string;
   awayTeam: string;
+  // Noms simples (ancienne version)
   homeInjuries?: string[];
   awayInjuries?: string[];
+  // 🎯 Task: disclaimer détaillé — joueurs avec type de blessure + statut
+  homeKeyPlayers?: DetailedKeyPlayer[];
+  awayKeyPlayers?: DetailedKeyPlayer[];
   homeImpact?: number;
   awayImpact?: number;
-}): LineupDisclaimer {
+}
+
+/**
+ * Génère le disclaimer composition pour un match.
+ *
+ * Format détaillé (avec keyPlayers détaillés) si dispo:
+ *   ⚠️ Vérifie la composition 1h avant le match
+ *   Absents PSG: Mbappé (cuisse, out), Hakimi (cuisse, out)
+ *   Absents Marseille: Rongier (genou, out)
+ *
+ * Format simple (noms seulement) sinon:
+ *   ⚠️ Vérifie la composition 1h avant le match · Joueurs clés absents PSG: Mbappé
+ */
+export function buildLineupDisclaimer(opts: LineupDisclaimerInput): LineupDisclaimer {
   const { sport, homeTeam, awayTeam } = opts;
   const s = (sport || '').toLowerCase();
   const isFootball = s.includes('foot') || s === 'foot';
   const isUS = s.includes('basket') || s.includes('nba') || s.includes('nhl') || s.includes('hockey') || s.includes('mlb') || s.includes('base');
 
-  // Joueurs clés identifiés (déjà scrapés avec impact significatif)
-  const keyPlayers: DisclaimerKeyPlayer[] = [];
-
-  // Football: joueurs avec impact ≤ -3 sont "à surveiller"
-  if (isFootball) {
-    const hImpact = opts.homeImpact ?? 0;
-    const aImpact = opts.awayImpact ?? 0;
-    if (hImpact <= -3 && opts.homeInjuries && opts.homeInjuries.length > 0) {
-      for (const name of opts.homeInjuries.slice(0, 3)) {
-        keyPlayers.push({ name, team: 'home', status: 'out', reason: 'blessure' });
-      }
-    }
-    if (aImpact <= -3 && opts.awayInjuries && opts.awayInjuries.length > 0) {
-      for (const name of opts.awayInjuries.slice(0, 3)) {
-        keyPlayers.push({ name, team: 'away', status: 'out', reason: 'blessure' });
-      }
-    }
-  } else if (isUS) {
-    // Sports US: tous les "out" sont affichés
-    if (opts.homeInjuries && opts.homeInjuries.length > 0) {
-      for (const name of opts.homeInjuries.slice(0, 3)) {
-        keyPlayers.push({ name, team: 'home', status: 'out', reason: 'blessure' });
-      }
-    }
-    if (opts.awayInjuries && opts.awayInjuries.length > 0) {
-      for (const name of opts.awayInjuries.slice(0, 3)) {
-        keyPlayers.push({ name, team: 'away', status: 'out', reason: 'blessure' });
-      }
-    }
-  }
-
   // ── Formatage du texte ──────────────────────────────────────────
-
   const header = '⚠️ Vérifie la composition 1h avant le match';
   let body = '';
 
-  if (keyPlayers.length > 0) {
-    // Joueurs clés déjà identifiés → on les liste explicitement
-    const homeList = keyPlayers
-      .filter(p => p.team === 'home')
-      .map(p => p.name)
-      .slice(0, 3);
-    const awayList = keyPlayers
-      .filter(p => p.team === 'away')
-      .map(p => p.name)
-      .slice(0, 3);
+  // Construire la liste détaillée (noms + types) si disponible
+  const homeDetailed = opts.homeKeyPlayers || [];
+  const awayDetailed = opts.awayKeyPlayers || [];
 
-    const parts: string[] = [header];
-    if (homeList.length > 0) {
-      parts.push(`Joueurs clés absents ${homeTeam}: ${homeList.join(', ')}`);
-    }
-    if (awayList.length > 0) {
-      parts.push(`Joueurs clés absents ${awayTeam}: ${awayList.join(', ')}`);
-    }
-    body = parts.join(' · ');
-  } else if (isFootball) {
-    // Football sans blessure connue → disclaimer générique (toujours utile)
-    body = `${header} · Composition officielle non prise en compte dans le pronostic`;
-  } else {
-    // Sports US: lineup non pris en compte + rappel de vérifier
-    body = `${header} · Lineup officiel et DNP à vérifier`;
+  // Construire la liste simple (noms only) sinon
+  const homeSimple = opts.homeInjuries || [];
+  const awaySimple = opts.awayInjuries || [];
+
+  const homeHasDetailed = homeDetailed.length > 0;
+  const awayHasDetailed = awayDetailed.length > 0;
+  const homeHasSimple = !homeHasDetailed && homeSimple.length > 0;
+  const awayHasSimple = !awayHasDetailed && awaySimple.length > 0;
+
+  // Filtre: football = impact ≤ -3 pour afficher ; US = tous affichés
+  let filteredHomeDetailed = homeDetailed;
+  let filteredAwayDetailed = awayDetailed;
+  let filteredHomeSimple = homeSimple;
+  let filteredAwaySimple = awaySimple;
+  if (isFootball) {
+    const hImpact = opts.homeImpact ?? 0;
+    const aImpact = opts.awayImpact ?? 0;
+    if (hImpact > -3) { filteredHomeDetailed = []; filteredHomeSimple = []; }
+    if (aImpact > -3) { filteredAwayDetailed = []; filteredAwaySimple = []; }
   }
 
-  // Version courte (1 ligne)
-  const short = keyPlayers.length > 0
-    ? `⚠️ Compo 1h avant · ${keyPlayers.length} absent(s) clé(s)`
+  const hasAnyPlayer = filteredHomeDetailed.length > 0 || filteredAwayDetailed.length > 0
+    || filteredHomeSimple.length > 0 || filteredAwaySimple.length > 0;
+
+  if (hasAnyPlayer) {
+    const parts: string[] = [header];
+
+    // Home: liste détaillée si dispo, sinon simple
+    if (filteredHomeDetailed.length > 0) {
+      const playerList = filteredHomeDetailed
+        .slice(0, 5) // max 5 joueurs par équipe pour économie d'espace
+        .map(p => {
+          const statusIcon = p.status === 'out' ? '🚫' : p.status === 'doubtful' ? '❓' : '⚠️';
+          // Type tronqué pour économie
+          const shortType = (p.type || 'blessure')
+            .replace(/^(rupture|entorse|fracture|déchirure|lésion)\s+/i, '$1 ')
+            .slice(0, 25);
+          return `${p.name} (${shortType}, ${statusIcon})`;
+        })
+        .join(', ');
+      const more = filteredHomeDetailed.length > 5 ? ` +${filteredHomeDetailed.length - 5} autres` : '';
+      parts.push(`Absents ${homeTeam}: ${playerList}${more}`);
+    } else if (filteredHomeSimple.length > 0) {
+      parts.push(`Absents ${homeTeam}: ${filteredHomeSimple.slice(0, 5).join(', ')}`);
+    }
+
+    // Away
+    if (filteredAwayDetailed.length > 0) {
+      const playerList = filteredAwayDetailed
+        .slice(0, 5)
+        .map(p => {
+          const statusIcon = p.status === 'out' ? '🚫' : p.status === 'doubtful' ? '❓' : '⚠️';
+          const shortType = (p.type || 'blessure')
+            .replace(/^(rupture|entorse|fracture|déchirure|lésion)\s+/i, '$1 ')
+            .slice(0, 25);
+          return `${p.name} (${shortType}, ${statusIcon})`;
+        })
+        .join(', ');
+      const more = filteredAwayDetailed.length > 5 ? ` +${filteredAwayDetailed.length - 5} autres` : '';
+      parts.push(`Absents ${awayTeam}: ${playerList}${more}`);
+    } else if (filteredAwaySimple.length > 0) {
+      parts.push(`Absents ${awayTeam}: ${filteredAwaySimple.slice(0, 5).join(', ')}`);
+    }
+
+    body = parts.join(' · ');
+  } else if (isFootball) {
+    body = `${header} · Composition officielle non prise en compte dans le pronostic`;
+  } else if (isUS) {
+    body = `${header} · Lineup officiel et DNP à vérifier`;
+  } else {
+    // Sport non couvert: disclaimer générique court
+    body = `${header}`;
+  }
+
+  const totalCount = filteredHomeDetailed.length + filteredAwayDetailed.length
+    + filteredHomeSimple.length + filteredAwaySimple.length;
+  const short = totalCount > 0
+    ? `⚠️ Compo 1h avant · ${totalCount} absent(s) clé(s)`
     : '⚠️ Vérifie la compo 1h avant';
 
   return {
     text: body,
     short,
-    keyPlayersCount: keyPlayers.length,
+    keyPlayersCount: totalCount,
     sport,
     shouldShow: true,
   };
 }
 
 /**
- * Version Telegram HTML (avec sauts de ligne propres).
+ * Version Telegram HTML (multi-lignes si joueurs détaillés).
  */
-export function buildLineupDisclaimerHTML(opts: {
-  sport: string;
-  homeTeam: string;
-  awayTeam: string;
-  homeInjuries?: string[];
-  awayInjuries?: string[];
-  homeImpact?: number;
-  awayImpact?: number;
-}): string {
+export function buildLineupDisclaimerHTML(opts: LineupDisclaimerInput): string {
   const d = buildLineupDisclaimer(opts);
-  // Format Telegram: ligne dédiée avec léger emoji + gras sur l'en-tête
-  return `\n    ⚠️ <i>${d.text}</i>`;
+  // Format détaillé multi-ligne si joueurs présents
+  const lines = d.text.split(' · ');
+  if (lines.length > 1) {
+    let html = `\n    <b>${lines[0]}</b>`;
+    for (let i = 1; i < lines.length; i++) {
+      html += `\n    <i>${lines[i]}</i>`;
+    }
+    return html;
+  }
+  return `\n    <i>${d.text}</i>`;
 }
 
 /**

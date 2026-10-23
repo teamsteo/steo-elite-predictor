@@ -369,6 +369,9 @@ export function evaluateInjuryImpact(
   homeImpact: number; // -10 à 0 (0 = pas d'impact, -10 = impact majeur)
   awayImpact: number;
   summary: string;
+  // 🎯 Task: disclaimer composition — noms + types de blessure
+  homeKeyPlayers?: { name: string; type: string; status: string }[];
+  awayKeyPlayers?: { name: string; type: string; status: string }[];
 } {
   // Pondération par statut
   const statusWeight: Record<string, number> = {
@@ -376,23 +379,40 @@ export function evaluateInjuryImpact(
     'doubtful': 0.6,
     'questionable': 0.3,
   };
-  
+
   // Calculer l'impact
   let homeImpactScore = 0;
   let awayImpactScore = 0;
-  
+
   for (const inj of homeInjuries) {
     homeImpactScore += statusWeight[inj.status] || 0.5;
   }
-  
+
   for (const inj of awayInjuries) {
     awayImpactScore += statusWeight[inj.status] || 0.5;
   }
-  
+
   // Normaliser sur une échelle de 0 à -10
   const homeImpact = Math.max(-10, -homeImpactScore * 1.5);
   const awayImpact = Math.max(-10, -awayImpactScore * 1.5);
-  
+
+  // 🎯 Task: disclaimer — liste des joueurs 'out' et 'doubtful' (les plus importants)
+  // Tous les joueurs 'out' (sûrs d'être absents) + 'doubtful' (incertains)
+  const homeKeyPlayers = homeInjuries
+    .filter(p => p.status === 'out' || p.status === 'doubtful')
+    .map(p => ({
+      name: p.playerName,
+      type: p.injuryType || 'blessure',
+      status: p.status,
+    }));
+  const awayKeyPlayers = awayInjuries
+    .filter(p => p.status === 'out' || p.status === 'doubtful')
+    .map(p => ({
+      name: p.playerName,
+      type: p.injuryType || 'blessure',
+      status: p.status,
+    }));
+
   // Générer un résumé
   let summary = '';
   if (homeInjuries.length > awayInjuries.length) {
@@ -404,11 +424,13 @@ export function evaluateInjuryImpact(
   } else {
     summary = 'Aucune blessure signalée';
   }
-  
+
   return {
     homeImpact: Math.round(homeImpact * 10) / 10,
     awayImpact: Math.round(awayImpact * 10) / 10,
     summary,
+    homeKeyPlayers,
+    awayKeyPlayers,
   };
 }
 

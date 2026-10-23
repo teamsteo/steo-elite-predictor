@@ -239,6 +239,9 @@ export interface UnifiedPrediction {
       // 🎯 Task: disclaimer composition — noms des joueurs clés absents
       homeNames?: string[];
       awayNames?: string[];
+      // 🎯 Task: disclaimer détaillé — noms + types de blessure + statut
+      homeKeyPlayers?: { name: string; type: string; status: string }[];
+      awayKeyPlayers?: { name: string; type: string; status: string }[];
     };
     // 🎯 Task: contexte football économique — classement + forme détaillée
     teamStats?: {
@@ -1146,6 +1149,9 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       // 🎯 Task: disclaimer composition — noms des joueurs clés absents
       homeNames: context?.injuries.keyAbsentees?.home || [],
       awayNames: context?.injuries.keyAbsentees?.away || [],
+      // 🎯 Task: disclaimer détaillé — noms + types de blessure + statut
+      homeKeyPlayers: context?.injuries.homeKeyPlayers || [],
+      awayKeyPlayers: context?.injuries.awayKeyPlayers || [],
     },
     xg: {
       home: context?.fbref?.homeXG?.xGDPer90 || null,

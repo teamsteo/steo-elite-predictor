@@ -157,6 +157,9 @@ export interface UnifiedMatchContext {
     awayImpact: number;
     summary: string;
     keyAbsentees?: { home: string[]; away: string[] };
+    // 🎯 Task: disclaimer détaillé — joueurs avec type de blessure + statut
+    homeKeyPlayers?: { name: string; type: string; status: string }[];
+    awayKeyPlayers?: { name: string; type: string; status: string }[];
     source: string;
   };
   
@@ -546,7 +549,12 @@ async function fetchInjuryData(
     // === PHASE 1: Source primaire (scraping dédié) ===
     let primaryHome: any[] = [];
     let primaryAway: any[] = [];
-    let primaryImpact: { homeImpact: number; awayImpact: number; summary: string; keyAbsentees: { home: string[]; away: string[] } } = { homeImpact: 0, awayImpact: 0, summary: '', keyAbsentees: { home: [], away: [] } };
+    let primaryImpact: {
+      homeImpact: number; awayImpact: number; summary: string;
+      keyAbsentees: { home: string[]; away: string[] };
+      homeKeyPlayers?: { name: string; type: string; status: string }[];
+      awayKeyPlayers?: { name: string; type: string; status: string }[];
+    } = { homeImpact: 0, awayImpact: 0, summary: '', keyAbsentees: { home: [], away: [] } };
 
     if (sport === 'basketball') {
       try {
@@ -574,6 +582,9 @@ async function fetchInjuryData(
           awayImpact: evalResult.awayImpact,
           summary: evalResult.summary,
           keyAbsentees: { home: [], away: [] },
+          // 🎯 Task: disclaimer détaillé — noms + types de blessure
+          homeKeyPlayers: evalResult.homeKeyPlayers || [],
+          awayKeyPlayers: evalResult.awayKeyPlayers || [],
         };
         sourcesUsed.push('Transfermarkt');
       } catch (e) {
@@ -661,6 +672,9 @@ async function fetchInjuryData(
       awayImpact: finalAwayImpact,
       summary: mergedSummary,
       keyAbsentees: allKeyAbsentees,
+      // 🎯 Task: disclaimer détaillé — propager les keyPlayers (noms + types)
+      homeKeyPlayers: primaryImpact.homeKeyPlayers || [],
+      awayKeyPlayers: primaryImpact.awayKeyPlayers || [],
       source: sourcesUsed.join('+'),
     };
     
