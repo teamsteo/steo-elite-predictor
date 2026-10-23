@@ -2682,6 +2682,15 @@ export async function GET(request: NextRequest) {
                   _h2h: p.factors?.h2h || undefined,
                   // 📰 Forme des équipes (points)
                   _form: p.factors?.form || undefined,
+                  // 🎯 Task: contexte football économique — classement + H2H détaillé
+                  _teamStats: (p.factors as any)?.teamStats || undefined,
+                  _fbrefH2H: (p.factors?.h2h?.totalMatches || 0) > 0 ? {
+                    totalMatches: p.factors?.h2h?.totalMatches || 0,
+                    homeWins: p.factors?.h2h?.homeWins || 0,
+                    draws: p.factors?.h2h?.draws || 0,
+                    awayWins: p.factors?.h2h?.awayWins || 0,
+                    lastMatches: p.factors?.h2h?.lastMatches?.slice(0, 3),
+                  } : undefined,
                   // 🧮 Engine V4-lite NBA (projection + marchés O/U / spread)
                   _nbaEngine: p.nbaEngine || undefined,
                 };

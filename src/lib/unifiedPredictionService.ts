@@ -223,7 +223,14 @@ export interface UnifiedPrediction {
   // Context factors
   factors: {
     form: { home: number; away: number };
-    h2h: { homeWins: number; draws: number; awayWins: number };
+    h2h: {
+      homeWins: number;
+      draws: number;
+      awayWins: number;
+      // 🎯 Task: contexte football économique — H2H détaillé
+      totalMatches?: number;
+      lastMatches?: Array<{ date: string; homeTeam: string; awayTeam: string; homeScore: number; awayScore: number; competition: string }>;
+    };
     injuries: {
       home: number;
       away: number;
@@ -232,6 +239,14 @@ export interface UnifiedPrediction {
       // 🎯 Task: disclaimer composition — noms des joueurs clés absents
       homeNames?: string[];
       awayNames?: string[];
+    };
+    // 🎯 Task: contexte football économique — classement + forme détaillée
+    teamStats?: {
+      homeRank?: number;
+      awayRank?: number;
+      totalTeams?: number;
+      homeFormStr?: string; // "WWDLW"
+      awayFormStr?: string;
     };
     xg: { home: number | null; away: number | null };
     weather?: {
@@ -1113,6 +1128,15 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       homeWins: context?.fbref?.h2h?.team1Wins || 0,
       draws: context?.fbref?.h2h?.draws || 0,
       awayWins: context?.fbref?.h2h?.team2Wins || 0,
+      totalMatches: context?.fbref?.h2h?.totalMatches || 0,
+      lastMatches: context?.fbref?.h2h?.lastMatches?.slice(0, 5).map(m => ({
+        date: m.date,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        homeScore: m.homeScore,
+        awayScore: m.awayScore,
+        competition: m.competition,
+      })) || [],
     },
     injuries: {
       home: context?.injuries.home.length || 0,
@@ -1127,6 +1151,14 @@ export async function getUnifiedPrediction(match: UnifiedPredictionInput): Promi
       home: context?.fbref?.homeXG?.xGDPer90 || null,
       away: context?.fbref?.awayXG?.xGDPer90 || null,
     },
+    // 🎯 Task: contexte football économique — classement ESPN + forme FBref
+    teamStats: sportType === 'football' ? {
+      homeRank: context?.standings?.homeRank,
+      awayRank: context?.standings?.awayRank,
+      totalTeams: context?.standings?.totalTeams,
+      homeFormStr: context?.fbref?.homeForm?.form?.replace(/-/g, ''),
+      awayFormStr: context?.fbref?.awayForm?.form?.replace(/-/g, ''),
+    } : undefined,
     weather: context?.weather ? {
       condition: context.weather.current.condition,
       temperature: context.weather.current.temperature,

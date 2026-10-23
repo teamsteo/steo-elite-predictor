@@ -14,6 +14,7 @@ import { getMatchTeamStats } from './teamStatsService';
 import SupabaseStore, { type DbPrediction } from './db-supabase';
 import { comboLegIsVn, doubleChanceOdds, vnPickLabel } from './resultPolicy';
 import { buildLineupDisclaimerHTML, shouldShowLineupDisclaimer } from './lineupDisclaimer';
+import { formatFootballContext } from './footballContext';
 import { getDailyCalibrations, type StoredCalibration } from './liveCalibration/store';
 import { updateFinalScore } from './liveCalibration/store';
 import { fetchFinalScoresBatch } from './liveCalibration/finalScores';
@@ -1014,11 +1015,29 @@ interface TelegramMatch {
     homeWins: number;
     draws: number;
     awayWins: number;
+    // 🎯 Task: contexte football économique — H2H détaillé (FBref)
+    totalMatches?: number;
+    lastMatches?: Array<{ date: string; homeTeam: string; awayTeam: string; homeScore: number; awayScore: number; competition: string }>;
   };
   // Forme des équipes
   _form?: {
     home: number;
     away: number;
+  };
+  // 🎯 Task: contexte football économique — classement + forme détaillée
+  _teamStats?: {
+    homeRank?: number;
+    awayRank?: number;
+    totalTeams?: number;
+    homeFormStr?: string; // "WWDLW"
+    awayFormStr?: string;
+  };
+  _fbrefH2H?: {
+    totalMatches: number;
+    homeWins: number;
+    draws: number;
+    awayWins: number;
+    lastMatches?: Array<{ date: string; homeTeam: string; awayTeam: string; homeScore: number; awayScore: number; competition: string }>;
   };
   // Contexte enrichi (ancien — teamNews, etc.)
   _enrichedContext?: {
@@ -1241,20 +1260,36 @@ async function formatMatchBlock(
     }
   }
 
-  // ── Face-à-face historique ──
-  if (m._h2h) {
-    const h2h = m._h2h;
-    const total = h2h.homeWins + h2h.draws + h2h.awayWins;
-    if (total > 0) {
-      contextLines.push(`⚔️ H2H: ${h2h.homeWins}V-${h2h.draws}N-${h2h.awayWins}V (${total} matchs)`);
-    }
-  }
-
-  // ── Forme des équipes (points ML) ──
-  if (m._form && !summaryLower.includes('forme')) {
-    const f = m._form;
-    const formLabel = (pts: number) => pts >= 65 ? '🔥 Fort' : pts >= 50 ? '⚖️ Moyen' : '❄️ Faible';
-    contextLines.push(`📈 Forme: ${formLabel(f.home)} vs ${formLabel(f.away)}`);
+  // ── 🎯 CONTEXTE FOOTBALL ÉCONOMIQUE — Rang + H2H détaillé + Forme 5 derniers ──
+  // 3 lignes max pour économiser l'espace Telegram:
+  //   📊 #1 PSG /20 vs #5 Marseille /20
+  //   ⚔️ H2H: PSG 4V-1N-1M (6 matchs · dernier: PSG 2-1 OM)
+  //   📈 PSG WWDLW (10pts) · Marseille WDWLW (10pts)
+  if (isFootball) {
+    const ctx = formatFootballContext({
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      league: m.league,
+      homeRank: m._teamStats?.homeRank,
+      awayRank: m._teamStats?.awayRank,
+      totalTeams: m._teamStats?.totalTeams,
+      homeFormStr: m._teamStats?.homeFormStr,
+      awayFormStr: m._teamStats?.awayFormStr,
+      homeFormPoints: m._form?.home,
+      awayFormPoints: m._form?.away,
+      h2h: m._fbrefH2H && m._fbrefH2H.totalMatches > 0 ? {
+        team1: m.homeTeam,
+        team2: m.awayTeam,
+        totalMatches: m._fbrefH2H.totalMatches,
+        team1Wins: m._fbrefH2H.homeWins,
+        team2Wins: m._fbrefH2H.awayWins,
+        draws: m._fbrefH2H.draws,
+        team1Goals: 0,
+        team2Goals: 0,
+        lastMatches: (m._fbrefH2H.lastMatches || []) as any,
+      } as any : null,
+    });
+    for (const line of ctx.lines) contextLines.push(line);
   }
 
   // ── contextSummary — résumé dynamique (dernier, une seule ligne) ──

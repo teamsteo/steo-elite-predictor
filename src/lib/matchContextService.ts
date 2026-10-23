@@ -113,6 +113,14 @@ export interface UnifiedMatchContext {
       h2hTrend: string;
     };
   };
+  // 🎯 Task: contexte football économique — classement ESPN (rang + record)
+  standings?: {
+    homeRank?: number;
+    awayRank?: number;
+    totalTeams?: number;
+    homeRecord?: { w: number; d: number; l: number };
+    awayRecord?: { w: number; d: number; l: number };
+  };
   
   // Données NBA (Basketball uniquement - NOUVEAU)
   nba?: {
@@ -496,6 +504,14 @@ export async function getUnifiedMatchContext(params: {
     injuries: injuryData,
     news: newsData,
     unifiedAnalysis,
+    // 🎯 Task: contexte football économique — standings ESPN
+    standings: {
+      homeRank: homeStanding,
+      awayRank: awayStanding,
+      totalTeams,
+      homeRecord: undefined, // pas exposé par ESPN standings directement
+      awayRecord: undefined,
+    },
     generatedAt: new Date().toISOString(),
     sourcesUsed,
   };
