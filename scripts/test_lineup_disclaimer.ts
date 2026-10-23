@@ -95,17 +95,8 @@ test('disclaimer HTML format: ligne dédiée + i tag', () => {
   assert(html.includes('\n'), `doit avoir saut de ligne: ${html}`);
 });
 
-test('disclaimer NFL: affiché même sans blessures', () => {
-  const d = buildLineupDisclaimer({
-    sport: 'NFL',
-    homeTeam: 'Chiefs',
-    awayTeam: 'Bills',
-  });
-  assert(d.shouldShow === true, 'NFL devrait afficher');
-  // NFL = isUS → fallback "Lineup officiel et DNP à vérifier"
-  assert(d.text.includes('Vérifie la composition 1h avant'), `texte: ${d.text}`);
-  assert(d.text.includes('DNP') || d.text.includes('Lineup'), `texte US: ${d.text}`);
-});
+// Note: NFL/American football n'est PAS dans le scope — utilisateur parle
+// de football (soccer) uniquement. Pas de test NFL.
 
 test('disclaimer limite à 5 joueurs par équipe (au lieu de 3)', () => {
   const d = buildLineupDisclaimer({
