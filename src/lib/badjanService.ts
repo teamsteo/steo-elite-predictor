@@ -53,6 +53,79 @@ export interface BadjanPublishResult {
 
 // ── Helpers locaux (répliques minimales, zéro couplage) ──
 
+// 🎯 Task: disclaimer composition (sans import pour préserver l'isolation)
+// Réplique locale minimale de buildLineupDisclaimerHTML
+function buildBadjanDisclaimer(opts: {
+  homeTeam: string;
+  awayTeam: string;
+  homeKeyPlayers?: { name: string; type: string; status: string }[];
+  awayKeyPlayers?: { name: string; type: string; status: string }[];
+  homeInjuries?: string[];
+  awayInjuries?: string[];
+  homeImpact?: number;
+  awayImpact?: number;
+}): string {
+  const header = '⚠️ Vérifie la composition 1h avant le match';
+  let body = '';
+  const homeDetailed = opts.homeKeyPlayers || [];
+  const awayDetailed = opts.awayKeyPlayers || [];
+  const homeSimple = opts.homeInjuries || [];
+  const awaySimple = opts.awayInjuries || [];
+
+  // Football: filtre impact ≤ -3 (les blessures sans impact notable sont ignorées)
+  let fHomeDetailed = homeDetailed;
+  let fAwayDetailed = awayDetailed;
+  let fHomeSimple = homeSimple;
+  let fAwaySimple = awaySimple;
+  const hImpact = opts.homeImpact ?? 0;
+  const aImpact = opts.awayImpact ?? 0;
+  if (hImpact > -3) { fHomeDetailed = []; fHomeSimple = []; }
+  if (aImpact > -3) { fAwayDetailed = []; fAwaySimple = []; }
+
+  const hasAnyPlayer = fHomeDetailed.length > 0 || fAwayDetailed.length > 0
+    || fHomeSimple.length > 0 || fAwaySimple.length > 0;
+
+  if (hasAnyPlayer) {
+    const parts: string[] = [header];
+    if (fHomeDetailed.length > 0) {
+      const list = fHomeDetailed.slice(0, 5).map(p => {
+        const ic = p.status === 'out' ? '🚫' : p.status === 'doubtful' ? '❓' : '⚠️';
+        const t = (p.type || 'blessure').slice(0, 25);
+        return `${p.name} (${t}, ${ic})`;
+      }).join(', ');
+      const more = fHomeDetailed.length > 5 ? ` +${fHomeDetailed.length - 5} autres` : '';
+      parts.push(`Absents ${opts.homeTeam}: ${list}${more}`);
+    } else if (fHomeSimple.length > 0) {
+      parts.push(`Absents ${opts.homeTeam}: ${fHomeSimple.slice(0, 5).join(', ')}`);
+    }
+    if (fAwayDetailed.length > 0) {
+      const list = fAwayDetailed.slice(0, 5).map(p => {
+        const ic = p.status === 'out' ? '🚫' : p.status === 'doubtful' ? '❓' : '⚠️';
+        const t = (p.type || 'blessure').slice(0, 25);
+        return `${p.name} (${t}, ${ic})`;
+      }).join(', ');
+      const more = fAwayDetailed.length > 5 ? ` +${fAwayDetailed.length - 5} autres` : '';
+      parts.push(`Absents ${opts.awayTeam}: ${list}${more}`);
+    } else if (fAwaySimple.length > 0) {
+      parts.push(`Absents ${opts.awayTeam}: ${fAwaySimple.slice(0, 5).join(', ')}`);
+    }
+    body = parts.join(' · ');
+  } else {
+    body = `${header} · Composition officielle non prise en compte dans le pronostic`;
+  }
+
+  // Multi-ligne si joueurs détaillés présents
+  const lines = body.split(' · ');
+  if (lines.length > 1) {
+    let html = `\n    <b>${lines[0]}</b>`;
+    for (let i = 1; i < lines.length; i++) {
+      html += `\n    <i>${lines[i]}</i>`;
+    }
+    return html + '\n';
+  }
+  return `\n    <i>${body}</i>\n`;
+}
+
 /** Foot uniquement : 'Football', 'football', 'soccer' (même logique que telegramService). */
 function isFootballSport(sport?: string): boolean {
   if (!sport) return false;
@@ -663,6 +736,20 @@ export function formatBadjanMessage(picks: EnrichedBadjanMatch[]): string {
         }
       } catch { /* skip */ }
     }
+
+    // 🎯 Task: disclaimer composition — ajouté pour tous les matchs Badjan
+    // (rappel vérif compo 1h avant + liste joueurs clés absents si dispo)
+    const inj = (m as any)._injuries;
+    message += buildBadjanDisclaimer({
+      homeTeam: m.homeTeam,
+      awayTeam: m.awayTeam,
+      homeKeyPlayers: inj?.homeKeyPlayers,
+      awayKeyPlayers: inj?.awayKeyPlayers,
+      homeInjuries: inj?.homeNames,
+      awayInjuries: inj?.awayNames,
+      homeImpact: inj?.homeImpact,
+      awayImpact: inj?.awayImpact,
+    });
 
     message += '\n';
   }
